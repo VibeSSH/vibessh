@@ -140,6 +140,27 @@ same `ServerConnection` interface on the Rust side.
       run against the project's real test server: a genuine interactive
       `bash` session, MOTD banner, colored prompt, and a command's output
       all round-tripped correctly
+- [x] Terminal tabs — the backend was already built for more than one
+      session at once (see the per-terminal event pair above), but the
+      frontend only ever opened a single `TerminalView`; the Terminal page
+      now has a real tab strip, each tab an independent `open_terminal`
+      call/`SshSession` channel. All tabs stay mounted simultaneously and
+      are shown/hidden with a plain CSS `display` toggle rather than
+      conditional rendering, specifically so a backgrounded shell keeps
+      receiving output and its scrollback survives switching away from it,
+      instead of disconnecting and reconnecting fresh every time it's
+      revisited. A hidden tab's `FitAddon.fit()` is a documented no-op
+      against a zero-size container (confirmed by reading its source - it
+      bails out when it can't measure a cell size rather than throwing or
+      collapsing to 0 cols/rows), so a new background tab opens at xterm's
+      normal 80x24 default and gets corrected to the real size via the
+      existing `ResizeObserver` the moment it's actually shown, rather than
+      erroring on mount. Closing a tab closes only that tab's terminal
+      session; the others are unaffected. No frontend test runner exists in
+      this project to cover this automatically, and multi-session tab
+      switching needs the native window to evaluate by hand, which this
+      autonomous session couldn't drive - verified with type-checking and a
+      production build only, worth trying by hand before trusting fully
 - [x] SFTP (Files module) — `russh-sftp` runs the SFTP subsystem over a
       channel on the same `russh` connection, not a separate transport;
       `SshSession` negotiates it lazily on first use (`SshSession::sftp`)
@@ -418,7 +439,8 @@ src/                        Frontend (React + TypeScript)
                             open/write/resize/close commands), FileEditorPanel (real,
                             view/edit files under 1MB over read_remote_file/write_remote_file),
                             ContainerLogsPanel (real, docker logs over get_server_container_logs)
-  pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
+  pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId -
+                            tab strip, each tab its own open_terminal session),
                             Files (/files/:serverId - breadcrumb-navigable directory browser,
                             native-dialog upload/download via tauri-plugin-dialog),
                             Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview,
