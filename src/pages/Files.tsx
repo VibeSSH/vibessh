@@ -65,6 +65,14 @@ export function FilesPage() {
 
   const segments = path === ROOT_PATH ? [] : path.replace(/^\.\/?/, "").split("/").filter(Boolean);
 
+  if (openFile) {
+    return (
+      <div className="page files-editor-page">
+        <FileEditorPanel serverId={serverId} entry={openFile} onClose={() => setOpenFile(null)} />
+      </div>
+    );
+  }
+
   async function handleUpload() {
     if (!serverId) return;
     const localPath = await open({ multiple: false, title: "Upload file" });
@@ -171,8 +179,6 @@ export function FilesPage() {
           </ul>
         )}
       </Card>
-
-      {openFile && <FileEditorPanel serverId={serverId} entry={openFile} onClose={() => setOpenFile(null)} />}
     </div>
   );
 }

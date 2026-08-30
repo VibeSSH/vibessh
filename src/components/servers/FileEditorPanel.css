@@ -1,0 +1,67 @@
+.file-editor-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+}
+
+.file-editor-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.file-editor-tab-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+.file-editor-tab-back:hover {
+  color: var(--accent);
+}
+.file-editor-tab-back svg {
+  color: var(--text-tertiary);
+  transition: transform 120ms ease;
+}
+.file-editor-tab-back:hover svg {
+  transform: translateX(-2px);
+}
+
+.file-editor-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.file-editor-tab-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.file-editor-tab-body {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.file-editor-tab-body .form-note {
+  padding: 16px;
+}
+
+.file-editor-tab-codemirror {
+  height: 100%;
+}
+
+.file-editor-tab-codemirror .cm-editor {
+  height: 100%;
+}

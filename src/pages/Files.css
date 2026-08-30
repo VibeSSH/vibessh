@@ -1,3 +1,11 @@
+/* The file editor swaps in for the whole page rather than overlaying it as
+   a modal - needs an explicit height to hand CodeMirror's own height="100%"
+   something real to fill, since .page normally just grows with its content. */
+.files-editor-page {
+  height: 100%;
+  min-height: 0;
+}
+
 .files-breadcrumb {
   display: flex;
   align-items: center;

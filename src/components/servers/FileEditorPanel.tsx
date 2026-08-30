@@ -7,8 +7,8 @@ import { languageExtensionFor } from "./editorLanguage";
 import { bytesToText, readRemoteFile, textToBytes, writeRemoteFile } from "@/services/filesService";
 import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
-import "./AddServerModal.css";
 import "./forms.css";
+import "./FileEditorPanel.css";
 
 /** Above this, decoding the whole file into a textarea isn't a good idea - point at the terminal instead. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
@@ -19,6 +19,12 @@ interface FileEditorPanelProps {
   onClose: () => void;
 }
 
+/**
+ * A full-tab editor view, not a modal - Files.tsx swaps the whole content
+ * area for this instead of overlaying it, matching Voltius's own editor
+ * (voltius/src/components/filetransfer/editor/EditorTab.tsx) using the
+ * full pane rather than a cramped dialog.
+ */
 export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelProps) {
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
   const [content, setContent] = useState("");
@@ -44,7 +50,6 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     try {
       await writeRemoteFile(serverId, entry.path, textToBytes(content));
       toastSuccess(`Saved ${entry.name}`);
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save this file.");
     } finally {
@@ -53,51 +58,38 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel" style={{ width: 640 }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">{entry.name}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">
-            <Icon name="x" size={16} />
-          </button>
-        </div>
-        <div className="modal-body">
-          {tooLarge ? (
-            <p className="form-note">
-              This file is larger than 1&nbsp;MB - too large to edit here. Use the terminal to work with it instead.
-            </p>
-          ) : loading ? (
-            <p className="form-note">Loading...</p>
-          ) : (
-            <div className="file-editor-codemirror">
-              <CodeMirror
-                value={content}
-                height="360px"
-                theme="none"
-                extensions={extensions}
-                onChange={setContent}
-                basicSetup={{ foldGutter: true, highlightActiveLine: true }}
-              />
-            </div>
-          )}
-
-          {error && (
-            <p className="form-note" style={{ color: "var(--danger)" }}>
-              {error}
-            </p>
-          )}
-
-          <div className="form-actions" style={{ marginTop: 12, gap: 8 }}>
-            <Button variant="secondary" onClick={onClose}>
-              Cancel
+    <div className="file-editor-tab">
+      <div className="file-editor-tab-header">
+        <button className="file-editor-tab-back" onClick={onClose} aria-label="Back to file list">
+          <Icon name="chevron-left" size={16} />
+          <span>{entry.name}</span>
+        </button>
+        <div className="file-editor-tab-actions">
+          {error && <span className="file-editor-tab-error">{error}</span>}
+          {!tooLarge && (
+            <Button onClick={handleSave} disabled={loading || saving}>
+              {saving ? "Saving..." : "Save"}
             </Button>
-            {!tooLarge && (
-              <Button onClick={handleSave} disabled={loading || saving}>
-                Save
-              </Button>
-            )}
-          </div>
+          )}
         </div>
+      </div>
+
+      <div className="file-editor-tab-body">
+        {tooLarge ? (
+          <p className="form-note">This file is larger than 1&nbsp;MB - too large to edit here. Use the terminal to work with it instead.</p>
+        ) : loading ? (
+          <p className="form-note">Loading...</p>
+        ) : (
+          <CodeMirror
+            className="file-editor-tab-codemirror"
+            value={content}
+            height="100%"
+            theme="none"
+            extensions={extensions}
+            onChange={setContent}
+            basicSetup={{ foldGutter: true, highlightActiveLine: true }}
+          />
+        )}
       </div>
     </div>
   );
