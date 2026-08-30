@@ -3,7 +3,10 @@
 //! cached). This module only translates between `russh_sftp`'s API and the
 //! app's own `RemoteFileEntry`/`AppResult` shapes.
 
+use std::path::Path;
+
 use russh_sftp::protocol::OpenFlags;
+use tokio::fs::File as LocalFile;
 use tokio::io::AsyncWriteExt;
 
 use vibessh_protocol::RemoteFileEntry;
@@ -57,5 +60,49 @@ impl SshSession {
         file.shutdown()
             .await
             .map_err(|err| AppError::Connection(format!("couldn't finish writing {path}: {err}")))
+    }
+
+    /// Streams `remote_path` straight to `local_path` via `tokio::io::copy` -
+    /// unlike `read_file`, this never materializes the whole file as a
+    /// `Vec<u8>` in memory (let alone twice, once as SFTP protocol frames and
+    /// again as a JSON array crossing the Tauri IPC bridge), which matters
+    /// once "a file" isn't a few KB of text but something upload/download is
+    /// actually for.
+    pub async fn download_file(&self, remote_path: &str, local_path: &Path) -> AppResult<()> {
+        let sftp = self.sftp().await?;
+        let mut remote = sftp
+            .open(remote_path)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for reading: {err}")))?;
+        let mut local = LocalFile::create(local_path)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", local_path.display())))?;
+        tokio::io::copy(&mut remote, &mut local)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't download {remote_path}: {err}")))?;
+        local
+            .flush()
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't finish writing {}: {err}", local_path.display())))
+    }
+
+    /// The upload counterpart of `download_file` - same streaming-copy
+    /// reasoning, same create-or-truncate "save" semantics as `write_file`.
+    pub async fn upload_file(&self, local_path: &Path, remote_path: &str) -> AppResult<()> {
+        let mut local = LocalFile::open(local_path)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't open {}: {err}", local_path.display())))?;
+        let sftp = self.sftp().await?;
+        let mut remote = sftp
+            .open_with_flags(remote_path, OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for writing: {err}")))?;
+        tokio::io::copy(&mut local, &mut remote)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't upload to {remote_path}: {err}")))?;
+        remote
+            .shutdown()
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't finish writing {remote_path}: {err}")))
     }
 }

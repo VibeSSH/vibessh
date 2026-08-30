@@ -279,6 +279,59 @@ async fn writes_a_new_file_reads_it_back_and_lists_it_in_the_directory() {
 }
 
 #[tokio::test]
+async fn downloads_and_uploads_stream_through_a_real_local_file_not_just_memory() {
+    let fs = InMemoryFs::default();
+    let port = spawn_mock_server(fs).await;
+    let outcome = timeout(Duration::from_secs(5), connect(&credentials(port), None))
+        .await
+        .expect("timed out connecting")
+        .expect("connect should succeed");
+
+    outcome
+        .session
+        .write_file("/uploads/report.csv", b"id,name\n1,alpha\n2,beta\n")
+        .await
+        .expect("seeding the remote file should succeed");
+
+    let local_dir = std::env::temp_dir().join(format!("vibessh-sftp-test-{}-{}", std::process::id(), unique_suffix()));
+    std::fs::create_dir_all(&local_dir).expect("create scratch dir");
+    let download_target = local_dir.join("downloaded.csv");
+
+    outcome
+        .session
+        .download_file("/uploads/report.csv", &download_target)
+        .await
+        .expect("download_file should succeed");
+    let downloaded = std::fs::read(&download_target).expect("downloaded file should exist locally");
+    assert_eq!(downloaded, b"id,name\n1,alpha\n2,beta\n");
+
+    // Round trip: upload the file we just downloaded to a new remote path
+    // and read it back over SFTP, proving upload_file's local-file-to-SFTP
+    // stream works too, not just the download direction.
+    outcome
+        .session
+        .upload_file(&download_target, "/uploads/report-copy.csv")
+        .await
+        .expect("upload_file should succeed");
+    let reuploaded = outcome
+        .session
+        .read_file("/uploads/report-copy.csv")
+        .await
+        .expect("reading the reuploaded file back should succeed");
+    assert_eq!(reuploaded, b"id,name\n1,alpha\n2,beta\n");
+
+    std::fs::remove_dir_all(&local_dir).ok();
+    outcome.session.close().await;
+}
+
+fn unique_suffix() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after the epoch")
+        .as_nanos()
+}
+
+#[tokio::test]
 async fn reading_a_missing_file_is_a_clean_error_not_a_hang_or_panic() {
     let fs = InMemoryFs::default();
     let port = spawn_mock_server(fs).await;

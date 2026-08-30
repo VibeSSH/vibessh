@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub use vibessh_protocol::{CommandOutput, ContainerSummary, ProcessSummary, RemoteFileEntry, ServerMetrics, ServiceSummary};
 
 use crate::errors::AppResult;
@@ -28,6 +30,8 @@ pub trait ServerConnection: Send + Sync {
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>>;
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()>;
+    async fn download_file(&self, remote_path: &str, local_path: &Path) -> AppResult<()>;
+    async fn upload_file(&self, local_path: &Path, remote_path: &str) -> AppResult<()>;
 }
 
 #[cfg(test)]
@@ -111,6 +115,14 @@ mod tests {
         }
 
         async fn write_file(&self, _path: &str, _contents: &[u8]) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn download_file(&self, _remote_path: &str, _local_path: &Path) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn upload_file(&self, _local_path: &Path, _remote_path: &str) -> AppResult<()> {
             Ok(())
         }
     }

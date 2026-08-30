@@ -3,6 +3,7 @@
 //! points: testing a connection before a server is saved, and running a
 //! command against one that already is (via the cached `SshSessionManager`).
 
+use std::path::Path;
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -94,6 +95,28 @@ pub async fn write_file(
 ) -> AppResult<()> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.write_file(path, contents).await
+}
+
+pub async fn download_file(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    remote_path: &str,
+    local_path: &Path,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.download_file(remote_path, local_path).await
+}
+
+pub async fn upload_file(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    local_path: &Path,
+    remote_path: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.upload_file(local_path, remote_path).await
 }
 
 /// A fresh sample each call - the CPU%/network-rate delta math lives on

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tauri::State;
 use uuid::Uuid;
 
@@ -36,4 +38,30 @@ pub async fn write_remote_file(
     contents: Vec<u8>,
 ) -> AppResult<()> {
     services::write_remote_file(&repo, &sessions, server_id, &path, &contents).await
+}
+
+/// `local_path` comes from a native save-file dialog the frontend already
+/// ran, so it's a real, user-chosen filesystem path - never a value that
+/// needs shell-safety validation the way a remote service/container name
+/// does.
+#[tauri::command]
+pub async fn download_remote_file(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    remote_path: String,
+    local_path: PathBuf,
+) -> AppResult<()> {
+    services::download_remote_file(&repo, &sessions, server_id, &remote_path, &local_path).await
+}
+
+#[tauri::command]
+pub async fn upload_remote_file(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    local_path: PathBuf,
+    remote_path: String,
+) -> AppResult<()> {
+    services::upload_remote_file(&repo, &sessions, server_id, &local_path, &remote_path).await
 }

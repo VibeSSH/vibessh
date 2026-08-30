@@ -30,6 +30,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
@@ -62,6 +63,8 @@ pub fn run() {
             commands::file_commands::list_remote_directory,
             commands::file_commands::read_remote_file,
             commands::file_commands::write_remote_file,
+            commands::file_commands::download_remote_file,
+            commands::file_commands::upload_remote_file,
             commands::monitor_commands::get_server_metrics,
             commands::monitor_commands::list_server_processes,
             commands::actions_commands::list_server_services,

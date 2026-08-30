@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
+# Native open/save file dialogs for Files module upload/download.
+tauri-plugin-dialog = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -26,7 +28,7 @@ async-trait = "0.1"
 vibessh-protocol = { path = "../protocol" }
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
-tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 # Agent connections are wss:// with a self-signed cert (Etap K - no CA for

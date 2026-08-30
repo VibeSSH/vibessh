@@ -14,6 +14,16 @@ export function writeRemoteFile(serverId: string, path: string, contents: number
   return callCommand<void>("write_remote_file", { serverId, path, contents });
 }
 
+/** Streams straight between the remote file and a local path chosen via a native save dialog - never round-trips the file's bytes through this JS layer. */
+export function downloadRemoteFile(serverId: string, remotePath: string, localPath: string): Promise<void> {
+  return callCommand<void>("download_remote_file", { serverId, remotePath, localPath });
+}
+
+/** The upload counterpart of downloadRemoteFile - localPath comes from a native open-file dialog. */
+export function uploadRemoteFile(serverId: string, localPath: string, remotePath: string): Promise<void> {
+  return callCommand<void>("upload_remote_file", { serverId, localPath, remotePath });
+}
+
 export function bytesToText(bytes: number[]): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }

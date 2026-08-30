@@ -2,6 +2,8 @@
 //! `monitor.rs`/`systemd.rs`/`docker.rs`) to the app's transport-agnostic
 //! `ServerConnection` trait. Every method is real - none of this is a stub
 //! standing in for a later stage.
+use std::path::Path;
+
 use crate::errors::AppResult;
 use crate::ssh::client::SshSession;
 use crate::transport::{
@@ -76,5 +78,13 @@ impl ServerConnection for SshSession {
 
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         self.write_file(path, contents).await
+    }
+
+    async fn download_file(&self, remote_path: &str, local_path: &Path) -> AppResult<()> {
+        self.download_file(remote_path, local_path).await
+    }
+
+    async fn upload_file(&self, local_path: &Path, remote_path: &str) -> AppResult<()> {
+        self.upload_file(local_path, remote_path).await
     }
 }

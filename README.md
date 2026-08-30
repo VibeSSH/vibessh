@@ -163,6 +163,31 @@ same `ServerConnection` interface on the Rust side.
       one-off manual run against the project's real test server: wrote a
       file over real SFTP, read it back byte-for-byte, and saw it with the
       correct size and modification time in a real directory listing
+- [x] Upload/download (Files module) - `download_file`/`upload_file` on
+      `SshSession` stream directly between the remote SFTP file and a local
+      one via `tokio::io::copy` (russh-sftp's `File` implements
+      `AsyncRead`/`AsyncWrite`), the same create-or-truncate semantics as
+      `write_file`. Deliberately not built on `read_file`/`write_file`'s
+      `Vec<u8>` - those exist for the small-text-file editor, but a real
+      upload/download has no business materializing an entire file in
+      memory, let alone shipping its bytes across the Tauri IPC bridge as a
+      JSON number array the way the editor's read/write commands do. So the
+      new `download_remote_file`/`upload_remote_file` commands take a local
+      filesystem path instead of file contents - the frontend gets that
+      path from a native save/open dialog (`tauri-plugin-dialog`, new this
+      phase) rather than ever touching the bytes itself. The Files page
+      gained an Upload button in the breadcrumb row (uploads into whatever
+      directory is currently open) and a download icon button on every
+      file row. Covered by a new integration test against the real local
+      `russh::server` harness (download to a real local temp file, then
+      re-upload that same file to a new remote path and read it back over
+      SFTP to prove both directions independently) and a one-off manual run
+      against the project's real test server moving a ~2MB file end to end
+      - seeded it remotely, downloaded it, re-uploaded the downloaded copy
+      under a new name, and read that back over SFTP, asserting byte-exact
+      equality with the original at every step (not just "no error" - actual
+      content compared) - large enough that a bug truncating at a single
+      SFTP read/write frame boundary would have failed the assertion
 - [x] Process manager / resource monitor (Monitor module) — no agent, no
       `sysinfo` (that crate only reads the *local* machine), so `ssh/
       monitor.rs` reads the same `/proc` files and runs the same `ps`/`df`
@@ -359,7 +384,8 @@ src/                        Frontend (React + TypeScript)
                             open/write/resize/close commands), FileEditorPanel (real,
                             view/edit files under 1MB over read_remote_file/write_remote_file)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
-                            Files (/files/:serverId - breadcrumb-navigable directory browser),
+                            Files (/files/:serverId - breadcrumb-navigable directory browser,
+                            native-dialog upload/download via tauri-plugin-dialog),
                             Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview),
                             Actions (/actions/:serverId - systemd services + Docker containers,
                             start/stop/restart/enable-disable/remove, each behind a confirm dialog)

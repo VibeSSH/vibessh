@@ -6,6 +6,16 @@
   font-family: var(--font-mono);
 }
 
+.files-breadcrumb-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+.files-breadcrumb-row > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .files-breadcrumb-item {
   padding: 2px 4px;
   border-radius: 4px;

@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
-import { listRemoteDirectory } from "@/services/filesService";
+import { downloadRemoteFile, listRemoteDirectory, uploadRemoteFile } from "@/services/filesService";
 import { useServersStore } from "@/stores/serversStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
 import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
 
 const ROOT_PATH = ".";
+
+/** Mirrors the backend's own path-joining rule (see ssh/sftp.rs's opendir prefix) - "." is the SFTP cwd, so a name under it needs no dot-prefix, just like breadcrumb targets already carry none. */
+function joinRemotePath(dir: string, name: string): string {
+  return dir === ROOT_PATH ? name : `${dir}/${name}`;
+}
 
 export function FilesPage() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -25,6 +32,8 @@ export function FilesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
 
   const load = useCallback(
     (targetPath: string) => {
@@ -56,6 +65,38 @@ export function FilesPage() {
 
   const segments = path === ROOT_PATH ? [] : path.replace(/^\.\/?/, "").split("/").filter(Boolean);
 
+  async function handleUpload() {
+    if (!serverId) return;
+    const localPath = await open({ multiple: false, title: "Upload file" });
+    if (!localPath || Array.isArray(localPath)) return;
+    const fileName = localPath.split(/[/\\]/).pop() ?? localPath;
+    setUploading(true);
+    try {
+      await uploadRemoteFile(serverId, localPath, joinRemotePath(path, fileName));
+      toastSuccess(`Uploaded ${fileName}`);
+      load(path);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : `Couldn't upload ${fileName}.`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDownload(entry: RemoteFileEntry) {
+    if (!serverId) return;
+    const localPath = await save({ defaultPath: entry.name, title: "Download file" });
+    if (!localPath) return;
+    setDownloadingPath(entry.path);
+    try {
+      await downloadRemoteFile(serverId, entry.path, localPath);
+      toastSuccess(`Downloaded ${entry.name}`);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : `Couldn't download ${entry.name}.`);
+    } finally {
+      setDownloadingPath(null);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-header page-header-row">
@@ -69,21 +110,27 @@ export function FilesPage() {
         </Button>
       </div>
 
-      <div className="files-breadcrumb">
-        <button className="files-breadcrumb-item" onClick={() => load(ROOT_PATH)}>
-          /
-        </button>
-        {segments.map((segment, index) => {
-          const target = segments.slice(0, index + 1).join("/");
-          return (
-            <span key={target}>
-              <span className="files-breadcrumb-sep">/</span>
-              <button className="files-breadcrumb-item" onClick={() => load(target)}>
-                {segment}
-              </button>
-            </span>
-          );
-        })}
+      <div className="files-breadcrumb files-breadcrumb-row">
+        <div>
+          <button className="files-breadcrumb-item" onClick={() => load(ROOT_PATH)}>
+            /
+          </button>
+          {segments.map((segment, index) => {
+            const target = segments.slice(0, index + 1).join("/");
+            return (
+              <span key={target}>
+                <span className="files-breadcrumb-sep">/</span>
+                <button className="files-breadcrumb-item" onClick={() => load(target)}>
+                  {segment}
+                </button>
+              </span>
+            );
+          })}
+        </div>
+        <Button variant="secondary" onClick={handleUpload} disabled={uploading}>
+          <Icon name="upload" size={14} />
+          {uploading ? "Uploading..." : "Upload"}
+        </Button>
       </div>
 
       {error && <p className="page-error-note">{error}</p>}
@@ -106,7 +153,19 @@ export function FilesPage() {
                 >
                   {entry.name}
                 </button>
-                {!entry.isDir && <span className="files-entry-size">{formatSize(entry.size)}</span>}
+                {!entry.isDir && (
+                  <>
+                    <span className="files-entry-size">{formatSize(entry.size)}</span>
+                    <button
+                      className="server-list-action"
+                      aria-label={`Download ${entry.name}`}
+                      disabled={downloadingPath === entry.path}
+                      onClick={() => handleDownload(entry)}
+                    >
+                      <Icon name="download" size={14} />
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
