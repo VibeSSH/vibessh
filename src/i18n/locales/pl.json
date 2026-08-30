@@ -185,6 +185,7 @@
     "tabOverview": "Przegląd",
     "tabLogs": "Logi",
     "tabEnvironment": "Środowisko",
+    "tabPorts": "Porty",
     "resourceUsageTitle": "Zużycie zasobów",
     "detailsTitle": "Szczegóły",
     "cpu": "CPU",
@@ -213,6 +214,30 @@
       "restart": "Uruchomić ponownie <1>{{name}}</1>?",
       "kill": "Wymusić zakończenie <1>{{name}}</1>? Kończy działanie natychmiast, bez kontrolowanego zamknięcia - niezapisany stan zostanie utracony."
     }
+  },
+  "portsTab": {
+    "description": "Zadeklarowane porty tej aplikacji - to dokumentacja zamierzenia, nie żywa gwarancja (VibeSSH nie sprawdza jeszcze, czy port jest faktycznie wolny na hoście).",
+    "addPort": "Dodaj port",
+    "loadError": "Nie udało się wczytać portów.",
+    "emptyTitle": "Brak zadeklarowanych portów",
+    "emptyDescription": "Dodaj port, aby udokumentować, których portów używa ta aplikacja.",
+    "required": "Wymagany",
+    "editAria": "Edytuj {{name}}",
+    "deleteAria": "Usuń {{name}}",
+    "deleteTitle": "Usuń port",
+    "deleteBody": "Usunąć „{{name}}\"? Tej operacji nie można cofnąć.",
+    "deleteError": "Nie udało się usunąć portu.",
+    "editTitle": "Edytuj port",
+    "addTitle": "Dodaj port",
+    "name": "Nazwa",
+    "namePlaceholder": "Gra",
+    "protocol": "Protokół",
+    "bindAddress": "Adres nasłuchu",
+    "internalPort": "Port wewnętrzny",
+    "externalPort": "Port zewnętrzny",
+    "externalPortPlaceholder": "Opcjonalnie",
+    "invalidForm": "Podaj nazwę i prawidłowy numer portu (1-65535).",
+    "saveError": "Nie udało się zapisać portu."
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",

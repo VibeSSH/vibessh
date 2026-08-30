@@ -11,8 +11,9 @@ use crate::errors::AppResult;
 
 pub use app_info_service::get_app_info;
 pub use application_service::{
-    application_logs, application_resource_usage, create_application, delete_application, get_application, kill_application,
-    list_applications, list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
+    add_application_port, application_logs, application_resource_usage, create_application, delete_application, get_application,
+    kill_application, list_application_ports, list_applications, list_blueprints, refresh_application_status,
+    remove_application_port, restart_application, start_application, stop_application, update_application_port,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use papermc_service::PapermcBuild;

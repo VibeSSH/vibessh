@@ -185,6 +185,7 @@
     "tabOverview": "Overview",
     "tabLogs": "Logs",
     "tabEnvironment": "Environment",
+    "tabPorts": "Ports",
     "resourceUsageTitle": "Resource usage",
     "detailsTitle": "Details",
     "cpu": "CPU",
@@ -213,6 +214,30 @@
       "restart": "Restart <1>{{name}}</1>?",
       "kill": "Force-kill <1>{{name}}</1>? This ends it immediately, without a graceful shutdown - any unsaved state it was holding is lost."
     }
+  },
+  "portsTab": {
+    "description": "Declared ports for this application - documentation of intent, not a live guarantee (VibeSSH doesn't check whether the port is actually free on the host yet).",
+    "addPort": "Add port",
+    "loadError": "Couldn't load ports.",
+    "emptyTitle": "No ports declared",
+    "emptyDescription": "Add one to document which ports this application uses.",
+    "required": "Required",
+    "editAria": "Edit {{name}}",
+    "deleteAria": "Remove {{name}}",
+    "deleteTitle": "Remove port",
+    "deleteBody": "Remove \"{{name}}\"? This can't be undone.",
+    "deleteError": "Couldn't remove the port.",
+    "editTitle": "Edit port",
+    "addTitle": "Add port",
+    "name": "Name",
+    "namePlaceholder": "Game",
+    "protocol": "Protocol",
+    "bindAddress": "Bind address",
+    "internalPort": "Internal port",
+    "externalPort": "External port",
+    "externalPortPlaceholder": "Optional",
+    "invalidForm": "Enter a name and a valid port number (1-65535).",
+    "saveError": "Couldn't save the port."
   },
   "deleteApplicationDialog": {
     "title": "Delete application",

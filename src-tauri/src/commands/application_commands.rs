@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::blueprints::BlueprintRegistry;
 use crate::errors::AppResult;
-use crate::models::{Application, ApplicationDetail, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput};
+use crate::models::{Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, PortInput};
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::ResourceUsage;
 use crate::services::{self, JavaInstallation};
@@ -36,6 +36,31 @@ pub fn get_application(repo: State<ApplicationRepository>, id: Uuid) -> AppResul
 #[tauri::command]
 pub fn list_blueprints(registry: State<BlueprintRegistry>) -> Vec<Blueprint> {
     services::list_blueprints(&registry)
+}
+
+#[tauri::command]
+pub fn list_application_ports(repo: State<ApplicationRepository>, id: Uuid) -> AppResult<Vec<ApplicationPort>> {
+    services::list_application_ports(&repo, id)
+}
+
+#[tauri::command]
+pub fn add_application_port(repo: State<ApplicationRepository>, id: Uuid, port: PortInput) -> AppResult<ApplicationPort> {
+    services::add_application_port(&repo, id, &port)
+}
+
+#[tauri::command]
+pub fn update_application_port(
+    repo: State<ApplicationRepository>,
+    id: Uuid,
+    port_id: Uuid,
+    port: PortInput,
+) -> AppResult<ApplicationPort> {
+    services::update_application_port(&repo, id, port_id, &port)
+}
+
+#[tauri::command]
+pub fn remove_application_port(repo: State<ApplicationRepository>, id: Uuid, port_id: Uuid) -> AppResult<()> {
+    services::remove_application_port(&repo, id, port_id)
 }
 
 #[tauri::command]

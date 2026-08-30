@@ -12,7 +12,8 @@ use uuid::Uuid;
 use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    Application, ApplicationDetail, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, CreateApplicationInput,
+    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput,
+    CreateApplicationInput, PortInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{self, ApplicationRuntime, ResourceUsage, RuntimeContext};
@@ -32,6 +33,35 @@ pub fn get_application(repo: &ApplicationRepository, id: Uuid) -> AppResult<Appl
 
 pub fn list_blueprints(registry: &BlueprintRegistry) -> Vec<Blueprint> {
     registry.list().into_iter().cloned().collect()
+}
+
+/// **Known, deliberate scope gap**: this validates ports for collisions
+/// against this same Application's *other* declared ports only (the
+/// repository's own job, see `ApplicationRepository::add_port`'s doc
+/// comment) - it does not check whether the port is actually free on the
+/// target host, local or remote. That needs a real live probe (a bind
+/// attempt locally, an `ss`/`netstat`-style query over SSH remotely) that
+/// hasn't been built yet; declaring a port here is documentation of intent
+/// today, not a guarantee nothing else on the host is already using it.
+pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid) -> AppResult<Vec<ApplicationPort>> {
+    repo.list_ports(application_id)
+}
+
+pub fn add_application_port(repo: &ApplicationRepository, application_id: Uuid, port: &PortInput) -> AppResult<ApplicationPort> {
+    repo.add_port(application_id, port)
+}
+
+pub fn update_application_port(
+    repo: &ApplicationRepository,
+    application_id: Uuid,
+    port_id: Uuid,
+    port: &PortInput,
+) -> AppResult<ApplicationPort> {
+    repo.update_port(application_id, port_id, port)
+}
+
+pub fn remove_application_port(repo: &ApplicationRepository, application_id: Uuid, port_id: Uuid) -> AppResult<()> {
+    repo.remove_port(application_id, port_id)
 }
 
 /// Creates the working directory (local `create_dir_all`, or `mkdir -p`
@@ -401,5 +431,38 @@ mod tests {
         assert!(fresh_dir.is_dir());
         assert_eq!(detail.application.working_directory, fresh_dir.to_string_lossy());
         std::fs::remove_dir_all(&fresh_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn port_crud_add_update_remove_round_trips_through_the_service_layer() {
+        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
+        let application_id = detail.application.id;
+
+        assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
+
+        let input = crate::models::PortInput {
+            name: "game".to_string(),
+            protocol: crate::models::PortProtocol::Tcp,
+            bind_address: "0.0.0.0".to_string(),
+            internal_port: 25565,
+            external_port: None,
+            required: false,
+        };
+        let added = add_application_port(&app_repo, application_id, &input).unwrap();
+        assert_eq!(added.internal_port, 25565);
+        assert_eq!(list_application_ports(&app_repo, application_id).unwrap().len(), 1);
+
+        // Adding the exact same internal_port/bind_address/protocol again
+        // is a real collision, not a silent duplicate - the service layer
+        // must surface the repository's own collision error, not swallow it.
+        assert!(add_application_port(&app_repo, application_id, &input).is_err());
+
+        let updated_input = crate::models::PortInput { internal_port: 25566, ..input };
+        let updated = update_application_port(&app_repo, application_id, added.id, &updated_input).unwrap();
+        assert_eq!(updated.internal_port, 25566);
+
+        remove_application_port(&app_repo, application_id, added.id).unwrap();
+        assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
     }
 }

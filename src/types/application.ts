@@ -24,6 +24,15 @@ export interface ApplicationPort {
   updatedAt: string;
 }
 
+/** What add/update submit - `required` always omitted from the UI (defaults to false server-side): a port declared through this tab is always user-removable, "required" is a blueprint-authored concept this UI doesn't expose a way to set. */
+export interface PortInput {
+  name: string;
+  protocol: PortProtocol;
+  bindAddress: string;
+  internalPort: number;
+  externalPort?: number;
+}
+
 export interface Application {
   id: string;
   /** Undefined = Local. There is no separate "location" field - same single source of truth as the Rust `Application::location()` derivation. */

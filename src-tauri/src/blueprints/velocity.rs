@@ -29,7 +29,7 @@ impl VelocityBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports],
                 fields: vec![
                     BlueprintField {
                         key: "velocityVersion".to_string(),

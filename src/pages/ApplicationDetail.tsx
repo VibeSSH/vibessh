@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { PortsTab } from "@/components/applications/PortsTab";
 import {
   getApplication,
   getApplicationLogs,
@@ -29,7 +30,7 @@ import "./ApplicationDetail.css";
 const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "logs" | "environment";
+type Tab = "overview" | "logs" | "environment" | "ports";
 type Verb = "start" | "stop" | "restart" | "kill";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -208,6 +209,11 @@ export function ApplicationDetail() {
                 {t("applicationDetail.tabEnvironment")}
               </button>
             )}
+            {features.includes("ports") && (
+              <button className={`modal-tab ${tab === "ports" ? "modal-tab-active" : ""}`} onClick={() => setTab("ports")}>
+                {t("applicationDetail.tabPorts")}
+              </button>
+            )}
           </div>
 
           {tab === "overview" && (
@@ -281,6 +287,8 @@ export function ApplicationDetail() {
               )}
             </Card>
           )}
+
+          {tab === "ports" && <PortsTab applicationId={id} />}
         </>
       )}
 

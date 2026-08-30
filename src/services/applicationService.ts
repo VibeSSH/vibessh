@@ -1,5 +1,16 @@
 import { callCommand } from "./tauri";
-import type { Application, ApplicationDetail, ApplicationStatus, Blueprint, EnvironmentVariable, JavaInstallation, ResourceUsage, RuntimeType } from "@/types/application";
+import type {
+  Application,
+  ApplicationDetail,
+  ApplicationPort,
+  ApplicationStatus,
+  Blueprint,
+  EnvironmentVariable,
+  JavaInstallation,
+  PortInput,
+  ResourceUsage,
+  RuntimeType,
+} from "@/types/application";
 
 /** What the Create Application wizard submits - mirrors the Rust `CreateApplicationFromBlueprintInput` DTO. */
 export interface CreateApplicationInput {
@@ -77,4 +88,21 @@ export function listPaperVersions(): Promise<string[]> {
 /** Same idea as listPaperVersions, for the Velocity proxy - a different papermc.io project, so a separate list. */
 export function listVelocityVersions(): Promise<string[]> {
   return callCommand<string[]>("list_velocity_versions");
+}
+
+/** Declared ports are documentation of intent, not a live guarantee - VibeSSH checks for a collision against this same application's *other* declared ports, not whether the port is actually free on the host. */
+export function listApplicationPorts(id: string): Promise<ApplicationPort[]> {
+  return callCommand<ApplicationPort[]>("list_application_ports", { id });
+}
+
+export function addApplicationPort(id: string, port: PortInput): Promise<ApplicationPort> {
+  return callCommand<ApplicationPort>("add_application_port", { id, port });
+}
+
+export function updateApplicationPort(id: string, portId: string, port: PortInput): Promise<ApplicationPort> {
+  return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
+}
+
+export function removeApplicationPort(id: string, portId: string): Promise<void> {
+  return callCommand<void>("remove_application_port", { id, portId });
 }
