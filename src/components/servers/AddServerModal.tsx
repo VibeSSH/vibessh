@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import type { ManagedServer } from "@/stores/serversStore";
@@ -19,9 +20,10 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
+  const backdrop = useBackdropClose(onClose);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{isEditing ? t("addServerModal.titleEdit") : t("addServerModal.titleAdd")}</h2>

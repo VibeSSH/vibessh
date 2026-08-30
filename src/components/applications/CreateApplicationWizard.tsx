@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { createApplication, detectJavaInstallations } from "@/services/applicationService";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
@@ -74,6 +75,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [runtimeType, setRuntimeType] = useState<RuntimeType | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [environment, setEnvironment] = useState<EnvironmentVariable[]>([]);
+  const backdrop = useBackdropClose(onClose);
 
   useEffect(() => {
     listBlueprints()
@@ -151,7 +153,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div className="modal-panel modal-panel-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t("createApplicationWizard.title")}</h2>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import {
   getApplication,
   getApplicationLogs,
@@ -58,6 +59,7 @@ export function ApplicationDetail() {
   const [confirming, setConfirming] = useState<Verb | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const confirmBackdrop = useBackdropClose(() => !actionBusy && setConfirming(null));
 
   const [logs, setLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -283,7 +285,7 @@ export function ApplicationDetail() {
       )}
 
       {confirming && (
-        <div className="modal-backdrop" onClick={() => !actionBusy && setConfirming(null)}>
+        <div className="modal-backdrop" {...confirmBackdrop}>
           <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{t("applicationDetail.confirmTitle", { verb: t(`applicationDetail.verb.${confirming}`) })}</h2>

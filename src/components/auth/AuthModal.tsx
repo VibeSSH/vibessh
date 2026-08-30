@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { cloudLogin, cloudRegister } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
@@ -24,8 +25,6 @@ export function AuthModal() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   function reset() {
     setEmail("");
     setPassword("");
@@ -37,6 +36,10 @@ export function AuthModal() {
     reset();
     close();
   }
+
+  const backdrop = useBackdropClose(handleClose);
+
+  if (!isOpen) return null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -56,7 +59,7 @@ export function AuthModal() {
   }
 
   return (
-    <div className="modal-backdrop" onClick={handleClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t("auth.modalTitle")}</h2>

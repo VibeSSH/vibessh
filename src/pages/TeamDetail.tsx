@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { AuditLogSection } from "@/components/teams/AuditLogSection";
 import { InvitationsSection } from "@/components/teams/InvitationsSection";
 import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
@@ -37,6 +38,7 @@ export function TeamDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const confirmDeleteBackdrop = useBackdropClose(() => !deleteBusy && setConfirmingDelete(false));
 
   function loadOverview() {
     if (!teamId) return;
@@ -184,7 +186,7 @@ export function TeamDetail() {
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
 
       {confirmingDelete && (
-        <div className="modal-backdrop" onClick={() => !deleteBusy && setConfirmingDelete(false)}>
+        <div className="modal-backdrop" {...confirmDeleteBackdrop}>
           <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{t("teams.deleteTeamTitle")}</h2>
