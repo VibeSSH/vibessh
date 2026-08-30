@@ -23,8 +23,8 @@ impl GenericBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 // Not Docker: a raw command isn't a Docker image, and this
-                // blueprint has no field for one - a "Generic Docker"
-                // blueprint would be its own, separate thing.
+                // blueprint has no field for one - see
+                // `blueprints::GenericDockerBlueprint` for that.
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck],
                 fields: vec![

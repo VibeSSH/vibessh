@@ -32,11 +32,13 @@ use crate::models::{Blueprint, BlueprintField, BlueprintFieldType};
 use crate::ssh::SshSession;
 
 mod generic;
+mod generic_docker;
 mod generic_java;
 mod paper;
 mod velocity;
 
 pub use generic::GenericBlueprint;
+pub use generic_docker::GenericDockerBlueprint;
 pub use generic_java::GenericJavaBlueprint;
 pub use paper::PaperBlueprint;
 pub use velocity::VelocityBlueprint;
@@ -174,6 +176,8 @@ impl BlueprintRegistry {
         let mut handlers: HashMap<String, Box<dyn BlueprintHandler>> = HashMap::new();
         let generic = GenericBlueprint::new();
         handlers.insert(generic.blueprint().id.clone(), Box::new(generic));
+        let generic_docker = GenericDockerBlueprint::new();
+        handlers.insert(generic_docker.blueprint().id.clone(), Box::new(generic_docker));
         let generic_java = GenericJavaBlueprint::new();
         handlers.insert(generic_java.blueprint().id.clone(), Box::new(generic_java));
         let paper = PaperBlueprint::new();
@@ -255,12 +259,13 @@ mod tests {
     fn registry_contains_every_builtin_sorted_by_id() {
         let registry = BlueprintRegistry::with_builtins();
         assert!(registry.get("generic").is_some());
+        assert!(registry.get("generic-docker").is_some());
         assert!(registry.get("generic-java").is_some());
         assert!(registry.get("paper").is_some());
         assert!(registry.get("velocity").is_some());
         assert!(registry.get("nonexistent").is_none());
 
         let ids: Vec<&str> = registry.list().iter().map(|blueprint| blueprint.id.as_str()).collect();
-        assert_eq!(ids, vec!["generic", "generic-java", "paper", "velocity"]);
+        assert_eq!(ids, vec!["generic", "generic-docker", "generic-java", "paper", "velocity"]);
     }
 }

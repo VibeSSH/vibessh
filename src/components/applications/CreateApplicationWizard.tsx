@@ -20,7 +20,7 @@ interface CreateApplicationWizardProps {
 
 const TOTAL_STEPS = 5;
 
-/** Runtime types a Local application can use vs a Remote one - `localProcess` needs no `RuntimeContext.connection`, the other three need one. Intersected with the chosen blueprint's own `supportedRuntimeTypes` to get the real, capability-driven options for a given step (never a hardcoded "always offer Docker" list - see runtime::docker's own scope notes on why neither built-in blueprint even supports it). */
+/** Runtime types a Local application can use vs a Remote one - `localProcess` needs no `RuntimeContext.connection`, the other three need one. Intersected with the chosen blueprint's own `supportedRuntimeTypes` to get the real, capability-driven options for a given step (never a hardcoded "always offer Docker" list - only `generic-docker` declares Docker support, so it's the only blueprint that offers it). */
 function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): RuntimeType[] {
   return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" : rt !== "localProcess"));
 }
