@@ -33,6 +33,8 @@ pub const ROLE_ASSIGNED: &str = "role.assigned";
 pub const ROLE_UNASSIGNED: &str = "role.unassigned";
 pub const INVITATION_CREATED: &str = "invitation.created";
 pub const INVITATION_REVOKED: &str = "invitation.revoked";
+pub const SERVER_ADDED: &str = "server.added";
+pub const SERVER_REMOVED: &str = "server.removed";
 pub const INVITATION_ACCEPTED: &str = "invitation.accepted";
 pub const INVITATION_DECLINED: &str = "invitation.declined";
 

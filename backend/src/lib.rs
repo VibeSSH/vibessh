@@ -24,6 +24,7 @@ pub mod permissions;
 pub mod invitations;
 pub mod refresh_token;
 pub mod roles;
+pub mod team_servers;
 pub mod teams;
 pub mod tokens;
 
@@ -80,6 +81,8 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/teams/:team_id/invitations/:invitation_id", delete(invitations::revoke_invitation))
         .route("/invitations/:token/accept", post(invitations::accept_invitation))
         .route("/invitations/:token/decline", post(invitations::decline_invitation))
+        .route("/teams/:team_id/servers", get(team_servers::list_servers).post(team_servers::create_server))
+        .route("/teams/:team_id/servers/:server_id", delete(team_servers::delete_server))
         .with_state(state)
 }
 

@@ -192,3 +192,27 @@ pub struct AuditEvent {
     pub actor_email: Option<String>,
     pub actor_display_name: Option<String>,
 }
+
+/// Metadata only - no password/private-key-path/passphrase fields exist
+/// here or in the table behind it (see migrations/0006). Secrets stay in
+/// whichever device's OS keyring already has them.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamServer {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub name: String,
+    pub host: String,
+    pub ssh_port: i32,
+    pub username: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTeamServerRequest {
+    pub name: String,
+    pub host: String,
+    pub ssh_port: Option<i32>,
+    pub username: Option<String>,
+}
