@@ -56,5 +56,6 @@ export function serverSummaryToManagedServer(server: ServerSummary): ManagedServ
     username: server.username,
     authenticationType: server.authenticationType,
     privateKeyPath: server.privateKeyPath,
+    createdAt: server.createdAt,
   };
 }

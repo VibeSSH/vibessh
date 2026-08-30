@@ -3,15 +3,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
 import { usePingStore } from "@/stores/pingStore";
 import type { ManagedServer } from "@/stores/serversStore";
-import type { ServerConnectionStatus } from "@/types/server";
+import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./ServerCard.css";
-
-const STATUS_COLOR: Record<ServerConnectionStatus, string> = {
-  online: "var(--t-status-connected)",
-  offline: "var(--t-text-dim)",
-  connecting: "var(--t-status-connecting)",
-  unknown: "var(--t-text-dim)",
-};
 
 interface ServerCardActionButtonProps {
   icon: string;

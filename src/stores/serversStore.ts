@@ -24,6 +24,8 @@ export interface ManagedServer {
   username?: string;
   authenticationType?: AuthenticationType;
   privateKeyPath?: string;
+  /** ISO timestamp - drives "newest first" ordering (Rail's instance list) that survives an app restart, unlike relying on in-memory insertion order. Absent for agent-mode rows (not yet Etap-2-persisted, see the note above). */
+  createdAt?: string;
 }
 
 interface ServersState {

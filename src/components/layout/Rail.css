@@ -5,9 +5,42 @@
   width: 52px;
   min-width: 52px;
   height: 100%;
-  padding: 12px 0;
+  /* Top edge lines up with app-layout-brand's own 48px-tall row (see
+     AppLayout.css) so the first instance icon (or the + button, when the
+     list is empty) sits at the same vertical center as the brand mark next
+     to it, instead of drifting from an arbitrary top padding value. */
+  padding: 6px 0 12px;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.rail-instances {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.rail-instances::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-instance-btn {
+  position: relative;
+}
+
+.rail-instance-status-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-bg);
 }
 
 .rail-spacer {

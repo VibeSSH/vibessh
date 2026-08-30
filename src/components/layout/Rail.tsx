@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
+import { usePingStore } from "@/stores/pingStore";
 import { useServerModalStore } from "@/stores/serverModalStore";
+import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { useToastStore } from "@/stores/toastStore";
+import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./Rail.css";
 
 interface RailButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -111,21 +115,62 @@ function AccountButton() {
   );
 }
 
+/** Missing for agent-paired servers (not yet Etap-2-persisted, see serversStore's own note) - treated as "just added right now" for sort purposes, which is exactly what pairing one during this session actually means. */
+function sortableTimestamp(server: ManagedServer): number {
+  return server.createdAt ? new Date(server.createdAt).getTime() : Date.now();
+}
+
+function RailInstanceButton({ server }: { server: ManagedServer }) {
+  const { createRipple, rippleEls } = useRipple();
+  const navigate = useNavigate();
+  const latencyMs = usePingStore((s) => s.latencies[server.id]);
+  const isAgent = server.connectionMode === "agent";
+  const statusColor = STATUS_COLOR[server.status];
+
+  const tooltipLines = [server.name, server.host];
+  if (!isAgent && server.status === "online" && typeof latencyMs === "number") tooltipLines.push(`${latencyMs} ms`);
+  const tooltip = tooltipLines.join("\n");
+
+  return (
+    <button
+      className="rail-btn rail-instance-btn ripple-host"
+      onPointerDown={createRipple}
+      onClick={() => navigate(isAgent ? "/servers" : `/terminal/${server.id}`)}
+      aria-label={tooltip}
+      title={tooltip}
+    >
+      {rippleEls}
+      <Icon name={isAgent ? "zap" : "server"} size={16} />
+      <span className="rail-instance-status-dot" style={{ background: statusColor }} />
+    </button>
+  );
+}
+
 /**
  * Narrow icon rail on the far left, ported from Voltius's vault-switcher
  * rail (voltius/src/components/layout/VaultSidebar.tsx) - Voltius uses the
- * top of it to switch vaults, which VibeSSH has no equivalent of, so only
- * the bottom utility icons (account/notifications) and a quick-add button
- * carry over, repurposed for what VibeSSH actually has. Settings now lives
- * in the sidebar's Other group instead of here, so it isn't duplicated
- * between two navigation surfaces.
+ * top of it to switch vaults, which VibeSSH has no equivalent of, so
+ * instead the top of the rail is a quick-access list of added servers
+ * (newest first), the way a taskbar lists open windows - click one to jump
+ * straight to its terminal. The bottom utility icons (account/
+ * notifications) carry over from Voltius as-is. Settings lives in the
+ * sidebar's Other group instead of here, so it isn't duplicated between two
+ * navigation surfaces.
  */
 export function Rail() {
   const { t } = useTranslation();
   const openForCreate = useServerModalStore((s) => s.openForCreate);
+  const servers = useServersStore((s) => s.servers);
+  const sortedServers = [...servers].sort((a, b) => sortableTimestamp(b) - sortableTimestamp(a));
 
   return (
     <div className="rail">
+      <div className="rail-instances">
+        {sortedServers.map((server) => (
+          <RailInstanceButton key={server.id} server={server} />
+        ))}
+      </div>
+
       <RailButton icon="plus" className="rail-add-btn" onClick={openForCreate} aria-label={t("rail.addServer")} title={t("rail.addServer")} />
 
       <div className="rail-spacer" />
