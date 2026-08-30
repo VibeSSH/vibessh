@@ -8,6 +8,7 @@ pub mod config;
 pub mod errors;
 pub mod identity;
 pub mod info;
+pub mod metrics;
 pub mod pairing;
 pub mod transport;
 

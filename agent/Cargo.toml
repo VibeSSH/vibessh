@@ -32,6 +32,11 @@ sha2 = { workspace = true }
 # tokio for, so this stays a synchronous, minimal-dependency HTTP client
 # rather than reqwest.
 ureq = { version = "2", features = ["json"] }
+# CPU/RAM/disk/load/uptime/network collection (Etap J). Hand-rolled /proc
+# parsing for all of these would mean reimplementing what this crate
+# already does correctly across kernel/cgroup/filesystem edge cases - the
+# same reasoning as using axum instead of a bespoke HTTP layer.
+sysinfo = "0.39"
 
 [dev-dependencies]
 tokio-tungstenite = "0.24"

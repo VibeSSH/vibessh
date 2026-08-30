@@ -88,6 +88,18 @@ same `ServerConnection` interface on the Rust side.
       box has Docker/systemd. Verified for real against the project's test
       server - including `minecraft: true`, correctly detecting an actual
       running Minecraft server process there
+- [x] Realtime metrics (Etap J) — the agent samples CPU/RAM/disk/load
+      average/uptime/network RX-TX (via `sysinfo`, not hand-rolled `/proc`
+      parsing) once per connection and pushes `metrics.update` on a 5s
+      interval with real backpressure (`MissedTickBehavior::Delay` - a slow
+      reader delays the next tick instead of the connection bursting a
+      backlog once it catches up). Desktop surfaces this as a live
+      `MetricsPreview` fed by the connection the pairing flow already has
+      open - real push data, not polled, not mocked, though not yet wired
+      into a persistent Dashboard session (that needs Etap 2 storage first).
+      Verified end-to-end against the test server through a real WebSocket
+      handshake: reported RAM/disk totals matched what `free -h`/`df -h`
+      showed on that box independently
 - [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
 - [ ] Private host mesh — future, architecture reserved for it, not built yet
 
@@ -136,12 +148,13 @@ src/                        Frontend (React + TypeScript)
   components/
     layout/                 Sidebar, Topbar, AppLayout
     ui/                     Reusable design-system components
-    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real), CapabilityBadges
+    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real),
+                            CapabilityBadges, MetricsPreview
   pages/                    Dashboard, Servers, Settings
   hooks/
   services/                 Tauri command wrappers (incl. pairingService.ts)
   stores/                   Zustand stores (incl. serversStore.ts - session-only until Etap 2)
-  types/                    incl. pairing.ts, mirroring AgentConnectionState
+  types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics)
   config/                   Navigation/module config
 
 src-tauri/                  Desktop backend (Rust, Tauri)
@@ -167,8 +180,9 @@ agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
     config.rs                      Data/config dir resolution
     errors.rs                       AgentError/AgentResult (own type, not shared with desktop)
     capabilities.rs                  detect() - real systemd/docker/minecraft/terminal detection
+    metrics.rs                        MetricsCollector - real CPU/RAM/disk/load/uptime/network via sysinfo
     pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
-    transport/                         WS server (handshake, heartbeat) + local-only pairing control HTTP route
+    transport/                         WS server (handshake, heartbeat, metrics tick) + local-only pairing control HTTP route
 
 protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
   src/

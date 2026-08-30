@@ -6,11 +6,14 @@ import {
   cancelAgentPairing,
   generatePairingCode,
   getPairingCodeTtlSeconds,
+  onAgentPairingEvent,
   onAgentPairingState,
   startAgentPairing,
 } from "@/services/pairingService";
 import type { AgentConnectionState } from "@/types/pairing";
+import type { ServerMetrics } from "@/types/serverEvent";
 import { CapabilityBadges } from "./CapabilityBadges";
+import { MetricsPreview } from "./MetricsPreview";
 import "./forms.css";
 
 const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agent-install/install.sh";
@@ -18,6 +21,16 @@ const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agen
 interface AgentPairingFlowProps {
   onPaired: () => void;
 }
+
+/**
+ * The WebSocket connection this opens lives only as long as this component
+ * is mounted - unmounting calls cancelAgentPairing(), including when the
+ * user clicks "Done" and the parent modal closes. The live MetricsPreview
+ * below is real, pushed data (Etap J), but it's a preview of the pipeline
+ * working, not a persistent per-server session - there's no Dashboard/
+ * session-manager to hand this connection off to yet (that's downstream of
+ * server storage, Etap 2). Reopening "Add Server" reconnects from scratch.
+ */
 
 export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
   const [host, setHost] = useState("");
@@ -27,6 +40,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
   const [connectionState, setConnectionState] = useState<AgentConnectionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
+  const [latestMetrics, setLatestMetrics] = useState<ServerMetrics | null>(null);
   const ttlRef = useRef<number>(300);
   const upsertServer = useServersStore((s) => s.upsertServer);
 
@@ -53,8 +67,15 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
       }
     });
 
+    const unlistenEventsPromise = onAgentPairingEvent((event) => {
+      if (event.type === "metrics.update") {
+        setLatestMetrics(event.metrics);
+      }
+    });
+
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
+      unlistenEventsPromise.then((unlisten) => unlisten());
       cancelAgentPairing().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,6 +98,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
       setCode(newCode);
       setRemainingSeconds(ttlRef.current);
       setConnectionState(null);
+      setLatestMetrics(null);
       await startAgentPairing(host, Number(port), newCode);
     } catch (err) {
       setBackendError(err instanceof Error ? err.message : "Couldn't reach the VibeSSH backend.");
@@ -198,7 +220,14 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
             </div>
 
             {connectionState?.status === "connected" && (
-              <CapabilityBadges capabilities={connectionState.capabilities} />
+              <>
+                <CapabilityBadges capabilities={connectionState.capabilities} />
+                {latestMetrics ? (
+                  <MetricsPreview metrics={latestMetrics} />
+                ) : (
+                  <p className="form-note">Waiting for the first metrics update...</p>
+                )}
+              </>
             )}
 
             {connectionState?.status !== "connected" && (

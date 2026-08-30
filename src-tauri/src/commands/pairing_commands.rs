@@ -19,10 +19,17 @@ use tokio::sync::{mpsc, watch};
 
 use crate::agent_client::{self, AgentClientConfig, AgentConnectionState};
 use crate::state::PairingSession;
+use vibessh_protocol::ServerEvent;
 
 /// Frontend listens with `listen(PAIRING_STATE_EVENT, ...)` from
 /// `@tauri-apps/api/event`. Payload is `AgentConnectionState`'s JSON shape.
 const PAIRING_STATE_EVENT: &str = "agent-pairing://state";
+/// Etap J: realtime data (currently just `metrics.update`) arriving while
+/// the pairing flow's connection is open, so the "Connected" panel can show
+/// live numbers instead of ending the moment a handshake succeeds. Payload
+/// is `ServerEvent`'s JSON shape (heartbeats never reach here - see
+/// `agent_client::run`, which swallows them before they reach this channel).
+const PAIRING_EVENT_EVENT: &str = "agent-pairing://event";
 
 #[tauri::command]
 pub fn generate_pairing_code() -> String {
@@ -36,11 +43,18 @@ pub fn pairing_code_ttl_seconds() -> i64 {
 
 /// Starts (or restarts, if one was already running - see
 /// `PairingSession::replace`) `agent_client::run` in the background,
-/// calling `on_state_change` from a spawned task every time its connection
-/// state changes. Returns immediately - callers don't block until connected.
-pub fn spawn_pairing_session<F>(session: &PairingSession, config: AgentClientConfig, mut on_state_change: F)
-where
+/// calling `on_state_change` every time its connection state changes and
+/// `on_event` for every realtime data event (currently just
+/// `metrics.update` - Etap J) that arrives on an open connection. Returns
+/// immediately - callers don't block until connected.
+pub fn spawn_pairing_session<F, E>(
+    session: &PairingSession,
+    config: AgentClientConfig,
+    mut on_state_change: F,
+    mut on_event: E,
+) where
     F: FnMut(AgentConnectionState) + Send + 'static,
+    E: FnMut(ServerEvent) + Send + 'static,
 {
     let (events_tx, mut events_rx) = mpsc::channel(16);
     let (state_tx, mut state_rx) = watch::channel(AgentConnectionState::Connecting);
@@ -54,11 +68,11 @@ where
         }
     });
 
-    // No pairing-flow feature reads ServerEvents yet (Etap D defined the
-    // channel for the realtime data feed, not for pairing itself) - this
-    // just drains it so agent_client::run never blocks on a full buffer.
-    // It ends on its own once events_tx drops, same as the loop above.
-    tauri::async_runtime::spawn(async move { while events_rx.recv().await.is_some() {} });
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = events_rx.recv().await {
+            on_event(event);
+        }
+    });
 
     let run_handle = tauri::async_runtime::spawn(agent_client::run(config, events_tx, state_tx));
     session.replace(run_handle);
@@ -72,9 +86,17 @@ pub fn start_agent_pairing(app: AppHandle, session: State<PairingSession>, host:
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         auth_token: Some(pairing_code),
     };
-    spawn_pairing_session(&session, config, move |state| {
-        let _ = app.emit(PAIRING_STATE_EVENT, &state);
-    });
+    let app_for_events = app.clone();
+    spawn_pairing_session(
+        &session,
+        config,
+        move |state| {
+            let _ = app.emit(PAIRING_STATE_EVENT, &state);
+        },
+        move |event| {
+            let _ = app_for_events.emit(PAIRING_EVENT_EVENT, &event);
+        },
+    );
 }
 
 #[tauri::command]
@@ -130,6 +152,22 @@ mod tests {
             let _ = ws
                 .send(Message::Text(serde_json::to_string(&response).unwrap()))
                 .await;
+
+            let event = ServerEvent::MetricsUpdate {
+                metrics: vibessh_protocol::ServerMetrics {
+                    cpu_usage_percent: 12.5,
+                    ram_used_bytes: 1,
+                    ram_total_bytes: 2,
+                    disk_used_bytes: 1,
+                    disk_total_bytes: 2,
+                    load_average_1m: 0.5,
+                    uptime_seconds: 100,
+                    network_rx_bytes_per_sec: 0,
+                    network_tx_bytes_per_sec: 0,
+                },
+            };
+            let _ = ws.send(Message::Text(serde_json::to_string(&event).unwrap())).await;
+
             tokio::time::sleep(Duration::from_secs(5)).await;
         });
 
@@ -148,9 +186,17 @@ mod tests {
         };
 
         let (states_tx, mut states_rx) = mpsc::unbounded_channel();
-        spawn_pairing_session(&session, config, move |state| {
-            let _ = states_tx.send(state);
-        });
+        let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+        spawn_pairing_session(
+            &session,
+            config,
+            move |state| {
+                let _ = states_tx.send(state);
+            },
+            move |event| {
+                let _ = events_tx.send(event);
+            },
+        );
 
         let connected = timeout(Duration::from_secs(2), async {
             loop {
@@ -173,6 +219,15 @@ mod tests {
         assert!(connected.2.docker);
         assert!(connected.2.systemd);
         assert!(!connected.2.minecraft);
+
+        let metrics_event = timeout(Duration::from_secs(2), events_rx.recv())
+            .await
+            .expect("timed out waiting for a metrics event")
+            .expect("event channel closed");
+        match metrics_event {
+            ServerEvent::MetricsUpdate { metrics } => assert_eq!(metrics.cpu_usage_percent, 12.5),
+            other => panic!("expected MetricsUpdate, got {other:?}"),
+        }
 
         session.cancel();
 

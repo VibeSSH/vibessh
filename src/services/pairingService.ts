@@ -1,8 +1,10 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./tauri";
 import type { AgentConnectionState } from "@/types/pairing";
+import type { ServerEvent } from "@/types/serverEvent";
 
 const PAIRING_STATE_EVENT = "agent-pairing://state";
+const PAIRING_EVENT_EVENT = "agent-pairing://event";
 
 export function generatePairingCode(): Promise<string> {
   return callCommand<string>("generate_pairing_code");
@@ -28,6 +30,13 @@ export function cancelAgentPairing(): Promise<void> {
  */
 export function onAgentPairingState(handler: (state: AgentConnectionState) => void): Promise<UnlistenFn> {
   return listen<AgentConnectionState>(PAIRING_STATE_EVENT, (event) => handler(event.payload)).catch(() => {
+    return () => {};
+  });
+}
+
+/** Same shape/guarantees as onAgentPairingState - see its docs. */
+export function onAgentPairingEvent(handler: (event: ServerEvent) => void): Promise<UnlistenFn> {
+  return listen<ServerEvent>(PAIRING_EVENT_EVENT, (event) => handler(event.payload)).catch(() => {
     return () => {};
   });
 }

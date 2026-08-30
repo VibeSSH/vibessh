@@ -24,6 +24,11 @@ pub struct ServerMetrics {
     pub disk_total_bytes: u64,
     pub load_average_1m: f32,
     pub uptime_seconds: u64,
+    /// Rate since the previous sample, not a cumulative total - what a
+    /// "realtime" dashboard actually wants to plot. Zero on the very first
+    /// sample after a connection opens, since there's no prior point yet.
+    pub network_rx_bytes_per_sec: u64,
+    pub network_tx_bytes_per_sec: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

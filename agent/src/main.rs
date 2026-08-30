@@ -87,6 +87,7 @@ async fn run_daemon() {
         data_dir: config.data_dir,
         pairing: PairingRegistry::new(),
         heartbeat_interval: transport::DEFAULT_HEARTBEAT_INTERVAL,
+        metrics_interval: transport::DEFAULT_METRICS_INTERVAL,
     };
 
     tokio::select! {

@@ -1,30 +1,43 @@
 use axum::extract::ws::{Message, WebSocket};
-use tokio::time::{interval, timeout, Duration};
+use tokio::time::{interval, timeout, Duration, MissedTickBehavior};
 
 use vibessh_protocol::{
     HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
 
+use crate::metrics::MetricsCollector;
 use crate::pairing::{issue_credential, verify_credential};
 
 use super::{SharedState, HANDSHAKE_TIMEOUT_SECS};
 
 /// Runs the whole lifetime of one client connection: handshake, then the
-/// heartbeat/event loop until the client disconnects or errors out.
+/// heartbeat/metrics/event loop until the client disconnects or errors out.
 pub async fn handle(mut socket: WebSocket, state: SharedState) {
     if !perform_handshake(&mut socket, &state).await {
         return;
     }
     log::info!("agent: client connected");
 
-    let mut heartbeat = interval(state.heartbeat_interval);
-    heartbeat.tick().await; // first tick is immediate; consume it so we don't heartbeat on connect
+    let mut heartbeat = ticker(state.heartbeat_interval).await;
+    let mut metrics_tick = ticker(state.metrics_interval).await;
+    // One collector per connection, not shared across connections - simple
+    // and correct for the single-viewer case this UI has today. Broadcasting
+    // one shared sample to multiple simultaneous viewers is a real future
+    // optimization, not something worth building before anything needs it.
+    let mut metrics = MetricsCollector::new();
 
     loop {
         tokio::select! {
             _ = heartbeat.tick() => {
                 if !send_event(&mut socket, &ServerEvent::Heartbeat).await {
                     log::info!("agent: client disconnected (heartbeat send failed)");
+                    return;
+                }
+            }
+            _ = metrics_tick.tick() => {
+                let sample = metrics.collect();
+                if !send_event(&mut socket, &ServerEvent::MetricsUpdate { metrics: sample }).await {
+                    log::info!("agent: client disconnected (metrics send failed)");
                     return;
                 }
             }
@@ -46,6 +59,21 @@ pub async fn handle(mut socket: WebSocket, state: SharedState) {
             }
         }
     }
+}
+
+/// An interval whose missed ticks are delayed, not burst-fired. Without
+/// this, a slow client (send() blocked waiting for it to drain a full TCP
+/// buffer) would make tokio's default interval behavior fire a *burst* of
+/// queued-up ticks the moment the connection catches up - exactly the
+/// "sending data absurdly often" the metrics interval is meant to avoid.
+/// This is this connection's actual backpressure mechanism: a slow reader
+/// naturally throttles how often the agent samples and sends, instead of
+/// either blocking forever or firing an unbounded backlog.
+async fn ticker(period: Duration) -> tokio::time::Interval {
+    let mut interval = interval(period);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    interval.tick().await; // first tick is immediate; consume it so we don't fire on connect
+    interval
 }
 
 async fn perform_handshake(socket: &mut WebSocket, state: &SharedState) -> bool {

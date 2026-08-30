@@ -33,7 +33,7 @@ impl Drop for TestAgent {
     }
 }
 
-async fn spawn_test_agent(heartbeat_interval: Duration) -> TestAgent {
+async fn spawn_test_agent(heartbeat_interval: Duration, metrics_interval: Duration) -> TestAgent {
     let identity = AgentIdentity {
         id: uuid::Uuid::new_v4(),
         created_at: chrono::Utc::now(),
@@ -51,6 +51,7 @@ async fn spawn_test_agent(heartbeat_interval: Duration) -> TestAgent {
         data_dir: data_dir.clone(),
         pairing: PairingRegistry::new(),
         heartbeat_interval,
+        metrics_interval,
     };
 
     tokio::spawn(transport::serve(ws_listener, state.clone()));
@@ -98,7 +99,7 @@ async fn register_code_via_http(control_url: &str, code: &str) {
 
 #[tokio::test]
 async fn handshake_rejects_mismatched_protocol_version() {
-    let agent = spawn_test_agent(Duration::from_secs(30)).await;
+    let agent = spawn_test_agent(Duration::from_secs(30), Duration::from_secs(30)).await;
     let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
 
     let request = HandshakeRequest {
@@ -118,7 +119,7 @@ async fn handshake_rejects_mismatched_protocol_version() {
 
 #[tokio::test]
 async fn handshake_rejects_missing_or_unknown_token() {
-    let agent = spawn_test_agent(Duration::from_secs(30)).await;
+    let agent = spawn_test_agent(Duration::from_secs(30), Duration::from_secs(30)).await;
 
     let response = handshake_with(&agent.ws_url, None).await;
     assert!(!response.accepted);
@@ -131,7 +132,7 @@ async fn handshake_rejects_missing_or_unknown_token() {
 
 #[tokio::test]
 async fn pairing_via_control_endpoint_issues_a_credential_and_burns_the_code() {
-    let agent = spawn_test_agent(Duration::from_millis(200)).await;
+    let agent = spawn_test_agent(Duration::from_millis(200), Duration::from_secs(30)).await;
     register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
 
     let response = handshake_with(&agent.ws_url, Some("VIBE-TEST-CODE")).await;
@@ -153,7 +154,7 @@ async fn pairing_via_control_endpoint_issues_a_credential_and_burns_the_code() {
 
 #[tokio::test]
 async fn heartbeat_still_follows_a_successful_pairing_handshake() {
-    let agent = spawn_test_agent(Duration::from_millis(100)).await;
+    let agent = spawn_test_agent(Duration::from_millis(100), Duration::from_secs(30)).await;
     register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
 
     let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
@@ -171,6 +172,50 @@ async fn heartbeat_still_follows_a_successful_pairing_handshake() {
 
     let event: ServerEvent = next_json(&mut ws).await;
     assert!(matches!(event, ServerEvent::Heartbeat));
+}
+
+#[tokio::test]
+async fn metrics_update_follows_a_successful_handshake_with_sane_values() {
+    // Fast metrics, slow (effectively disabled) heartbeat - deterministic
+    // proof this is a metrics.update, not a race against the heartbeat.
+    let agent = spawn_test_agent(Duration::from_secs(30), Duration::from_millis(100)).await;
+    register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
+
+    let response = handshake_with(&agent.ws_url, Some("VIBE-TEST-CODE")).await;
+    assert!(response.accepted);
+
+    // Reconnect to read the event stream from a clean handshake instead of
+    // consuming handshake_with's own connection, which it already closed.
+    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
+    let request = HandshakeRequest {
+        protocol_version: PROTOCOL_VERSION,
+        client_name: "vibessh-desktop-test".into(),
+        client_version: "0.0.0".into(),
+        auth_token: Some(response.issued_credential.unwrap()),
+    };
+    ws.send(Message::Text(serde_json::to_string(&request).unwrap()))
+        .await
+        .unwrap();
+    let _: HandshakeResponse = next_json(&mut ws).await;
+
+    let event: ServerEvent = next_json(&mut ws).await;
+    match event {
+        ServerEvent::MetricsUpdate { metrics } => {
+            assert!(metrics.ram_total_bytes > 0, "a real host always has some RAM");
+            assert!(
+                metrics.ram_used_bytes <= metrics.ram_total_bytes,
+                "used RAM can't exceed total RAM"
+            );
+            assert!((0.0..=100.0 * num_cpus()).contains(&metrics.cpu_usage_percent));
+        }
+        other => panic!("expected MetricsUpdate, got {other:?}"),
+    }
+}
+
+/// sysinfo's global_cpu_usage() is the sum across cores, so its sane upper
+/// bound is 100% times the core count, not a flat 100.
+fn num_cpus() -> f32 {
+    std::thread::available_parallelism().map(|n| n.get() as f32).unwrap_or(1.0)
 }
 
 async fn next_json<T: serde::de::DeserializeOwned>(

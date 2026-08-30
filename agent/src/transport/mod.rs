@@ -26,6 +26,10 @@ use crate::info::AgentInfo;
 use crate::pairing::PairingRegistry;
 
 pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+/// Etap J: "nie wysyłaj danych absurdalnie często" - every 5s is frequent
+/// enough for a "realtime" dashboard to feel live without turning a chatty
+/// connection into a de facto flood.
+pub const DEFAULT_METRICS_INTERVAL: Duration = Duration::from_secs(5);
 const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone)]
@@ -33,9 +37,10 @@ pub struct SharedState {
     pub info: Arc<AgentInfo>,
     pub data_dir: PathBuf,
     pub pairing: PairingRegistry,
-    /// A field (not a const) so tests can use a short interval instead of
+    /// Fields (not consts) so tests can use short intervals instead of
     /// waiting out the real production cadence.
     pub heartbeat_interval: Duration,
+    pub metrics_interval: Duration,
 }
 
 pub fn router(state: SharedState) -> Router {
