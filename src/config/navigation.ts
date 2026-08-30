@@ -1,25 +1,36 @@
-import type { NavModule } from "@/types/common";
-
-/** Core pages available from Etap 1 onward. Settings isn't here - it moved
- * to its own icon in the Rail (see Rail.tsx), so it isn't duplicated
- * between two separate navigation surfaces. */
-export const primaryNav: NavModule[] = [
-  { id: "dashboard", label: "Dashboard", path: "/", icon: "layout-grid" },
-  { id: "servers", label: "Servers", path: "/servers", icon: "server" },
-];
+import type { SidebarGroup } from "@/types/common";
 
 /**
- * Per-server modules. Each is real (SSH transport, SFTP, monitoring,
- * systemd/Docker actions), but every one of them needs a specific server to
- * act on - the sidebar link lands on a server picker (see
- * `pages/ModulePicker.tsx`), not the module directly, since there's no
- * "current server" concept outside of that. `pro` is the only one still
- * genuinely unbuilt.
+ * The sidebar's real information architecture, grouped the same way the
+ * production roadmap's target navigation is (Main / Workspace / Other today
+ * - Infrastructure/Team/etc. join once Applications, Databases, and the
+ * Team backend actually exist). Every entry here maps to a route that's
+ * genuinely implemented; there's no placeholder/"coming soon" group for
+ * features that don't exist yet, since a disabled link to nothing isn't
+ * more honest than not showing it at all.
  */
-export const moduleNav: NavModule[] = [
-  { id: "terminal", label: "Terminal", path: "/terminal", icon: "terminal" },
-  { id: "files", label: "Files", path: "/files", icon: "folder" },
-  { id: "monitor", label: "Monitor", path: "/monitor", icon: "activity" },
-  { id: "actions", label: "Actions", path: "/actions", icon: "zap" },
-  { id: "pro", label: "Pro", path: "/pro", icon: "sparkles", comingSoon: true },
+export const sidebarGroups: SidebarGroup[] = [
+  {
+    id: "main",
+    labelKey: "nav.groupMain",
+    items: [
+      { id: "dashboard", labelKey: "nav.dashboard", path: "/", icon: "layout-grid" },
+      { id: "servers", labelKey: "nav.servers", path: "/servers", icon: "server" },
+    ],
+  },
+  {
+    id: "workspace",
+    labelKey: "nav.groupWorkspace",
+    items: [
+      { id: "terminal", labelKey: "nav.terminal", path: "/terminal", icon: "terminal" },
+      { id: "files", labelKey: "nav.files", path: "/files", icon: "folder" },
+      { id: "monitor", labelKey: "nav.monitor", path: "/monitor", icon: "activity" },
+      { id: "actions", labelKey: "nav.actions", path: "/actions", icon: "zap" },
+    ],
+  },
+  {
+    id: "other",
+    labelKey: "nav.groupOther",
+    items: [{ id: "settings", labelKey: "nav.settings", path: "/settings", icon: "settings" }],
+  },
 ];

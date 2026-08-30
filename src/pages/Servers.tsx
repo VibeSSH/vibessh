@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,6 +17,7 @@ import "./Servers.css";
 import "@/components/servers/forms.css";
 
 export function Servers() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [deletingServer, setDeletingServer] = useState<ManagedServer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -52,10 +54,10 @@ export function Servers() {
     try {
       await deleteServer(deletingServer.id);
       removeServer(deletingServer.id);
-      toastSuccess(`Removed ${deletingServer.name}`);
+      toastSuccess(t("servers.removedToast", { name: deletingServer.name }));
       setDeletingServer(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Couldn't remove the server.");
+      setDeleteError(err instanceof Error ? err.message : t("servers.couldntRemove"));
     } finally {
       setDeleteBusy(false);
     }
@@ -65,22 +67,18 @@ export function Servers() {
     <div className="page">
       <div className="page-header page-header-row">
         <div>
-          <h1 className="page-title">Servers</h1>
-          <p className="page-subtitle">Manage the remote servers VibeSSH connects to.</p>
+          <h1 className="page-title">{t("servers.title")}</h1>
+          <p className="page-subtitle">{t("servers.subtitle")}</p>
         </div>
         <Button onClick={openForCreate}>
           <Icon name="plug" size={16} />
-          Add server
+          {t("servers.addServer")}
         </Button>
       </div>
 
       {servers.length === 0 ? (
         <Card>
-          <EmptyState
-            icon="plug"
-            title="No servers yet"
-            description="Add a server via SSH, or pair a Vibe Agent for realtime metrics and a more capable terminal."
-          />
+          <EmptyState icon="plug" title={t("servers.emptyTitle")} description={t("servers.emptyDescription")} />
         </Card>
       ) : (
         <>
@@ -88,7 +86,7 @@ export function Servers() {
             <Icon name="search" size={14} />
             <input
               className="form-input servers-filter-input"
-              placeholder="Filter servers..."
+              placeholder={t("servers.filterPlaceholder")}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
@@ -96,7 +94,7 @@ export function Servers() {
 
           {filteredServers.length === 0 ? (
             <Card>
-              <EmptyState icon="search" title="No matches" description={`Nothing matches "${filter}".`} />
+              <EmptyState icon="search" title={t("servers.noMatchesTitle")} description={t("servers.noMatchesDescription", { query: filter })} />
             </Card>
           ) : (
             <div className="servers-grid">

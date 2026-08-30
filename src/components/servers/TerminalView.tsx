@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -38,6 +39,7 @@ interface TerminalViewProps {
  * canvas renderer on context loss, and search backs the Ctrl+F bar below.
  */
 export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -93,7 +95,7 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
     let unlistenClosed = () => {};
 
     async function start() {
-      term.writeln("Connecting...");
+      term.writeln(t("terminalPage.connecting"));
       try {
         const id = await openTerminal(serverId, term.cols, term.rows);
         if (disposed) {
@@ -105,11 +107,11 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
 
         unlistenOutput = await onTerminalOutput(id, (chunk) => term.write(chunk));
         unlistenClosed = await onTerminalClosed(id, (reason) => {
-          term.write(`\r\n\x1b[31m[disconnected${reason ? `: ${reason}` : ""}]\x1b[0m\r\n`);
+          term.write(`\r\n\x1b[31m[${reason ? t("terminalPage.disconnectedReason", { reason }) : t("terminalPage.disconnected")}]\x1b[0m\r\n`);
           onClosed?.(reason);
         });
       } catch (err) {
-        term.writeln(`\x1b[31mFailed to open terminal: ${err instanceof Error ? err.message : String(err)}\x1b[0m`);
+        term.writeln(`\x1b[31m${t("terminalPage.failedToOpen", { error: err instanceof Error ? err.message : String(err) })}\x1b[0m`);
       }
     }
     start();
@@ -166,7 +168,7 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
           <input
             ref={searchInputRef}
             className="terminal-search-input"
-            placeholder="Find in terminal..."
+            placeholder={t("terminalPage.searchPlaceholder")}
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -177,13 +179,13 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
               if (e.key === "Escape") setSearchOpen(false);
             }}
           />
-          <button className="terminal-search-btn" onClick={() => runSearch("previous")} aria-label="Previous match">
+          <button className="terminal-search-btn" onClick={() => runSearch("previous")} aria-label={t("terminalPage.searchPrevAria")}>
             <Icon name="chevron-left" size={14} />
           </button>
-          <button className="terminal-search-btn" onClick={() => runSearch("next")} aria-label="Next match">
+          <button className="terminal-search-btn" onClick={() => runSearch("next")} aria-label={t("terminalPage.searchNextAria")}>
             <Icon name="chevron-right" size={14} />
           </button>
-          <button className="terminal-search-btn" onClick={() => setSearchOpen(false)} aria-label="Close search">
+          <button className="terminal-search-btn" onClick={() => setSearchOpen(false)} aria-label={t("terminalPage.searchCloseAria")}>
             <Icon name="x" size={14} />
           </button>
         </div>

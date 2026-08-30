@@ -1,13 +1,14 @@
+import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import type { AgentCapabilities } from "@/types/pairing";
 import "./CapabilityBadges.css";
 
-const CAPABILITY_META: Record<keyof AgentCapabilities, { label: string; icon: string }> = {
-  terminal: { label: "Terminal", icon: "terminal" },
-  fileAccess: { label: "File access", icon: "folder" },
-  systemd: { label: "Systemd", icon: "settings" },
-  docker: { label: "Docker", icon: "layout-grid" },
-  minecraft: { label: "Minecraft", icon: "sparkles" },
+const CAPABILITY_META: Record<keyof AgentCapabilities, { labelKey: string; icon: string }> = {
+  terminal: { labelKey: "capabilities.terminal", icon: "terminal" },
+  fileAccess: { labelKey: "capabilities.fileAccess", icon: "folder" },
+  systemd: { labelKey: "capabilities.systemd", icon: "settings" },
+  docker: { labelKey: "capabilities.docker", icon: "layout-grid" },
+  minecraft: { labelKey: "capabilities.minecraft", icon: "sparkles" },
 };
 
 const ORDER: (keyof AgentCapabilities)[] = ["terminal", "fileAccess", "systemd", "docker", "minecraft"];
@@ -23,6 +24,7 @@ interface CapabilityBadgesProps {
  * absent instead of looking like the check never happened.
  */
 export function CapabilityBadges({ capabilities }: CapabilityBadgesProps) {
+  const { t } = useTranslation();
   return (
     <div className="capability-badges">
       {ORDER.map((key) => {
@@ -31,7 +33,7 @@ export function CapabilityBadges({ capabilities }: CapabilityBadgesProps) {
         return (
           <span key={key} className={`capability-badge ${supported ? "capability-badge-on" : "capability-badge-off"}`}>
             <Icon name={meta.icon} size={12} />
-            {meta.label}
+            {t(meta.labelKey)}
           </span>
         );
       })}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
 import { usePingStore } from "@/stores/pingStore";
@@ -60,6 +61,7 @@ interface ServerCardProps {
  * this only wires the actions VibeSSH actually has.
  */
 export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor, onOpenActions, onEdit, onDelete }: ServerCardProps) {
+  const { t } = useTranslation();
   const isAgent = server.connectionMode === "agent";
   const protocolLabel = isAgent ? "AGENT" : "SSH";
   const statusColor = STATUS_COLOR[server.status];
@@ -93,15 +95,15 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
 
         <div className="server-card-footer">
           <div className="server-card-actions">
-            {onDelete && <ServerCardActionButton icon="trash" title={`Remove ${server.name}`} danger onClick={onDelete} />}
-            {onEdit && <ServerCardActionButton icon="edit" title={`Edit ${server.name}`} onClick={onEdit} />}
-            {!isAgent && <ServerCardActionButton icon="folder" title={`Browse files on ${server.name}`} onClick={onOpenFiles} />}
-            {!isAgent && <ServerCardActionButton icon="activity" title={`Monitor ${server.name}`} onClick={onOpenMonitor} />}
-            {!isAgent && <ServerCardActionButton icon="zap" title={`Quick actions for ${server.name}`} onClick={onOpenActions} />}
+            {onDelete && <ServerCardActionButton icon="trash" title={t("serverCard.removeAria", { name: server.name })} danger onClick={onDelete} />}
+            {onEdit && <ServerCardActionButton icon="edit" title={t("serverCard.editAria", { name: server.name })} onClick={onEdit} />}
+            {!isAgent && <ServerCardActionButton icon="folder" title={t("serverCard.browseFilesAria", { name: server.name })} onClick={onOpenFiles} />}
+            {!isAgent && <ServerCardActionButton icon="activity" title={t("serverCard.monitorAria", { name: server.name })} onClick={onOpenMonitor} />}
+            {!isAgent && <ServerCardActionButton icon="zap" title={t("serverCard.actionsAria", { name: server.name })} onClick={onOpenActions} />}
           </div>
 
           {!isAgent && (
-            <button className="server-card-terminal-btn" onClick={onOpenTerminal} title={`Open a terminal to ${server.name}`}>
+            <button className="server-card-terminal-btn" onClick={onOpenTerminal} title={t("serverCard.terminalAria", { name: server.name })}>
               <div className="server-card-terminal-dots">
                 <span className="server-card-terminal-dot" style={{ background: "#ff5f56" }} />
                 <span className="server-card-terminal-dot" style={{ background: "#ffbd2e" }} />

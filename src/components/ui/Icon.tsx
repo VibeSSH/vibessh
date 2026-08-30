@@ -37,6 +37,8 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   "chevron-left": "chevron-left",
   "chevron-right": "chevron-right",
   "chevron-down": "chevron-down",
+  "chevrons-left": "chevrons-left",
+  "chevrons-right": "chevrons-right",
   plug: "plug",
   x: "x",
   copy: "copy",

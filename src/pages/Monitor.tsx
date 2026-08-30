@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -38,6 +39,7 @@ function formatRate(bytesPerSec: number): string {
 }
 
 export function MonitorPage() {
+  const { t } = useTranslation();
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
@@ -65,7 +67,7 @@ export function MonitorPage() {
         setError(null);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Couldn't reach this server.");
+        setError(err instanceof Error ? err.message : t("monitorPage.couldntReach"));
       }
     }
 
@@ -85,43 +87,47 @@ export function MonitorPage() {
     <div className="page">
       <div className="page-header page-header-row">
         <div>
-          <h1 className="page-title">{server ? server.name : "Monitor"}</h1>
+          <h1 className="page-title">{server ? server.name : t("nav.monitor")}</h1>
           <p className="page-subtitle">{server ? server.host : serverId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />
-          Back to servers
+          {t("common.backToServers")}
         </Button>
       </div>
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card title="Resources" subtitle={`Refreshes every ${POLL_INTERVAL_MS / 1000}s`}>
+      <Card title={t("monitorPage.resources")} subtitle={t("monitorPage.refreshesEvery", { seconds: POLL_INTERVAL_MS / 1000 })}>
         {metrics ? <MetricsPreview metrics={metrics} /> : <SkeletonRows count={3} height={52} />}
       </Card>
 
       <Card
-        title="History"
-        subtitle={history.length > 1 ? `last ${Math.round((history.length * POLL_INTERVAL_MS) / 1000 / 60)}m` : "collecting..."}
+        title={t("monitorPage.history")}
+        subtitle={
+          history.length > 1
+            ? t("monitorPage.lastMinutes", { minutes: Math.round((history.length * POLL_INTERVAL_MS) / 1000 / 60) })
+            : t("monitorPage.collecting")
+        }
       >
         {history.length === 0 ? (
           <SkeletonRows count={2} height={70} />
         ) : (
           <div className="monitor-history-grid">
-            <MetricsHistoryChart label="CPU" values={history.map((m) => m.cpuUsagePercent)} formatValue={formatPercent} minScale={100} />
+            <MetricsHistoryChart label={t("monitorPage.cpu")} values={history.map((m) => m.cpuUsagePercent)} formatValue={formatPercent} minScale={100} />
             <MetricsHistoryChart
-              label="RAM"
+              label={t("monitorPage.ram")}
               values={history.map((m) => (m.ramTotalBytes > 0 ? (m.ramUsedBytes / m.ramTotalBytes) * 100 : 0))}
               formatValue={formatPercent}
               minScale={100}
             />
-            <MetricsHistoryChart label="Network in" values={history.map((m) => m.networkRxBytesPerSec)} formatValue={formatRate} />
-            <MetricsHistoryChart label="Network out" values={history.map((m) => m.networkTxBytesPerSec)} formatValue={formatRate} />
+            <MetricsHistoryChart label={t("monitorPage.networkIn")} values={history.map((m) => m.networkRxBytesPerSec)} formatValue={formatRate} />
+            <MetricsHistoryChart label={t("monitorPage.networkOut")} values={history.map((m) => m.networkTxBytesPerSec)} formatValue={formatRate} />
           </div>
         )}
       </Card>
 
-      <Card title="Processes" subtitle={`${processes.length} running, sorted by memory`}>
+      <Card title={t("monitorPage.processes")} subtitle={t("monitorPage.sortedByMemory", { count: processes.length })}>
         {processes.length === 0 ? (
           <SkeletonRows count={6} height={28} />
         ) : (
@@ -129,11 +135,11 @@ export function MonitorPage() {
             <table className="monitor-process-table">
               <thead>
                 <tr>
-                  <th>PID</th>
-                  <th>User</th>
-                  <th>CPU</th>
-                  <th>RAM</th>
-                  <th>Command</th>
+                  <th>{t("monitorPage.pid")}</th>
+                  <th>{t("monitorPage.user")}</th>
+                  <th>{t("monitorPage.cpuColumn")}</th>
+                  <th>{t("monitorPage.ramColumn")}</th>
+                  <th>{t("monitorPage.command")}</th>
                 </tr>
               </thead>
               <tbody>

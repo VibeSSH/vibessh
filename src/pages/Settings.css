@@ -1,0 +1,41 @@
+.settings-preference-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-preference-label {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-language-switch {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--t-bg-input);
+  flex-shrink: 0;
+}
+
+.settings-language-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.settings-language-btn:hover {
+  color: var(--text-primary);
+}
+
+.settings-language-btn-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+.settings-language-btn-active:hover {
+  color: var(--accent-contrast);
+}

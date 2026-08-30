@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useServersStore } from "@/stores/serversStore";
@@ -33,6 +34,7 @@ interface AgentPairingFlowProps {
  */
 
 export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
+  const { t } = useTranslation();
   const [host, setHost] = useState("");
   const [port, setPort] = useState("7420");
   const [code, setCode] = useState<string | null>(null);
@@ -101,7 +103,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
       setLatestMetrics(null);
       await startAgentPairing(host, Number(port), newCode);
     } catch (err) {
-      setBackendError(err instanceof Error ? err.message : "Couldn't reach the VibeSSH backend.");
+      setBackendError(err instanceof Error ? err.message : t("agentPairing.errorBackend"));
     } finally {
       setBusy(false);
     }
@@ -123,7 +125,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
     <div className="server-form">
       <div className="form-row">
         <label className="form-field form-field-grow">
-          <span className="form-label">Host</span>
+          <span className="form-label">{t("agentPairing.host")}</span>
           <input
             className="form-input"
             placeholder="203.0.113.10"
@@ -133,7 +135,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
           />
         </label>
         <label className="form-field form-field-narrow">
-          <span className="form-label">Port</span>
+          <span className="form-label">{t("agentPairing.port")}</span>
           <input
             className="form-input"
             value={port}
@@ -144,31 +146,28 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
       </div>
 
       <div className="form-field">
-        <span className="form-label">1. Install the agent on that server</span>
+        <span className="form-label">{t("agentPairing.step1Title")}</span>
         <div className="code-block">
           <span className="code-block-text">curl -fsSL {INSTALL_URL} | sudo sh</span>
           <button
             type="button"
             className="code-block-copy"
             onClick={() => handleCopy(`curl -fsSL ${INSTALL_URL} | sudo sh`)}
-            aria-label="Copy install command"
+            aria-label={t("agentPairing.copyCommandAria")}
           >
             <Icon name="copy" size={14} />
           </button>
         </div>
-        <p className="form-note">
-          No release is published yet, so this exact URL isn't live — see
-          the project README. Once installed, come back here.
-        </p>
+        <p className="form-note">{t("agentPairing.noteInstall")}</p>
       </div>
 
       <div className="form-field">
-        <span className="form-label">2. Pair it</span>
+        <span className="form-label">{t("agentPairing.step2Title")}</span>
         {!code ? (
           <>
             <Button onClick={handleGenerate} disabled={busy || !host}>
               <Icon name="key" size={16} />
-              Generate pairing code
+              {t("agentPairing.generateCode")}
             </Button>
             {backendError && (
               <p className="form-note" style={{ color: "var(--danger)" }}>
@@ -182,7 +181,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
               <span className="pairing-code-value">{code}</span>
               {connectionState?.status !== "connected" && remainingSeconds !== null && (
                 <span className={`pairing-code-timer ${remainingSeconds < 60 ? "pairing-code-timer-low" : ""}`}>
-                  {expired ? "Expired" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
+                  {expired ? t("agentPairing.expired") : `${minutes}:${seconds.toString().padStart(2, "0")}`}
                 </span>
               )}
             </div>
@@ -199,7 +198,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
               {connectionState?.status === "connected" ? (
                 <>
                   <Icon name="check" size={16} />
-                  Connected — agent {connectionState.agentVersion}
+                  {t("agentPairing.connected", { version: connectionState.agentVersion })}
                 </>
               ) : connectionState?.status === "disconnected" ? (
                 <>
@@ -209,12 +208,12 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
               ) : expired ? (
                 <>
                   <Icon name="x" size={16} />
-                  Code expired — generate a new one
+                  {t("agentPairing.codeExpired")}
                 </>
               ) : (
                 <>
                   <span className="pairing-spinner" />
-                  Waiting for agent on the server to connect...
+                  {t("agentPairing.waiting")}
                 </>
               )}
             </div>
@@ -222,17 +221,13 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
             {connectionState?.status === "connected" && (
               <>
                 <CapabilityBadges capabilities={connectionState.capabilities} />
-                {latestMetrics ? (
-                  <MetricsPreview metrics={latestMetrics} />
-                ) : (
-                  <p className="form-note">Waiting for the first metrics update...</p>
-                )}
+                {latestMetrics ? <MetricsPreview metrics={latestMetrics} /> : <p className="form-note">{t("agentPairing.waitingMetrics")}</p>}
               </>
             )}
 
             {connectionState?.status !== "connected" && (
               <Button variant="secondary" onClick={handleGenerate} disabled={busy || !host}>
-                Generate new code
+                {t("agentPairing.generateNewCode")}
               </Button>
             )}
           </>
@@ -241,7 +236,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
 
       {connectionState?.status === "connected" && (
         <div className="form-actions">
-          <Button onClick={onPaired}>Done</Button>
+          <Button onClick={onPaired}>{t("agentPairing.done")}</Button>
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,8 +12,8 @@ import "./Servers.css";
 import "./Files.css";
 
 interface ModulePickerProps {
-  title: string;
-  subtitle: string;
+  titleKey: string;
+  subtitleKey: string;
   icon: string;
   /** e.g. "/terminal" - the server picked is appended as "/:id". */
   routePrefix: string;
@@ -21,11 +22,12 @@ interface ModulePickerProps {
 /**
  * Every per-server module (Terminal, Files, Monitor, Actions) needs a
  * specific server to act on - there's no "current server" concept outside
- * of one. NavBar's tabs for those modules land here instead of jumping
+ * of one. Sidebar's links for those modules land here instead of jumping
  * straight to a module route with no id, so picking a server is always the
  * first step rather than a dead end.
  */
-export function ModulePicker({ title, subtitle, icon, routePrefix }: ModulePickerProps) {
+export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: ModulePickerProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const setServers = useServersStore((s) => s.setServers);
   const allServers = useServersStore((s) => s.servers);
@@ -44,26 +46,22 @@ export function ModulePicker({ title, subtitle, icon, routePrefix }: ModulePicke
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">{title}</h1>
-        <p className="page-subtitle">{subtitle}</p>
+        <h1 className="page-title">{t(titleKey)}</h1>
+        <p className="page-subtitle">{t(subtitleKey)}</p>
       </div>
 
       {servers.length === 0 ? (
         <Card>
-          <EmptyState
-            icon={icon}
-            title="No servers yet"
-            description="Add an SSH server first, then come back here to pick one."
-          />
+          <EmptyState icon={icon} title={t("modulePicker.emptyTitle")} description={t("modulePicker.emptyDescription")} />
           <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
             <Button onClick={() => navigate("/servers")}>
               <Icon name="plug" size={16} />
-              Go to Servers
+              {t("modulePicker.goToServers")}
             </Button>
           </div>
         </Card>
       ) : (
-        <Card subtitle="Pick a server">
+        <Card subtitle={t("modulePicker.pickServer")}>
           <ul className="server-list">
             {servers.map((server) => (
               <li key={server.id} className="server-list-item">

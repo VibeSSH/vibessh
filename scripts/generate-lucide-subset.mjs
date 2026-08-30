@@ -25,6 +25,8 @@ const ICON_NAMES = [
   "chevron-left",
   "chevron-right",
   "chevron-down",
+  "chevrons-left",
+  "chevrons-right",
   "plug",
   "x",
   "copy",

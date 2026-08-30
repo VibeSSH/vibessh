@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
@@ -14,6 +15,7 @@ interface AddServerModalProps {
 }
 
 export function AddServerModal({ onClose, editingServer }: AddServerModalProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
 
@@ -21,8 +23,8 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEditing ? "Edit server" : "Add server"}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">
+          <h2 className="modal-title">{isEditing ? t("addServerModal.titleEdit") : t("addServerModal.titleAdd")}</h2>
+          <button className="modal-close" onClick={onClose} aria-label={t("common.close")}>
             <Icon name="x" size={16} />
           </button>
         </div>
@@ -34,14 +36,14 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
               onClick={() => setTab("ssh")}
             >
               <Icon name="terminal" size={16} />
-              Connect with SSH
+              {t("addServerModal.tabSsh")}
             </button>
             <button
               className={`modal-tab ${tab === "agent" ? "modal-tab-active" : ""}`}
               onClick={() => setTab("agent")}
             >
               <Icon name="zap" size={16} />
-              Install Vibe Agent
+              {t("addServerModal.tabAgent")}
             </button>
           </div>
         )}

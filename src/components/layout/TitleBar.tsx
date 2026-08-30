@@ -1,4 +1,5 @@
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
+import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
 import "./TitleBar.css";
@@ -65,6 +66,8 @@ function TitleBarBtn({ icon, size, onClick, className, ariaLabel }: TitleBarBtnP
  * visible in devtools instead of a silently inert button.
  */
 export function TitleBar() {
+  const { t } = useTranslation();
+
   function handleMouseDown(event: React.MouseEvent) {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
@@ -85,20 +88,20 @@ export function TitleBar() {
           icon="minus"
           size={16}
           onClick={() => currentWindow()?.minimize().catch((err) => console.error("minimize failed:", err))}
-          ariaLabel="Minimize"
+          ariaLabel={t("titlebar.minimize")}
         />
         <TitleBarBtn
           icon="square"
           size={12}
           onClick={() => currentWindow()?.toggleMaximize().catch((err) => console.error("toggleMaximize failed:", err))}
-          ariaLabel="Maximize"
+          ariaLabel={t("titlebar.maximize")}
         />
         <TitleBarBtn
           icon="x"
           size={16}
           onClick={() => currentWindow()?.close().catch((err) => console.error("close failed:", err))}
           className="titlebar-btn-close"
-          ariaLabel="Close"
+          ariaLabel={t("titlebar.close")}
         />
       </div>
     </div>

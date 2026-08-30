@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -26,6 +27,7 @@ interface FileEditorPanelProps {
  * full pane rather than a cramped dialog.
  */
 export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelProps) {
+  const { t } = useTranslation();
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(!tooLarge);
@@ -39,7 +41,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setError(null);
     readRemoteFile(serverId, entry.path)
       .then((bytes) => setContent(bytesToText(bytes)))
-      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't read this file."))
+      .catch((err) => setError(err instanceof Error ? err.message : t("fileEditor.couldntRead")))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, entry.path]);
@@ -49,9 +51,9 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setError(null);
     try {
       await writeRemoteFile(serverId, entry.path, textToBytes(content));
-      toastSuccess(`Saved ${entry.name}`);
+      toastSuccess(t("fileEditor.savedToast", { name: entry.name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't save this file.");
+      setError(err instanceof Error ? err.message : t("fileEditor.couldntSave"));
     } finally {
       setSaving(false);
     }
@@ -60,7 +62,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   return (
     <div className="file-editor-tab">
       <div className="file-editor-tab-header">
-        <button className="file-editor-tab-back" onClick={onClose} aria-label="Back to file list">
+        <button className="file-editor-tab-back" onClick={onClose} aria-label={t("fileEditor.backAria")}>
           <Icon name="chevron-left" size={16} />
           <span>{entry.name}</span>
         </button>
@@ -68,7 +70,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
           {error && <span className="file-editor-tab-error">{error}</span>}
           {!tooLarge && (
             <Button onClick={handleSave} disabled={loading || saving}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("fileEditor.saving") : t("fileEditor.save")}
             </Button>
           )}
         </div>
@@ -76,9 +78,9 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
 
       <div className="file-editor-tab-body">
         {tooLarge ? (
-          <p className="form-note">This file is larger than 1&nbsp;MB - too large to edit here. Use the terminal to work with it instead.</p>
+          <p className="form-note">{t("fileEditor.tooLarge")}</p>
         ) : loading ? (
-          <p className="form-note">Loading...</p>
+          <p className="form-note">{t("fileEditor.loading")}</p>
         ) : (
           <CodeMirror
             className="file-editor-tab-codemirror"

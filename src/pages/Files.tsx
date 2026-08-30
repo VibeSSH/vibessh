@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -23,6 +24,7 @@ function joinRemotePath(dir: string, name: string): string {
 }
 
 export function FilesPage() {
+  const { t } = useTranslation();
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
@@ -48,7 +50,7 @@ export function FilesPage() {
           setEntries(sorted);
           setPath(targetPath);
         })
-        .catch((err) => setError(err instanceof Error ? err.message : "Couldn't list this directory."))
+        .catch((err) => setError(err instanceof Error ? err.message : t("filesPage.couldntList")))
         .finally(() => setLoading(false));
     },
     [serverId],
@@ -81,10 +83,10 @@ export function FilesPage() {
     setUploading(true);
     try {
       await uploadRemoteFile(serverId, localPath, joinRemotePath(path, fileName));
-      toastSuccess(`Uploaded ${fileName}`);
+      toastSuccess(t("filesPage.uploadedToast", { name: fileName }));
       load(path);
     } catch (err) {
-      toastError(err instanceof Error ? err.message : `Couldn't upload ${fileName}.`);
+      toastError(err instanceof Error ? err.message : t("filesPage.couldntUpload", { name: fileName }));
     } finally {
       setUploading(false);
     }
@@ -97,9 +99,9 @@ export function FilesPage() {
     setDownloadingPath(entry.path);
     try {
       await downloadRemoteFile(serverId, entry.path, localPath);
-      toastSuccess(`Downloaded ${entry.name}`);
+      toastSuccess(t("filesPage.downloadedToast", { name: entry.name }));
     } catch (err) {
-      toastError(err instanceof Error ? err.message : `Couldn't download ${entry.name}.`);
+      toastError(err instanceof Error ? err.message : t("filesPage.couldntDownload", { name: entry.name }));
     } finally {
       setDownloadingPath(null);
     }
@@ -114,7 +116,7 @@ export function FilesPage() {
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />
-          Back to servers
+          {t("common.backToServers")}
         </Button>
       </div>
 
@@ -137,7 +139,7 @@ export function FilesPage() {
         </div>
         <Button variant="secondary" onClick={handleUpload} disabled={uploading}>
           <Icon name="upload" size={14} />
-          {uploading ? "Uploading..." : "Upload"}
+          {uploading ? t("filesPage.uploading") : t("filesPage.upload")}
         </Button>
       </div>
 
@@ -147,7 +149,7 @@ export function FilesPage() {
         {loading ? (
           <SkeletonRows />
         ) : entries.length === 0 ? (
-          <EmptyState icon="folder" title="Empty directory" description="Nothing here." />
+          <EmptyState icon="folder" title={t("filesPage.emptyTitle")} description={t("filesPage.emptyDescription")} />
         ) : (
           <ul className="server-list">
             {entries.map((entry) => (
@@ -166,7 +168,7 @@ export function FilesPage() {
                     <span className="files-entry-size">{formatSize(entry.size)}</span>
                     <button
                       className="server-list-action"
-                      aria-label={`Download ${entry.name}`}
+                      aria-label={t("filesPage.downloadAria", { name: entry.name })}
                       disabled={downloadingPath === entry.path}
                       onClick={() => handleDownload(entry)}
                     >

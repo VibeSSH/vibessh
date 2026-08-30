@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ServerMetrics } from "@/types/serverEvent";
 import "./MetricsPreview.css";
 
@@ -53,19 +54,20 @@ interface MetricsPreviewProps {
  * the whole realtime pipeline actually works end to end in the UI.
  */
 export function MetricsPreview({ metrics }: MetricsPreviewProps) {
+  const { t } = useTranslation();
   const ramPercent = metrics.ramTotalBytes > 0 ? (metrics.ramUsedBytes / metrics.ramTotalBytes) * 100 : 0;
   const diskPercent = metrics.diskTotalBytes > 0 ? (metrics.diskUsedBytes / metrics.diskTotalBytes) * 100 : 0;
 
   return (
     <div className="metrics-preview">
-      <Gauge label="CPU" percent={metrics.cpuUsagePercent} />
-      <Gauge label="RAM" percent={ramPercent} />
-      <Gauge label="Disk" percent={diskPercent} />
+      <Gauge label={t("metricsPreview.cpu")} percent={metrics.cpuUsagePercent} />
+      <Gauge label={t("metricsPreview.ram")} percent={ramPercent} />
+      <Gauge label={t("metricsPreview.disk")} percent={diskPercent} />
       <div className="metrics-preview-stats">
-        <span>Load (1m): {metrics.loadAverage1m.toFixed(2)}</span>
-        <span>Uptime: {formatUptime(metrics.uptimeSeconds)}</span>
+        <span>{t("metricsPreview.load1m", { value: metrics.loadAverage1m.toFixed(2) })}</span>
+        <span>{t("metricsPreview.uptime", { value: formatUptime(metrics.uptimeSeconds) })}</span>
         <span>
-          Net: ↓{formatRate(metrics.networkRxBytesPerSec)} ↑{formatRate(metrics.networkTxBytesPerSec)}
+          {t("metricsPreview.net", { down: formatRate(metrics.networkRxBytesPerSec), up: formatRate(metrics.networkTxBytesPerSec) })}
         </span>
       </div>
     </div>

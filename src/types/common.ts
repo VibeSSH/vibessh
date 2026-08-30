@@ -5,8 +5,14 @@ export interface AppInfo {
 
 export interface NavModule {
   id: string;
-  label: string;
+  labelKey: string;
   path: string;
   icon: string;
   comingSoon?: boolean;
+}
+
+export interface SidebarGroup {
+  id: string;
+  labelKey: string;
+  items: NavModule[];
 }

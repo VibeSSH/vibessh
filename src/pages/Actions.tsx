@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -36,33 +37,6 @@ type PendingAction =
   | { kind: "service"; name: string; verb: ServiceVerb }
   | { kind: "container"; name: string; verb: ContainerVerb };
 
-const VERB_LABEL: Record<ServiceVerb | ContainerVerb, string> = {
-  start: "Start",
-  stop: "Stop",
-  restart: "Restart",
-  enable: "Enable",
-  disable: "Disable",
-  remove: "Remove",
-};
-
-const VERB_PAST: Record<ServiceVerb | ContainerVerb, string> = {
-  start: "Started",
-  stop: "Stopped",
-  restart: "Restarted",
-  enable: "Enabled",
-  disable: "Disabled",
-  remove: "Removed",
-};
-
-const VERB_BODY: Record<ServiceVerb | ContainerVerb, string> = {
-  start: "Start {name}?",
-  stop: "Stop {name}? Anything using it loses its connection.",
-  restart: "Restart {name}? Anything using it may briefly disconnect.",
-  enable: "Enable {name}? It will start automatically on boot.",
-  disable: "Disable {name}? It won't start automatically on boot anymore.",
-  remove: "Remove {name}? This deletes the container, not just stops it - it can't be undone.",
-};
-
 /** stop/disable/remove interrupt or end something and read as the "careful" action; start/restart/enable don't. */
 const VERB_IS_DESTRUCTIVE: Record<ServiceVerb | ContainerVerb, boolean> = {
   start: false,
@@ -74,6 +48,7 @@ const VERB_IS_DESTRUCTIVE: Record<ServiceVerb | ContainerVerb, boolean> = {
 };
 
 export function ActionsPage() {
+  const { t } = useTranslation();
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
@@ -98,7 +73,7 @@ export function ActionsPage() {
     setServicesError(null);
     listServerServices(serverId)
       .then((loaded) => setServices([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setServicesError(err instanceof Error ? err.message : "Couldn't list services."))
+      .catch((err) => setServicesError(err instanceof Error ? err.message : t("actionsPage.couldntListServices")))
       .finally(() => setServicesLoading(false));
   }, [serverId]);
 
@@ -108,7 +83,7 @@ export function ActionsPage() {
     setContainersError(null);
     listServerContainers(serverId)
       .then((loaded) => setContainers([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setContainersError(err instanceof Error ? err.message : "Couldn't list containers."))
+      .catch((err) => setContainersError(err instanceof Error ? err.message : t("actionsPage.couldntListContainers")))
       .finally(() => setContainersLoading(false));
   }, [serverId]);
 
@@ -152,10 +127,10 @@ export function ActionsPage() {
         await call(serverId, confirming.name);
         loadContainers();
       }
-      toastSuccess(`${VERB_PAST[confirming.verb]} ${confirming.name}`);
+      toastSuccess(t("actionsPage.toast", { verb: t(`actionsPage.verbPast.${confirming.verb}`), name: confirming.name }));
       setConfirming(null);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : `Couldn't ${confirming.verb} this.`);
+      setActionError(err instanceof Error ? err.message : t("actionsPage.couldntDo", { verb: t(`actionsPage.verb.${confirming.verb}`) }));
     } finally {
       setActionBusy(false);
     }
@@ -165,21 +140,21 @@ export function ActionsPage() {
     <div className="page">
       <div className="page-header page-header-row">
         <div>
-          <h1 className="page-title">{server ? server.name : "Actions"}</h1>
+          <h1 className="page-title">{server ? server.name : t("nav.actions")}</h1>
           <p className="page-subtitle">{server ? server.host : serverId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />
-          Back to servers
+          {t("common.backToServers")}
         </Button>
       </div>
 
       {servicesError && <p className="page-error-note">{servicesError}</p>}
 
-      <Card title="Systemd services" subtitle={`${services.length} units`}>
+      <Card title={t("actionsPage.servicesTitle")} subtitle={t("actionsPage.unitsCount", { count: services.length })}>
         <input
           className="form-input actions-filter"
-          placeholder="Filter by name..."
+          placeholder={t("actionsPage.filterByName")}
           value={serviceFilter}
           onChange={(e) => setServiceFilter(e.target.value)}
         />
@@ -193,26 +168,28 @@ export function ActionsPage() {
                   <span className="server-list-name">{service.name}</span>
                   <span className="server-list-host">{service.description}</span>
                 </div>
-                <Badge tone={service.active ? "success" : "neutral"}>{service.active ? "Active" : "Inactive"}</Badge>
-                <Badge tone="neutral">{service.enabled ? "Enabled" : "Disabled"}</Badge>
+                <Badge tone={service.active ? "success" : "neutral"}>{service.active ? t("actionsPage.active") : t("actionsPage.inactive")}</Badge>
+                <Badge tone="neutral">{service.enabled ? t("actionsPage.enabled") : t("actionsPage.disabled")}</Badge>
                 <div className="server-list-actions">
                   <button
                     className="server-list-action"
-                    aria-label={service.active ? `Stop ${service.name}` : `Start ${service.name}`}
+                    aria-label={service.active ? t("actionsPage.stopAria", { name: service.name }) : t("actionsPage.startAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.active ? "stop" : "start" })}
                   >
                     <Icon name={service.active ? "square" : "play"} size={14} />
                   </button>
                   <button
                     className="server-list-action"
-                    aria-label={`Restart ${service.name}`}
+                    aria-label={t("actionsPage.restartAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: "restart" })}
                   >
                     <Icon name="zap" size={14} />
                   </button>
                   <button
                     className="server-list-action"
-                    aria-label={service.enabled ? `Disable ${service.name}` : `Enable ${service.name}`}
+                    aria-label={
+                      service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })
+                    }
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.enabled ? "disable" : "enable" })}
                   >
                     <Icon name="power" size={14} />
@@ -226,11 +203,11 @@ export function ActionsPage() {
 
       {containersError && <p className="page-error-note">{containersError}</p>}
 
-      <Card title="Docker containers" subtitle={`${containers.length} containers`}>
+      <Card title={t("actionsPage.containersTitle")} subtitle={t("actionsPage.containersCount", { count: containers.length })}>
         {containersLoading ? (
           <SkeletonRows count={3} />
         ) : containers.length === 0 ? (
-          <p className="settings-muted">No containers, or Docker isn't installed on this server.</p>
+          <p className="settings-muted">{t("actionsPage.noContainers")}</p>
         ) : (
           <ul className="server-list">
             {containers.map((container) => (
@@ -241,18 +218,20 @@ export function ActionsPage() {
                     {container.image} · {container.status}
                   </span>
                 </div>
-                <Badge tone={container.running ? "success" : "neutral"}>{container.running ? "Running" : "Stopped"}</Badge>
+                <Badge tone={container.running ? "success" : "neutral"}>{container.running ? t("actionsPage.running") : t("actionsPage.stopped")}</Badge>
                 <div className="server-list-actions">
                   <button
                     className="server-list-action"
-                    aria-label={`View logs for ${container.name}`}
+                    aria-label={t("actionsPage.viewLogsAria", { name: container.name })}
                     onClick={() => setViewingLogsFor(container.name)}
                   >
                     <Icon name="terminal" size={14} />
                   </button>
                   <button
                     className="server-list-action"
-                    aria-label={container.running ? `Stop ${container.name}` : `Start ${container.name}`}
+                    aria-label={
+                      container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })
+                    }
                     onClick={() =>
                       askConfirm({ kind: "container", name: container.name, verb: container.running ? "stop" : "start" })
                     }
@@ -261,14 +240,14 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
-                    aria-label={`Restart ${container.name}`}
+                    aria-label={t("actionsPage.restartAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "restart" })}
                   >
                     <Icon name="zap" size={14} />
                   </button>
                   <button
                     className="server-list-action"
-                    aria-label={`Remove ${container.name}`}
+                    aria-label={t("actionsPage.removeAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "remove" })}
                   >
                     <Icon name="trash" size={14} />
@@ -289,17 +268,17 @@ export function ActionsPage() {
           <div className="modal-panel" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">
-                {VERB_LABEL[confirming.verb]} {confirming.kind === "service" ? "service" : "container"}
+                {t(confirming.kind === "service" ? "actionsPage.confirmTitleService" : "actionsPage.confirmTitleContainer", {
+                  verb: t(`actionsPage.verb.${confirming.verb}`),
+                })}
               </h2>
-              <button className="modal-close" onClick={() => setConfirming(null)} aria-label="Close">
+              <button className="modal-close" onClick={() => setConfirming(null)} aria-label={t("common.close")}>
                 <Icon name="x" size={16} />
               </button>
             </div>
             <div className="modal-body">
               <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>
-                {VERB_BODY[confirming.verb].split("{name}")[0]}
-                <strong>{confirming.name}</strong>
-                {VERB_BODY[confirming.verb].split("{name}")[1]}
+                <Trans i18nKey={`actionsPage.confirmBody.${confirming.verb}`} values={{ name: confirming.name }} components={{ 1: <strong /> }} />
               </p>
               {actionError && (
                 <p className="form-note" style={{ color: "var(--danger)", marginBottom: 12 }}>
@@ -308,14 +287,14 @@ export function ActionsPage() {
               )}
               <div className="form-actions" style={{ gap: 8 }}>
                 <Button variant="secondary" onClick={() => setConfirming(null)} disabled={actionBusy}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
                   variant={VERB_IS_DESTRUCTIVE[confirming.verb] ? "danger" : "primary"}
                   onClick={handleConfirmAction}
                   disabled={actionBusy}
                 >
-                  {VERB_LABEL[confirming.verb]}
+                  {t(`actionsPage.verb.${confirming.verb}`)}
                 </Button>
               </div>
             </div>

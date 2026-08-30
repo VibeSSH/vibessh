@@ -17,22 +17,22 @@ export function AppRouter() {
         <Route path="/servers" element={<Servers />} />
         <Route
           path="/terminal"
-          element={<ModulePicker title="VibeSSH Terminal" subtitle="Pick a server to open a shell on." icon="terminal" routePrefix="/terminal" />}
+          element={<ModulePicker titleKey="modulePicker.terminalTitle" subtitleKey="modulePicker.terminalSubtitle" icon="terminal" routePrefix="/terminal" />}
         />
         <Route path="/terminal/:serverId" element={<TerminalPage />} />
         <Route
           path="/files"
-          element={<ModulePicker title="VibeSSH Files" subtitle="Pick a server to browse its files." icon="folder" routePrefix="/files" />}
+          element={<ModulePicker titleKey="modulePicker.filesTitle" subtitleKey="modulePicker.filesSubtitle" icon="folder" routePrefix="/files" />}
         />
         <Route path="/files/:serverId" element={<FilesPage />} />
         <Route
           path="/monitor"
-          element={<ModulePicker title="VibeSSH Monitor" subtitle="Pick a server to see its resources and processes." icon="activity" routePrefix="/monitor" />}
+          element={<ModulePicker titleKey="modulePicker.monitorTitle" subtitleKey="modulePicker.monitorSubtitle" icon="activity" routePrefix="/monitor" />}
         />
         <Route path="/monitor/:serverId" element={<MonitorPage />} />
         <Route
           path="/actions"
-          element={<ModulePicker title="VibeSSH Actions" subtitle="Pick a server to manage its services and containers." icon="zap" routePrefix="/actions" />}
+          element={<ModulePicker titleKey="modulePicker.actionsTitle" subtitleKey="modulePicker.actionsSubtitle" icon="zap" routePrefix="/actions" />}
         />
         <Route path="/actions/:serverId" element={<ActionsPage />} />
         <Route path="/settings" element={<Settings />} />
