@@ -17,7 +17,7 @@ interface ServerCardActionButtonProps {
   danger?: boolean;
 }
 
-/** Ported from Voltius's CardActionButton (voltius/src/components/shared/CardActionButton.tsx) - hidden until the card is hovered. */
+/** Ported from Voltius's CardActionButton (voltius/src/components/shared/CardActionButton.tsx) - always visible on a grid card (their own HostCard passes reveal={false} for this exact layout; hover-reveal is list-mode-only there). */
 function ServerCardActionButton({ icon, title, onClick, danger }: ServerCardActionButtonProps) {
   return (
     <button
@@ -64,18 +64,17 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
     <div className="server-card surface-glass">
       <div className="server-card-body">
         <div className="server-card-header">
-          <div className="server-card-avatar-wrap">
-            <div className="server-card-avatar">
-              <Icon name={isAgent ? "zap" : "server"} size={16} />
-            </div>
-            <span className="server-card-status-dot" style={{ background: statusColor }}>
-              {server.status === "online" && <span className="server-card-status-ping" style={{ background: statusColor }} />}
-            </span>
+          <div className="server-card-avatar">
+            <Icon name={isAgent ? "zap" : "server"} size={16} />
           </div>
           <div className="server-card-title-col">
             <div className="server-card-title-row">
               <p className="server-card-name">{server.name}</p>
               <span className="server-card-protocol-pill">{protocolLabel}</span>
+              <span className="server-card-status-dot-wrap">
+                {server.status === "online" && <span className="server-card-status-ping" style={{ background: statusColor }} />}
+                <span className="server-card-status-dot" style={{ background: statusColor }} />
+              </span>
             </div>
             <p className="server-card-host">{identity}</p>
           </div>

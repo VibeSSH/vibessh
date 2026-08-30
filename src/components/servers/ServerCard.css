@@ -17,36 +17,44 @@
   min-width: 0;
 }
 
-.server-card-avatar-wrap {
-  position: relative;
-  flex-shrink: 0;
-}
-
 .server-card-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
+  flex-shrink: 0;
   border-radius: var(--r-sm);
   background: linear-gradient(145deg, color-mix(in srgb, var(--t-accent) 24%, var(--t-bg-elevated)) 0%, var(--t-bg-elevated) 60%);
   color: var(--t-accent);
   box-shadow: var(--t-ring), var(--t-highlight);
 }
 
+/* Status dot sits at the end of the title row (ml-auto in Voltius's own
+   HostCard, next to the ping-latency reading we don't have) rather than
+   overlaid on the avatar corner - a presence-badge placement that reads
+   naturally but isn't what the reference screenshot actually shows. */
+.server-card-status-dot-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .server-card-status-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 10px;
-  height: 10px;
+  position: relative;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
-  border: 2px solid var(--t-bg-card);
 }
 
 .server-card-status-ping {
   position: absolute;
-  inset: 0;
+  inset: 3px;
   border-radius: 999px;
   animation: server-card-ping 2s ease-out infinite;
 }
@@ -117,15 +125,15 @@
   gap: 8px;
 }
 
+/* Always visible, not hover-gated - matches Voltius's actual HostCard: its
+   grid-layout action buttons pass reveal={false} to CardActionButton
+   specifically (hover-only reveal is a list-mode-only behavior there), a
+   detail an earlier pass here got backwards until the reference screenshot
+   showed otherwise. */
 .server-card-actions {
   display: flex;
   align-items: center;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.server-card:hover .server-card-actions {
-  opacity: 1;
 }
 
 .server-card-action {
