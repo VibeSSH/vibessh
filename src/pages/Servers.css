@@ -85,3 +85,15 @@
 .server-list-action:active {
   transform: scale(0.92);
 }
+
+.servers-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+}
+
+.servers-filter-input {
+  flex: 1;
+  max-width: 280px;
+}

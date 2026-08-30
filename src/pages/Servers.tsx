@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,6 +12,7 @@ import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
 import "./Servers.css";
+import "@/components/servers/forms.css";
 
 export function Servers() {
   const navigate = useNavigate();
@@ -20,9 +21,16 @@ export function Servers() {
   const [deletingServer, setDeletingServer] = useState<ManagedServer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
   const servers = useServersStore((s) => s.servers);
   const setServers = useServersStore((s) => s.setServers);
   const removeServer = useServersStore((s) => s.removeServer);
+
+  const needle = filter.trim().toLowerCase();
+  const filteredServers = useMemo(
+    () => (needle ? servers.filter((s) => s.name.toLowerCase().includes(needle) || s.host.toLowerCase().includes(needle)) : servers),
+    [servers, needle],
+  );
 
   useEffect(() => {
     listServers()
@@ -77,26 +85,44 @@ export function Servers() {
           />
         </Card>
       ) : (
-        <div className="servers-grid">
-          {servers.map((server) => (
-            <ServerCard
-              key={server.id}
-              server={server}
-              onOpenTerminal={() => navigate(`/terminal/${server.id}`)}
-              onOpenFiles={() => navigate(`/files/${server.id}`)}
-              onOpenMonitor={() => navigate(`/monitor/${server.id}`)}
-              onOpenActions={() => navigate(`/actions/${server.id}`)}
-              onEdit={() => {
-                setEditingServer(server);
-                setModalOpen(true);
-              }}
-              onDelete={() => {
-                setDeleteError(null);
-                setDeletingServer(server);
-              }}
+        <>
+          <div className="servers-filter-row">
+            <Icon name="search" size={14} />
+            <input
+              className="form-input servers-filter-input"
+              placeholder="Filter servers..."
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
             />
-          ))}
-        </div>
+          </div>
+
+          {filteredServers.length === 0 ? (
+            <Card>
+              <EmptyState icon="search" title="No matches" description={`Nothing matches "${filter}".`} />
+            </Card>
+          ) : (
+            <div className="servers-grid">
+              {filteredServers.map((server) => (
+                <ServerCard
+                  key={server.id}
+                  server={server}
+                  onOpenTerminal={() => navigate(`/terminal/${server.id}`)}
+                  onOpenFiles={() => navigate(`/files/${server.id}`)}
+                  onOpenMonitor={() => navigate(`/monitor/${server.id}`)}
+                  onOpenActions={() => navigate(`/actions/${server.id}`)}
+                  onEdit={() => {
+                    setEditingServer(server);
+                    setModalOpen(true);
+                  }}
+                  onDelete={() => {
+                    setDeleteError(null);
+                    setDeletingServer(server);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {modalOpen && <AddServerModal onClose={closeModal} editingServer={editingServer ?? undefined} />}
