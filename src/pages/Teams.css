@@ -1,0 +1,7 @@
+.teams-create-row {
+  display: flex;
+  gap: 8px;
+}
+.teams-create-row .form-input {
+  flex: 1;
+}

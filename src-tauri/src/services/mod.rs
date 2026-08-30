@@ -1,9 +1,15 @@
 mod app_info_service;
+mod cloud_service;
 mod ping_service;
 mod server_service;
 mod ssh_service;
 
 pub use app_info_service::get_app_info;
+pub use cloud_service::{
+    create_team as cloud_create_team, get_team as cloud_get_team, list_members as cloud_list_members,
+    list_teams as cloud_list_teams, login as cloud_login, logout as cloud_logout, register as cloud_register,
+    session_info as cloud_session_info, try_restore_session as cloud_try_restore_session,
+};
 pub use ping_service::ping_server;
 pub use server_service::{create_server, delete_server, get_server, list_servers, update_server};
 pub use ssh_service::{

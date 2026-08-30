@@ -19,6 +19,12 @@ pub enum AppError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// Not (or no longer) signed in to the cloud backend - the frontend
+    /// should route this to a login prompt rather than a generic error
+    /// toast.
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -39,6 +45,7 @@ impl Serialize for AppError {
             AppError::Storage(_) => "storage",
             AppError::Connection(_) => "connection",
             AppError::Internal(_) => "internal",
+            AppError::Unauthorized(_) => "unauthorized",
         };
         let mut state = serializer.serialize_struct("AppError", 2)?;
         state.serialize_field("kind", kind)?;

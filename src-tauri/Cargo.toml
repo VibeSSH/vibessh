@@ -54,6 +54,10 @@ russh = { version = "0.63", default-features = false, features = ["ring", "rsa"]
 # SFTP (Files module) - runs over a subsystem channel on the same russh
 # connection, not a separate transport.
 russh-sftp = "2"
+# HTTP client for the new cloud backend (accounts/teams/roles) - default-tls
+# (native-tls) rather than adding rustls as a second TLS stack, since
+# native-tls is already a dependency here for agent_client's WSS connections.
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code

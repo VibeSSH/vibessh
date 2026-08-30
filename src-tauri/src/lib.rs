@@ -2,6 +2,7 @@
 // can drive it directly - everything else here only needs in-crate tests
 // (pairing_commands' own test lives inside that module, see its file for why).
 pub mod agent_client;
+pub mod cloud_client;
 mod commands;
 mod errors;
 mod models;
@@ -13,7 +14,7 @@ mod state;
 mod storage;
 mod transport;
 
-use state::{AppState, PairingSession, SshSessionManager, TerminalSessionManager};
+use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
 use storage::server_repository::ServerRepository;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -41,6 +42,24 @@ pub fn run() {
             // calls above.
             let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
             app.manage(ServerRepository::open(&db_path)?);
+
+            let config_dir = app.path().app_config_dir()?;
+            let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
+            app.manage(CloudState::new(backend_url));
+
+            // Silently turns a keyring-stored refresh token from a previous
+            // run back into a live session, if there is one - see
+            // services::cloud_try_restore_session's own doc comment for why
+            // this is fire-and-forget rather than something setup() waits on
+            // or surfaces an error for. Spawned *after* app.manage() above,
+            // not before - the spawned task looks the state up by type, so
+            // it must already be registered before this can run.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<CloudState>();
+                services::cloud_try_restore_session(&state).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -80,6 +99,16 @@ pub fn run() {
             commands::actions_commands::stop_server_container,
             commands::actions_commands::remove_server_container,
             commands::actions_commands::get_server_container_logs,
+            commands::cloud_commands::cloud_register,
+            commands::cloud_commands::cloud_login,
+            commands::cloud_commands::cloud_logout,
+            commands::cloud_commands::cloud_session_info,
+            commands::cloud_commands::cloud_get_backend_url,
+            commands::cloud_commands::cloud_set_backend_url,
+            commands::cloud_commands::cloud_list_teams,
+            commands::cloud_commands::cloud_create_team,
+            commands::cloud_commands::cloud_list_members,
+            commands::cloud_commands::cloud_get_team,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

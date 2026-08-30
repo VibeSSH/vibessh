@@ -29,6 +29,12 @@ export const sidebarGroups: SidebarGroup[] = [
     ],
   },
   {
+    id: "team",
+    labelKey: "nav.groupTeam",
+    requiresAuth: true,
+    items: [{ id: "teams", labelKey: "nav.teams", path: "/teams", icon: "users" }],
+  },
+  {
     id: "other",
     labelKey: "nav.groupOther",
     items: [{ id: "settings", labelKey: "nav.settings", path: "/settings", icon: "settings" }],

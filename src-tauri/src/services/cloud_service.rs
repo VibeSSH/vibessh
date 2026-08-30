@@ -1,0 +1,115 @@
+//! Session orchestration on top of `cloud_client::CloudClient` - the "make
+//! sure we have a live access token before doing anything authenticated"
+//! logic lives here, not in the client (which only knows how to make one
+//! HTTP call) or in the commands (which stay thin, same split as every
+//! other module in this crate).
+use chrono::Utc;
+use uuid::Uuid;
+
+use crate::errors::{AppError, AppResult};
+use crate::models::{CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile};
+use crate::state::cloud_session::{CloudSession, CloudState};
+use crate::storage::credentials;
+
+const REFRESH_SKEW_SECONDS: i64 = 30;
+
+pub async fn register(state: &CloudState, email: &str, password: &str, display_name: &str) -> AppResult<CloudUserProfile> {
+    let mut inner = state.inner.lock().await;
+    let auth = inner.client.register(email, password, display_name).await?;
+    credentials::store_cloud_refresh_token(&auth.refresh_token)?;
+    let user = auth.user.clone();
+    inner.session =
+        Some(CloudSession { access_token: auth.access_token, access_token_expires_at: auth.access_token_expires_at, user: auth.user });
+    Ok(user)
+}
+
+pub async fn login(state: &CloudState, email: &str, password: &str) -> AppResult<CloudUserProfile> {
+    let mut inner = state.inner.lock().await;
+    let auth = inner.client.login(email, password).await?;
+    credentials::store_cloud_refresh_token(&auth.refresh_token)?;
+    let user = auth.user.clone();
+    inner.session =
+        Some(CloudSession { access_token: auth.access_token, access_token_expires_at: auth.access_token_expires_at, user: auth.user });
+    Ok(user)
+}
+
+pub async fn logout(state: &CloudState) -> AppResult<()> {
+    let mut inner = state.inner.lock().await;
+    if let Some(refresh_token) = credentials::load_cloud_refresh_token()? {
+        // Best-effort - if the backend is unreachable the local session is
+        // still cleared below, so the user is signed out of *this device*
+        // either way. The refresh token stays valid server-side until it
+        // expires on its own in that case, same trade-off any "log out
+        // while offline" flow has.
+        let _ = inner.client.logout(&refresh_token).await;
+    }
+    credentials::delete_cloud_refresh_token()?;
+    inner.session = None;
+    Ok(())
+}
+
+pub async fn session_info(state: &CloudState) -> Option<CloudSessionInfo> {
+    state.session_info().await
+}
+
+/// Returns a definitely-not-expired access token, refreshing it first if
+/// necessary - every authenticated call below goes through this rather
+/// than reading `session.access_token` directly.
+async fn ensure_valid_access_token(state: &CloudState) -> AppResult<String> {
+    let mut inner = state.inner.lock().await;
+
+    if let Some(session) = &inner.session {
+        if session.access_token_expires_at > Utc::now().timestamp() + REFRESH_SKEW_SECONDS {
+            return Ok(session.access_token.clone());
+        }
+    }
+
+    let refresh_token = credentials::load_cloud_refresh_token()?
+        .ok_or_else(|| AppError::Unauthorized("not signed in to the VibeSSH cloud backend".to_string()))?;
+    let auth = inner.client.refresh(&refresh_token).await.map_err(|err| {
+        // A rejected refresh token means the session is really over (it was
+        // revoked, or expired) - clear the now-useless stored token instead
+        // of leaving it around to fail the same way on every future call.
+        let _ = credentials::delete_cloud_refresh_token();
+        err
+    })?;
+    credentials::store_cloud_refresh_token(&auth.refresh_token)?;
+    let access_token = auth.access_token.clone();
+    inner.session =
+        Some(CloudSession { access_token: auth.access_token, access_token_expires_at: auth.access_token_expires_at, user: auth.user });
+    Ok(access_token)
+}
+
+/// Called once at app startup - if a refresh token is already sitting in
+/// the OS keyring from a previous run, this turns it back into a live
+/// session so the user doesn't have to log in again every launch. Silent,
+/// not an error, if there's nothing stored or it no longer works: "not
+/// signed in yet" is the normal state for most of this app's history so
+/// far, not a failure.
+pub async fn try_restore_session(state: &CloudState) {
+    let _ = ensure_valid_access_token(state).await;
+}
+
+pub async fn list_teams(state: &CloudState) -> AppResult<Vec<CloudTeam>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_teams(&token).await
+}
+
+pub async fn create_team(state: &CloudState, name: &str) -> AppResult<CloudTeam> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.create_team(&token, name).await
+}
+
+pub async fn get_team(state: &CloudState, team_id: Uuid) -> AppResult<CloudTeam> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.get_team(&token, team_id).await
+}
+
+pub async fn list_members(state: &CloudState, team_id: Uuid) -> AppResult<Vec<CloudTeamMember>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_members(&token, team_id).await
+}

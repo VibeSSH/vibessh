@@ -4,6 +4,7 @@
 //! `server_repository` (Etap 2) is the SQLite-backed store for server
 //! records themselves; it never touches secrets, see `credentials`.
 
+pub mod cloud_config;
 pub mod credentials;
 pub mod migrations;
 pub mod server_repository;

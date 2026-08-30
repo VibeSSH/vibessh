@@ -3,9 +3,13 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
+import { cloudLogout } from "@/services/cloudService";
+import { useAuthModalStore } from "@/stores/authModalStore";
+import { useAuthStore } from "@/stores/authStore";
 import { usePingStore } from "@/stores/pingStore";
 import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
+import { toastSuccess } from "@/stores/toastStore";
 import { useToastStore } from "@/stores/toastStore";
 import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./Rail.css";
@@ -90,6 +94,9 @@ function AccountButton() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const openAuthModal = useAuthModalStore((s) => s.open);
 
   useEffect(() => {
     if (!open) return;
@@ -100,6 +107,17 @@ function AccountButton() {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
+  async function handleLogout() {
+    setOpen(false);
+    try {
+      await cloudLogout();
+    } catch {
+      // Local session is cleared below regardless - see cloud_service::logout's own comment on why logout is best-effort against the backend.
+    }
+    setUser(null);
+    toastSuccess(t("auth.loggedOutToast"));
+  }
+
   return (
     <div className="rail-popover-anchor" ref={anchorRef}>
       <RailButton icon="user" onClick={() => setOpen((o) => !o)} aria-label={t("rail.account")} title={t("rail.account")} />
@@ -108,7 +126,32 @@ function AccountButton() {
           <div className="rail-popover-header">
             <span>{t("rail.account")}</span>
           </div>
-          <p className="rail-popover-empty">{t("rail.accountEmpty")}</p>
+          {user ? (
+            <>
+              <div className="rail-account-info">
+                <p className="rail-account-name">{user.displayName}</p>
+                <p className="rail-account-email">{user.email}</p>
+              </div>
+              <button
+                className="rail-account-action"
+                onClick={handleLogout}
+              >
+                <Icon name="x" size={13} />
+                {t("rail.signOut")}
+              </button>
+            </>
+          ) : (
+            <button
+              className="rail-account-action"
+              onClick={() => {
+                setOpen(false);
+                openAuthModal();
+              }}
+            >
+              <Icon name="user" size={13} />
+              {t("rail.signIn")}
+            </button>
+          )}
         </div>
       )}
     </div>

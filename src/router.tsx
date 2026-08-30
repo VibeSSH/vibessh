@@ -7,6 +7,8 @@ import { ModulePicker } from "@/pages/ModulePicker";
 import { MonitorPage } from "@/pages/Monitor";
 import { Servers } from "@/pages/Servers";
 import { Settings } from "@/pages/Settings";
+import { TeamDetail } from "@/pages/TeamDetail";
+import { Teams } from "@/pages/Teams";
 import { TerminalPage } from "@/pages/Terminal";
 
 export function AppRouter() {
@@ -35,6 +37,8 @@ export function AppRouter() {
           element={<ModulePicker titleKey="modulePicker.actionsTitle" subtitleKey="modulePicker.actionsSubtitle" icon="zap" routePrefix="/actions" />}
         />
         <Route path="/actions/:serverId" element={<ActionsPage />} />
+        <Route path="/teams" element={<Teams />} />
+        <Route path="/teams/:teamId" element={<TeamDetail />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

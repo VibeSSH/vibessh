@@ -19,6 +19,8 @@
     "groupMain": "Main",
     "groupWorkspace": "Workspace",
     "groupOther": "Other",
+    "groupTeam": "Team",
+    "teams": "Teams",
     "dashboard": "Dashboard",
     "servers": "Servers",
     "terminal": "Terminal",
@@ -44,7 +46,23 @@
     "notifications": "Notifications",
     "notificationsEmpty": "Nothing yet - actions you take show up here.",
     "notificationsClear": "Clear",
-    "accountEmpty": "Cloud accounts aren't built yet - VibeSSH is fully local for now. This is where sign-in will live once that's real."
+    "signIn": "Sign in",
+    "signOut": "Sign out"
+  },
+  "auth": {
+    "modalTitle": "VibeSSH Cloud",
+    "tabLogin": "Log in",
+    "tabRegister": "Create account",
+    "email": "Email",
+    "emailPlaceholder": "you@example.com",
+    "password": "Password",
+    "displayName": "Name",
+    "displayNamePlaceholder": "Your name",
+    "backendNote": "Signs in to the VibeSSH backend for Team features - the rest of the app stays fully local and works without this.",
+    "genericError": "Something went wrong. Please try again.",
+    "loggedInToast": "Signed in as {{name}}",
+    "registeredToast": "Welcome, {{name}}",
+    "loggedOutToast": "Signed out"
   },
   "titlebar": {
     "minimize": "Minimize",
@@ -282,6 +300,24 @@
     "loading": "Loading...",
     "noOutput": "No output from the last {{lines}} lines.",
     "couldntRead": "Couldn't read logs for this container."
+  },
+  "teams": {
+    "title": "Teams",
+    "subtitle": "Teams you belong to on the VibeSSH cloud backend.",
+    "createTitle": "Create a team",
+    "namePlaceholder": "Team name",
+    "create": "Create",
+    "createdToast": "Created {{name}}",
+    "couldntCreate": "Couldn't create the team.",
+    "couldntList": "Couldn't load your teams.",
+    "couldntLoad": "Couldn't load this team.",
+    "emptyTitle": "No teams yet",
+    "emptyDescription": "Create a team to start inviting members and managing shared access.",
+    "detailSubtitle": "Members and roles for this team.",
+    "backToTeams": "Back to teams",
+    "membersTitle": "Members",
+    "membersCount": "{{count}} members",
+    "owner": "Owner"
   },
   "settings": {
     "title": "Settings",

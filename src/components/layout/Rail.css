@@ -119,6 +119,38 @@
   color: var(--text-primary);
 }
 
+.rail-account-info {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rail-account-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rail-account-email {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.rail-account-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rail-account-action:hover {
+  background: var(--surface-2);
+}
+
 .rail-popover-empty {
   margin: 0;
   padding: 16px 12px;

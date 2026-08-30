@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useRipple } from "@/hooks/useRipple";
 import { sidebarGroups } from "@/config/navigation";
+import { useAuthStore } from "@/stores/authStore";
 import type { NavModule } from "@/types/common";
 import "./Sidebar.css";
 
@@ -94,6 +95,8 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(() => readStoredBoolean(COLLAPSED_KEY, false));
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => readStoredGroups());
   const navRef = useRef<HTMLElement>(null);
+  const isSignedIn = useAuthStore((s) => s.status === "signedIn");
+  const visibleGroups = sidebarGroups.filter((group) => !group.requiresAuth || isSignedIn);
 
   useEffect(() => {
     try {
@@ -143,7 +146,7 @@ export function Sidebar() {
       aria-label={t("nav.sidebarAria")}
     >
       <div className="sidebar-scroll">
-        {sidebarGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <SidebarGroupSection
             key={group.id}
             group={group}

@@ -61,6 +61,36 @@ fn entry_for(server_id: Uuid, kind: SecretKind) -> AppResult<Entry> {
         .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
 }
 
+/// The cloud backend's refresh token - not keyed by server id like
+/// everything else in this file, since it belongs to the signed-in account
+/// as a whole, not to any one server. A separate fixed entry name rather
+/// than reusing `entry_for` with a fabricated placeholder id.
+const CLOUD_REFRESH_TOKEN_ENTRY: &str = "cloud-refresh-token";
+
+fn cloud_refresh_token_entry() -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, CLOUD_REFRESH_TOKEN_ENTRY)
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_cloud_refresh_token(value: &str) -> AppResult<()> {
+    cloud_refresh_token_entry()?.set_password(value).map_err(|err| AppError::Storage(format!("failed to store the cloud session: {err}")))
+}
+
+pub fn load_cloud_refresh_token() -> AppResult<Option<String>> {
+    match cloud_refresh_token_entry()?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the cloud session: {err}"))),
+    }
+}
+
+pub fn delete_cloud_refresh_token() -> AppResult<()> {
+    match cloud_refresh_token_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to clear the cloud session: {err}"))),
+    }
+}
+
 // Named wrappers for the one call site (pairing_commands.rs) that predates
 // SecretKind - self-documenting at the call site, same implementation.
 pub fn store_agent_credential(server_id: Uuid, credential: &str) -> AppResult<()> {
@@ -120,6 +150,24 @@ mod tests {
 
         delete_agent_credential(server_id).unwrap();
         assert_eq!(load_agent_credential(server_id).unwrap(), None);
+    }
+
+    #[test]
+    fn cloud_refresh_token_stores_loads_and_deletes_via_the_real_os_keyring() {
+        let _guard = lock();
+        struct CloudCleanup;
+        impl Drop for CloudCleanup {
+            fn drop(&mut self) {
+                let _ = delete_cloud_refresh_token();
+            }
+        }
+        let _cleanup = CloudCleanup;
+
+        assert_eq!(load_cloud_refresh_token().unwrap(), None);
+        store_cloud_refresh_token("real-refresh-token-value").unwrap();
+        assert_eq!(load_cloud_refresh_token().unwrap(), Some("real-refresh-token-value".to_string()));
+        delete_cloud_refresh_token().unwrap();
+        assert_eq!(load_cloud_refresh_token().unwrap(), None);
     }
 
     #[test]

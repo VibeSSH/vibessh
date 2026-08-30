@@ -62,6 +62,7 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   minus: "minus",
   bell: "bell",
   user: "user-round",
+  users: "users",
 };
 
 interface IconProps {

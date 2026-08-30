@@ -19,6 +19,8 @@
     "groupMain": "Główne",
     "groupWorkspace": "Obszar pracy",
     "groupOther": "Inne",
+    "groupTeam": "Zespół",
+    "teams": "Zespoły",
     "dashboard": "Panel",
     "servers": "Serwery",
     "terminal": "Terminal",
@@ -44,7 +46,23 @@
     "notifications": "Powiadomienia",
     "notificationsEmpty": "Jeszcze nic tu nie ma - akcje, które wykonasz, pojawią się w tym miejscu.",
     "notificationsClear": "Wyczyść",
-    "accountEmpty": "Konta w chmurze nie są jeszcze dostępne - VibeSSH działa obecnie w pełni lokalnie. Tu pojawi się logowanie, gdy ta funkcja powstanie."
+    "signIn": "Zaloguj się",
+    "signOut": "Wyloguj się"
+  },
+  "auth": {
+    "modalTitle": "VibeSSH Cloud",
+    "tabLogin": "Zaloguj się",
+    "tabRegister": "Utwórz konto",
+    "email": "E-mail",
+    "emailPlaceholder": "ty@example.com",
+    "password": "Hasło",
+    "displayName": "Imię",
+    "displayNamePlaceholder": "Twoje imię",
+    "backendNote": "Loguje do backendu VibeSSH dla funkcji zespołowych - reszta aplikacji nadal działa w pełni lokalnie i nie wymaga tego.",
+    "genericError": "Coś poszło nie tak. Spróbuj ponownie.",
+    "loggedInToast": "Zalogowano jako {{name}}",
+    "registeredToast": "Witaj, {{name}}",
+    "loggedOutToast": "Wylogowano"
   },
   "titlebar": {
     "minimize": "Minimalizuj",
@@ -282,6 +300,24 @@
     "loading": "Ładowanie...",
     "noOutput": "Brak danych wyjściowych z ostatnich {{lines}} linii.",
     "couldntRead": "Nie udało się odczytać logów tego kontenera."
+  },
+  "teams": {
+    "title": "Zespoły",
+    "subtitle": "Zespoły, do których należysz w backendzie VibeSSH.",
+    "createTitle": "Utwórz zespół",
+    "namePlaceholder": "Nazwa zespołu",
+    "create": "Utwórz",
+    "createdToast": "Utworzono {{name}}",
+    "couldntCreate": "Nie udało się utworzyć zespołu.",
+    "couldntList": "Nie udało się wczytać Twoich zespołów.",
+    "couldntLoad": "Nie udało się wczytać tego zespołu.",
+    "emptyTitle": "Brak zespołów",
+    "emptyDescription": "Utwórz zespół, aby zapraszać członków i zarządzać wspólnym dostępem.",
+    "detailSubtitle": "Członkowie i role w tym zespole.",
+    "backToTeams": "Wróć do zespołów",
+    "membersTitle": "Członkowie",
+    "membersCount": "{{count}} członków",
+    "owner": "Właściciel"
   },
   "settings": {
     "title": "Ustawienia",
