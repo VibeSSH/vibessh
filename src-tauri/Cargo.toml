@@ -28,7 +28,13 @@ async-trait = "0.1"
 vibessh-protocol = { path = "../protocol" }
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
-tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net"] }
+# "process" (LocalProcessRuntime, Applications Phase 2) is new here -
+# everything else was already enabled for the agent transport/SSH/terminal.
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net", "process"] }
+# Cross-platform CPU/RAM-per-PID sampling for LocalProcessRuntime's
+# resource_usage() - same crate and version the `agent` crate already uses
+# for the identical purpose (see agent/src/metrics.rs), not a new pattern.
+sysinfo = "0.39"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 # Agent connections are wss:// with a self-signed cert (Etap K - no CA for
@@ -58,6 +64,19 @@ russh-sftp = "2"
 # (native-tls) rather than adding rustls as a second TLS stack, since
 # native-tls is already a dependency here for agent_client's WSS connections.
 reqwest = { version = "0.12", features = ["json"] }
+
+# Windows-only piece of LocalProcessRuntime's graceful stop (Applications
+# Phase 2). On Unix, sysinfo's own Process::kill_with(Signal::Term) already
+# sends a real SIGTERM, so no extra dependency is needed there. Windows has
+# no SIGTERM equivalent - sysinfo's kill_with() on Windows just shells out to
+# `taskkill /F` for any signal, which is a force-kill, not a graceful one -
+# so GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT) is the closest real "please
+# shut down" signal a child console process can receive. It only works if
+# the child was spawned with CREATE_NEW_PROCESS_GROUP (see
+# runtime::local_process) so the event targets the child's own process group
+# instead of also hitting VibeSSH.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
 
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code

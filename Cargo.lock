@@ -7144,6 +7144,7 @@ dependencies = [
  "russh-sftp",
  "serde",
  "serde_json",
+ "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -7153,6 +7154,7 @@ dependencies = [
  "tokio-tungstenite",
  "uuid",
  "vibessh-protocol",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

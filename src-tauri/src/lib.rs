@@ -15,7 +15,9 @@ mod state;
 mod storage;
 mod transport;
 
+use runtime::local_process::LocalProcessManager;
 use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
+use std::sync::Arc;
 use storage::application_repository::ApplicationRepository;
 use storage::server_repository::ServerRepository;
 use tauri::Manager;
@@ -38,6 +40,11 @@ pub fn run() {
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
         .manage(TerminalSessionManager::new())
+        // Arc-wrapped (unlike the two managers above) because
+        // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
+        // construct itself with, not just a borrow scoped to one command -
+        // see runtime::local_process's own doc comment.
+        .manage(Arc::new(LocalProcessManager::new()))
         .setup(|app| {
             // Needs the resolved app data dir, which only exists once the
             // app is running - can't be built alongside the other .manage()

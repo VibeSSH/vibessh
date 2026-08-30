@@ -7,10 +7,12 @@
 //! construct. No implementation lands in this phase - this is the
 //! interface Phase 2 (LocalProcessRuntime) onward builds against.
 
+pub mod local_process;
+
 use std::sync::Arc;
 
 use crate::errors::AppResult;
-use crate::models::{Application, ApplicationStatus, RuntimeType};
+use crate::models::{Application, ApplicationStatus, EnvironmentVariable, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Everything a runtime call needs, resolved once per command rather than
@@ -19,6 +21,11 @@ use crate::ssh::SshSession;
 pub struct RuntimeContext<'a> {
     pub application: &'a Application,
     pub runtime_config: &'a serde_json::Value,
+    /// From the `application_environment` table (`Application` itself
+    /// deliberately excludes it, see models::application's own doc comment)
+    /// - added once `LocalProcessRuntime` (Phase 2) needed it to actually
+    /// launch a process; every other trait method is free to ignore it.
+    pub environment: &'a [EnvironmentVariable],
     /// `None` for `RuntimeType::LocalProcess`; `Some` (from
     /// `SshSessionManager`, same cache every other remote feature already
     /// shares) for every Remote runtime type.
@@ -172,7 +179,7 @@ mod tests {
         let runtime: Box<dyn ApplicationRuntime> = Box::new(StubRuntime);
         let application = stub_application();
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Unknown);
