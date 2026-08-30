@@ -33,6 +33,11 @@ export function deleteServer(id: string): Promise<void> {
   return callCommand<void>("delete_server", { id });
 }
 
+/** Connects with whatever's in `input` directly, no save - for the "Test connection" button. */
+export function testSshConnection(input: ServerFormInput): Promise<void> {
+  return callCommand<void>("test_ssh_connection", { input });
+}
+
 /** No live status check exists yet (that's Etap 3's SshTransport), so a freshly loaded server is just "unknown". */
 export function serverSummaryToManagedServer(server: ServerSummary): ManagedServer {
   return {

@@ -75,9 +75,24 @@ pub fn delete_agent_credential(server_id: Uuid) -> AppResult<()> {
     delete_secret(server_id, SecretKind::AgentCredential)
 }
 
+/// Every test across this crate that touches the real OS credential store -
+/// here and in `services::server_service`'s tests - takes this lock first.
+/// Windows Credential Manager isn't reliably safe under concurrent access
+/// from many threads in one process (observed: a write for one credential
+/// name occasionally not showing up yet when a *different* credential name
+/// is read back moments later from another thread) - `cargo test` runs
+/// tests in parallel by default, so without this, keyring-touching tests
+/// are flaky in a way that has nothing to do with the code under test.
+#[cfg(test)]
+pub(crate) static KEYRING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        KEYRING_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     /// Cleans up the real OS credential store entry even if an assertion
     /// below panics - these tests write to the user's actual Windows
@@ -91,6 +106,7 @@ mod tests {
 
     #[test]
     fn stores_loads_and_deletes_a_credential_via_the_real_os_keyring() {
+        let _guard = lock();
         let server_id = Uuid::new_v4();
         let _cleanup = Cleanup(server_id, SecretKind::AgentCredential);
 
@@ -108,6 +124,7 @@ mod tests {
 
     #[test]
     fn different_secret_kinds_for_the_same_server_dont_collide() {
+        let _guard = lock();
         let server_id = Uuid::new_v4();
         let _cleanup_password = Cleanup(server_id, SecretKind::SshPassword);
         let _cleanup_agent = Cleanup(server_id, SecretKind::AgentCredential);

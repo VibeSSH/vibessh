@@ -14,6 +14,9 @@ pub enum AppError {
     #[error("storage error: {0}")]
     Storage(String),
 
+    #[error("connection error: {0}")]
+    Connection(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -34,6 +37,7 @@ impl Serialize for AppError {
             AppError::NotFound(_) => "not_found",
             AppError::InvalidInput(_) => "invalid_input",
             AppError::Storage(_) => "storage",
+            AppError::Connection(_) => "connection",
             AppError::Internal(_) => "internal",
         };
         let mut state = serializer.serialize_struct("AppError", 2)?;

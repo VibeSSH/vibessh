@@ -73,8 +73,6 @@ same `ServerConnection` interface on the Rust side.
       remove all round-trip through the SQLite repository. Paired agent
       servers still only show for the current session, since agent-mode rows
       aren't persisted yet
-- [ ] SSH transport implementation (`SshTransport` - Etap 3; saved SSH
-      servers don't connect yet, only store)
 - [x] Server storage (Etap 2) — SQLite (`rusqlite`, bundled) holds the
       non-secret server row (name/host/port/username/auth type/private key
       *path*); password and key passphrase go to the OS credential store via
@@ -93,6 +91,35 @@ same `ServerConnection` interface on the Rust side.
       can reach (form validation, tab switching, error surfacing all work) -
       the actual Tauri `invoke()` round trip needs the native webview, which
       isn't exercised by that pass
+- [x] SSH transport (Etap 3) — `russh` (pure Rust, async/tokio-native, `ring`
+      crypto backend rather than the default `aws-lc-rs`, since `ring` is
+      the backend already proven to build here for rustls and `aws-lc-rs`
+      needs cmake). `ssh::client` connects, authenticates (password or
+      private key + optional passphrase, resolved from Etap 2's storage),
+      and runs a command over a real exec channel, splitting stdout/stderr/
+      exit status. Host key verification is real Trust-On-First-Use, done
+      properly from the start rather than deferred like the agent's TLS
+      residual risk (Etap K): the first connection to a given server trusts
+      and records the host key's SHA-256 fingerprint in a new
+      `ssh_known_hosts` table, and every connection after checks against it
+      - a changed key (reinstalled server, or an active MITM) is rejected
+      with an explicit error instead of silently trusted, exactly like
+      OpenSSH's own known_hosts. A cached connection per server id
+      (`SshSessionManager`) avoids re-authenticating on every command, with
+      a dead-connection retried once before giving up. "Test connection" in
+      the Add/Edit Server form opens a real connection against whatever's
+      currently typed and closes it again, no save required. Verified two
+      ways: 4 integration tests drive `ssh::connect`/`execute_command`
+      against a real local `russh::server` instance (successful auth, wrong
+      password rejected, first-connection trust, and a changed-key mismatch
+      genuinely rejected, not silently accepted), and a one-off manual run
+      against the project's real test server confirmed the reported
+      fingerprint matches `ssh-keygen -lf`'s independent calculation exactly
+      and a real command executed with correct stdout/exit code.
+      `get_metrics`/`list_processes`/`restart_service`/`read_file`/
+      `write_file` stay honest `not implemented yet` stubs - those need
+      their own remote-side mechanics (SFTP, process manager, systemd) that
+      are later stages, not "run a command" alone
 - [ ] Terminal, SFTP, process manager, systemd, Docker
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
@@ -183,9 +210,9 @@ src/                        Frontend (React + TypeScript)
   components/
     layout/                 Sidebar, Topbar, AppLayout
     ui/                     Reusable design-system components
-    servers/                AddServerModal (add/edit), SshServerForm (real, Etap 2),
-                            DeleteServerDialog, AgentPairingFlow (real),
-                            CapabilityBadges, MetricsPreview
+    servers/                AddServerModal (add/edit), SshServerForm (real, Etap 2/3 -
+                            includes "Test connection"), DeleteServerDialog,
+                            AgentPairingFlow (real), CapabilityBadges, MetricsPreview
   pages/                    Dashboard, Servers, Settings
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts)
@@ -196,17 +223,23 @@ src/                        Frontend (React + TypeScript)
 src-tauri/                  Desktop backend (Rust, Tauri)
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
-                             server_commands.rs
+                             server_commands.rs, ssh_commands.rs
     services/                 Business logic, incl. server_service.rs (validation +
-                              repository/keyring orchestration)
+                              repository/keyring orchestration), ssh_service.rs
+                              (resolves a Server + keyring secret into ssh::connect's input)
     models/                    DTOs shared with the frontend (incl. Server/ServerInput/ConnectionMode)
     errors/                     Shared AppError/AppResult
-    state/                       AppState, PairingSession (Etap H's running-task handle)
+    state/                       AppState, PairingSession (Etap H), SshSessionManager (Etap 3 -
+                                 caches one live connection per server id)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
-    ssh/                             Reserved for SshTransport impl (Etap 3)
+    ssh/                             client.rs (connect/TOFU/auth/exec, `russh`), transport.rs
+                                     (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
-                                       server id); server_repository.rs (SQLite, Etap 2)
+                                       server id); server_repository.rs (SQLite, Etap 2 servers +
+                                       Etap 3 ssh_known_hosts)
+  tests/                       agent_client.rs, ssh_client.rs (both drive real protocol code
+                               against a local mock server, not a reimplementation of it)
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)

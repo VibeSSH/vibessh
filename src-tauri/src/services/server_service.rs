@@ -114,6 +114,15 @@ mod tests {
         ServerRepository::open(&path).unwrap()
     }
 
+    /// See `storage::credentials::KEYRING_TEST_LOCK` - any test here that
+    /// goes through `create_server`/`update_server`/`delete_server` (and so
+    /// touches the real OS keyring) takes this first.
+    fn keyring_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::storage::credentials::KEYRING_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn create_rejects_an_empty_name() {
         let repo = temp_repo();
@@ -144,6 +153,7 @@ mod tests {
 
     #[test]
     fn create_stores_the_password_in_the_keyring_and_delete_removes_it() {
+        let _guard = keyring_lock();
         let repo = temp_repo();
         let server = create_server(&repo, valid_input()).unwrap();
 
@@ -159,6 +169,7 @@ mod tests {
 
     #[test]
     fn update_with_a_blank_password_keeps_the_existing_secret() {
+        let _guard = keyring_lock();
         let repo = temp_repo();
         let server = create_server(&repo, valid_input()).unwrap();
 
@@ -177,6 +188,7 @@ mod tests {
 
     #[test]
     fn list_returns_created_servers() {
+        let _guard = keyring_lock();
         let repo = temp_repo();
         let server = create_server(&repo, valid_input()).unwrap();
         let servers = list_servers(&repo).unwrap();

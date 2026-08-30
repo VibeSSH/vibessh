@@ -1,3 +1,10 @@
-//! Reserved for the SSH session manager (Etap 3). Deliberately empty in
-//! Etap 1 so the connection pool / auth / reconnect logic starts from a
-//! clean module instead of being retrofitted into `commands` or `services`.
+//! Real SSH transport (Etap 3). `client` is pure protocol mechanics (connect,
+//! TOFU host key check, auth, exec) with no knowledge of `Server`/keyring/
+//! SQLite; `transport` adapts it to the app's `ServerConnection` trait.
+//! `ssh_service` (in `services/`) is what actually resolves a `Server` row
+//! and its keyring secret into the `SshCredentials` this module needs.
+
+pub mod client;
+mod transport;
+
+pub use client::{connect, SshAuth, SshCredentials, SshSession};

@@ -1,9 +1,17 @@
 import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { createServer, serverSummaryToManagedServer, updateServer } from "@/services/serverService";
+import {
+  createServer,
+  serverSummaryToManagedServer,
+  testSshConnection,
+  updateServer,
+  type ServerFormInput,
+} from "@/services/serverService";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import type { AuthenticationType } from "@/types/server";
 import "./forms.css";
+
+type TestStatus = "idle" | "testing" | "success" | "error";
 
 interface SshServerFormProps {
   /** Present in edit mode - prefills the form and calls updateServer instead of createServer. */
@@ -27,22 +35,41 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
   const [keyPassphrase, setKeyPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testMessage, setTestMessage] = useState<string | null>(null);
+
+  function buildInput(): ServerFormInput {
+    return {
+      name: name.trim(),
+      host: host.trim(),
+      sshPort: Number(port) || 0,
+      username: username.trim(),
+      authenticationType: authMethod,
+      privateKeyPath: authMethod === "privateKey" ? privateKeyPath.trim() : undefined,
+      password: authMethod === "password" && password ? password : undefined,
+      keyPassphrase: authMethod === "privateKey" && keyPassphrase ? keyPassphrase : undefined,
+    };
+  }
+
+  async function handleTestConnection() {
+    setTestStatus("testing");
+    setTestMessage(null);
+    try {
+      await testSshConnection(buildInput());
+      setTestStatus("success");
+      setTestMessage("Connected successfully.");
+    } catch (err) {
+      setTestStatus("error");
+      setTestMessage(err instanceof Error ? err.message : "Couldn't connect.");
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const input = {
-        name: name.trim(),
-        host: host.trim(),
-        sshPort: Number(port) || 0,
-        username: username.trim(),
-        authenticationType: authMethod,
-        privateKeyPath: authMethod === "privateKey" ? privateKeyPath.trim() : undefined,
-        password: authMethod === "password" && password ? password : undefined,
-        keyPassphrase: authMethod === "privateKey" && keyPassphrase ? keyPassphrase : undefined,
-      };
+      const input = buildInput();
       const saved = isEditing && editingServer
         ? await updateServer(editingServer.id, input)
         : await createServer(input);
@@ -154,20 +181,33 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
         </p>
       </div>
 
+      {testMessage && (
+        <p
+          className="form-note"
+          style={{ color: testStatus === "success" ? "var(--success)" : "var(--danger)" }}
+        >
+          {testMessage}
+        </p>
+      )}
+
       {error && (
         <p className="form-note" style={{ color: "var(--danger)" }}>
           {error}
         </p>
       )}
 
-      <div className="form-actions">
+      <div className="form-actions" style={{ justifyContent: "space-between" }}>
+        <Button type="button" variant="secondary" onClick={handleTestConnection} disabled={testStatus === "testing" || busy}>
+          {testStatus === "testing" ? "Testing..." : "Test connection"}
+        </Button>
         <Button type="submit" disabled={busy}>
           {isEditing ? "Save changes" : "Save server"}
         </Button>
       </div>
       <p className="form-note">
-        Etap 3's real SSH transport isn't built yet, so saving stores the
-        server for later - it doesn't test the connection.
+        {isEditing
+          ? "Leaving the password/passphrase blank keeps the one already saved - test connection needs it re-entered to check a changed credential."
+          : "Test connection opens a real SSH connection and closes it again - it doesn't save anything."}
       </p>
     </form>
   );

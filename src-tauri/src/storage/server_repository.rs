@@ -45,7 +45,46 @@ impl ServerRepository {
         )
         .map_err(|err| AppError::Storage(format!("failed to create the servers table: {err}")))?;
 
+        // Etap 3's TOFU host key store - a separate table, not a column on
+        // `servers`, since it's connection-security bookkeeping rather than
+        // server metadata, and it's fine for a row to not exist yet (no
+        // connection made) or to change independently of the server's own
+        // fields being edited.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ssh_known_hosts (
+                server_id    TEXT PRIMARY KEY,
+                fingerprint  TEXT NOT NULL
+            )",
+            (),
+        )
+        .map_err(|err| AppError::Storage(format!("failed to create the ssh_known_hosts table: {err}")))?;
+
         Ok(Self { conn: Mutex::new(conn) })
+    }
+
+    /// `None` means no connection has ever succeeded for this server - the
+    /// next `ssh::connect` call trusts whatever host key it sees and this
+    /// becomes the baseline every later connection is checked against.
+    pub fn get_known_host_fingerprint(&self, server_id: Uuid) -> AppResult<Option<String>> {
+        self.lock()
+            .query_row(
+                "SELECT fingerprint FROM ssh_known_hosts WHERE server_id = ?1",
+                params![server_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| AppError::Storage(format!("failed to read the known host key: {err}")))
+    }
+
+    pub fn set_known_host_fingerprint(&self, server_id: Uuid, fingerprint: &str) -> AppResult<()> {
+        self.lock()
+            .execute(
+                "INSERT INTO ssh_known_hosts (server_id, fingerprint) VALUES (?1, ?2)
+                 ON CONFLICT(server_id) DO UPDATE SET fingerprint = excluded.fingerprint",
+                params![server_id.to_string(), fingerprint],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to record the known host key: {err}")))?;
+        Ok(())
     }
 
     pub fn create(&self, input: &ServerInput) -> AppResult<Server> {
@@ -140,6 +179,15 @@ impl ServerRepository {
             ],
         )
         .map_err(|err| AppError::Storage(format!("failed to update server: {err}")))?;
+
+        // A previously recorded host key belongs to the old host:port - if
+        // either changed, it would otherwise be compared against a
+        // different machine's key on the next connection and get rejected
+        // as a "mismatch" that isn't actually one.
+        if existing.host != updated.host || existing.ssh_port != updated.ssh_port {
+            conn.execute("DELETE FROM ssh_known_hosts WHERE server_id = ?1", params![id.to_string()])
+                .map_err(|err| AppError::Storage(format!("failed to clear the stale known host key: {err}")))?;
+        }
         drop(conn);
 
         Ok(updated)
@@ -153,6 +201,8 @@ impl ServerRepository {
         if affected == 0 {
             return Err(AppError::NotFound(format!("server {id}")));
         }
+        conn.execute("DELETE FROM ssh_known_hosts WHERE server_id = ?1", params![id.to_string()])
+            .map_err(|err| AppError::Storage(format!("failed to clear the known host key: {err}")))?;
         Ok(())
     }
 

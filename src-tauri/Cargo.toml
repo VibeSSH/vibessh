@@ -39,8 +39,18 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "sync-s
 # Server records (Etap 2) - "bundled" statically links SQLite so users don't
 # need a system libsqlite3 install.
 rusqlite = { version = "0.32", features = ["bundled"] }
+# SSH transport (Etap 3) - pure Rust, async/tokio-native. "ring" instead of
+# the default aws-lc-rs backend: aws-lc-rs needs cmake to build its C/asm
+# core, which isn't guaranteed to be installed; ring builds with just the
+# MSVC toolchain already required for this project (same backend rustls
+# already uses here, see agent/Cargo.toml).
+russh = { version = "0.63", default-features = false, features = ["ring", "rsa"] }
 
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code
 # doesn't bind sockets itself.
 tokio = { version = "1", features = ["net"] }
+# tests/ssh_client.rs's mock SSH server needs a host key - russh's own
+# `PrivateKey::random` wants a rand 0.10-shaped RNG, unrelated to (and
+# coexisting fine alongside) the workspace's rand 0.8 used elsewhere.
+rand = "0.10"
