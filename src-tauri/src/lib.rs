@@ -13,7 +13,7 @@ mod state;
 mod storage;
 mod transport;
 
-use state::{AppState, PairingSession, SshSessionManager};
+use state::{AppState, PairingSession, SshSessionManager, TerminalSessionManager};
 use storage::server_repository::ServerRepository;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -33,6 +33,7 @@ pub fn run() {
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
+        .manage(TerminalSessionManager::new())
         .setup(|app| {
             // Needs the resolved app data dir, which only exists once the
             // app is running - can't be built alongside the other .manage()
@@ -54,6 +55,10 @@ pub fn run() {
             commands::server_commands::list_servers,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
+            commands::terminal_commands::open_terminal,
+            commands::terminal_commands::write_to_terminal,
+            commands::terminal_commands::resize_terminal,
+            commands::terminal_commands::close_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

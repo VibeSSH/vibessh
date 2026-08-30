@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -28,6 +29,7 @@ const STATUS_LABEL: Record<ServerConnectionStatus, string> = {
 };
 
 export function Servers() {
+  const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<ManagedServer | null>(null);
   const [deletingServer, setDeletingServer] = useState<ManagedServer | null>(null);
@@ -105,6 +107,13 @@ export function Servers() {
                 <Badge tone={STATUS_TONE[server.status]}>{STATUS_LABEL[server.status]}</Badge>
                 {server.connectionMode === "ssh" && (
                   <div className="server-list-actions">
+                    <button
+                      className="server-list-action"
+                      aria-label={`Open a terminal to ${server.name}`}
+                      onClick={() => navigate(`/terminal/${server.id}`)}
+                    >
+                      <Icon name="terminal" size={14} />
+                    </button>
                     <button
                       className="server-list-action"
                       aria-label={`Edit ${server.name}`}

@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use russh::keys::{load_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{client, ChannelMsg, Disconnect};
+use tokio::sync::mpsc;
 
 use crate::errors::{AppError, AppResult};
 use vibessh_protocol::CommandOutput;
@@ -139,6 +140,96 @@ impl SshSession {
 
     pub async fn close(&self) {
         let _ = self.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+    }
+
+    /// Opens an interactive PTY + shell and spawns a background task that
+    /// drives it for as long as the returned `TerminalHandle` lives: remote
+    /// output is forwarded to `on_output` as it arrives, and the task ends
+    /// (calling `on_closed` once) when either side closes the channel or
+    /// the handle - and with it, its input channel - is dropped.
+    pub async fn open_terminal(
+        &self,
+        cols: u32,
+        rows: u32,
+        mut on_output: impl FnMut(String) + Send + 'static,
+        on_closed: impl FnOnce(Option<String>) + Send + 'static,
+    ) -> AppResult<TerminalHandle> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open a terminal channel: {err}")))?;
+        channel
+            .request_pty(true, "xterm-256color", cols, rows, 0, 0, &[])
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't request a PTY: {err}")))?;
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't start a shell: {err}")))?;
+
+        let (input_tx, mut input_rx) = mpsc::unbounded_channel::<TerminalInput>();
+
+        tokio::spawn(async move {
+            let mut channel = channel;
+            let close_reason = loop {
+                tokio::select! {
+                    input = input_rx.recv() => {
+                        match input {
+                            Some(TerminalInput::Data(data)) => {
+                                if channel.data_bytes(data).await.is_err() {
+                                    break Some("failed to send input to the remote shell".to_string());
+                                }
+                            }
+                            Some(TerminalInput::Resize { cols, rows }) => {
+                                let _ = channel.window_change(cols, rows, 0, 0).await;
+                            }
+                            // The TerminalHandle (and its sender) was dropped -
+                            // the UI closed this terminal from its side.
+                            None => {
+                                let _ = channel.close().await;
+                                break None;
+                            }
+                        }
+                    }
+                    msg = channel.wait() => {
+                        match msg {
+                            Some(ChannelMsg::Data { data }) => on_output(String::from_utf8_lossy(&data).into_owned()),
+                            Some(ChannelMsg::ExtendedData { data, .. }) => {
+                                on_output(String::from_utf8_lossy(&data).into_owned());
+                            }
+                            Some(ChannelMsg::Close) | None => break None,
+                            _ => {}
+                        }
+                    }
+                }
+            };
+            on_closed(close_reason);
+        });
+
+        Ok(TerminalHandle { input_tx })
+    }
+}
+
+/// A handle to a running interactive shell, opened by `SshSession::open_terminal`.
+/// Dropping it ends the underlying background task and closes the remote
+/// channel - there's no separate `close()` to remember to call.
+pub struct TerminalHandle {
+    input_tx: mpsc::UnboundedSender<TerminalInput>,
+}
+
+enum TerminalInput {
+    Data(Vec<u8>),
+    Resize { cols: u32, rows: u32 },
+}
+
+impl TerminalHandle {
+    pub fn write(&self, data: Vec<u8>) {
+        let _ = self.input_tx.send(TerminalInput::Data(data));
+    }
+
+    pub fn resize(&self, cols: u32, rows: u32) {
+        let _ = self.input_tx.send(TerminalInput::Resize { cols, rows });
     }
 }
 

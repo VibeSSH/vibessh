@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{AuthenticationType, Server, ServerInput};
-use crate::ssh::{self, SshAuth, SshCredentials, SshSession};
+use crate::ssh::{self, SshAuth, SshCredentials, SshSession, TerminalHandle};
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
@@ -44,6 +44,25 @@ pub async fn execute_command(
             session.execute_command(command).await.map_err(|_| first_err)
         }
     }
+}
+
+/// Opens an interactive shell against a saved server, reusing a cached
+/// connection when there is one. Unlike `execute_command`, a dead cached
+/// connection here isn't retried automatically - opening a terminal is a
+/// user-initiated action with its own visible feedback, so surfacing the
+/// failure and letting them try again is clearer than silently reconnecting
+/// underneath a UI element they just clicked.
+pub async fn open_terminal(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    cols: u32,
+    rows: u32,
+    on_output: impl FnMut(String) + Send + 'static,
+    on_closed: impl FnOnce(Option<String>) + Send + 'static,
+) -> AppResult<TerminalHandle> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.open_terminal(cols, rows, on_output, on_closed).await
 }
 
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {

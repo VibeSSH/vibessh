@@ -1,8 +1,10 @@
 mod pairing_session;
 mod ssh_sessions;
+mod terminal_sessions;
 
 pub use pairing_session::PairingSession;
 pub use ssh_sessions::SshSessionManager;
+pub use terminal_sessions::TerminalSessionManager;
 
 /// Shared application state, injected into every Tauri command via `State<AppState>`.
 ///

@@ -5,3 +5,4 @@ pub mod app_commands;
 pub mod pairing_commands;
 pub mod server_commands;
 pub mod ssh_commands;
+pub mod terminal_commands;

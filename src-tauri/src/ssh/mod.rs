@@ -7,4 +7,4 @@
 pub mod client;
 mod transport;
 
-pub use client::{connect, SshAuth, SshCredentials, SshSession};
+pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};

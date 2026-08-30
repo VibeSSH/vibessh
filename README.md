@@ -120,7 +120,27 @@ same `ServerConnection` interface on the Rust side.
       `write_file` stay honest `not implemented yet` stubs - those need
       their own remote-side mechanics (SFTP, process manager, systemd) that
       are later stages, not "run a command" alone
-- [ ] Terminal, SFTP, process manager, systemd, Docker
+- [x] Terminal — an interactive PTY + shell over the same `russh` connection
+      as Etap 3, not a separate transport. `SshSession::open_terminal` opens
+      a channel, requests a PTY and a shell, then spawns a background task
+      that bridges it: remote output is forwarded out through a callback,
+      writes/resizes come in through an internal channel, and dropping the
+      returned `TerminalHandle` is what actually closes the remote channel
+      (no separate close-and-forget-to-call-it method). Each terminal gets
+      its own Tauri event pair (`terminal://{id}/output`/`/closed`) instead
+      of one shared name, since - unlike pairing - more than one can
+      reasonably be open at once. The frontend is real xterm.js (`@xterm/
+      xterm` + the fit addon), reached from a terminal icon on each SSH
+      server's row; output is written straight into xterm with no parsing
+      on the frontend side, so real ANSI colors/cursor movement/etc. all
+      work exactly like any other terminal emulator. Verified with an
+      integration test against a real local `russh::server` implementing an
+      echoing shell (open, write, receive echoed output, resize without
+      disrupting the session, clean close on drop), and a one-off manual
+      run against the project's real test server: a genuine interactive
+      `bash` session, MOTD banner, colored prompt, and a command's output
+      all round-tripped correctly
+- [ ] SFTP, process manager, systemd, Docker
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -212,10 +232,13 @@ src/                        Frontend (React + TypeScript)
     ui/                     Reusable design-system components
     servers/                AddServerModal (add/edit), SshServerForm (real, Etap 2/3 -
                             includes "Test connection"), DeleteServerDialog,
-                            AgentPairingFlow (real), CapabilityBadges, MetricsPreview
-  pages/                    Dashboard, Servers, Settings
+                            AgentPairingFlow (real), CapabilityBadges, MetricsPreview,
+                            TerminalView (real, xterm.js over the Terminal module's
+                            open/write/resize/close commands)
+  pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId)
   hooks/
-  services/                 Tauri command wrappers (pairingService.ts, serverService.ts)
+  services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
+                            terminalService.ts)
   stores/                   Zustand stores (serversStore.ts - SSH-mode rows are Etap 2-persisted, agent-mode rows still session-only)
   types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics)
   config/                   Navigation/module config
@@ -223,23 +246,25 @@ src/                        Frontend (React + TypeScript)
 src-tauri/                  Desktop backend (Rust, Tauri)
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
-                             server_commands.rs, ssh_commands.rs
+                             server_commands.rs, ssh_commands.rs, terminal_commands.rs
     services/                 Business logic, incl. server_service.rs (validation +
                               repository/keyring orchestration), ssh_service.rs
-                              (resolves a Server + keyring secret into ssh::connect's input)
+                              (resolves a Server + keyring secret into ssh::connect's/
+                              open_terminal's input)
     models/                    DTOs shared with the frontend (incl. Server/ServerInput/ConnectionMode)
     errors/                     Shared AppError/AppResult
     state/                       AppState, PairingSession (Etap H), SshSessionManager (Etap 3 -
-                                 caches one live connection per server id)
+                                 caches one live connection per server id), TerminalSessionManager
+                                 (Terminal module - caches open interactive shells by terminal id)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
-    ssh/                             client.rs (connect/TOFU/auth/exec, `russh`), transport.rs
-                                     (adapts SshSession to ServerConnection) - Etap 3
+    ssh/                             client.rs (connect/TOFU/auth/exec/open_terminal, `russh`),
+                                     transport.rs (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
                                        server id); server_repository.rs (SQLite, Etap 2 servers +
                                        Etap 3 ssh_known_hosts)
-  tests/                       agent_client.rs, ssh_client.rs (both drive real protocol code
-                               against a local mock server, not a reimplementation of it)
+  tests/                       agent_client.rs, ssh_client.rs, ssh_terminal.rs (all drive real
+                               protocol code against a local mock server, not a reimplementation of it)
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
