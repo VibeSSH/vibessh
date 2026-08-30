@@ -8,14 +8,17 @@ export const primaryNav: NavModule[] = [
 ];
 
 /**
- * Per-server modules. These map 1:1 to the VibeSSH product surface but are
- * implemented in later stages (SSH in Etap 3, SFTP/monitoring/actions after).
- * Listed now so the shell and branding are in place before the features land.
+ * Per-server modules. Each is real (SSH transport, SFTP, monitoring,
+ * systemd/Docker actions), but every one of them needs a specific server to
+ * act on - the sidebar link lands on a server picker (see
+ * `pages/ModulePicker.tsx`), not the module directly, since there's no
+ * "current server" concept outside of that. `pro` is the only one still
+ * genuinely unbuilt.
  */
 export const moduleNav: NavModule[] = [
-  { id: "terminal", label: "VibeSSH Terminal", path: "/terminal", icon: "terminal", comingSoon: true },
-  { id: "files", label: "VibeSSH Files", path: "/files", icon: "folder", comingSoon: true },
-  { id: "monitor", label: "VibeSSH Monitor", path: "/monitor", icon: "activity", comingSoon: true },
-  { id: "actions", label: "VibeSSH Actions", path: "/actions", icon: "zap", comingSoon: true },
+  { id: "terminal", label: "VibeSSH Terminal", path: "/terminal", icon: "terminal" },
+  { id: "files", label: "VibeSSH Files", path: "/files", icon: "folder" },
+  { id: "monitor", label: "VibeSSH Monitor", path: "/monitor", icon: "activity" },
+  { id: "actions", label: "VibeSSH Actions", path: "/actions", icon: "zap" },
   { id: "pro", label: "VibeSSH Pro", path: "/pro", icon: "sparkles", comingSoon: true },
 ];

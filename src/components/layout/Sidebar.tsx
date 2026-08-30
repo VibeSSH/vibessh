@@ -32,17 +32,28 @@ export function Sidebar() {
 
         {!collapsed && <div className="sidebar-section-label">Modules</div>}
         <div className="sidebar-section">
-          {moduleNav.map((item) => (
-            <span key={item.id} className="sidebar-link sidebar-link-disabled" title="Coming soon">
-              <Icon name={item.icon} size={18} />
-              {!collapsed && (
-                <>
-                  <span>{item.label}</span>
-                  <span className="sidebar-soon">soon</span>
-                </>
-              )}
-            </span>
-          ))}
+          {moduleNav.map((item) =>
+            item.comingSoon ? (
+              <span key={item.id} className="sidebar-link sidebar-link-disabled" title="Coming soon">
+                <Icon name={item.icon} size={18} />
+                {!collapsed && (
+                  <>
+                    <span>{item.label}</span>
+                    <span className="sidebar-soon">soon</span>
+                  </>
+                )}
+              </span>
+            ) : (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                className={({ isActive }) => `sidebar-link ${isActive ? "sidebar-link-active" : ""}`}
+              >
+                <Icon name={item.icon} size={18} />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            ),
+          )}
         </div>
       </nav>
 
