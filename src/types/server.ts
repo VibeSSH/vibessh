@@ -19,6 +19,8 @@ export interface ServerSummary {
   sshPort: number;
   username: string;
   authenticationType: AuthenticationType;
+  /** Only meaningful when authenticationType is "privateKey" - a path, never key content. */
+  privateKeyPath?: string;
   connectionMode: ConnectionMode;
   agentId?: string;
   agentStatus?: AgentStatus;

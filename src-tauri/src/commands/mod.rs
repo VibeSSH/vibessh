@@ -3,3 +3,4 @@
 // each function — those only resolve through the function's real path.
 pub mod app_commands;
 pub mod pairing_commands;
+pub mod server_commands;

@@ -69,14 +69,30 @@ same `ServerConnection` interface on the Rust side.
       state to the UI over Tauri events (Connecting → Connected, with a
       live TTL countdown and a "generate new code" escape hatch) - this is
       real, not mocked, verified against a real WebSocket handshake.
-      **Connect with SSH** is real UI with no backend to submit to yet
-      (`SshTransport` is Etap 3). Paired/added servers show in a list with
-      type (SSH/Agent) and status badges - session-only for now, since
-      server storage (Etap 2) isn't built
-- [ ] SSH transport implementation
-- [ ] Server storage (SQLite for server records - credential storage already
-      landed early, see pairing above; the server *list* is currently
-      in-memory only, see Etap H)
+      **Connect with SSH** now saves for real (Etap 2, below) - add, edit and
+      remove all round-trip through the SQLite repository. Paired agent
+      servers still only show for the current session, since agent-mode rows
+      aren't persisted yet
+- [ ] SSH transport implementation (`SshTransport` - Etap 3; saved SSH
+      servers don't connect yet, only store)
+- [x] Server storage (Etap 2) — SQLite (`rusqlite`, bundled) holds the
+      non-secret server row (name/host/port/username/auth type/private key
+      *path*); password and key passphrase go to the OS credential store via
+      the same `keyring`-backed module pairing's credential uses, now
+      generalized to multiple secret kinds keyed by `(server_id, kind)` so
+      they never collide. Private keys are referenced by file path, not
+      content - Windows Credential Manager caps a generic credential at
+      ~2.5KB, too small for a typical key. `server_service` validates input
+      and keeps the two stores in sync (delete removes both the row and any
+      secrets; a blank password/passphrase on edit means "keep the existing
+      one," since the frontend never has it to resend). Covered by 15 Rust
+      tests exercising the real SQLite file and the real OS keyring (create/
+      update/delete/list, validation failures, secret collision, keep-on-
+      blank-update). The Servers page loads/creates/edits/deletes through
+      this for real; verified in-browser up to the point a plain browser tab
+      can reach (form validation, tab switching, error surfacing all work) -
+      the actual Tauri `invoke()` round trip needs the native webview, which
+      isn't exercised by that pass
 - [ ] Terminal, SFTP, process manager, systemd, Docker
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
@@ -167,26 +183,30 @@ src/                        Frontend (React + TypeScript)
   components/
     layout/                 Sidebar, Topbar, AppLayout
     ui/                     Reusable design-system components
-    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real),
+    servers/                AddServerModal (add/edit), SshServerForm (real, Etap 2),
+                            DeleteServerDialog, AgentPairingFlow (real),
                             CapabilityBadges, MetricsPreview
   pages/                    Dashboard, Servers, Settings
   hooks/
-  services/                 Tauri command wrappers (incl. pairingService.ts)
-  stores/                   Zustand stores (incl. serversStore.ts - session-only until Etap 2)
+  services/                 Tauri command wrappers (pairingService.ts, serverService.ts)
+  stores/                   Zustand stores (serversStore.ts - SSH-mode rows are Etap 2-persisted, agent-mode rows still session-only)
   types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics)
   config/                   Navigation/module config
 
 src-tauri/                  Desktop backend (Rust, Tauri)
   src/
-    commands/                Tauri command entry points (thin), incl. pairing_commands.rs
-    services/                 Business logic
-    models/                    DTOs shared with the frontend (incl. Server/ConnectionMode)
+    commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
+                             server_commands.rs
+    services/                 Business logic, incl. server_service.rs (validation +
+                              repository/keyring orchestration)
+    models/                    DTOs shared with the frontend (incl. Server/ServerInput/ConnectionMode)
     errors/                     Shared AppError/AppResult
     state/                       AppState, PairingSession (Etap H's running-task handle)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
-    ssh/                             Reserved for SshTransport impl
-    storage/                           credentials.rs (OS keyring); server repository still reserved
+    ssh/                             Reserved for SshTransport impl (Etap 3)
+    storage/                           credentials.rs (OS keyring, multiple secret kinds per
+                                       server id); server_repository.rs (SQLite, Etap 2)
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)

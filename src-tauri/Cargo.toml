@@ -36,6 +36,9 @@ native-tls = "0.2"
 # OS credential store (Windows Credential Manager / macOS Keychain / Linux
 # Secret Service) for agent device credentials - see storage/credentials.rs.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
+# Server records (Etap 2) - "bundled" statically links SQLite so users don't
+# need a system libsqlite3 install.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code

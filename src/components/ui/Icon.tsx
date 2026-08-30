@@ -16,6 +16,8 @@ const paths: Record<string, string> = {
   copy: "M9 9h10v10H9zM5 15V5h10",
   check: "M20 6 9 17l-5-5",
   key: "M15 7a4 4 0 1 1-4 4M2 21l7-7M9 14l3 3M13 10l3 3",
+  edit: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z",
+  trash: "M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z",
 };
 
 interface IconProps {

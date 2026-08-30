@@ -46,3 +46,25 @@
   font-size: 12px;
   color: var(--text-tertiary);
 }
+
+.server-list-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.server-list-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.server-list-action:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}

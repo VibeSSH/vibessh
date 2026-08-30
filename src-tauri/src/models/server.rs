@@ -40,6 +40,14 @@ pub struct Server {
     pub ssh_port: u16,
     pub username: String,
     pub authentication_type: AuthenticationType,
+    /// Only meaningful for `AuthenticationType::PrivateKey`. A *path* to a
+    /// key file, not the key's contents - the file's own permissions are
+    /// what protect it, same as any other SSH client. Storing key content
+    /// directly would mean writing potentially several KB into the OS
+    /// credential store, which on Windows has a hard ~2.5KB size ceiling
+    /// for generic credentials - too small for a 4096-bit RSA key. Not a
+    /// secret itself, so it lives in this row, not the keyring.
+    pub private_key_path: Option<String>,
     pub connection_mode: ConnectionMode,
     /// Set once a Vibe Agent has been paired for this server.
     pub agent_id: Option<Uuid>,
@@ -47,4 +55,25 @@ pub struct Server {
     pub group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// What the frontend submits to create or replace a server. Secrets
+/// (`password`, `key_passphrase`) are pulled out and sent to the OS keyring
+/// by the service layer - they never reach `server_repository`, which only
+/// ever sees the non-secret `Server` shape above.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerInput {
+    pub name: String,
+    pub host: String,
+    pub ssh_port: u16,
+    pub username: String,
+    pub authentication_type: AuthenticationType,
+    pub private_key_path: Option<String>,
+    pub group_id: Option<Uuid>,
+    /// Required when `authentication_type` is `Password`.
+    pub password: Option<String>,
+    /// Optional even when `authentication_type` is `PrivateKey` - not
+    /// every key file has a passphrase.
+    pub key_passphrase: Option<String>,
 }

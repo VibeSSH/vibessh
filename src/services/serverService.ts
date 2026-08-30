@@ -1,0 +1,50 @@
+import { callCommand } from "./tauri";
+import type { ManagedServer } from "@/stores/serversStore";
+import type { AuthenticationType, ServerSummary } from "@/types/server";
+
+/** Mirrors the Rust `ServerInput` DTO - what create/update submit. */
+export interface ServerFormInput {
+  name: string;
+  host: string;
+  sshPort: number;
+  username: string;
+  authenticationType: AuthenticationType;
+  privateKeyPath?: string;
+  groupId?: string;
+  /** Required on create for password auth; on update, blank means "keep the existing password". */
+  password?: string;
+  /** Same keep-existing-when-blank rule as password, but always optional. */
+  keyPassphrase?: string;
+}
+
+export function listServers(): Promise<ServerSummary[]> {
+  return callCommand<ServerSummary[]>("list_servers");
+}
+
+export function createServer(input: ServerFormInput): Promise<ServerSummary> {
+  return callCommand<ServerSummary>("create_server", { input });
+}
+
+export function updateServer(id: string, input: ServerFormInput): Promise<ServerSummary> {
+  return callCommand<ServerSummary>("update_server", { id, input });
+}
+
+export function deleteServer(id: string): Promise<void> {
+  return callCommand<void>("delete_server", { id });
+}
+
+/** No live status check exists yet (that's Etap 3's SshTransport), so a freshly loaded server is just "unknown". */
+export function serverSummaryToManagedServer(server: ServerSummary): ManagedServer {
+  return {
+    id: server.id,
+    name: server.name,
+    host: server.host,
+    connectionMode: server.connectionMode,
+    status: "unknown",
+    agentId: server.agentId,
+    sshPort: server.sshPort,
+    username: server.username,
+    authenticationType: server.authenticationType,
+    privateKeyPath: server.privateKeyPath,
+  };
+}

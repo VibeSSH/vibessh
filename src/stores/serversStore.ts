@@ -1,12 +1,14 @@
 import { create } from "zustand";
-import type { ConnectionMode, ServerConnectionStatus } from "@/types/server";
+import type { AuthenticationType, ConnectionMode, ServerConnectionStatus } from "@/types/server";
 import type { AgentCapabilities } from "@/types/pairing";
 
 /**
- * Etap 2 (SQLite server repository) isn't built yet, so this is
- * intentionally session-only - added servers vanish on app restart. It
- * exists so Etap H's UI has somewhere real to put what pairing produces
- * instead of mocking a list that goes nowhere.
+ * Agent-paired servers (Etap H) still live here only for the session - Etap
+ * 2's server storage doesn't persist connectionMode "agent" rows yet, so
+ * those vanish on app restart. SSH-mode servers loaded via `setServers` are
+ * the real, persisted Etap 2 records; the sshPort/username/authenticationType/
+ * privateKeyPath fields exist so the Servers page can prefill an edit form
+ * or call deleteServer without a second round trip per row.
  */
 export interface ManagedServer {
   id: string;
@@ -18,10 +20,15 @@ export interface ManagedServer {
   agentVersion?: string;
   /** Only known for connectionMode "agent" - set from the handshake's Etap I capabilities. */
   capabilities?: AgentCapabilities;
+  sshPort?: number;
+  username?: string;
+  authenticationType?: AuthenticationType;
+  privateKeyPath?: string;
 }
 
 interface ServersState {
   servers: ManagedServer[];
+  setServers: (servers: ManagedServer[]) => void;
   upsertServer: (server: ManagedServer) => void;
   updateStatus: (id: string, status: ServerConnectionStatus) => void;
   removeServer: (id: string) => void;
@@ -29,6 +36,7 @@ interface ServersState {
 
 export const useServersStore = create<ServersState>((set) => ({
   servers: [],
+  setServers: (servers) => set({ servers }),
   upsertServer: (server) =>
     set((state) => {
       const existing = state.servers.findIndex((s) => s.id === server.id);
