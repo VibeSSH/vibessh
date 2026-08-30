@@ -50,13 +50,28 @@ function TitleBarBtn({ icon, size, onClick, className, ariaLabel }: TitleBarBtnP
  * drag-region` HTML attribute, same as Voltius: a mousedown anywhere on the
  * bar that isn't a button/input/link starts the OS window-move gesture via
  * `appWindow.startDragging()`.
+ *
+ * All four window methods here (minimize/toggleMaximize/close/
+ * startDragging) need their own explicit permission in capabilities/
+ * default.json - Tauri 2's `core:default` window permission set is
+ * read-only (is_minimized, is_maximized, etc.), not the commands that
+ * actually change window state. Missing that was a real bug: the window
+ * genuinely couldn't be moved, minimized, or maximized in the real app,
+ * silently (a rejected permission check just rejects the promise; nothing
+ * surfaced in the UI, and the browser-preview verification this project
+ * otherwise leans on couldn't have caught it either, since currentWindow()
+ * resolves to null there before any permission check would even run).
+ * .catch(console.error) below at least makes a *future* permission gap
+ * visible in devtools instead of a silently inert button.
  */
 export function TitleBar() {
   function handleMouseDown(event: React.MouseEvent) {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     if (!target.closest('button, a, input, [role="button"]')) {
-      currentWindow()?.startDragging();
+      currentWindow()
+        ?.startDragging()
+        .catch((err) => console.error("startDragging failed:", err));
     }
   }
 
@@ -66,9 +81,25 @@ export function TitleBar() {
           underneath and showing "VibeSSH" in both looked like broken,
           overlapping text rather than two separate rows. */}
       <div className="titlebar-controls">
-        <TitleBarBtn icon="minus" size={16} onClick={() => currentWindow()?.minimize()} ariaLabel="Minimize" />
-        <TitleBarBtn icon="square" size={12} onClick={() => currentWindow()?.toggleMaximize()} ariaLabel="Maximize" />
-        <TitleBarBtn icon="x" size={16} onClick={() => currentWindow()?.close()} className="titlebar-btn-close" ariaLabel="Close" />
+        <TitleBarBtn
+          icon="minus"
+          size={16}
+          onClick={() => currentWindow()?.minimize().catch((err) => console.error("minimize failed:", err))}
+          ariaLabel="Minimize"
+        />
+        <TitleBarBtn
+          icon="square"
+          size={12}
+          onClick={() => currentWindow()?.toggleMaximize().catch((err) => console.error("toggleMaximize failed:", err))}
+          ariaLabel="Maximize"
+        />
+        <TitleBarBtn
+          icon="x"
+          size={16}
+          onClick={() => currentWindow()?.close().catch((err) => console.error("close failed:", err))}
+          className="titlebar-btn-close"
+          ariaLabel="Close"
+        />
       </div>
     </div>
   );
