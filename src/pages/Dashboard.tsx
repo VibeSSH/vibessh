@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ServerCard } from "@/components/servers/ServerCard";
+import { useServerPinging } from "@/hooks/useServerPinging";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
 import "./pages.css";
@@ -11,6 +12,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const servers = useServersStore((s) => s.servers);
   const setServers = useServersStore((s) => s.setServers);
+
+  useServerPinging(servers);
 
   useEffect(() => {
     listServers()

@@ -38,7 +38,12 @@ export function testSshConnection(input: ServerFormInput): Promise<void> {
   return callCommand<void>("test_ssh_connection", { input });
 }
 
-/** No live status check exists yet (that's Etap 3's SshTransport), so a freshly loaded server is just "unknown". */
+/** A TCP-connect-timing reachability check against the server's SSH port - resolves to the round trip in ms, rejects if unreachable. No auth involved. */
+export function pingServer(id: string): Promise<number> {
+  return callCommand<number>("ping_server", { id });
+}
+
+/** A freshly loaded server starts "unknown" until the first ping resolves - see useServerPinging, which then calls updateStatus with a real online/offline reading. */
 export function serverSummaryToManagedServer(server: ServerSummary): ManagedServer {
   return {
     id: server.id,

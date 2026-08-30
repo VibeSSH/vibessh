@@ -28,7 +28,7 @@ async-trait = "0.1"
 vibessh-protocol = { path = "../protocol" }
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
-tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 # Agent connections are wss:// with a self-signed cert (Etap K - no CA for

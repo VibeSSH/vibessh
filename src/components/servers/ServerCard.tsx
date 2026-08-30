@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { usePingStore } from "@/stores/pingStore";
 import type { ManagedServer } from "@/stores/serversStore";
 import type { ServerConnectionStatus } from "@/types/server";
 import "./ServerCard.css";
@@ -59,6 +60,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
   const protocolLabel = isAgent ? "AGENT" : "SSH";
   const statusColor = STATUS_COLOR[server.status];
   const identity = server.username ? `${server.username}@${server.host}` : server.host;
+  const latencyMs = usePingStore((s) => s.latencies[server.id]);
 
   return (
     <div className="server-card surface-glass">
@@ -71,9 +73,14 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
             <div className="server-card-title-row">
               <p className="server-card-name">{server.name}</p>
               <span className="server-card-protocol-pill">{protocolLabel}</span>
-              <span className="server-card-status-dot-wrap">
-                {server.status === "online" && <span className="server-card-status-ping" style={{ background: statusColor }} />}
-                <span className="server-card-status-dot" style={{ background: statusColor }} />
+              <span className="server-card-status-group">
+                {!isAgent && server.status === "online" && typeof latencyMs === "number" && (
+                  <span className="server-card-latency">{latencyMs} ms</span>
+                )}
+                <span className="server-card-status-dot-wrap">
+                  {server.status === "online" && <span className="server-card-status-ping" style={{ background: statusColor }} />}
+                  <span className="server-card-status-dot" style={{ background: statusColor }} />
+                </span>
               </span>
             </div>
             <p className="server-card-host">{identity}</p>

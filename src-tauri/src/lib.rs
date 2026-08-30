@@ -56,6 +56,7 @@ pub fn run() {
             commands::server_commands::list_servers,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
+            commands::ssh_commands::ping_server,
             commands::terminal_commands::open_terminal,
             commands::terminal_commands::write_to_terminal,
             commands::terminal_commands::resize_terminal,

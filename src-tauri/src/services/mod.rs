@@ -1,8 +1,10 @@
 mod app_info_service;
+mod ping_service;
 mod server_service;
 mod ssh_service;
 
 pub use app_info_service::get_app_info;
+pub use ping_service::ping_server;
 pub use server_service::{create_server, delete_server, get_server, list_servers, update_server};
 pub use ssh_service::{
     container_logs as server_container_logs, disable_service as disable_server_service,

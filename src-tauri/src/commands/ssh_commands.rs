@@ -22,3 +22,8 @@ pub async fn execute_ssh_command(
 ) -> AppResult<CommandOutput> {
     services::execute_ssh_command(&repo, &sessions, id, &command).await
 }
+
+#[tauri::command]
+pub async fn ping_server(repo: State<'_, ServerRepository>, id: Uuid) -> AppResult<u32> {
+    services::ping_server(&repo, id).await
+}

@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { AddServerModal } from "@/components/servers/AddServerModal";
 import { DeleteServerDialog } from "@/components/servers/DeleteServerDialog";
 import { ServerCard } from "@/components/servers/ServerCard";
+import { useServerPinging } from "@/hooks/useServerPinging";
 import { deleteServer, listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
@@ -31,6 +32,8 @@ export function Servers() {
     () => (needle ? servers.filter((s) => s.name.toLowerCase().includes(needle) || s.host.toLowerCase().includes(needle)) : servers),
     [servers, needle],
   );
+
+  useServerPinging(servers);
 
   useEffect(() => {
     listServers()
