@@ -6,6 +6,7 @@ pub mod cloud_client;
 mod commands;
 mod errors;
 mod models;
+mod runtime;
 mod services;
 // `pub` for the same reason as `agent_client` above - `tests/ssh_client.rs`
 // drives `ssh::connect` directly against a local mock SSH server.
@@ -15,6 +16,7 @@ mod storage;
 mod transport;
 
 use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
+use storage::application_repository::ApplicationRepository;
 use storage::server_repository::ServerRepository;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -42,6 +44,12 @@ pub fn run() {
             // calls above.
             let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
             app.manage(ServerRepository::open(&db_path)?);
+            // Same physical file as ServerRepository above (Applications'
+            // server_id is a real foreign key into servers, which only
+            // means something within one SQLite file) - see
+            // ApplicationRepository::open's own doc comment for why this
+            // is a second independent Connection rather than a shared one.
+            app.manage(ApplicationRepository::open(&db_path)?);
 
             let config_dir = app.path().app_config_dir()?;
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;

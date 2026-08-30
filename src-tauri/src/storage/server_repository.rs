@@ -63,6 +63,14 @@ impl ServerRepository {
         }
         let mut conn = Connection::open(db_path)
             .map_err(|err| AppError::Storage(format!("failed to open the server database: {err}")))?;
+        // Off by default in SQLite, per-connection - without this, the
+        // `applications` table's `ON DELETE RESTRICT`/`CASCADE` clauses
+        // (see storage::migrations, Applications feature) would be inert
+        // documentation rather than an actually enforced constraint, and a
+        // server with applications attached could be deleted right out
+        // from under them through this exact connection.
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
         bootstrap_legacy_schema(&conn)?;
 
         // `servers` (server metadata) and `ssh_known_hosts` (Etap 3's TOFU
@@ -279,9 +287,18 @@ impl ServerRepository {
 
     pub fn delete(&self, id: Uuid) -> AppResult<()> {
         let conn = self.lock();
-        let affected = conn
-            .execute("DELETE FROM servers WHERE id = ?1", params![id.to_string()])
-            .map_err(|err| AppError::Storage(format!("failed to delete server: {err}")))?;
+        let affected = conn.execute("DELETE FROM servers WHERE id = ?1", params![id.to_string()]).map_err(|err| {
+            if is_foreign_key_violation(&err) {
+                // `applications.server_id` is ON DELETE RESTRICT (see
+                // storage::migrations) specifically so this can't happen
+                // silently - the caller (server_service::delete_server)
+                // turns this into a message naming which applications are
+                // still attached, not just "storage error".
+                AppError::InvalidInput(format!("server {id} still has applications attached - remove or move them first"))
+            } else {
+                AppError::Storage(format!("failed to delete server: {err}"))
+            }
+        })?;
         if affected == 0 {
             return Err(AppError::NotFound(format!("server {id}")));
         }
@@ -333,6 +350,27 @@ fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
         created_at: parse_timestamp(row.get::<_, String>(11)?),
         updated_at: parse_timestamp(row.get::<_, String>(12)?),
     })
+}
+
+/// Distinguishes a `FOREIGN KEY constraint failed` (a real, expected
+/// "something still references this row" case - see `delete` above) from
+/// every other kind of SQLite failure, which should stay a generic storage
+/// error rather than being misreported as this specific, actionable one.
+///
+/// Deliberately *not* `extended_code == SQLITE_CONSTRAINT_FOREIGNKEY` -
+/// proven wrong by a real test failure (see
+/// storage::migrations::tests::a_server_with_an_application_attached_cannot_be_deleted):
+/// SQLite's *immediate* RESTRICT check (as opposed to a deferred one,
+/// raised at COMMIT) reports as `SQLITE_CONSTRAINT_TRIGGER` instead, even
+/// though the message correctly says "FOREIGN KEY constraint failed".
+/// Checking the primary code + message text is what's actually reliable
+/// across both cases.
+fn is_foreign_key_violation(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(sqlite_err, Some(message))
+            if sqlite_err.code == rusqlite::ErrorCode::ConstraintViolation && message.contains("FOREIGN KEY")
+    )
 }
 
 fn parse_uuid(value: String) -> Uuid {

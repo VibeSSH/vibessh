@@ -39,6 +39,75 @@ pub fn migrations() -> Migrations<'static> {
                 fingerprint  TEXT NOT NULL
             );",
         ),
+        // Migration 2: Applications (see docs/APPLICATIONS_ARCHITECTURE.md).
+        // `server_id` is nullable (NULL = a Local application, running on
+        // this device rather than a VibeSSH-managed remote server) and
+        // ON DELETE RESTRICT rather than CASCADE or SET NULL - a server
+        // with applications attached must not become deletable out from
+        // under them by accident (see ServerRepository::delete's own
+        // foreign-key-violation handling). `blueprint_id`/`blueprint_version`
+        // are plain columns, not yet a foreign key to a `blueprints` table -
+        // that table doesn't exist until the Blueprint schema phase; these
+        // stay a soft reference until then; every read that renders a
+        // blueprint name of a still-unknown id falls back to showing the
+        // raw id rather than erroring.
+        //
+        // Ports and environment variables are real tables, not JSON blobs
+        // on `applications` - both need real per-row CRUD and (ports)
+        // collision queries (`WHERE application_id != ? AND internal_port =
+        // ? AND bind_address = ?`), which a JSON column can't do without
+        // parsing client-side first. `application_runtime_config` and
+        // `application_metadata` stay JSON deliberately - their field set
+        // genuinely varies per runtime_type/blueprint, so there's no fixed
+        // column set to design against.
+        M::up(
+            "CREATE TABLE applications (
+                id                   TEXT PRIMARY KEY,
+                server_id            TEXT REFERENCES servers(id) ON DELETE RESTRICT,
+                name                 TEXT NOT NULL,
+                description          TEXT,
+                blueprint_id         TEXT NOT NULL,
+                blueprint_version    INTEGER NOT NULL,
+                runtime_type         TEXT NOT NULL,
+                working_directory    TEXT NOT NULL,
+                status               TEXT NOT NULL DEFAULT 'unknown',
+                last_status_check_at TEXT,
+                created_at           TEXT NOT NULL,
+                updated_at           TEXT NOT NULL
+            );
+            CREATE INDEX applications_server_id_idx ON applications (server_id);
+
+            CREATE TABLE application_environment (
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                key            TEXT NOT NULL,
+                value          TEXT NOT NULL,
+                PRIMARY KEY (application_id, key)
+            );
+
+            CREATE TABLE application_ports (
+                id             TEXT PRIMARY KEY,
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                name           TEXT NOT NULL,
+                protocol       TEXT NOT NULL,
+                bind_address   TEXT NOT NULL,
+                internal_port  INTEGER NOT NULL,
+                external_port  INTEGER,
+                required       INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL
+            );
+            CREATE INDEX application_ports_application_id_idx ON application_ports (application_id);
+
+            CREATE TABLE application_runtime_config (
+                application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                config_json    TEXT NOT NULL
+            );
+
+            CREATE TABLE application_metadata (
+                application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                metadata_json  TEXT NOT NULL
+            );",
+        ),
     ])
 }
 
@@ -74,5 +143,57 @@ mod tests {
         // the first) must not try to re-run migration 1 and hit "table
         // already exists".
         migrations().to_latest(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn migration_2_creates_every_applications_table() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN (
+                    'applications', 'application_environment', 'application_ports',
+                    'application_runtime_config', 'application_metadata'
+                )",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 5);
+    }
+
+    #[test]
+    fn a_server_with_an_application_attached_cannot_be_deleted() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO applications (id, server_id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 's1', 'App', 'generic', 1, 'systemd', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let err = conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap_err();
+        // Not `extended_code == SQLITE_CONSTRAINT_FOREIGNKEY` - SQLite's
+        // *immediate* RESTRICT check (as opposed to a deferred one, raised
+        // at COMMIT) reports as SQLITE_CONSTRAINT_TRIGGER (1811) instead,
+        // despite the message correctly saying "FOREIGN KEY constraint
+        // failed". Caught by this exact test, not assumed - see
+        // ServerRepository::delete and is_foreign_key_violation, which
+        // check message text for the same reason.
+        let rusqlite::Error::SqliteFailure(sqlite_err, message) = &err else {
+            panic!("expected a SqliteFailure, got {err:?}");
+        };
+        assert_eq!(sqlite_err.code, rusqlite::ErrorCode::ConstraintViolation);
+        assert!(message.as_deref().unwrap_or_default().contains("FOREIGN KEY"), "unexpected message: {message:?}");
     }
 }
