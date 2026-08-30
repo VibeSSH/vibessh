@@ -249,6 +249,7 @@
     "customJavaPath": "Enter a path myself...",
     "backToDetectedJava": "Choose from detected installations instead",
     "noJavaDetected": "No Java installation was detected automatically - enter a path yourself.",
+    "javaDetectError": "Detection failed: {{error}}",
     "environmentNote": "Optional - variables the application can read from its own environment.",
     "environmentKeyPlaceholder": "KEY",
     "environmentValuePlaceholder": "value",

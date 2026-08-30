@@ -249,6 +249,7 @@
     "customJavaPath": "Wpiszę ścieżkę sam...",
     "backToDetectedJava": "Wybierz zamiast tego z wykrytych instalacji",
     "noJavaDetected": "Nie wykryto automatycznie żadnej instalacji Javy - wpisz ścieżkę ręcznie.",
+    "javaDetectError": "Wykrywanie nie powiodło się: {{error}}",
     "environmentNote": "Opcjonalne - zmienne, które aplikacja może odczytać z własnego środowiska.",
     "environmentKeyPlaceholder": "KLUCZ",
     "environmentValuePlaceholder": "wartość",

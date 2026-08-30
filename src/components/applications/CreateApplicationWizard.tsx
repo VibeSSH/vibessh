@@ -401,14 +401,19 @@ function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersion
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<JavaInstallation[] | null>(null);
   const [detecting, setDetecting] = useState(true);
+  const [detectError, setDetectError] = useState<string | null>(null);
   const [customPath, setCustomPath] = useState(false);
 
   useEffect(() => {
     setDetecting(true);
     setInstallations(null);
+    setDetectError(null);
     detectJavaInstallations(serverId ?? undefined)
       .then(setInstallations)
-      .catch(() => setInstallations([]))
+      .catch((err) => {
+        setInstallations([]);
+        setDetectError(err instanceof Error ? err.message : String(err));
+      })
       .finally(() => setDetecting(false));
   }, [serverId]);
 
@@ -441,7 +446,7 @@ function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersion
           </Button>
         )}
         {!hasDetected && <p className="form-note">{t("createApplicationWizard.noJavaDetected")}</p>}
-        {field.helpText && <p className="form-note">{field.helpText}</p>}
+        {detectError && <p className="form-note form-note-danger">{t("createApplicationWizard.javaDetectError", { error: detectError })}</p>}
       </label>
     );
   }

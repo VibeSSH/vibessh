@@ -34,9 +34,22 @@ pub fn list_blueprints(registry: &BlueprintRegistry) -> Vec<Blueprint> {
     registry.list().into_iter().cloned().collect()
 }
 
-pub fn create_application(
+/// Creates the working directory (local `create_dir_all`, or `mkdir -p`
+/// over the same SSH connection every other Remote feature shares) before
+/// the Application row itself is created - so a fresh working directory
+/// the user just typed in the wizard (as opposed to one from an existing,
+/// already-provisioned setup) doesn't leave `start()` failing on a bare
+/// "No such file or directory" the user has to go fix by hand over a
+/// separate SSH session. `mkdir -p` (not the single-level SFTP
+/// `create_directory` the Files module uses) so a working directory nested
+/// under parents that don't exist yet - `/srv/minecraft/my-server` on a
+/// freshly provisioned host - still works in one step, and so an already-
+/// existing directory is a no-op rather than an error.
+pub async fn create_application(
     repo: &ApplicationRepository,
     registry: &BlueprintRegistry,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
     input: CreateApplicationFromBlueprintInput,
 ) -> AppResult<ApplicationDetail> {
     let name = input.name.trim();
@@ -62,6 +75,8 @@ pub fn create_application(
     };
     let runtime_config = handler.render_runtime_config(&blueprint_inputs)?;
 
+    ensure_working_directory_exists(server_repo, sessions, input.server_id, working_directory).await?;
+
     let create_input = CreateApplicationInput {
         server_id: input.server_id,
         name: name.to_string(),
@@ -76,6 +91,48 @@ pub fn create_application(
         metadata: serde_json::json!({}),
     };
     repo.create(&create_input)
+}
+
+async fn ensure_working_directory_exists(
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Option<Uuid>,
+    working_directory: &str,
+) -> AppResult<()> {
+    match server_id {
+        None => tokio::fs::create_dir_all(working_directory)
+            .await
+            .map_err(|err| AppError::InvalidInput(format!("couldn't create working directory '{working_directory}': {err}"))),
+        Some(server_id) => {
+            let connection = get_or_connect(server_repo, sessions, server_id).await?;
+            let output = connection.execute_command(&format!("mkdir -p {}", shell_quote(working_directory))).await?;
+            if output.exit_code != 0 {
+                let detail = output.stderr.trim();
+                let detail = if detail.is_empty() { "mkdir failed".to_string() } else { detail.to_string() };
+                return Err(AppError::InvalidInput(format!("couldn't create working directory '{working_directory}' on the remote host: {detail}")));
+            }
+            Ok(())
+        }
+    }
+}
+
+/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
+/// of the same function for the full reasoning; duplicated rather than
+/// shared across the `services`/`runtime` module boundary, same as it's
+/// already duplicated between `runtime::remote_process` and
+/// `runtime::docker`.
+fn shell_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 pub fn delete_application(repo: &ApplicationRepository, id: Uuid) -> AppResult<()> {
@@ -265,7 +322,7 @@ mod tests {
     async fn full_lifecycle_create_start_status_stop_delete() {
         let (app_repo, server_repo, sessions, local_process_manager, registry) = temp_setup();
 
-        let detail = create_application(&app_repo, &registry, sleep_command_input()).unwrap();
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
         assert_eq!(detail.application.status, ApplicationStatus::Unknown);
         assert_eq!(detail.runtime_config["command"], serde_json::json!(if cfg!(windows) { "cmd" } else { "sh" }));
 
@@ -295,27 +352,42 @@ mod tests {
         assert!(get_application(&app_repo, detail.application.id).is_err());
     }
 
-    #[test]
-    fn create_rejects_an_unknown_blueprint() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, registry) = temp_setup();
+    #[tokio::test]
+    async fn create_rejects_an_unknown_blueprint() {
+        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.blueprint_id = "does-not-exist".to_string();
-        assert!(create_application(&app_repo, &registry, input).is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
     }
 
-    #[test]
-    fn create_rejects_a_runtime_type_the_blueprint_doesnt_support() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, registry) = temp_setup();
+    #[tokio::test]
+    async fn create_rejects_a_runtime_type_the_blueprint_doesnt_support() {
+        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.runtime_type = RuntimeType::Docker;
-        assert!(create_application(&app_repo, &registry, input).is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
     }
 
-    #[test]
-    fn create_rejects_a_blank_name() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, registry) = temp_setup();
+    #[tokio::test]
+    async fn create_rejects_a_blank_name() {
+        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.name = "   ".to_string();
-        assert!(create_application(&app_repo, &registry, input).is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_creates_a_missing_local_working_directory() {
+        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let mut input = sleep_command_input();
+        let fresh_dir = std::env::temp_dir().join(format!("vibessh-app-service-workdir-{}", Uuid::new_v4()));
+        assert!(!fresh_dir.exists());
+        input.working_directory = fresh_dir.to_string_lossy().into_owned();
+
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, input).await.unwrap();
+
+        assert!(fresh_dir.is_dir());
+        assert_eq!(detail.application.working_directory, fresh_dir.to_string_lossy());
+        std::fs::remove_dir_all(&fresh_dir).ok();
     }
 }

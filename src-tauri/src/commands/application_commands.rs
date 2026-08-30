@@ -29,12 +29,14 @@ pub fn list_blueprints(registry: State<BlueprintRegistry>) -> Vec<Blueprint> {
 }
 
 #[tauri::command]
-pub fn create_application(
-    repo: State<ApplicationRepository>,
-    registry: State<BlueprintRegistry>,
+pub async fn create_application(
+    repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
     input: CreateApplicationFromBlueprintInput,
 ) -> AppResult<ApplicationDetail> {
-    services::create_application(&repo, &registry, input)
+    services::create_application(&repo, &registry, &server_repo, &sessions, input).await
 }
 
 #[tauri::command]
