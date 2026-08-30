@@ -16,9 +16,9 @@ export const primaryNav: NavModule[] = [
  * genuinely unbuilt.
  */
 export const moduleNav: NavModule[] = [
-  { id: "terminal", label: "VibeSSH Terminal", path: "/terminal", icon: "terminal" },
-  { id: "files", label: "VibeSSH Files", path: "/files", icon: "folder" },
-  { id: "monitor", label: "VibeSSH Monitor", path: "/monitor", icon: "activity" },
-  { id: "actions", label: "VibeSSH Actions", path: "/actions", icon: "zap" },
-  { id: "pro", label: "VibeSSH Pro", path: "/pro", icon: "sparkles", comingSoon: true },
+  { id: "terminal", label: "Terminal", path: "/terminal", icon: "terminal" },
+  { id: "files", label: "Files", path: "/files", icon: "folder" },
+  { id: "monitor", label: "Monitor", path: "/monitor", icon: "activity" },
+  { id: "actions", label: "Actions", path: "/actions", icon: "zap" },
+  { id: "pro", label: "Pro", path: "/pro", icon: "sparkles", comingSoon: true },
 ];

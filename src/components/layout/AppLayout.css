@@ -1,8 +1,8 @@
 /* app-shell is the whole window: a custom titlebar (decorations: false, see
-   TitleBar.tsx) stacked above the sidebar+content row. Sidebar sits directly
-   on the frame color with no border of its own (see Sidebar.css) so it reads
-   as one continuous backplate the content "slab" floats on - Voltius's
-   chrome-frame/chrome-slab pattern, ported in globals.css. */
+   TitleBar.tsx) stacked above the content slab. The slab now spans the full
+   width - the earlier two-column sidebar+content layout was replaced by a
+   single-column layout with NavBar's horizontal tabs on top, so there's no
+   second column left to size against. */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -14,24 +14,18 @@
   background: var(--t-bg-terminal);
 }
 
-.app-layout {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-/* No top margin - Sidebar has none either (it spans the full height of
-   .app-layout flush to the top), so a top margin here alone pushed this
-   column's content down relative to the sidebar's own brand row and
-   collapse button, a visible misalignment a screenshot caught. */
 .app-layout-main {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-width: 0;
-  margin: 0 8px 8px 0;
+  min-height: 0;
+  margin: 0 8px 8px 8px;
   background: var(--t-bg-base);
   overflow: hidden;
+  /* .chrome-slab (globals.css) only rounds the top-left corner, right for
+     Voltius's own sidebar+slab split - with no sidebar here the slab is
+     symmetric, so both top corners round to match. */
+  border-top-right-radius: var(--radius-lg);
 }
 
 .app-layout-content {

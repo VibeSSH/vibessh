@@ -21,7 +21,7 @@ interface ModulePickerProps {
 /**
  * Every per-server module (Terminal, Files, Monitor, Actions) needs a
  * specific server to act on - there's no "current server" concept outside
- * of one. Sidebar links for those modules land here instead of jumping
+ * of one. NavBar's tabs for those modules land here instead of jumping
  * straight to a module route with no id, so picking a server is always the
  * first step rather than a dead end.
  */

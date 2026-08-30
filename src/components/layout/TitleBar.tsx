@@ -42,7 +42,7 @@ export function TitleBar() {
 
   return (
     <div className="titlebar" onMouseDown={handleMouseDown}>
-      {/* No app-name label here - the Sidebar's own brand row sits directly
+      {/* No app-name label here - NavBar's own brand mark sits directly
           underneath and showing "VibeSSH" in both looked like broken,
           overlapping text rather than two separate rows. */}
       <div className="titlebar-controls">
