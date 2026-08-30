@@ -121,6 +121,11 @@ mod tests {
                 protocol_version: PROTOCOL_VERSION,
                 error: None,
                 issued_credential: accepted.then(|| "mock-credential".to_string()),
+                capabilities: vibessh_protocol::AgentCapabilities {
+                    docker: true,
+                    systemd: true,
+                    ..Default::default()
+                },
             };
             let _ = ws
                 .send(Message::Text(serde_json::to_string(&response).unwrap()))
@@ -153,8 +158,9 @@ mod tests {
                     AgentConnectionState::Connected {
                         agent_id,
                         issued_credential,
+                        capabilities,
                         ..
-                    } => return (agent_id, issued_credential),
+                    } => return (agent_id, issued_credential, capabilities),
                     _ => continue,
                 }
             }
@@ -164,6 +170,9 @@ mod tests {
 
         assert_eq!(connected.0, agent_id);
         assert_eq!(connected.1.as_deref(), Some("mock-credential"));
+        assert!(connected.2.docker);
+        assert!(connected.2.systemd);
+        assert!(!connected.2.minecraft);
 
         session.cancel();
 

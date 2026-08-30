@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { AddServerModal } from "@/components/servers/AddServerModal";
+import { CapabilityBadges } from "@/components/servers/CapabilityBadges";
 import { useServersStore } from "@/stores/serversStore";
 import type { ServerConnectionStatus } from "@/types/server";
 import "./pages.css";
@@ -60,6 +61,7 @@ export function Servers() {
                 <div className="server-list-main">
                   <span className="server-list-name">{server.name}</span>
                   <span className="server-list-host">{server.host}</span>
+                  {server.capabilities && <CapabilityBadges capabilities={server.capabilities} />}
                 </div>
                 <Badge tone="neutral">{server.connectionMode === "agent" ? "Agent" : "SSH"}</Badge>
                 <Badge tone={STATUS_TONE[server.status]}>{STATUS_LABEL[server.status]}</Badge>

@@ -12,7 +12,9 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 
 use vibessh_lib::agent_client::{run, AgentClientConfig, AgentConnectionState};
-use vibessh_protocol::{HandshakeRequest, HandshakeResponse, LogLine, ServerEvent, PROTOCOL_VERSION};
+use vibessh_protocol::{
+    AgentCapabilities, HandshakeRequest, HandshakeResponse, LogLine, ServerEvent, PROTOCOL_VERSION,
+};
 
 #[tokio::test]
 async fn connects_swallows_heartbeats_and_forwards_real_events() {
@@ -37,6 +39,10 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
             protocol_version: PROTOCOL_VERSION,
             error: None,
             issued_credential: Some("mock-issued-credential".into()),
+            capabilities: AgentCapabilities {
+                terminal: true,
+                ..Default::default()
+            },
         };
         ws.send(Message::Text(serde_json::to_string(&response).unwrap()))
             .await
@@ -73,15 +79,16 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
     let client_task = tokio::spawn(run(config, events_tx, state_tx));
 
     // Wait for the Connected state instead of a fixed sleep.
-    let (connected, issued_credential) = timeout(Duration::from_secs(2), async {
+    let (connected, issued_credential, capabilities) = timeout(Duration::from_secs(2), async {
         loop {
             if let AgentConnectionState::Connected {
                 agent_id: got_id,
                 issued_credential,
+                capabilities,
                 ..
             } = &*state_rx.borrow_and_update()
             {
-                return (*got_id, issued_credential.clone());
+                return (*got_id, issued_credential.clone(), *capabilities);
             }
             state_rx.changed().await.unwrap();
         }
@@ -90,6 +97,8 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
     .expect("timed out waiting for Connected state");
     assert_eq!(connected, agent_id);
     assert_eq!(issued_credential.as_deref(), Some("mock-issued-credential"));
+    assert!(capabilities.terminal);
+    assert!(!capabilities.docker);
 
     let event = timeout(Duration::from_secs(2), events_rx.recv())
         .await

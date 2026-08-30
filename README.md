@@ -78,9 +78,16 @@ same `ServerConnection` interface on the Rust side.
       landed early, see pairing above; the server *list* is currently
       in-memory only, see Etap H)
 - [ ] Terminal, SFTP, process manager, systemd, Docker
-- [ ] Capability-aware UI, realtime metrics dashboard — no agent reports
-      capabilities yet (Etap I), so the Dashboard doesn't show badges for
-      data that doesn't exist
+- [x] Capabilities (Etap I) — the agent detects real host state on every
+      accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
+      the socket file, `minecraft` by scanning `/proc` for a Java process
+      launching a recognizable server jar) and reports it; a `true` means
+      the *host* supports it, not that VibeSSH has that feature built yet.
+      The desktop shows capability badges (supported vs. struck-through) in
+      the pairing flow and the server list instead of assuming every Linux
+      box has Docker/systemd. Verified for real against the project's test
+      server - including `minecraft: true`, correctly detecting an actual
+      running Minecraft server process there
 - [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
 - [ ] Private host mesh — future, architecture reserved for it, not built yet
 
@@ -129,7 +136,7 @@ src/                        Frontend (React + TypeScript)
   components/
     layout/                 Sidebar, Topbar, AppLayout
     ui/                     Reusable design-system components
-    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real)
+    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real), CapabilityBadges
   pages/                    Dashboard, Servers, Settings
   hooks/
   services/                 Tauri command wrappers (incl. pairingService.ts)
@@ -159,7 +166,7 @@ agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
     info.rs                       AgentInfo DTO (id/version/hostname/os/status)
     config.rs                      Data/config dir resolution
     errors.rs                       AgentError/AgentResult (own type, not shared with desktop)
-    capabilities.rs                  Reserved for capability reporting
+    capabilities.rs                  detect() - real systemd/docker/minecraft/terminal detection
     pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
     transport/                         WS server (handshake, heartbeat) + local-only pairing control HTTP route
 
@@ -170,6 +177,7 @@ protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
     dto.rs                         CommandOutput, ServerMetrics, ProcessSummary, ServiceSummary
     error.rs                        ProtocolErrorCode
     pairing.rs                       generate_pairing_code(), PAIRING_CODE_TTL
+    capabilities.rs                   AgentCapabilities (docker/systemd/minecraft/fileAccess/terminal)
 
 scripts/
   setup.ps1                  Setup/build launcher

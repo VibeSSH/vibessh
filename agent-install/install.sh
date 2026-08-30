@@ -284,9 +284,19 @@ EOF
 }
 
 start_service() {
-    log "starting vibessh-agent service"
     systemctl daemon-reload
-    systemctl enable --now vibessh-agent.service
+    # `enable --now` on an already-running, already-enabled unit is a no-op
+    # - re-running this script to deploy an updated binary would silently
+    # keep the old one running otherwise. `restart` after `enable` covers
+    # both the fresh-install and the upgrade case.
+    if systemctl is-active --quiet vibessh-agent.service 2>/dev/null; then
+        log "restarting vibessh-agent service to pick up the new binary"
+        systemctl enable vibessh-agent.service
+        systemctl restart vibessh-agent.service
+    else
+        log "starting vibessh-agent service"
+        systemctl enable --now vibessh-agent.service
+    fi
 }
 
 print_status() {

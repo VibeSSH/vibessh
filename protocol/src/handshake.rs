@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::capabilities::AgentCapabilities;
 use crate::error::ProtocolErrorCode;
 
 /// Bumped whenever a breaking change is made to the message shapes in this
@@ -36,4 +37,8 @@ pub struct HandshakeResponse {
     /// for every future connection instead of the pairing code, which is
     /// now spent. Absent on ordinary reconnects.
     pub issued_credential: Option<String>,
+    /// Real (freshly detected) capabilities on an accepted handshake;
+    /// all-`false` on a rejected one - an unauthenticated attempt doesn't
+    /// get free system fingerprinting.
+    pub capabilities: AgentCapabilities,
 }

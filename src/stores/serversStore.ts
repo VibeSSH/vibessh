@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ConnectionMode, ServerConnectionStatus } from "@/types/server";
+import type { AgentCapabilities } from "@/types/pairing";
 
 /**
  * Etap 2 (SQLite server repository) isn't built yet, so this is
@@ -15,6 +16,8 @@ export interface ManagedServer {
   status: ServerConnectionStatus;
   agentId?: string;
   agentVersion?: string;
+  /** Only known for connectionMode "agent" - set from the handshake's Etap I capabilities. */
+  capabilities?: AgentCapabilities;
 }
 
 interface ServersState {

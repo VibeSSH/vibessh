@@ -103,6 +103,7 @@ async fn perform_handshake(socket: &mut WebSocket, state: &SharedState) -> bool 
         protocol_version: PROTOCOL_VERSION,
         error: None,
         issued_credential,
+        capabilities: crate::capabilities::detect(),
     };
     send_json(socket, &response).await
 }
@@ -152,6 +153,8 @@ async fn send_handshake_rejection(
         protocol_version: PROTOCOL_VERSION,
         error: Some(code),
         issued_credential: None,
+        // No capability fingerprinting for an unauthenticated attempt.
+        capabilities: Default::default(),
     };
     send_json(socket, &response).await
 }

@@ -21,7 +21,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use uuid::Uuid;
 
-use vibessh_protocol::{HandshakeRequest, HandshakeResponse, ServerEvent, PROTOCOL_VERSION};
+use vibessh_protocol::{AgentCapabilities, HandshakeRequest, HandshakeResponse, ServerEvent, PROTOCOL_VERSION};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
@@ -52,6 +52,10 @@ pub enum AgentConnectionState {
         /// `auth_token` from then on - it's not stored by this module,
         /// which deliberately doesn't know about `storage`/keyring itself.
         issued_credential: Option<String>,
+        /// Freshly detected on every handshake (Etap I) - the UI hides or
+        /// marks features this particular agent/host can't do instead of
+        /// assuming every Linux box has Docker/systemd/etc.
+        capabilities: AgentCapabilities,
     },
     #[serde(rename = "disconnected")]
     Disconnected { reason: String },
@@ -122,6 +126,7 @@ async fn connect_and_stream(
         agent_id: response.agent_id,
         agent_version: response.agent_version,
         issued_credential: response.issued_credential,
+        capabilities: response.capabilities,
     });
 
     loop {

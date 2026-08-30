@@ -10,6 +10,7 @@ import {
   startAgentPairing,
 } from "@/services/pairingService";
 import type { AgentConnectionState } from "@/types/pairing";
+import { CapabilityBadges } from "./CapabilityBadges";
 import "./forms.css";
 
 const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agent-install/install.sh";
@@ -47,6 +48,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
           status: "online",
           agentId: state.agentId,
           agentVersion: state.agentVersion,
+          capabilities: state.capabilities,
         });
       }
     });
@@ -177,6 +179,11 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
                   <Icon name="check" size={16} />
                   Connected — agent {connectionState.agentVersion}
                 </>
+              ) : connectionState?.status === "disconnected" ? (
+                <>
+                  <Icon name="x" size={16} />
+                  {connectionState.reason}
+                </>
               ) : expired ? (
                 <>
                   <Icon name="x" size={16} />
@@ -189,6 +196,10 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
                 </>
               )}
             </div>
+
+            {connectionState?.status === "connected" && (
+              <CapabilityBadges capabilities={connectionState.capabilities} />
+            )}
 
             {connectionState?.status !== "connected" && (
               <Button variant="secondary" onClick={handleGenerate} disabled={busy || !host}>
