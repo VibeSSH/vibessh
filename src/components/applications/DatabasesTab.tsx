@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-shell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,6 +12,7 @@ import { useBackdropClose } from "@/hooks/useBackdropClose";
 import {
   createApplicationDatabase,
   deleteApplicationDatabase,
+  getPhpmyadminUrl,
   listApplicationDatabases,
   listDatabaseHosts,
   resetApplicationDatabasePassword,
@@ -24,7 +26,7 @@ interface DatabasesTabProps {
   applicationId: string;
 }
 
-/** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, and per-row regenerate/remove. The "Open in phpMyAdmin" button from that same section is deliberately not built yet: it needs `tauri-plugin-shell` (not a dependency) to open a URL in the system browser. Docker port publishing (`runtime::docker`'s `-p` flags) is wired now, so a phpMyAdmin container with a declared, published port is actually reachable - only the "open it" plumbing itself is still missing, not shipping a button that can't work at all. */
+/** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, per-row regenerate/remove, and "Open in phpMyAdmin" (only shown once a host has one linked - see DatabaseHosts.tsx) which opens the deployed instance in the system browser with the database name pre-filled. Login itself still happens in phpMyAdmin's own form - real SSO would need phpMyAdmin's `signon` auth mode configured against something, out of scope for this first pass (Section 12.2). */
 export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<ApplicationDatabase[]>([]);
@@ -119,6 +121,19 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     }
   }
 
+  async function handleOpenPhpmyadmin(database: ApplicationDatabase) {
+    setBusyRowId(database.id);
+    setRowError(null);
+    try {
+      const url = await getPhpmyadminUrl(database.databaseHostId, database.databaseName);
+      await open(url);
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : t("databasesTab.phpmyadminError"));
+    } finally {
+      setBusyRowId(null);
+    }
+  }
+
   async function handleConfirmDelete() {
     if (!deletingDatabase) return;
     setDeleteBusy(true);
@@ -168,6 +183,12 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
                   )}
                 </div>
                 <Badge tone="neutral">{database.connectionsFrom}</Badge>
+                {host?.phpmyadminApplicationId && (
+                  <Button variant="secondary" size="sm" onClick={() => handleOpenPhpmyadmin(database)} disabled={busy}>
+                    <Icon name="database" size={14} />
+                    {t("databasesTab.openPhpmyadmin")}
+                  </Button>
+                )}
                 <IconButton
                   icon={password !== undefined ? "eye-off" : "eye"}
                   size="sm"

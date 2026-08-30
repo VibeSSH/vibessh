@@ -64,6 +64,17 @@ pub fn reveal_application_database_password(db_repo: State<DatabaseRepository>, 
 }
 
 #[tauri::command]
+pub fn get_phpmyadmin_url(
+    db_repo: State<DatabaseRepository>,
+    app_repo: State<ApplicationRepository>,
+    server_repo: State<ServerRepository>,
+    database_host_id: Uuid,
+    database_name: Option<String>,
+) -> AppResult<String> {
+    services::phpmyadmin_url(&db_repo, &app_repo, &server_repo, database_host_id, database_name.as_deref())
+}
+
+#[tauri::command]
 pub async fn reset_application_database_password(
     db_repo: State<'_, DatabaseRepository>,
     server_repo: State<'_, ServerRepository>,

@@ -41,3 +41,8 @@ export function revealApplicationDatabasePassword(id: string): Promise<string> {
 export function resetApplicationDatabasePassword(id: string): Promise<string> {
   return callCommand<string>("reset_application_database_password", { id });
 }
+
+/** Rejects if no phpMyAdmin application is linked to this host, or if it has no published port - never a URL that would just fail to load. `databaseName` pre-fills phpMyAdmin's own `db=` query parameter where its configuration allows it. */
+export function getPhpmyadminUrl(databaseHostId: string, databaseName?: string): Promise<string> {
+  return callCommand<string>("get_phpmyadmin_url", { databaseHostId, databaseName });
+}

@@ -38,6 +38,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
@@ -123,6 +124,7 @@ pub fn run() {
             commands::database_commands::delete_application_database,
             commands::database_commands::reveal_application_database_password,
             commands::database_commands::reset_application_database_password,
+            commands::database_commands::get_phpmyadmin_url,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,

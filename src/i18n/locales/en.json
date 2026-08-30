@@ -331,6 +331,8 @@
     "deleteAria": "Remove {{name}}",
     "revealError": "Couldn't reveal the password.",
     "resetError": "Couldn't reset the password.",
+    "openPhpmyadmin": "Open in phpMyAdmin",
+    "phpmyadminError": "Couldn't open phpMyAdmin.",
     "deleteError": "Couldn't remove the database.",
     "createError": "Couldn't create the database.",
     "noHosts": "No database hosts are registered yet - add one on the <1>Database Hosts</1> page first.",

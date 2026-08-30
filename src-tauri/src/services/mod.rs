@@ -19,8 +19,8 @@ pub use application_service::{
 };
 pub use database_service::{
     create_application_database, create_database_host, delete_application_database, delete_database_host,
-    list_application_databases, list_database_hosts, reset_application_database_password, reveal_application_database_password,
-    set_database_host_phpmyadmin,
+    list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
+    reveal_application_database_password, set_database_host_phpmyadmin,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use papermc_service::PapermcBuild;

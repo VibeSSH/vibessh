@@ -221,6 +221,48 @@ pub async fn reset_application_database_password(
     Ok(new_password)
 }
 
+/// Builds the URL a "Open in phpMyAdmin" button opens in the system browser
+/// (docs/APPLICATIONS_ARCHITECTURE.md Section 12.2) - `Err` when there's
+/// nothing actually openable yet (no phpMyAdmin linked, or it has no
+/// published port), rather than handing back a URL that would just fail to
+/// load. `database_name` is optional and only pre-fills phpMyAdmin's own
+/// `db=` query parameter where its own configuration allows it - login
+/// itself always happens in phpMyAdmin's own form (Section 12.2 explicitly
+/// scopes real SSO out of a first pass).
+pub fn phpmyadmin_url(
+    db_repo: &DatabaseRepository,
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    database_host_id: Uuid,
+    database_name: Option<&str>,
+) -> AppResult<String> {
+    let host = load_host(db_repo, database_host_id)?;
+    let Some(application_id) = host.phpmyadmin_application_id else {
+        return Err(AppError::InvalidInput("no phpMyAdmin application is linked to this database host".into()));
+    };
+    let detail = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?;
+    // The first declared port with a published (external) port - a
+    // phpMyAdmin application only ever declares the one web port, so
+    // there's no ambiguity to resolve among several in practice.
+    let Some(port) = detail.ports.iter().find_map(|p| p.external_port) else {
+        return Err(AppError::InvalidInput("the linked phpMyAdmin application has no published port - add one on its Ports tab".into()));
+    };
+    let address = match detail.application.server_id {
+        None => "127.0.0.1".to_string(),
+        Some(server_id) => server_repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?.host,
+    };
+
+    let mut url = format!("http://{address}:{port}/");
+    if let Some(name) = database_name {
+        // Always machine-generated (alphanumeric + underscore only, see
+        // `generate_identifier`) - safe to embed directly in a query
+        // string, no percent-encoding needed.
+        url.push_str("?db=");
+        url.push_str(name);
+    }
+    Ok(url)
+}
+
 // ---- Shared helpers ----
 
 fn load_host(db_repo: &DatabaseRepository, id: Uuid) -> AppResult<DatabaseHost> {
@@ -434,5 +476,86 @@ mod tests {
 
         let result = connect_to_host(&server_repo, &sessions, &host).await;
         assert!(matches!(result, Err(AppError::InvalidInput(_))));
+    }
+
+    fn temp_repos() -> (DatabaseRepository, ApplicationRepository, ServerRepository) {
+        let path = std::env::temp_dir().join(format!("vibessh-database-service-phpmyadmin-test-{}.sqlite3", Uuid::new_v4()));
+        (DatabaseRepository::open(&path).unwrap(), ApplicationRepository::open(&path).unwrap(), ServerRepository::open(&path).unwrap())
+    }
+
+    fn docker_application_with_published_port(app_repo: &ApplicationRepository, external_port: Option<u16>) -> Uuid {
+        use crate::models::{CreateApplicationInput, PortInput, PortProtocol, RuntimeType};
+        let detail = app_repo
+            .create(&CreateApplicationInput {
+                server_id: None,
+                name: "phpMyAdmin".to_string(),
+                description: None,
+                blueprint_id: "generic-docker".to_string(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::Docker,
+                working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config: serde_json::json!({ "image": "phpmyadmin/phpmyadmin", "command": [] }),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        app_repo
+            .add_port(
+                detail.application.id,
+                &PortInput {
+                    name: "web".to_string(),
+                    protocol: PortProtocol::Tcp,
+                    bind_address: "0.0.0.0".to_string(),
+                    internal_port: 80,
+                    external_port,
+                    required: false,
+                },
+            )
+            .unwrap();
+        detail.application.id
+    }
+
+    #[test]
+    fn phpmyadmin_url_is_rejected_when_no_application_is_linked() {
+        let (db_repo, app_repo, server_repo) = temp_repos();
+        let host = db_repo.create_host(&host_input_for_test()).unwrap();
+
+        let result = phpmyadmin_url(&db_repo, &app_repo, &server_repo, host.id, None);
+        assert!(matches!(result, Err(AppError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn phpmyadmin_url_is_rejected_when_the_linked_application_has_no_published_port() {
+        let (db_repo, app_repo, server_repo) = temp_repos();
+        let host = db_repo.create_host(&host_input_for_test()).unwrap();
+        let application_id = docker_application_with_published_port(&app_repo, None);
+        db_repo.update_phpmyadmin_application(host.id, Some(application_id)).unwrap();
+
+        let result = phpmyadmin_url(&db_repo, &app_repo, &server_repo, host.id, None);
+        assert!(matches!(result, Err(AppError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn phpmyadmin_url_builds_a_local_url_with_the_published_port_and_prefilled_database() {
+        let (db_repo, app_repo, server_repo) = temp_repos();
+        let host = db_repo.create_host(&host_input_for_test()).unwrap();
+        let application_id = docker_application_with_published_port(&app_repo, Some(8080));
+        db_repo.update_phpmyadmin_application(host.id, Some(application_id)).unwrap();
+
+        let url = phpmyadmin_url(&db_repo, &app_repo, &server_repo, host.id, Some("vibessh_myapp_ab12cd")).unwrap();
+        assert_eq!(url, "http://127.0.0.1:8080/?db=vibessh_myapp_ab12cd");
+    }
+
+    fn host_input_for_test() -> crate::models::CreateDatabaseHostInput {
+        crate::models::CreateDatabaseHostInput {
+            server_id: None,
+            name: "Main DB host".to_string(),
+            engine: DatabaseEngine::Mysql,
+            host: "127.0.0.1".to_string(),
+            port: 3306,
+            admin_username: "root".to_string(),
+            admin_password: "hunter2".to_string(),
+        }
     }
 }

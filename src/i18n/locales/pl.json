@@ -331,6 +331,8 @@
     "deleteAria": "Usuń {{name}}",
     "revealError": "Nie udało się pokazać hasła.",
     "resetError": "Nie udało się zresetować hasła.",
+    "openPhpmyadmin": "Otwórz w phpMyAdmin",
+    "phpmyadminError": "Nie udało się otworzyć phpMyAdmin.",
     "deleteError": "Nie udało się usunąć bazy danych.",
     "createError": "Nie udało się utworzyć bazy danych.",
     "noHosts": "Nie zarejestrowano jeszcze żadnego hosta bazy danych - najpierw dodaj go na stronie <1>Hosty baz danych</1>.",

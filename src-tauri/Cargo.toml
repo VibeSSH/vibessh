@@ -18,6 +18,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 # Native open/save file dialogs for Files module upload/download.
 tauri-plugin-dialog = "2"
+# Opens a phpMyAdmin URL in the user's system browser (Databases tab) -
+# only the `open` command is granted (capabilities/default.json), not the
+# plugin's own `execute` (arbitrary process spawn), which this app has no
+# use for.
+tauri-plugin-shell = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
