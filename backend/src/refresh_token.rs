@@ -6,29 +6,14 @@
 //! presented twice (the old one, after rotation already happened) is a
 //! reasonable signal something is wrong - the token is simply rejected
 //! either way since it's already revoked.
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use rand::rngs::OsRng;
-use rand::RngCore;
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::{ApiError, ApiResult};
+use crate::tokens;
 
 pub const REFRESH_TOKEN_TTL_DAYS: i64 = 30;
-
-fn generate_raw_token() -> String {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
-}
-
-fn hash_token(raw: &str) -> String {
-    let digest = Sha256::digest(raw.as_bytes());
-    URL_SAFE_NO_PAD.encode(digest)
-}
 
 pub struct IssuedRefreshToken {
     pub raw: String,
@@ -38,7 +23,7 @@ pub struct IssuedRefreshToken {
 /// Inserts a brand new refresh token row and returns the raw value to hand
 /// to the client - the raw value is never persisted, only its hash.
 pub async fn issue(db: &PgPool, user_id: Uuid) -> ApiResult<IssuedRefreshToken> {
-    let raw = generate_raw_token();
+    let raw = tokens::generate();
     let now = Utc::now();
     let expires_at = now + Duration::days(REFRESH_TOKEN_TTL_DAYS);
 
@@ -47,7 +32,7 @@ pub async fn issue(db: &PgPool, user_id: Uuid) -> ApiResult<IssuedRefreshToken> 
     )
     .bind(Uuid::new_v4())
     .bind(user_id)
-    .bind(hash_token(&raw))
+    .bind(tokens::hash(&raw))
     .bind(now)
     .bind(expires_at)
     .execute(db)
@@ -62,7 +47,7 @@ pub async fn issue(db: &PgPool, user_id: Uuid) -> ApiResult<IssuedRefreshToken> 
 /// revoked with no new one issued (which would strand the client) or both
 /// tokens simultaneously valid.
 pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid, IssuedRefreshToken)> {
-    let hashed = hash_token(raw_token);
+    let hashed = tokens::hash(raw_token);
     let mut tx = db.begin().await?;
 
     let row: Option<(Uuid, Uuid, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
@@ -88,7 +73,7 @@ pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid,
         .execute(&mut *tx)
         .await?;
 
-    let raw = generate_raw_token();
+    let raw = tokens::generate();
     let now = Utc::now();
     let new_expires_at = now + Duration::days(REFRESH_TOKEN_TTL_DAYS);
     sqlx::query(
@@ -96,7 +81,7 @@ pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid,
     )
     .bind(Uuid::new_v4())
     .bind(user_id)
-    .bind(hash_token(&raw))
+    .bind(tokens::hash(&raw))
     .bind(now)
     .bind(new_expires_at)
     .execute(&mut *tx)
@@ -114,7 +99,7 @@ pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid,
 pub async fn revoke(db: &PgPool, raw_token: &str) -> ApiResult<()> {
     sqlx::query("UPDATE refresh_tokens SET revoked_at = $1 WHERE token_hash = $2 AND revoked_at IS NULL")
         .bind(Utc::now())
-        .bind(hash_token(raw_token))
+        .bind(tokens::hash(raw_token))
         .execute(db)
         .await?;
     Ok(())

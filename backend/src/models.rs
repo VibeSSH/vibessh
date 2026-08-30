@@ -139,6 +139,41 @@ pub struct AssignRoleRequest {
     pub role_id: Uuid,
 }
 
+/// `status` here can be the computed value `"expired"` even though that's
+/// never actually stored in the `status` column (see migrations/0005) -
+/// every query that returns this type computes it at read time from
+/// `status`/`expires_at` rather than trusting the raw column value.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Invitation {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub email: String,
+    pub role_id: Option<Uuid>,
+    pub status: String,
+    pub invited_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedInvitation {
+    #[serde(flatten)]
+    pub invitation: Invitation,
+    /// The raw, unhashed token - present only in this one response. Never
+    /// retrievable again afterward, same as a freshly issued refresh token.
+    pub token: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInvitationRequest {
+    pub email: String,
+    pub role_id: Option<Uuid>,
+    pub expires_in_days: Option<i64>,
+}
+
 /// `actor_id`/`actor_email`/`actor_display_name` are all nullable together -
 /// null when the acting user's account has since been deleted (see
 /// migrations/0004: `actor_id` is ON DELETE SET NULL specifically so the

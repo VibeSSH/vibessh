@@ -3,3 +3,10 @@
 # Linux ("/bin/sh^M: bad interpreter"), which is the only place install.sh
 # is ever actually run.
 *.sh text eol=lf
+# sqlx checksums each migration file's exact bytes to detect an
+# already-applied migration being edited after the fact (see backend/
+# migrations/README.md) - a CRLF/LF difference from a contributor's
+# core.autocrlf setting would trip that same "modified" check for no real
+# reason, so migrations always check out with LF regardless of local
+# settings, same as shell scripts above.
+backend/migrations/*.sql text eol=lf

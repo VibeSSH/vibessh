@@ -31,6 +31,10 @@ pub const ROLE_UPDATED: &str = "role.updated";
 pub const ROLE_DELETED: &str = "role.deleted";
 pub const ROLE_ASSIGNED: &str = "role.assigned";
 pub const ROLE_UNASSIGNED: &str = "role.unassigned";
+pub const INVITATION_CREATED: &str = "invitation.created";
+pub const INVITATION_REVOKED: &str = "invitation.revoked";
+pub const INVITATION_ACCEPTED: &str = "invitation.accepted";
+pub const INVITATION_DECLINED: &str = "invitation.declined";
 
 #[allow(clippy::too_many_arguments)]
 pub async fn record(
