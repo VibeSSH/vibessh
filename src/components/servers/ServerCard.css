@@ -1,0 +1,224 @@
+.server-card {
+  border-radius: var(--r-lg);
+  cursor: default;
+}
+
+.server-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.server-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.server-card-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.server-card-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--t-accent) 24%, var(--t-bg-elevated)) 0%, var(--t-bg-elevated) 60%);
+  color: var(--t-accent);
+  box-shadow: var(--t-ring), var(--t-highlight);
+}
+
+.server-card-status-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid var(--t-bg-card);
+}
+
+.server-card-status-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  animation: server-card-ping 2s ease-out infinite;
+}
+
+@keyframes server-card-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.server-card-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.server-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.server-card-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--t-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-card-protocol-pill {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--t-text-dim);
+  background: var(--t-bg-input);
+  border: 1px solid var(--t-border);
+}
+
+.server-card-host {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--t-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-card-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.server-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.server-card:hover .server-card-actions {
+  opacity: 1;
+}
+
+.server-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  color: var(--t-text-secondary);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.server-card-action:hover {
+  color: var(--t-text-primary);
+  background: color-mix(in srgb, #ffffff 10%, transparent);
+}
+.server-card-action-danger:hover {
+  color: var(--t-status-error);
+  background: color-mix(in srgb, var(--t-status-error) 18%, transparent);
+}
+
+/* The flagship "1:1 Voltius" element - a mini terminal preview that bleeds
+   into the card's own bottom-right corner radius. Ported near-verbatim from
+   HostCard.tsx's terminal-connect-btn (including the shared .cursor-blink-char/
+   .terminal-connect-btn hover rules from Voltius's globals.css, reproduced here
+   since we don't import their global stylesheet). */
+.server-card-terminal-btn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 75%;
+  margin-top: -20px;
+  margin-right: -16px;
+  margin-bottom: -16px;
+  padding: 10px 18px 14px 12px;
+  border-top-left-radius: var(--r-lg);
+  border-bottom-right-radius: calc(var(--r-lg) + 2px);
+  background: var(--t-bg-terminal);
+  color: #9effff;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 1px 0 0 rgba(255, 255, 255, 0.07);
+  transition: filter 150ms ease;
+}
+.server-card-terminal-btn:hover {
+  filter: brightness(1.5);
+}
+.server-card-terminal-btn:hover .server-card-cursor {
+  animation: server-card-cursor-blink 1s step-end infinite;
+}
+
+.server-card-terminal-dots {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.server-card-terminal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.server-card-terminal-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-card-terminal-user {
+  color: #7dffb0;
+}
+
+.server-card-terminal-host {
+  color: #7de8ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-card-cursor {
+  opacity: 1;
+}
+
+@keyframes server-card-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.servers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
