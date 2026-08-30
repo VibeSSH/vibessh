@@ -51,10 +51,18 @@ same `ServerConnection` interface on the Rust side.
       Service), not a plaintext file
 - [x] Agent installer — `agent-install/install.sh`: detects OS/arch,
       downloads + checksums a release, installs a dedicated systemd service
-      as a non-root user. No release published yet, so the download step is
-      unverified in practice; the rest is tested (see `agent-install/README.md`)
-- [ ] Deeper systemd/privilege hardening (which agent features actually need
-      elevated access, and the capability/polkit/sudo-helper model for that)
+      as a non-root user. Run for real end-to-end on a live Ubuntu 24.04 box
+      (see `agent-install/README.md`) - only the download step is unverified,
+      since there's no published release to fetch yet
+- [x] Systemd/privilege hardening (Etap G) — `docs/agent-privileges.md`
+      analyzes which future agent features need elevated access and why.
+      Systemd unit management (Quick Actions) gets a polkit rule authorizing
+      only allowlisted units, with the allowlist file deliberately
+      unwritable by the agent itself. Docker and cross-user process/file
+      access are documented but intentionally deferred - no feature needs
+      them yet, so nothing is granted yet. Verified for real: empty
+      allowlist denies, adding a unit allows it, other units stay denied,
+      and the agent genuinely cannot rewrite its own allowlist
 - [ ] SSH transport implementation
 - [ ] Server storage (SQLite for server records - credential storage already
       landed early, see pairing above)

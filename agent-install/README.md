@@ -61,11 +61,25 @@ the fetch step is swapped out.
 | `VIBESSH_INSTALL_VERSION`       | `latest`                                     | Release tag, or `latest`                   |
 | `VIBESSH_INSTALL_BASE_URL`      | `https://github.com/<repo>/releases`         | Override for a different release host      |
 | `VIBESSH_INSTALL_BIN_DIR`       | `/usr/local/bin`                             | Where `vibe-agent` is installed            |
+| `VIBESSH_INSTALL_BASE_CONFIG_DIR` | `/etc/vibessh`                             | Root-owned parent; holds `managed-units.conf` |
 | `VIBESSH_INSTALL_CONFIG_DIR`    | `/etc/vibessh/agent`                         | Config directory (created, owned by service user) |
 | `VIBESSH_INSTALL_DATA_DIR`      | `/var/lib/vibessh/agent`                     | Data directory (identity, paired credential hash) |
 | `VIBESSH_INSTALL_USER`          | `vibessh-agent`                              | Dedicated system user the service runs as  |
 | `VIBESSH_INSTALL_UNIT_PATH`     | `/etc/systemd/system/vibessh-agent.service`  | Where the unit file is written             |
+| `VIBESSH_INSTALL_POLKIT_RULE_PATH` | `/etc/polkit-1/rules.d/49-vibessh-agent.rules` | Where the systemd-unit authorization rule is written |
 | `VIBESSH_INSTALL_LOCAL_BINARY`  | (unset)                                      | Skip download/checksum, install this file instead |
+
+## Authorizing Quick Actions to manage a systemd unit
+
+By default the agent can start/stop/restart/enable/disable **no** systemd
+units at all - `install.sh` ships an empty allowlist on purpose. To let it
+manage one (e.g. so a future Quick Action can restart nginx), add the unit
+name to `/etc/vibessh/managed-units.conf` (one per line, root-owned - the
+agent can read it, not write it) and there's nothing else to do; the
+polkit rule watches that file live. See `docs/agent-privileges.md` in the
+main repo for the full reasoning, including why Docker access and
+cross-user process/file access are deliberately *not* covered by this
+installer yet.
 
 ## Why these paths
 
@@ -80,9 +94,8 @@ deviation from what the planning doc suggested was needed.
 - **Signature verification.** Only a SHA-256 checksum is checked. Real
   signing needs a release pipeline and a key that don't exist yet - tracked
   as an Etap K (security review) follow-up, not silently skipped.
-- **Deep privilege analysis.** The systemd unit already runs as a
-  non-root dedicated user with baseline hardening
-  (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`), but which
-  *specific* agent features need more than that (Docker socket access,
-  restarting other systemd units, etc.) and what capability/polkit/sudo-helper
-  model covers that gap is Etap G's job, done as a deliberate follow-up.
+- **Docker and cross-user process/file access.** The systemd-unit privilege
+  gap is covered (see the polkit section above); Docker and anything
+  needing another user's files/processes are deliberately not, since no
+  feature uses them yet. Full reasoning and the intended pattern for each
+  (an opt-in flag, a sudo-helper) are in `docs/agent-privileges.md`.
