@@ -71,7 +71,12 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner }: Membe
 
   return (
     <div className="member-roles-anchor" ref={anchorRef}>
-      <button className="server-list-action" aria-label={t("roles.manageRolesAria", { name: memberName })} onClick={handleOpen}>
+      <button
+        className="server-list-action"
+        title={t("roles.manageRolesAria", { name: memberName })}
+        aria-label={t("roles.manageRolesAria", { name: memberName })}
+        onClick={handleOpen}
+      >
         <Icon name="key" size={14} />
       </button>
       {open && (

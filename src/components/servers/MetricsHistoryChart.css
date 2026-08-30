@@ -12,7 +12,7 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-secondary);
 }

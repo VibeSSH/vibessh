@@ -79,13 +79,18 @@ export function ServersSection({ teamId }: { teamId: string }) {
                 <Icon name="server" size={16} />
               </div>
               <div className="server-list-main">
-                <span className="server-list-name">{server.name}</span>
-                <span className="server-list-host">
+                <span className="server-list-name" title={server.name}>{server.name}</span>
+                <span className="server-list-host" title={`${server.username ? `${server.username}@` : ""}${server.host}:${server.sshPort}`}>
                   {server.username ? `${server.username}@` : ""}
                   {server.host}:{server.sshPort}
                 </span>
               </div>
-              <button className="server-list-action" aria-label={t("teamServers.removeAria", { name: server.name })} onClick={() => handleDelete(server)}>
+              <button
+                className="server-list-action"
+                title={t("teamServers.removeAria", { name: server.name })}
+                aria-label={t("teamServers.removeAria", { name: server.name })}
+                onClick={() => handleDelete(server)}
+              >
                 <Icon name="trash" size={14} />
               </button>
             </li>

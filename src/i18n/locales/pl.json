@@ -10,7 +10,8 @@
     "edit": "Edytuj",
     "refresh": "Odśwież",
     "loading": "Ładowanie...",
-    "done": "Gotowe"
+    "done": "Gotowe",
+    "create": "Utwórz"
   },
   "toast": {
     "dismissAria": "Odrzuć powiadomienie"
@@ -47,7 +48,14 @@
     "notificationsEmpty": "Jeszcze nic tu nie ma - akcje, które wykonasz, pojawią się w tym miejscu.",
     "notificationsClear": "Wyczyść",
     "signIn": "Zaloguj się",
-    "signOut": "Wyloguj się"
+    "signOut": "Wyloguj się",
+    "statusOnline": "Online",
+    "statusOffline": "Offline",
+    "statusConnecting": "Łączenie",
+    "statusUnknown": "Nieznany",
+    "hostHidden": "Host ukryty",
+    "revealHostAria": "Pokaż adres hosta",
+    "hideHostAria": "Ukryj adres hosta"
   },
   "auth": {
     "modalTitle": "VibeSSH Cloud",
@@ -173,7 +181,7 @@
   },
   "modulePicker": {
     "terminalTitle": "Terminal VibeSSH",
-    "terminalSubtitle": "Wybierz serwer, aby otworzyć powłokę.",
+    "terminalSubtitle": "Wybierz serwer, aby otworzyć terminal.",
     "filesTitle": "Pliki VibeSSH",
     "filesSubtitle": "Wybierz serwer, aby przeglądać jego pliki.",
     "monitorTitle": "Monitor VibeSSH",
@@ -186,7 +194,7 @@
     "pickServer": "Wybierz serwer"
   },
   "terminalPage": {
-    "shellLabel": "Powłoka {{number}}",
+    "shellLabel": "Terminal {{number}}",
     "closeTabAria": "Zamknij {{label}}",
     "newTabAria": "Nowa karta terminala",
     "noSessions": "Brak otwartych sesji terminala.",
@@ -206,14 +214,27 @@
   "filesPage": {
     "upload": "Wyślij",
     "uploading": "Wysyłanie...",
+    "newFolder": "Nowy katalog",
+    "newFile": "Nowy plik",
     "downloadAria": "Pobierz {{name}}",
     "emptyTitle": "Pusty katalog",
     "emptyDescription": "Nic tu nie ma.",
     "uploadedToast": "Wysłano {{name}}",
     "downloadedToast": "Pobrano {{name}}",
+    "createdFolderToast": "Utworzono {{name}}",
+    "createdFileToast": "Utworzono {{name}}",
     "couldntList": "Nie udało się wyświetlić tego katalogu.",
     "couldntUpload": "Nie udało się wysłać {{name}}.",
-    "couldntDownload": "Nie udało się pobrać {{name}}."
+    "couldntDownload": "Nie udało się pobrać {{name}}.",
+    "couldntCreateFolder": "Nie udało się utworzyć katalogu.",
+    "couldntCreateFile": "Nie udało się utworzyć pliku.",
+    "newFolderTitle": "Nowy katalog",
+    "newFileTitle": "Nowy plik",
+    "folderName": "Nazwa katalogu",
+    "folderNamePlaceholder": "np. backups",
+    "fileName": "Nazwa pliku",
+    "fileNamePlaceholder": "np. config",
+    "format": "Format"
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",
@@ -341,7 +362,17 @@
     "couldntList": "Nie udało się wczytać ról.",
     "couldntSave": "Nie udało się zapisać roli.",
     "couldntDelete": "Nie udało się usunąć roli.",
-    "couldntAssign": "Nie udało się zaktualizować przypisania roli."
+    "couldntAssign": "Nie udało się zaktualizować przypisania roli.",
+    "permissionLabels": {
+      "team.view": "Wyświetlanie zespołu",
+      "team.update": "Edycja zespołu",
+      "team.delete": "Usuwanie zespołu",
+      "team.members.add": "Dodawanie członków",
+      "team.members.remove": "Usuwanie członków",
+      "team.roles.manage": "Zarządzanie rolami",
+      "audit.view": "Podgląd dziennika audytu",
+      "servers.manage": "Zarządzanie serwerami"
+    }
   },
   "teamServers": {
     "title": "Serwery",

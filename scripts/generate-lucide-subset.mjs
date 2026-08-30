@@ -51,6 +51,10 @@ const ICON_NAMES = [
   "bell",
   "user-round",
   "users",
+  "folder-plus",
+  "file-plus",
+  "eye",
+  "eye-off",
 ];
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));

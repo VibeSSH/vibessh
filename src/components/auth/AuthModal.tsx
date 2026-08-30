@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
 import { cloudLogin, cloudRegister } from "@/services/cloudService";
@@ -60,9 +60,7 @@ export function AuthModal() {
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t("auth.modalTitle")}</h2>
-          <button className="modal-close" onClick={handleClose} aria-label={t("common.close")}>
-            <Icon name="x" size={16} />
-          </button>
+          <IconButton icon="x" size="sm" onClick={handleClose} title={t("common.close")} />
         </div>
 
         <div className="modal-tabs">
@@ -111,11 +109,7 @@ export function AuthModal() {
               />
             </label>
 
-            {error && (
-              <p className="form-note" style={{ color: "var(--danger)" }}>
-                {error}
-              </p>
-            )}
+            {error && <p className="form-note form-note-danger">{error}</p>}
 
             <div className="form-actions">
               <Button type="submit" disabled={busy}>

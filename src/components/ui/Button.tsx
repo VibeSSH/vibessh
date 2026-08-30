@@ -3,15 +3,17 @@ import { useRipple } from "@/hooks/useRipple";
 import "./Button.css";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
+  size?: Size;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = "primary", className, children, onPointerDown, ...rest }, ref) => {
+  ({ variant = "primary", size = "md", className, children, onPointerDown, ...rest }, ref) => {
     const { createRipple, rippleEls } = useRipple();
-    const classes = ["btn", `btn-${variant}`, "ripple-host", className].filter(Boolean).join(" ");
+    const classes = ["btn", `btn-${variant}`, size === "sm" ? "btn-sm" : "", "ripple-host", className].filter(Boolean).join(" ");
     return (
       <button
         ref={ref}

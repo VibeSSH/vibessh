@@ -29,6 +29,11 @@
   display: none;
 }
 
+.rail-instance-anchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .rail-instance-btn {
   position: relative;
 }
@@ -41,6 +46,100 @@
   height: 8px;
   border-radius: 50%;
   border: 2px solid var(--surface-bg);
+}
+
+.rail-instance-tooltip {
+  position: fixed;
+  transform: translateY(-50%);
+  width: 210px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--t-bg-modal);
+  box-shadow: var(--t-ring-strong), var(--t-elev-3);
+  z-index: var(--z-popover);
+  animation: scaleIn 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: auto;
+}
+
+.rail-instance-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rail-instance-tooltip-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-instance-tooltip-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.rail-instance-tooltip-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rail-instance-tooltip-host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.rail-instance-tooltip-host-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.rail-instance-tooltip-host-masked {
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+}
+
+.rail-instance-tooltip-eye {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+}
+.rail-instance-tooltip-eye:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+
+.rail-instance-tooltip-latency {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
 }
 
 .rail-spacer {
@@ -88,7 +187,7 @@
   border-radius: var(--radius-md);
   background: var(--t-bg-modal);
   box-shadow: var(--t-ring-strong), var(--t-elev-3);
-  z-index: 50;
+  z-index: var(--z-popover);
   animation: scaleIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .rail-popover-right {

@@ -61,7 +61,7 @@ export function TeamDetail() {
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <div className="modal-tabs" style={{ marginBottom: 16 }}>
+      <div className="page-tabs">
         <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
           {t("teams.membersTitle")}
         </button>
@@ -85,8 +85,8 @@ export function TeamDetail() {
                     <Icon name="user" size={16} />
                   </div>
                   <div className="server-list-main">
-                    <span className="server-list-name">{member.displayName}</span>
-                    <span className="server-list-host">{member.email}</span>
+                    <span className="server-list-name" title={member.displayName}>{member.displayName}</span>
+                    <span className="server-list-host" title={member.email}>{member.email}</span>
                   </div>
                   {member.isOwner && <Badge tone="success">{t("teams.owner")}</Badge>}
                   <MemberRolesEditor teamId={teamId} userId={member.userId} memberName={member.displayName} isOwner={member.isOwner} />

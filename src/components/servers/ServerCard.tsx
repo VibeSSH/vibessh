@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
-import { useRipple } from "@/hooks/useRipple";
+import { IconButton } from "@/components/ui/IconButton";
 import { usePingStore } from "@/stores/pingStore";
 import type { ManagedServer } from "@/stores/serversStore";
 import { STATUS_COLOR } from "@/utils/serverStatusColor";
@@ -13,23 +13,19 @@ interface ServerCardActionButtonProps {
   danger?: boolean;
 }
 
-/** Ported from Voltius's CardActionButton (voltius/src/components/shared/CardActionButton.tsx) - always visible on a grid card (their own HostCard passes reveal={false} for this exact layout; hover-reveal is list-mode-only there), plus the same ripple-on-press every one of their buttons has. */
+/** Always visible on the grid card (matches Voltius's own HostCard, which passes reveal={false} for this exact layout - hover-reveal is list-mode-only there). Thin wrapper around IconButton just for the stopPropagation - clicking an action shouldn't also trigger whatever the card itself does. */
 function ServerCardActionButton({ icon, title, onClick, danger }: ServerCardActionButtonProps) {
-  const { createRipple, rippleEls } = useRipple();
   return (
-    <button
+    <IconButton
+      icon={icon}
+      size="sm"
+      danger={danger}
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      onPointerDown={createRipple}
-      className={`server-card-action ripple-host ${danger ? "server-card-action-danger" : ""}`}
-      title={title}
-      aria-label={title}
-    >
-      {rippleEls}
-      <Icon name={icon} size={15} />
-    </button>
+    />
   );
 }
 
@@ -70,7 +66,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
           </div>
           <div className="server-card-title-col">
             <div className="server-card-title-row">
-              <p className="server-card-name">{server.name}</p>
+              <p className="server-card-name" title={server.name}>{server.name}</p>
               <span className="server-card-protocol-pill">{protocolLabel}</span>
               <span className="server-card-status-group">
                 {!isAgent && server.status === "online" && typeof latencyMs === "number" && (
@@ -82,7 +78,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
                 </span>
               </span>
             </div>
-            <p className="server-card-host">{identity}</p>
+            <p className="server-card-host" title={identity}>{identity}</p>
           </div>
         </div>
 

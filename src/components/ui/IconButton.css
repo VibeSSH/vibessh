@@ -1,0 +1,41 @@
+/* Consolidates what used to be independently-styled square icon buttons
+   (.modal-close, .toast-dismiss, and - in later UI-cleanup phases - the
+   page-level ones too) into one primitive with two sizes, so every
+   icon-only control shares the same height/radius/hover treatment
+   instead of each call site reinventing it slightly differently. */
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background-color 120ms ease, color 120ms ease, transform 100ms ease;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-3);
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.icon-btn-sm {
+  width: 28px;
+  height: 28px;
+}
+
+.icon-btn-md {
+  width: 36px;
+  height: 36px;
+}
+
+.icon-btn-danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}

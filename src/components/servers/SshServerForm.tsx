@@ -174,7 +174,6 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
               placeholder={isEditing ? t("sshForm.passphrasePlaceholderEdit") : t("sshForm.passphrasePlaceholder")}
               value={keyPassphrase}
               onChange={(e) => setKeyPassphrase(e.target.value)}
-              style={{ marginTop: 8 }}
             />
           </>
         )}
@@ -182,21 +181,12 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
       </div>
 
       {testMessage && (
-        <p
-          className="form-note"
-          style={{ color: testStatus === "success" ? "var(--success)" : "var(--danger)" }}
-        >
-          {testMessage}
-        </p>
+        <p className={`form-note ${testStatus === "success" ? "form-note-success" : "form-note-danger"}`}>{testMessage}</p>
       )}
 
-      {error && (
-        <p className="form-note" style={{ color: "var(--danger)" }}>
-          {error}
-        </p>
-      )}
+      {error && <p className="form-note form-note-danger">{error}</p>}
 
-      <div className="form-actions" style={{ justifyContent: "space-between" }}>
+      <div className="form-actions form-actions-split">
         <Button type="button" variant="secondary" onClick={handleTestConnection} disabled={testStatus === "testing" || busy}>
           {testStatus === "testing" ? t("sshForm.testing") : t("sshForm.testConnection")}
         </Button>

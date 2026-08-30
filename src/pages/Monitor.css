@@ -17,7 +17,7 @@
 .monitor-process-table th {
   text-align: left;
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { ContainerLogsPanel } from "@/components/servers/ContainerLogsPanel";
 import {
@@ -165,14 +166,15 @@ export function ActionsPage() {
             {filteredServices.slice(0, MAX_ROWS_SHOWN).map((service) => (
               <li key={service.name} className="server-list-item">
                 <div className="server-list-main">
-                  <span className="server-list-name">{service.name}</span>
-                  <span className="server-list-host">{service.description}</span>
+                  <span className="server-list-name" title={service.name}>{service.name}</span>
+                  <span className="server-list-host" title={service.description}>{service.description}</span>
                 </div>
                 <Badge tone={service.active ? "success" : "neutral"}>{service.active ? t("actionsPage.active") : t("actionsPage.inactive")}</Badge>
                 <Badge tone="neutral">{service.enabled ? t("actionsPage.enabled") : t("actionsPage.disabled")}</Badge>
                 <div className="server-list-actions">
                   <button
                     className="server-list-action"
+                    title={service.active ? t("actionsPage.stopAria", { name: service.name }) : t("actionsPage.startAria", { name: service.name })}
                     aria-label={service.active ? t("actionsPage.stopAria", { name: service.name }) : t("actionsPage.startAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.active ? "stop" : "start" })}
                   >
@@ -180,6 +182,7 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
+                    title={t("actionsPage.restartAria", { name: service.name })}
                     aria-label={t("actionsPage.restartAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: "restart" })}
                   >
@@ -187,6 +190,9 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
+                    title={
+                      service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })
+                    }
                     aria-label={
                       service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })
                     }
@@ -213,8 +219,8 @@ export function ActionsPage() {
             {containers.map((container) => (
               <li key={container.id} className="server-list-item">
                 <div className="server-list-main">
-                  <span className="server-list-name">{container.name}</span>
-                  <span className="server-list-host">
+                  <span className="server-list-name" title={container.name}>{container.name}</span>
+                  <span className="server-list-host" title={`${container.image} · ${container.status}`}>
                     {container.image} · {container.status}
                   </span>
                 </div>
@@ -222,6 +228,7 @@ export function ActionsPage() {
                 <div className="server-list-actions">
                   <button
                     className="server-list-action"
+                    title={t("actionsPage.viewLogsAria", { name: container.name })}
                     aria-label={t("actionsPage.viewLogsAria", { name: container.name })}
                     onClick={() => setViewingLogsFor(container.name)}
                   >
@@ -229,6 +236,9 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
+                    title={
+                      container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })
+                    }
                     aria-label={
                       container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })
                     }
@@ -240,6 +250,7 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
+                    title={t("actionsPage.restartAria", { name: container.name })}
                     aria-label={t("actionsPage.restartAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "restart" })}
                   >
@@ -247,6 +258,7 @@ export function ActionsPage() {
                   </button>
                   <button
                     className="server-list-action"
+                    title={t("actionsPage.removeAria", { name: container.name })}
                     aria-label={t("actionsPage.removeAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "remove" })}
                   >
@@ -265,27 +277,21 @@ export function ActionsPage() {
 
       {confirming && (
         <div className="modal-backdrop" onClick={() => !actionBusy && setConfirming(null)}>
-          <div className="modal-panel" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">
                 {t(confirming.kind === "service" ? "actionsPage.confirmTitleService" : "actionsPage.confirmTitleContainer", {
                   verb: t(`actionsPage.verb.${confirming.verb}`),
                 })}
               </h2>
-              <button className="modal-close" onClick={() => setConfirming(null)} aria-label={t("common.close")}>
-                <Icon name="x" size={16} />
-              </button>
+              <IconButton icon="x" size="sm" onClick={() => setConfirming(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
-              <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>
+              <p className="dialog-body-text">
                 <Trans i18nKey={`actionsPage.confirmBody.${confirming.verb}`} values={{ name: confirming.name }} components={{ 1: <strong /> }} />
               </p>
-              {actionError && (
-                <p className="form-note" style={{ color: "var(--danger)", marginBottom: 12 }}>
-                  {actionError}
-                </p>
-              )}
-              <div className="form-actions" style={{ gap: 8 }}>
+              {actionError && <p className="form-note form-note-danger form-note-spaced">{actionError}</p>}
+              <div className="form-actions">
                 <Button variant="secondary" onClick={() => setConfirming(null)} disabled={actionBusy}>
                   {t("common.cancel")}
                 </Button>

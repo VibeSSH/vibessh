@@ -149,7 +149,7 @@ export function MonitorPage() {
                     <td>{process.user}</td>
                     <td>{process.cpuPercent.toFixed(1)}%</td>
                     <td>{formatBytes(process.ramBytes)}</td>
-                    <td className="monitor-process-command">{process.command}</td>
+                    <td className="monitor-process-command" title={process.command}>{process.command}</td>
                   </tr>
                 ))}
               </tbody>

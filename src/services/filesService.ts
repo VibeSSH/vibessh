@@ -5,6 +5,10 @@ export function listRemoteDirectory(serverId: string, path: string): Promise<Rem
   return callCommand<RemoteFileEntry[]>("list_remote_directory", { serverId, path });
 }
 
+export function createRemoteDirectory(serverId: string, path: string): Promise<void> {
+  return callCommand<void>("create_remote_directory", { serverId, path });
+}
+
 /** Bytes come back as a plain number array over Tauri IPC - see bytesToText for decoding. */
 export function readRemoteFile(serverId: string, path: string): Promise<number[]> {
   return callCommand<number[]>("read_remote_file", { serverId, path });

@@ -41,6 +41,13 @@
   margin: 0 2px;
 }
 
+.files-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .files-entry-name {
   flex: 1;
   min-width: 0;

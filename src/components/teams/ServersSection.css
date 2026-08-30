@@ -13,7 +13,10 @@
   min-width: 120px;
 }
 
-.team-servers-port-input {
+/* Matches .team-servers-form-row .form-input's specificity (rather than
+   needing !important to beat it) - same descendant-selector shape, just
+   naming the narrower port field instead of "any input in this row". */
+.team-servers-form-row .team-servers-port-input {
+  flex: 0 0 80px;
   max-width: 80px;
-  flex: 0 0 80px !important;
 }

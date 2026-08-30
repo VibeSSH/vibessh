@@ -47,7 +47,7 @@
 }
 
 .server-card-latency {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--t-status-connected);
 }
@@ -151,24 +151,6 @@
   display: flex;
   align-items: center;
   gap: 2px;
-}
-
-.server-card-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  border-radius: var(--r-sm);
-  color: var(--t-text-secondary);
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.server-card-action:hover {
-  color: var(--t-text-primary);
-  background: color-mix(in srgb, #ffffff 10%, transparent);
-}
-.server-card-action-danger:hover {
-  color: var(--t-status-error);
-  background: color-mix(in srgb, var(--t-status-error) 18%, transparent);
 }
 
 /* The flagship "1:1 Voltius" element - a mini terminal preview that bleeds

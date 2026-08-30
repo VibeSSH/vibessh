@@ -80,7 +80,20 @@
 .form-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
   margin-top: 4px;
+}
+
+/* SshServerForm's "Test connection" (left) + "Save" (right) layout - was a
+   repeated inline style, consolidated since it's a real layout variant,
+   not a one-off. */
+.form-actions-split {
+  justify-content: space-between;
+}
+
+.form-actions-spaced {
+  margin-top: var(--space-3);
 }
 
 .form-note {
@@ -88,6 +101,44 @@
   font-size: 12px;
   color: var(--text-tertiary);
   line-height: 1.5;
+}
+
+.form-note-danger {
+  color: var(--danger);
+}
+
+.form-note-spaced {
+  margin-bottom: var(--space-3);
+}
+
+.form-note-success {
+  color: var(--success);
+}
+
+/* The "13px/1.5 line-height/primary text" paragraph style repeated
+   verbatim as an inline style in every confirm-style dialog
+   (DeleteServerDialog, Actions.tsx's confirm modal). */
+.dialog-body-text {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.container-logs-output {
+  height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .code-block {

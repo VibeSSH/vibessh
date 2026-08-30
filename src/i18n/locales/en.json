@@ -10,7 +10,8 @@
     "edit": "Edit",
     "refresh": "Refresh",
     "loading": "Loading...",
-    "done": "Done"
+    "done": "Done",
+    "create": "Create"
   },
   "toast": {
     "dismissAria": "Dismiss notification"
@@ -47,7 +48,14 @@
     "notificationsEmpty": "Nothing yet - actions you take show up here.",
     "notificationsClear": "Clear",
     "signIn": "Sign in",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "statusOnline": "Online",
+    "statusOffline": "Offline",
+    "statusConnecting": "Connecting",
+    "statusUnknown": "Unknown",
+    "hostHidden": "Host hidden",
+    "revealHostAria": "Show host address",
+    "hideHostAria": "Hide host address"
   },
   "auth": {
     "modalTitle": "VibeSSH Cloud",
@@ -206,14 +214,27 @@
   "filesPage": {
     "upload": "Upload",
     "uploading": "Uploading...",
+    "newFolder": "New folder",
+    "newFile": "New file",
     "downloadAria": "Download {{name}}",
     "emptyTitle": "Empty directory",
     "emptyDescription": "Nothing here.",
     "uploadedToast": "Uploaded {{name}}",
     "downloadedToast": "Downloaded {{name}}",
+    "createdFolderToast": "Created {{name}}",
+    "createdFileToast": "Created {{name}}",
     "couldntList": "Couldn't list this directory.",
     "couldntUpload": "Couldn't upload {{name}}.",
-    "couldntDownload": "Couldn't download {{name}}."
+    "couldntDownload": "Couldn't download {{name}}.",
+    "couldntCreateFolder": "Couldn't create this folder.",
+    "couldntCreateFile": "Couldn't create this file.",
+    "newFolderTitle": "New folder",
+    "newFileTitle": "New file",
+    "folderName": "Folder name",
+    "folderNamePlaceholder": "e.g. backups",
+    "fileName": "File name",
+    "fileNamePlaceholder": "e.g. config",
+    "format": "Format"
   },
   "fileEditor": {
     "backAria": "Back to file list",
@@ -341,7 +362,17 @@
     "couldntList": "Couldn't load roles.",
     "couldntSave": "Couldn't save the role.",
     "couldntDelete": "Couldn't delete the role.",
-    "couldntAssign": "Couldn't update this role assignment."
+    "couldntAssign": "Couldn't update this role assignment.",
+    "permissionLabels": {
+      "team.view": "View team",
+      "team.update": "Edit team",
+      "team.delete": "Delete team",
+      "team.members.add": "Add members",
+      "team.members.remove": "Remove members",
+      "team.roles.manage": "Manage roles",
+      "audit.view": "View audit log",
+      "servers.manage": "Manage servers"
+    }
   },
   "teamServers": {
     "title": "Servers",

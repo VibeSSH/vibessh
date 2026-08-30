@@ -53,7 +53,7 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
       {servers.length === 0 ? (
         <Card>
           <EmptyState icon={icon} title={t("modulePicker.emptyTitle")} description={t("modulePicker.emptyDescription")} />
-          <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+          <div className="page-empty-action-row">
             <Button onClick={() => navigate("/servers")}>
               <Icon name="plug" size={16} />
               {t("modulePicker.goToServers")}
@@ -68,7 +68,7 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
                 <div className="server-list-icon">
                   <Icon name={icon} size={16} />
                 </div>
-                <button className="files-entry-name" onClick={() => navigate(`${routePrefix}/${server.id}`)}>
+                <button className="files-entry-name" title={server.name} onClick={() => navigate(`${routePrefix}/${server.id}`)}>
                   {server.name}
                 </button>
                 <span className="server-list-host">{server.host}</span>

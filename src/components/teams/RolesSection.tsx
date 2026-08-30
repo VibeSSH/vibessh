@@ -28,6 +28,11 @@ function emptyForm(): RoleFormState {
   return { id: null, name: "", description: "", permissions: new Set() };
 }
 
+/** Permission keys are the backend's stable catalog strings (e.g. "team.roles.manage") - not meant to be read directly, so every one needs an entry under roles.permissionLabels in each locale file (falls back to the raw key if a new permission ships before its translation does). */
+function permissionLabel(t: (key: string, opts?: Record<string, unknown>) => string, permission: string): string {
+  return t(`roles.permissionLabels.${permission}`, { defaultValue: permission });
+}
+
 export function RolesSection({ teamId }: { teamId: string }) {
   const { t } = useTranslation();
   const [roles, setRoles] = useState<CloudRoleWithPermissions[]>([]);
@@ -112,14 +117,14 @@ export function RolesSection({ teamId }: { teamId: string }) {
             <li key={role.id} className="roles-list-item">
               <div className="roles-list-main">
                 <div className="roles-list-name-row">
-                  <span className="roles-list-name">{role.name}</span>
+                  <span className="roles-list-name" title={role.name}>{role.name}</span>
                   {role.isSystem && <Badge tone="neutral">{t("roles.builtIn")}</Badge>}
                 </div>
                 {role.description && <p className="roles-list-description">{role.description}</p>}
                 <div className="roles-permission-chips">
                   {role.permissions.map((permission) => (
                     <span key={permission} className="roles-permission-chip">
-                      {permission}
+                      {permissionLabel(t, permission)}
                     </span>
                   ))}
                 </div>
@@ -128,12 +133,18 @@ export function RolesSection({ teamId }: { teamId: string }) {
                 <div className="roles-list-actions">
                   <button
                     className="server-list-action"
+                    title={t("roles.editAria", { name: role.name })}
                     aria-label={t("roles.editAria", { name: role.name })}
                     onClick={() => setForm({ id: role.id, name: role.name, description: role.description ?? "", permissions: new Set(role.permissions) })}
                   >
                     <Icon name="edit" size={14} />
                   </button>
-                  <button className="server-list-action" aria-label={t("roles.deleteAria", { name: role.name })} onClick={() => handleDelete(role)}>
+                  <button
+                    className="server-list-action"
+                    title={t("roles.deleteAria", { name: role.name })}
+                    aria-label={t("roles.deleteAria", { name: role.name })}
+                    onClick={() => handleDelete(role)}
+                  >
                     <Icon name="trash" size={14} />
                   </button>
                 </div>
@@ -170,7 +181,7 @@ export function RolesSection({ teamId }: { teamId: string }) {
               {allPermissions.map((permission) => (
                 <label key={permission} className="roles-permission-checkbox">
                   <input type="checkbox" checked={form.permissions.has(permission)} onChange={() => togglePermission(permission)} />
-                  {permission}
+                  {permissionLabel(t, permission)}
                 </label>
               ))}
             </div>

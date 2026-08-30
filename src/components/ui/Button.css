@@ -28,6 +28,15 @@
   cursor: not-allowed;
 }
 
+/* Matches IconButton's "sm" height (28px) so a text button and an
+   icon-only button never mismatch height sitting side by side. */
+.btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  gap: 6px;
+}
+
 .btn-primary {
   background: var(--accent);
   color: var(--accent-contrast);

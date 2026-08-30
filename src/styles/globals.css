@@ -45,6 +45,51 @@
 }
 
 /*
+ * Spacing / typography / z-index scale - additive tokens from the UI
+ * cleanup pass (see docs/UI_AUDIT.md). These name a vocabulary that mostly
+ * already matched what components used ad hoc (4/8/12/16/20/24 show up
+ * constantly); they don't change any existing rule by themselves. New or
+ * touched CSS should reach for these instead of a fresh magic number.
+ */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Secondary metadata (timestamps, hints) up through the new page-title
+     size. Deliberately excludes the sub-12px decorative "eyebrow" labels
+     (sidebar group headers, badge text) - those rely on uppercase +
+     letter-spacing to stay legible at that size, not this scale. */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  /* Formalizes the z-index ladder that already existed informally
+     (content < terminal search overlay < popover < modal < toast). */
+  --z-content: 0;
+  --z-sticky: 5;
+  --z-popover: 50;
+  --z-modal: 100;
+  --z-toast: 200;
+
+  /* Below this content width, the shell steps down (sidebar collapse
+     hint, page padding). CSS `@media` conditions can't reference a custom
+     property, so this exists for documentation/JS use - stylesheets that
+     need the breakpoint repeat the literal 1100px value in their
+     `@media (max-width: 1100px)` query and should stay in sync with this. */
+  --bp-compact: 1100px;
+}
+
+/*
  * `--t-*` is a second, wider naming layer over the same palette above (every
  * shared hex still lives in exactly one place - the block above - these are
  * aliases, not new colors) plus the handful of intermediate tiers Voltius's

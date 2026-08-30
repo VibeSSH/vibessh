@@ -7,8 +7,9 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
 import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
-import { downloadRemoteFile, listRemoteDirectory, uploadRemoteFile } from "@/services/filesService";
+import { createRemoteDirectory, downloadRemoteFile, listRemoteDirectory, uploadRemoteFile, writeRemoteFile } from "@/services/filesService";
 import { useServersStore } from "@/stores/serversStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
@@ -36,6 +37,7 @@ export function FilesPage() {
   const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(null);
   const [uploading, setUploading] = useState(false);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
+  const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
 
   const load = useCallback(
     (targetPath: string) => {
@@ -92,6 +94,22 @@ export function FilesPage() {
     }
   }
 
+  async function handleCreateFolder(name: string) {
+    if (!serverId) return;
+    await createRemoteDirectory(serverId, joinRemotePath(path, name));
+    toastSuccess(t("filesPage.createdFolderToast", { name }));
+    load(path);
+  }
+
+  async function handleCreateFile(name: string) {
+    if (!serverId) return;
+    const remotePath = joinRemotePath(path, name);
+    await writeRemoteFile(serverId, remotePath, []);
+    toastSuccess(t("filesPage.createdFileToast", { name }));
+    load(path);
+    setOpenFile({ name, path: remotePath, isDir: false, isSymlink: false, size: 0 });
+  }
+
   async function handleDownload(entry: RemoteFileEntry) {
     if (!serverId) return;
     const localPath = await save({ defaultPath: entry.name, title: "Download file" });
@@ -137,10 +155,20 @@ export function FilesPage() {
             );
           })}
         </div>
-        <Button variant="secondary" onClick={handleUpload} disabled={uploading}>
-          <Icon name="upload" size={14} />
-          {uploading ? t("filesPage.uploading") : t("filesPage.upload")}
-        </Button>
+        <div className="files-toolbar-actions">
+          <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
+            <Icon name="folder-plus" size={14} />
+            {t("filesPage.newFolder")}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setCreateModal("file")}>
+            <Icon name="file-plus" size={14} />
+            {t("filesPage.newFile")}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleUpload} disabled={uploading}>
+            <Icon name="upload" size={14} />
+            {uploading ? t("filesPage.uploading") : t("filesPage.upload")}
+          </Button>
+        </div>
       </div>
 
       {error && <p className="page-error-note">{error}</p>}
@@ -159,6 +187,7 @@ export function FilesPage() {
                 </div>
                 <button
                   className="files-entry-name"
+                  title={entry.name}
                   onClick={() => (entry.isDir ? load(entry.path) : setOpenFile(entry))}
                 >
                   {entry.name}
@@ -181,6 +210,14 @@ export function FilesPage() {
           </ul>
         )}
       </Card>
+
+      {createModal && (
+        <CreateEntryModal
+          mode={createModal}
+          onClose={() => setCreateModal(null)}
+          onCreate={createModal === "folder" ? handleCreateFolder : handleCreateFile}
+        />
+      )}
     </div>
   );
 }

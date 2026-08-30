@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import type { ManagedServer } from "@/stores/serversStore";
@@ -24,9 +25,7 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{isEditing ? t("addServerModal.titleEdit") : t("addServerModal.titleAdd")}</h2>
-          <button className="modal-close" onClick={onClose} aria-label={t("common.close")}>
-            <Icon name="x" size={16} />
-          </button>
+          <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
 
         {!isEditing && (

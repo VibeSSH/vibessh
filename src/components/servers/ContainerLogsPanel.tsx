@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { getServerContainerLogs } from "@/services/actionsService";
 import "./AddServerModal.css";
 import "./forms.css";
@@ -34,40 +35,18 @@ export function ContainerLogsPanel({ serverId, containerName, onClose }: Contain
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel" style={{ width: 720 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel modal-panel-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t("containerLogs.title", { name: containerName })}</h2>
-          <button className="modal-close" onClick={onClose} aria-label={t("common.close")}>
-            <Icon name="x" size={16} />
-          </button>
+          <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="modal-body">
-          {error && (
-            <p className="form-note" style={{ color: "var(--danger)", marginBottom: 12 }}>
-              {error}
-            </p>
-          )}
-          <pre
-            style={{
-              height: 420,
-              overflow: "auto",
-              margin: 0,
-              padding: 12,
-              background: "var(--surface-bg)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: "var(--text-primary)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}
-          >
+          {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
+          <pre className="container-logs-output">
             {loading ? t("containerLogs.loading") : logs || t("containerLogs.noOutput", { lines: TAIL_LINES })}
           </pre>
 
-          <div className="form-actions" style={{ marginTop: 12, gap: 8 }}>
+          <div className="form-actions form-actions-spaced">
             <Button variant="secondary" onClick={onClose}>
               {t("common.close")}
             </Button>

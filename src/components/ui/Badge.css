@@ -9,6 +9,11 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
+  /* Never lets a badge squish inside a flex row (server-list rows with a
+     long name + multiple badges + action buttons, see docs/UI_AUDIT.md
+     finding C3) - the sibling with min-width:0 truncates instead. */
+  flex-shrink: 0;
 }
 
 .badge-neutral {

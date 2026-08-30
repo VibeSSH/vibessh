@@ -88,7 +88,7 @@ export function Teams() {
                 <div className="server-list-icon">
                   <Icon name="users" size={16} />
                 </div>
-                <button className="files-entry-name" onClick={() => navigate(`/teams/${team.id}`)}>
+                <button className="files-entry-name" title={team.name} onClick={() => navigate(`/teams/${team.id}`)}>
                   {team.name}
                 </button>
               </li>
