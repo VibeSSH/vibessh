@@ -498,8 +498,8 @@ function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersion
           {t("createApplicationWizard.chooseJava")}
         </option>
         {installations.map((installation) => (
-          <option key={installation.path} value={installation.path}>
-            {installation.label} — {installation.path}
+          <option key={installation.path} value={installation.path} title={installation.path}>
+            {t("createApplicationWizard.javaOption", { major: installation.majorVersion })}
           </option>
         ))}
         <option value="__custom__">{t("createApplicationWizard.customJavaPath")}</option>

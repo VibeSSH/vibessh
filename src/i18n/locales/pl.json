@@ -246,6 +246,7 @@
     "noRuntimeForLocation": "Ten blueprint nie obsługuje żadnego runtime'u dla wybranej lokalizacji.",
     "detectingJava": "Szukam zainstalowanych wersji Javy...",
     "chooseJava": "Wybierz instalację Javy",
+    "javaOption": "Java {{major}}",
     "customJavaPath": "Wpiszę ścieżkę sam...",
     "backToDetectedJava": "Wybierz zamiast tego z wykrytych instalacji",
     "noJavaDetected": "Nie wykryto automatycznie żadnej instalacji Javy - wpisz ścieżkę ręcznie.",

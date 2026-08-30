@@ -30,6 +30,38 @@ pub struct JavaInstallation {
     /// trust ("jdk-17", "temurin-17-jdk", "zulu17.44.53-ca-jdk17.0.8-...")
     /// for something shown to the user as the actual version.
     pub label: String,
+    /// The major version number (`"21"`, `"8"`, ...) parsed from `label` -
+    /// so the wizard can offer a clean "Java 21" / "Java 17" picker (the
+    /// user's own reference point: Pterodactyl's Docker-image picker reads
+    /// the same way), the same simple style the Minecraft version picker
+    /// already has, instead of every individual install's exact patch
+    /// version and filesystem path cluttering the list.
+    pub major_version: String,
+}
+
+/// Java's own versioning split: `"1.8.0_392"`-style strings (Java 8 and
+/// earlier) report their major version as the *second* dot-separated
+/// component; `"9.x.x"` onward (including `"21.0.9"`, `"25"`) reports it as
+/// the first.
+fn major_version(label: &str) -> String {
+    let mut parts = label.split('.');
+    match (parts.next(), parts.next()) {
+        (Some("1"), Some(second)) => second.to_string(),
+        (Some(first), _) => first.to_string(),
+        (None, _) => label.to_string(),
+    }
+}
+
+/// Keeps only the first installation found for each major version -
+/// several JDK vendors installed side by side often share one, and a
+/// picker showing "Java 21" three times over (once per vendor) defeats the
+/// point of simplifying it in the first place. Order is preserved, so the
+/// `$PATH`-found installation (always collected first, in both the local
+/// and remote scans) wins over a directory-scan match when both share a
+/// major version.
+fn dedupe_by_major_version(installations: Vec<JavaInstallation>) -> Vec<JavaInstallation> {
+    let mut seen_majors = HashSet::new();
+    installations.into_iter().filter(|installation| seen_majors.insert(installation.major_version.clone())).collect()
 }
 
 /// `Some(server_id)` detects on that Remote server over SSH; `None`
@@ -71,7 +103,7 @@ async fn detect_local_java() -> Vec<JavaInstallation> {
     let mut installations = Vec::new();
 
     if let Some(label) = probe_java_version(JAVA_ON_PATH).await {
-        installations.push(JavaInstallation { path: JAVA_ON_PATH.to_string(), label });
+        installations.push(JavaInstallation { path: JAVA_ON_PATH.to_string(), major_version: major_version(&label), label });
     }
 
     for root in CANDIDATE_ROOTS {
@@ -83,12 +115,12 @@ async fn detect_local_java() -> Vec<JavaInstallation> {
                 continue;
             }
             if let Some(label) = probe_java_version(candidate_str).await {
-                installations.push(JavaInstallation { path: candidate_str.to_string(), label });
+                installations.push(JavaInstallation { path: candidate_str.to_string(), major_version: major_version(&label), label });
             }
         }
     }
 
-    installations
+    dedupe_by_major_version(installations)
 }
 
 async fn probe_java_version(binary: &str) -> Option<String> {
@@ -142,11 +174,11 @@ fn parse_remote_detect_output(stdout: &str) -> Vec<JavaInstallation> {
         }
         let version_output = lines.collect::<Vec<_>>().join("\n");
         if let Some(label) = parse_java_version_output(&version_output) {
-            installations.push(JavaInstallation { path, label });
+            installations.push(JavaInstallation { path, major_version: major_version(&label), label });
         }
     }
 
-    installations
+    dedupe_by_major_version(installations)
 }
 
 #[cfg(test)]
@@ -159,6 +191,35 @@ mod tests {
         assert_eq!(parse_java_version_output("java version \"1.8.0_392\"\n"), Some("1.8.0_392".to_string()));
         assert_eq!(parse_java_version_output("not java output"), None);
         assert_eq!(parse_java_version_output(""), None);
+    }
+
+    #[test]
+    fn major_version_handles_both_java_versioning_schemes() {
+        assert_eq!(major_version("21.0.11"), "21");
+        assert_eq!(major_version("25"), "25");
+        assert_eq!(major_version("1.8.0_481"), "8");
+        assert_eq!(major_version("1.7.0_80"), "7");
+    }
+
+    #[test]
+    fn parse_remote_detect_output_collapses_two_vendors_sharing_a_major_version() {
+        let stdout = concat!(
+            "===JAVA===\n",
+            "/usr/bin/java\n",
+            "openjdk version \"21.0.1\" 2023-10-17\n",
+            "===JAVA===\n",
+            "/usr/lib/jvm/temurin-21-jdk/bin/java\n",
+            "openjdk version \"21.0.4\" 2024-01-01\n",
+        );
+
+        let installations = parse_remote_detect_output(stdout);
+
+        // Two different real paths, same major version - the PATH-found
+        // one (listed first) wins, the vendor-specific duplicate is
+        // dropped rather than showing "Java 21" twice.
+        assert_eq!(installations.len(), 1);
+        assert_eq!(installations[0].path, "/usr/bin/java");
+        assert_eq!(installations[0].major_version, "21");
     }
 
     #[test]

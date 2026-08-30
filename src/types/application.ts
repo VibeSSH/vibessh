@@ -58,10 +58,11 @@ export type BlueprintFeature = "console" | "logs" | "environment" | "ports";
 
 export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion" | "minecraftVersion";
 
-/** A real, detected Java installation - see `detectJavaInstallations`. */
+/** A real, detected Java installation - see `detectJavaInstallations`. One entry per major version (e.g. only one "21" even if several vendors are installed) - `majorVersion` is what the picker shows ("Java 21"), `label`/`path` are the full detail behind it. */
 export interface JavaInstallation {
   path: string;
   label: string;
+  majorVersion: string;
 }
 
 export interface BlueprintField {
