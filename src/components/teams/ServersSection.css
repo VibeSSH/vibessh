@@ -1,0 +1,19 @@
+.team-servers-form {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.team-servers-form-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.team-servers-form-row .form-input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.team-servers-port-input {
+  max-width: 80px;
+  flex: 0 0 80px !important;
+}

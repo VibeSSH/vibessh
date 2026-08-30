@@ -7,7 +7,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile};
+use crate::models::{CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile};
 use crate::state::cloud_session::{CloudSession, CloudState};
 use crate::storage::credentials;
 
@@ -112,4 +112,92 @@ pub async fn list_members(state: &CloudState, team_id: Uuid) -> AppResult<Vec<Cl
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;
     inner.client.list_members(&token, team_id).await
+}
+
+pub async fn list_permissions(state: &CloudState) -> AppResult<Vec<String>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_permissions(&token).await
+}
+
+pub async fn list_roles(state: &CloudState, team_id: Uuid) -> AppResult<Vec<CloudRoleWithPermissions>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_roles(&token, team_id).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_role(
+    state: &CloudState,
+    team_id: Uuid,
+    name: &str,
+    description: Option<&str>,
+    permissions: &[String],
+) -> AppResult<CloudRoleWithPermissions> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.create_role(&token, team_id, name, description, permissions).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn update_role(
+    state: &CloudState,
+    team_id: Uuid,
+    role_id: Uuid,
+    name: &str,
+    description: Option<&str>,
+    permissions: &[String],
+) -> AppResult<CloudRoleWithPermissions> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.update_role(&token, team_id, role_id, name, description, permissions).await
+}
+
+pub async fn delete_role(state: &CloudState, team_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.delete_role(&token, team_id, role_id).await
+}
+
+pub async fn list_member_roles(state: &CloudState, team_id: Uuid, user_id: Uuid) -> AppResult<Vec<CloudRole>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_member_roles(&token, team_id, user_id).await
+}
+
+pub async fn assign_role(state: &CloudState, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.assign_role(&token, team_id, user_id, role_id).await
+}
+
+pub async fn unassign_role(state: &CloudState, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.unassign_role(&token, team_id, user_id, role_id).await
+}
+
+pub async fn list_servers(state: &CloudState, team_id: Uuid) -> AppResult<Vec<CloudServer>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_servers(&token, team_id).await
+}
+
+pub async fn create_server(
+    state: &CloudState,
+    team_id: Uuid,
+    name: &str,
+    host: &str,
+    ssh_port: i32,
+    username: Option<&str>,
+) -> AppResult<CloudServer> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.create_server(&token, team_id, name, host, ssh_port, username).await
+}
+
+pub async fn delete_server(state: &CloudState, team_id: Uuid, server_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.delete_server(&token, team_id, server_id).await
 }

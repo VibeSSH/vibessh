@@ -24,3 +24,26 @@ export interface CloudTeamMember {
   joinedAt: string;
   isOwner: boolean;
 }
+
+export interface CloudRole {
+  id: string;
+  teamId: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  createdAt: string;
+}
+
+export interface CloudRoleWithPermissions extends CloudRole {
+  permissions: string[];
+}
+
+export interface CloudServer {
+  id: string;
+  teamId: string;
+  name: string;
+  host: string;
+  sshPort: number;
+  username: string | null;
+  createdAt: string;
+}

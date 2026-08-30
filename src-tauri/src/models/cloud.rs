@@ -51,3 +51,34 @@ pub struct CloudTeamMember {
 pub struct CloudSessionInfo {
     pub user: CloudUserProfile,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudRole {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_system: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudRoleWithPermissions {
+    #[serde(flatten)]
+    pub role: CloudRole,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudServer {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub name: String,
+    pub host: String,
+    pub ssh_port: i32,
+    pub username: Option<String>,
+    pub created_at: DateTime<Utc>,
+}

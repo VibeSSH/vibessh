@@ -1,0 +1,49 @@
+.member-roles-anchor {
+  position: relative;
+}
+
+.member-roles-popover {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--t-bg-modal);
+  box-shadow: var(--t-ring-strong), var(--t-elev-3);
+  z-index: 50;
+  animation: scaleIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.member-roles-popover-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.member-roles-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+
+.member-roles-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.member-roles-checkbox:hover {
+  background: var(--surface-2);
+}
+
+.member-roles-checkbox-locked {
+  color: var(--text-tertiary);
+}

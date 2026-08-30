@@ -6,21 +6,28 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
+import { RolesSection } from "@/components/teams/RolesSection";
+import { ServersSection } from "@/components/teams/ServersSection";
 import { cloudGetTeam, cloudListMembers } from "@/services/cloudService";
 import type { CloudTeam, CloudTeamMember } from "@/types/cloud";
 import "./pages.css";
 import "./Servers.css";
+import "@/components/servers/AddServerModal.css";
+
+type Tab = "members" | "roles" | "servers";
 
 export function TeamDetail() {
   const { t } = useTranslation();
   const { teamId } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
+  const [tab, setTab] = useState<Tab>("members");
   const [team, setTeam] = useState<CloudTeam | null>(null);
   const [members, setMembers] = useState<CloudTeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadOverview() {
     if (!teamId) return;
     setLoading(true);
     setError(null);
@@ -31,7 +38,9 @@ export function TeamDetail() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("teams.couldntLoad")))
       .finally(() => setLoading(false));
-  }, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }
+
+  useEffect(loadOverview, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!teamId) {
     return <Navigate to="/teams" replace />;
@@ -52,26 +61,44 @@ export function TeamDetail() {
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card title={t("teams.membersTitle")} subtitle={t("teams.membersCount", { count: members.length })}>
-        {loading ? (
-          <SkeletonRows />
-        ) : (
-          <ul className="server-list">
-            {members.map((member) => (
-              <li key={member.userId} className="server-list-item">
-                <div className="server-list-icon">
-                  <Icon name="user" size={16} />
-                </div>
-                <div className="server-list-main">
-                  <span className="server-list-name">{member.displayName}</span>
-                  <span className="server-list-host">{member.email}</span>
-                </div>
-                {member.isOwner && <Badge tone="success">{t("teams.owner")}</Badge>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <div className="modal-tabs" style={{ marginBottom: 16 }}>
+        <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
+          {t("teams.membersTitle")}
+        </button>
+        <button className={`modal-tab ${tab === "roles" ? "modal-tab-active" : ""}`} onClick={() => setTab("roles")}>
+          {t("roles.title")}
+        </button>
+        <button className={`modal-tab ${tab === "servers" ? "modal-tab-active" : ""}`} onClick={() => setTab("servers")}>
+          {t("teamServers.title")}
+        </button>
+      </div>
+
+      {tab === "members" && (
+        <Card title={t("teams.membersTitle")} subtitle={t("teams.membersCount", { count: members.length })}>
+          {loading ? (
+            <SkeletonRows />
+          ) : (
+            <ul className="server-list">
+              {members.map((member) => (
+                <li key={member.userId} className="server-list-item">
+                  <div className="server-list-icon">
+                    <Icon name="user" size={16} />
+                  </div>
+                  <div className="server-list-main">
+                    <span className="server-list-name">{member.displayName}</span>
+                    <span className="server-list-host">{member.email}</span>
+                  </div>
+                  {member.isOwner && <Badge tone="success">{t("teams.owner")}</Badge>}
+                  <MemberRolesEditor teamId={teamId} userId={member.userId} memberName={member.displayName} isOwner={member.isOwner} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {tab === "roles" && <RolesSection teamId={teamId} />}
+      {tab === "servers" && <ServersSection teamId={teamId} />}
     </div>
   );
 }

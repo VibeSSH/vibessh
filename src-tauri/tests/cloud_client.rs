@@ -56,6 +56,62 @@ async fn register_then_login_and_list_teams_round_trips_against_a_real_backend()
 }
 
 #[tokio::test]
+async fn roles_and_servers_round_trip_against_a_real_backend() {
+    let Some(base_url) = backend_url() else {
+        eprintln!("skipping: VIBESSH_TEST_BACKEND_URL not set");
+        return;
+    };
+    let client = CloudClient::new(base_url);
+    let email = unique_email();
+    let auth = client.register(&email, "correct horse battery staple", "Desktop Test").await.unwrap();
+    let team = client.create_team(&auth.access_token, "Roles Test Team").await.unwrap();
+
+    let permissions = client.list_permissions(&auth.access_token).await.expect("list_permissions should succeed");
+    assert!(permissions.contains(&"servers.manage".to_string()));
+
+    let roles = client.list_roles(&auth.access_token, team.id).await.expect("list_roles should succeed");
+    assert_eq!(roles.len(), 1, "the seeded Owner role");
+    assert_eq!(roles[0].role.name, "Owner");
+
+    let custom_role = client
+        .create_role(&auth.access_token, team.id, "Server Manager", Some("Can manage servers"), &["servers.manage".to_string()])
+        .await
+        .expect("create_role should succeed");
+    assert_eq!(custom_role.permissions, vec!["servers.manage".to_string()]);
+
+    let updated = client
+        .update_role(&auth.access_token, team.id, custom_role.role.id, "Server Manager", None, &["servers.manage".to_string(), "audit.view".to_string()])
+        .await
+        .expect("update_role should succeed");
+    assert_eq!(updated.permissions.len(), 2);
+
+    let members = client.list_members(&auth.access_token, team.id).await.unwrap();
+    let owner_id = members[0].user_id;
+    client.assign_role(&auth.access_token, team.id, owner_id, custom_role.role.id).await.expect("assign_role should succeed");
+    let member_roles = client.list_member_roles(&auth.access_token, team.id, owner_id).await.expect("list_member_roles should succeed");
+    assert!(member_roles.iter().any(|r| r.id == custom_role.role.id));
+    client.unassign_role(&auth.access_token, team.id, owner_id, custom_role.role.id).await.expect("unassign_role should succeed");
+
+    client.delete_role(&auth.access_token, team.id, custom_role.role.id).await.expect("delete_role should succeed");
+
+    let servers = client.list_servers(&auth.access_token, team.id).await.expect("list_servers should succeed");
+    assert!(servers.is_empty());
+
+    let server = client
+        .create_server(&auth.access_token, team.id, "Prod DB", "10.0.0.5", 2222, Some("root"))
+        .await
+        .expect("create_server should succeed");
+    assert_eq!(server.host, "10.0.0.5");
+
+    let servers_after = client.list_servers(&auth.access_token, team.id).await.unwrap();
+    assert_eq!(servers_after.len(), 1);
+
+    client.delete_server(&auth.access_token, team.id, server.id).await.expect("delete_server should succeed");
+    let servers_final = client.list_servers(&auth.access_token, team.id).await.unwrap();
+    assert!(servers_final.is_empty());
+}
+
+#[tokio::test]
 async fn wrong_password_is_a_clean_error_not_a_panic() {
     let Some(base_url) = backend_url() else {
         eprintln!("skipping: VIBESSH_TEST_BACKEND_URL not set");

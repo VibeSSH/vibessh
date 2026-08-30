@@ -6,9 +6,13 @@ mod ssh_service;
 
 pub use app_info_service::get_app_info;
 pub use cloud_service::{
-    create_team as cloud_create_team, get_team as cloud_get_team, list_members as cloud_list_members,
+    assign_role as cloud_assign_role, create_role as cloud_create_role, create_server as cloud_create_server,
+    create_team as cloud_create_team, delete_role as cloud_delete_role, delete_server as cloud_delete_server,
+    get_team as cloud_get_team, list_member_roles as cloud_list_member_roles, list_members as cloud_list_members,
+    list_permissions as cloud_list_permissions, list_roles as cloud_list_roles, list_servers as cloud_list_servers,
     list_teams as cloud_list_teams, login as cloud_login, logout as cloud_logout, register as cloud_register,
     session_info as cloud_session_info, try_restore_session as cloud_try_restore_session,
+    unassign_role as cloud_unassign_role, update_role as cloud_update_role,
 };
 pub use ping_service::ping_server;
 pub use server_service::{create_server, delete_server, get_server, list_servers, update_server};

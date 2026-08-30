@@ -2,7 +2,9 @@ use tauri::{Manager, State};
 use uuid::Uuid;
 
 use crate::errors::AppResult;
-use crate::models::{CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile};
+use crate::models::{
+    CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile,
+};
 use crate::services;
 use crate::state::cloud_session::CloudState;
 use crate::storage::cloud_config;
@@ -63,4 +65,79 @@ pub async fn cloud_list_members(state: State<'_, CloudState>, team_id: Uuid) -> 
 #[tauri::command]
 pub async fn cloud_get_team(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<CloudTeam> {
     services::cloud_get_team(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_permissions(state: State<'_, CloudState>) -> AppResult<Vec<String>> {
+    services::cloud_list_permissions(&state).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_roles(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<CloudRoleWithPermissions>> {
+    services::cloud_list_roles(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_create_role(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    name: String,
+    description: Option<String>,
+    permissions: Vec<String>,
+) -> AppResult<CloudRoleWithPermissions> {
+    services::cloud_create_role(&state, team_id, &name, description.as_deref(), &permissions).await
+}
+
+#[tauri::command]
+pub async fn cloud_update_role(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    role_id: Uuid,
+    name: String,
+    description: Option<String>,
+    permissions: Vec<String>,
+) -> AppResult<CloudRoleWithPermissions> {
+    services::cloud_update_role(&state, team_id, role_id, &name, description.as_deref(), &permissions).await
+}
+
+#[tauri::command]
+pub async fn cloud_delete_role(state: State<'_, CloudState>, team_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    services::cloud_delete_role(&state, team_id, role_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_member_roles(state: State<'_, CloudState>, team_id: Uuid, user_id: Uuid) -> AppResult<Vec<CloudRole>> {
+    services::cloud_list_member_roles(&state, team_id, user_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_assign_role(state: State<'_, CloudState>, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    services::cloud_assign_role(&state, team_id, user_id, role_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_unassign_role(state: State<'_, CloudState>, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+    services::cloud_unassign_role(&state, team_id, user_id, role_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_servers(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<CloudServer>> {
+    services::cloud_list_servers(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_create_server(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    name: String,
+    host: String,
+    ssh_port: i32,
+    username: Option<String>,
+) -> AppResult<CloudServer> {
+    services::cloud_create_server(&state, team_id, &name, &host, ssh_port, username.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn cloud_delete_server(state: State<'_, CloudState>, team_id: Uuid, server_id: Uuid) -> AppResult<()> {
+    services::cloud_delete_server(&state, team_id, server_id).await
 }

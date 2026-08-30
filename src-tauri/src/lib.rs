@@ -109,6 +109,17 @@ pub fn run() {
             commands::cloud_commands::cloud_create_team,
             commands::cloud_commands::cloud_list_members,
             commands::cloud_commands::cloud_get_team,
+            commands::cloud_commands::cloud_list_permissions,
+            commands::cloud_commands::cloud_list_roles,
+            commands::cloud_commands::cloud_create_role,
+            commands::cloud_commands::cloud_update_role,
+            commands::cloud_commands::cloud_delete_role,
+            commands::cloud_commands::cloud_list_member_roles,
+            commands::cloud_commands::cloud_assign_role,
+            commands::cloud_commands::cloud_unassign_role,
+            commands::cloud_commands::cloud_list_servers,
+            commands::cloud_commands::cloud_create_server,
+            commands::cloud_commands::cloud_delete_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

@@ -9,7 +9,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{CloudAuthResponse, CloudTeam, CloudTeamMember, CloudUserProfile};
+use crate::models::{
+    CloudAuthResponse, CloudRole, CloudRoleWithPermissions, CloudServer, CloudTeam, CloudTeamMember, CloudUserProfile,
+};
 
 pub struct CloudClient {
     base_url: String,
@@ -122,5 +124,102 @@ impl CloudClient {
 
     pub async fn list_members(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudTeamMember>> {
         self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/members"), Some(access_token), None).await
+    }
+
+    pub async fn list_permissions(&self, access_token: &str) -> AppResult<Vec<String>> {
+        self.send::<(), _>(Method::GET, "/permissions", Some(access_token), None).await
+    }
+
+    pub async fn list_roles(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudRoleWithPermissions>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/roles"), Some(access_token), None).await
+    }
+
+    pub async fn create_role(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        name: &str,
+        description: Option<&str>,
+        permissions: &[String],
+    ) -> AppResult<CloudRoleWithPermissions> {
+        self.send(
+            Method::POST,
+            &format!("/teams/{team_id}/roles"),
+            Some(access_token),
+            Some(&json!({ "name": name, "description": description, "permissions": permissions })),
+        )
+        .await
+    }
+
+    pub async fn update_role(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        role_id: Uuid,
+        name: &str,
+        description: Option<&str>,
+        permissions: &[String],
+    ) -> AppResult<CloudRoleWithPermissions> {
+        self.send(
+            Method::PATCH,
+            &format!("/teams/{team_id}/roles/{role_id}"),
+            Some(access_token),
+            Some(&json!({ "name": name, "description": description, "permissions": permissions })),
+        )
+        .await
+    }
+
+    pub async fn delete_role(&self, access_token: &str, team_id: Uuid, role_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}/roles/{role_id}"), Some(access_token), None).await
+    }
+
+    pub async fn list_member_roles(&self, access_token: &str, team_id: Uuid, user_id: Uuid) -> AppResult<Vec<CloudRole>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/members/{user_id}/roles"), Some(access_token), None).await
+    }
+
+    pub async fn assign_role(&self, access_token: &str, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+        self.send_no_content(
+            Method::POST,
+            &format!("/teams/{team_id}/members/{user_id}/roles"),
+            Some(access_token),
+            Some(&json!({ "roleId": role_id })),
+        )
+        .await
+    }
+
+    pub async fn unassign_role(&self, access_token: &str, team_id: Uuid, user_id: Uuid, role_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(
+            Method::DELETE,
+            &format!("/teams/{team_id}/members/{user_id}/roles/{role_id}"),
+            Some(access_token),
+            None,
+        )
+        .await
+    }
+
+    pub async fn list_servers(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudServer>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/servers"), Some(access_token), None).await
+    }
+
+    pub async fn create_server(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        name: &str,
+        host: &str,
+        ssh_port: i32,
+        username: Option<&str>,
+    ) -> AppResult<CloudServer> {
+        self.send(
+            Method::POST,
+            &format!("/teams/{team_id}/servers"),
+            Some(access_token),
+            Some(&json!({ "name": name, "host": host, "sshPort": ssh_port, "username": username })),
+        )
+        .await
+    }
+
+    pub async fn delete_server(&self, access_token: &str, team_id: Uuid, server_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}/servers/{server_id}"), Some(access_token), None).await
     }
 }
