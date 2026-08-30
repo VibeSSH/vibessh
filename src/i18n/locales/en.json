@@ -24,6 +24,7 @@
     "teams": "Teams",
     "dashboard": "Dashboard",
     "servers": "Servers",
+    "applications": "Applications",
     "terminal": "Terminal",
     "files": "Files",
     "monitor": "Monitor",
@@ -146,6 +147,74 @@
     "errorSave": "Couldn't save the server.",
     "noteEdit": "Leaving the password/passphrase blank keeps the one already saved - test connection needs it re-entered to check a changed credential.",
     "noteAdd": "Test connection opens a real SSH connection and closes it again - it doesn't save anything."
+  },
+  "applications": {
+    "title": "Applications",
+    "subtitle": "Processes, systemd units, and containers VibeSSH manages for you.",
+    "create": "Create application",
+    "emptyTitle": "No applications yet",
+    "emptyDescription": "Create one from a blueprint - run a command locally, or manage a process, systemd unit, or container on a remote server.",
+    "actionError": "Couldn't complete that action.",
+    "removedToast": "Removed {{name}}",
+    "couldntRemove": "Couldn't remove the application."
+  },
+  "applicationCard": {
+    "local": "Local",
+    "remote": "Remote server",
+    "startAria": "Start {{name}}",
+    "stopAria": "Stop {{name}}",
+    "restartAria": "Restart {{name}}",
+    "killAria": "Force-kill {{name}}",
+    "deleteAria": "Delete {{name}}"
+  },
+  "applicationStatus": {
+    "unknown": "Unknown",
+    "starting": "Starting",
+    "running": "Running",
+    "stopping": "Stopping",
+    "stopped": "Stopped",
+    "failed": "Failed"
+  },
+  "deleteApplicationDialog": {
+    "title": "Delete application",
+    "body": "Delete <1>{{name}}</1>? This removes it from VibeSSH - it won't stop a still-running process/unit/container on its own; stop it first if it's running. This can't be undone."
+  },
+  "createApplicationWizard": {
+    "title": "Create application",
+    "step1Title": "Location & basics",
+    "step2Title": "Blueprint & runtime",
+    "step3Title": "Configuration",
+    "step4Title": "Environment variables",
+    "step5Title": "Review",
+    "location": "Where does this run?",
+    "locationLocal": "This computer",
+    "noServersNote": "No saved servers yet - add one from the Servers page to run this remotely instead.",
+    "name": "Name",
+    "namePlaceholder": "My application",
+    "workingDirectory": "Working directory",
+    "workingDirectoryPlaceholderLocal": "C:\\Users\\you\\apps\\my-app",
+    "workingDirectoryPlaceholderRemote": "/srv/my-app",
+    "workingDirectoryNote": "Where the application's files live, and where it runs from.",
+    "blueprint": "Blueprint",
+    "runtimeType": "Runtime",
+    "runtimeTypePlaceholder": "Choose a runtime",
+    "runtimeTypeOption": {
+      "localProcess": "Local process",
+      "remoteProcess": "Remote process (SSH)",
+      "systemd": "systemd service",
+      "docker": "Docker container"
+    },
+    "noRuntimeForLocation": "This blueprint doesn't support any runtime for the chosen location.",
+    "environmentNote": "Optional - variables the application can read from its own environment.",
+    "environmentKeyPlaceholder": "KEY",
+    "environmentValuePlaceholder": "value",
+    "removeVariableAria": "Remove this variable",
+    "addVariable": "Add variable",
+    "environmentReviewLabel": "Environment variables",
+    "environmentReviewNone": "None",
+    "next": "Next",
+    "loadError": "Couldn't load blueprints.",
+    "createError": "Couldn't create the application."
   },
   "agentPairing": {
     "host": "Host",

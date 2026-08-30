@@ -35,7 +35,11 @@ pub struct RuntimeContext<'a> {
     pub connection: Option<Arc<SshSession>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// `Serialize` so a Tauri command can return this directly to the frontend
+/// (e.g. `application_resource_usage`) - added once a command actually
+/// needed to, not part of the trait's own Phase 0 shape.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceUsage {
     pub cpu_percent: Option<f32>,
     pub ram_bytes: Option<u64>,
@@ -93,12 +97,25 @@ pub trait LogProvider: Send + Sync {
     async fn tail(&self, max_lines: u32) -> AppResult<Vec<String>>;
 }
 
-/// A `RuntimeType` this build has no implementation for yet (every type is
-/// still in this state until its own phase lands - see
-/// docs/APPLICATIONS_ARCHITECTURE.md Section 10) - kept as its own
-/// documented case rather than a panic, since `runtime_for` will need to
-/// return *something* the moment `RuntimeType` has more variants than
-/// implementations, which is true for the whole of Phase 1.
+/// The one and only place that matches on `RuntimeType` to pick which
+/// `ApplicationRuntime` implementation to construct - every command/service
+/// that needs to act on an `Application` goes through this rather than
+/// each doing its own `if runtime_type == ...` branching (the whole point
+/// of this trait existing, per this module's own top doc comment).
+///
+/// Takes `local_process_manager` unconditionally even though only the
+/// `LocalProcess` arm uses it - the alternative (returning early with a
+/// `LocalProcess`-specific constructor signature) would defeat the "one
+/// call site returns `Box<dyn ApplicationRuntime>`" point of this function.
+pub fn runtime_for(runtime_type: RuntimeType, local_process_manager: Arc<local_process::LocalProcessManager>) -> Box<dyn ApplicationRuntime> {
+    match runtime_type {
+        RuntimeType::LocalProcess => Box::new(local_process::LocalProcessRuntime::new(local_process_manager)),
+        RuntimeType::RemoteProcess => Box::new(remote_process::RemoteProcessRuntime::new()),
+        RuntimeType::Systemd => Box::new(systemd::SystemdRuntime::new()),
+        RuntimeType::Docker => Box::new(docker::DockerRuntime::new()),
+    }
+}
+
 pub fn runtime_type_display_name(runtime_type: RuntimeType) -> &'static str {
     match runtime_type {
         RuntimeType::LocalProcess => "Local Process",

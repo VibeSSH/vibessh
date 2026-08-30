@@ -16,6 +16,7 @@ export const sidebarGroups: SidebarGroup[] = [
     items: [
       { id: "dashboard", labelKey: "nav.dashboard", path: "/", icon: "layout-grid" },
       { id: "servers", labelKey: "nav.servers", path: "/servers", icon: "server" },
+      { id: "applications", labelKey: "nav.applications", path: "/applications", icon: "box" },
     ],
   },
   {

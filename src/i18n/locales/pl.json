@@ -24,6 +24,7 @@
     "teams": "Zespoły",
     "dashboard": "Panel",
     "servers": "Serwery",
+    "applications": "Aplikacje",
     "terminal": "Terminal",
     "files": "Pliki",
     "monitor": "Monitor",
@@ -146,6 +147,74 @@
     "errorSave": "Nie udało się zapisać serwera.",
     "noteEdit": "Pozostawienie hasła/hasła klucza pustym zachowuje już zapisane - test połączenia wymaga jego ponownego wpisania, aby sprawdzić zmienione poświadczenie.",
     "noteAdd": "Test połączenia otwiera prawdziwe połączenie SSH i od razu je zamyka - nic nie zapisuje."
+  },
+  "applications": {
+    "title": "Aplikacje",
+    "subtitle": "Procesy, usługi systemd i kontenery, którymi zarządza VibeSSH.",
+    "create": "Utwórz aplikację",
+    "emptyTitle": "Brak aplikacji",
+    "emptyDescription": "Utwórz aplikację na podstawie blueprintu - uruchom komendę lokalnie, albo zarządzaj procesem, usługą systemd lub kontenerem na zdalnym serwerze.",
+    "actionError": "Nie udało się wykonać tej akcji.",
+    "removedToast": "Usunięto {{name}}",
+    "couldntRemove": "Nie udało się usunąć aplikacji."
+  },
+  "applicationCard": {
+    "local": "Lokalnie",
+    "remote": "Serwer zdalny",
+    "startAria": "Uruchom {{name}}",
+    "stopAria": "Zatrzymaj {{name}}",
+    "restartAria": "Uruchom ponownie {{name}}",
+    "killAria": "Wymuś zakończenie {{name}}",
+    "deleteAria": "Usuń {{name}}"
+  },
+  "applicationStatus": {
+    "unknown": "Nieznany",
+    "starting": "Uruchamianie",
+    "running": "Działa",
+    "stopping": "Zatrzymywanie",
+    "stopped": "Zatrzymana",
+    "failed": "Błąd"
+  },
+  "deleteApplicationDialog": {
+    "title": "Usuń aplikację",
+    "body": "Usunąć <1>{{name}}</1>? To usuwa ją z VibeSSH - nie zatrzymuje samodzielnie wciąż działającego procesu/usługi/kontenera; jeśli działa, zatrzymaj ją najpierw. Tej operacji nie można cofnąć."
+  },
+  "createApplicationWizard": {
+    "title": "Utwórz aplikację",
+    "step1Title": "Lokalizacja i podstawy",
+    "step2Title": "Blueprint i runtime",
+    "step3Title": "Konfiguracja",
+    "step4Title": "Zmienne środowiskowe",
+    "step5Title": "Podsumowanie",
+    "location": "Gdzie ma działać?",
+    "locationLocal": "Ten komputer",
+    "noServersNote": "Brak zapisanych serwerów - dodaj serwer na stronie Serwery, żeby uruchomić aplikację zdalnie.",
+    "name": "Nazwa",
+    "namePlaceholder": "Moja aplikacja",
+    "workingDirectory": "Katalog roboczy",
+    "workingDirectoryPlaceholderLocal": "C:\\Users\\ty\\aplikacje\\moja-app",
+    "workingDirectoryPlaceholderRemote": "/srv/moja-app",
+    "workingDirectoryNote": "Gdzie znajdują się pliki aplikacji i skąd jest uruchamiana.",
+    "blueprint": "Blueprint",
+    "runtimeType": "Runtime",
+    "runtimeTypePlaceholder": "Wybierz runtime",
+    "runtimeTypeOption": {
+      "localProcess": "Proces lokalny",
+      "remoteProcess": "Proces zdalny (SSH)",
+      "systemd": "Usługa systemd",
+      "docker": "Kontener Docker"
+    },
+    "noRuntimeForLocation": "Ten blueprint nie obsługuje żadnego runtime'u dla wybranej lokalizacji.",
+    "environmentNote": "Opcjonalne - zmienne, które aplikacja może odczytać z własnego środowiska.",
+    "environmentKeyPlaceholder": "KLUCZ",
+    "environmentValuePlaceholder": "wartość",
+    "removeVariableAria": "Usuń tę zmienną",
+    "addVariable": "Dodaj zmienną",
+    "environmentReviewLabel": "Zmienne środowiskowe",
+    "environmentReviewNone": "Brak",
+    "next": "Dalej",
+    "loadError": "Nie udało się wczytać blueprintów.",
+    "createError": "Nie udało się utworzyć aplikacji."
   },
   "agentPairing": {
     "host": "Host",

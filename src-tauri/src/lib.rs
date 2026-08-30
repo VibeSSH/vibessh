@@ -16,6 +16,7 @@ mod state;
 mod storage;
 mod transport;
 
+use blueprints::BlueprintRegistry;
 use runtime::local_process::LocalProcessManager;
 use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
 use std::sync::Arc;
@@ -46,6 +47,10 @@ pub fn run() {
         // construct itself with, not just a borrow scoped to one command -
         // see runtime::local_process's own doc comment.
         .manage(Arc::new(LocalProcessManager::new()))
+        // Read-only after construction (no interior mutability needed) -
+        // see blueprints::mod's own doc comment for why this is the whole
+        // persistence story for built-in blueprints in this phase.
+        .manage(BlueprintRegistry::with_builtins())
         .setup(|app| {
             // Needs the resolved app data dir, which only exists once the
             // app is running - can't be built alongside the other .manage()
@@ -84,6 +89,17 @@ pub fn run() {
             commands::pairing_commands::pairing_code_ttl_seconds,
             commands::pairing_commands::start_agent_pairing,
             commands::pairing_commands::cancel_agent_pairing,
+            commands::application_commands::list_applications,
+            commands::application_commands::get_application,
+            commands::application_commands::list_blueprints,
+            commands::application_commands::create_application,
+            commands::application_commands::delete_application,
+            commands::application_commands::start_application,
+            commands::application_commands::stop_application,
+            commands::application_commands::restart_application,
+            commands::application_commands::kill_application,
+            commands::application_commands::refresh_application_status,
+            commands::application_commands::get_application_resource_usage,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,

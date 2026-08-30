@@ -262,7 +262,11 @@ pub async fn container_logs(
     session.container_logs(container, tail).await
 }
 
-async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
+/// `pub(super)` (not just private) so `application_service`'s
+/// runtime-connection resolution can reuse this exact same
+/// cache-then-connect-then-cache logic rather than duplicating it - see
+/// that module's own use of it.
+pub(super) async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
     if let Some(session) = sessions.get(server_id).await {
         return Ok(session);
     }

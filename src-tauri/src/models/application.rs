@@ -97,6 +97,29 @@ pub struct CreateApplicationInput {
     pub metadata: serde_json::Value,
 }
 
+/// What the Create Application wizard submits - distinct from
+/// `CreateApplicationInput` (which already expects a fully-formed
+/// `runtime_config`) because the wizard only collects a blueprint id plus
+/// raw field values; turning those into the concrete `runtime_config` a
+/// runtime reads is `BlueprintHandler::render_runtime_config`'s job, done
+/// server-side in `services::application_service::create_application`
+/// (the frontend has no way to run that Rust logic itself).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateApplicationFromBlueprintInput {
+    pub server_id: Option<Uuid>,
+    pub name: String,
+    pub description: Option<String>,
+    pub blueprint_id: String,
+    pub runtime_type: RuntimeType,
+    pub working_directory: String,
+    #[serde(default)]
+    pub environment: Vec<EnvironmentVariable>,
+    /// A `{ fieldKey: value }` object - keys matching the chosen
+    /// blueprint's own `BlueprintField::key`s.
+    pub blueprint_inputs: serde_json::Value,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateApplicationInput {

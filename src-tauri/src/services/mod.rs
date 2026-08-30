@@ -1,10 +1,15 @@
 mod app_info_service;
+mod application_service;
 mod cloud_service;
 mod ping_service;
 mod server_service;
 mod ssh_service;
 
 pub use app_info_service::get_app_info;
+pub use application_service::{
+    application_resource_usage, create_application, delete_application, get_application, kill_application, list_applications,
+    list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
+};
 pub use cloud_service::{
     accept_invitation as cloud_accept_invitation, assign_role as cloud_assign_role, create_invitation as cloud_create_invitation,
     create_role as cloud_create_role, create_server as cloud_create_server, create_team as cloud_create_team,

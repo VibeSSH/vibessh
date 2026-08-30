@@ -1,0 +1,132 @@
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 20px 0;
+}
+
+.wizard-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: width 150ms ease, background 150ms ease;
+}
+
+.wizard-step-dot-active {
+  width: 20px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+.wizard-step-dot-done {
+  background: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.wizard-step-title {
+  margin: 8px 20px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.wizard-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 260px;
+}
+
+.wizard-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-env-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.wizard-review-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  font-size: 13px;
+  align-items: start;
+}
+
+.wizard-review-label {
+  color: var(--text-tertiary);
+}
+
+.wizard-review-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.wizard-location-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wizard-location-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wizard-location-option-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.wizard-blueprint-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wizard-blueprint-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wizard-blueprint-option-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.wizard-blueprint-option-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.wizard-blueprint-option-description {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.wizard-footer {
+  padding: 16px 20px 20px;
+}
