@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { vibesshEditorTheme } from "./cmTheme";
+import { languageExtensionFor } from "./editorLanguage";
 import { bytesToText, readRemoteFile, textToBytes, writeRemoteFile } from "@/services/filesService";
 import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
@@ -22,6 +25,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const [loading, setLoading] = useState(!tooLarge);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name)], [entry.name]);
 
   useEffect(() => {
     if (tooLarge) return;
@@ -65,13 +69,16 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
           ) : loading ? (
             <p className="form-note">Loading...</p>
           ) : (
-            <textarea
-              className="form-input form-textarea"
-              style={{ height: 360, fontFamily: "var(--font-mono)" }}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              spellCheck={false}
-            />
+            <div className="file-editor-codemirror">
+              <CodeMirror
+                value={content}
+                height="360px"
+                theme="none"
+                extensions={extensions}
+                onChange={setContent}
+                basicSetup={{ foldGutter: true, highlightActiveLine: true }}
+              />
+            </div>
           )}
 
           {error && (

@@ -190,3 +190,13 @@
     transform: rotate(360deg);
   }
 }
+
+.file-editor-codemirror {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.file-editor-codemirror .cm-editor {
+  height: 360px;
+}
