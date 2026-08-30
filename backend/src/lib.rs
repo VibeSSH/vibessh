@@ -14,6 +14,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
 pub mod auth;
+pub mod authorize;
 pub mod errors;
 pub mod jwt;
 pub mod models;
@@ -70,6 +71,7 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
             get(roles::list_member_roles).post(roles::assign_role),
         )
         .route("/teams/:team_id/members/:user_id/roles/:role_id", delete(roles::unassign_role))
+        .route("/teams/:team_id/me/permissions", get(roles::my_permissions))
         .with_state(state)
 }
 

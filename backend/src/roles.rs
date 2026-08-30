@@ -1,10 +1,8 @@
 //! Roles + Permissions: real team-scoped roles, each with a set of
 //! permissions drawn from the catalog in permissions.rs, and member_roles
-//! assigning roles to team members. Nothing here is *enforced* yet beyond
-//! "the team owner manages roles/assignments" (the same owner-only gate
-//! teams.rs already uses) - a central effective-permissions resolver that
-//! existing endpoints actually check against is the next stage. This stage
-//! is the data model and its CRUD being real and correct first.
+//! assigning roles to team members. Managing roles/assignments requires the
+//! `team.roles.manage` permission (see authorize.rs) - anyone a team's
+//! owner grants that permission to can manage roles, not only the owner.
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -14,10 +12,11 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
+use crate::authorize::{authorize, effective_permissions};
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{AssignRoleRequest, CreateRoleRequest, Role, RoleWithPermissions, UpdateRoleRequest};
 use crate::permissions;
-use crate::teams::{require_owner, team_for_member, OWNER_ROLE_NAME};
+use crate::teams::{team_for_member, OWNER_ROLE_NAME};
 use crate::AppState;
 
 const MAX_ROLE_NAME_LEN: usize = 60;
@@ -83,14 +82,28 @@ pub async fn list_permissions() -> Json<&'static [&'static str]> {
     Json(permissions::ALL_PERMISSIONS)
 }
 
+/// The caller's own effective permissions on this team - what a frontend
+/// would call once after loading a team to drive `can(permission)`-style
+/// UI gating (hiding/disabling actions the user can't take). Never the
+/// actual enforcement on its own; every write endpoint still calls
+/// `authorize()` itself server-side regardless of what this reports.
+pub async fn my_permissions(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(team_id): Path<Uuid>,
+) -> ApiResult<Json<Vec<String>>> {
+    team_for_member(&state.db, team_id, user_id).await?;
+    Ok(Json(effective_permissions(&state.db, team_id, user_id).await?))
+}
+
 pub async fn create_role(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(team_id): Path<Uuid>,
     Json(body): Json<CreateRoleRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
 
     let name = validate_role_name(&body.name)?;
     validate_permission_keys(&body.permissions)?;
@@ -163,8 +176,8 @@ pub async fn update_role(
     Path((team_id, role_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateRoleRequest>,
 ) -> ApiResult<Json<RoleWithPermissions>> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system {
         return Err(ApiError::Forbidden("the built-in owner role cannot be modified".to_string()));
@@ -199,8 +212,8 @@ pub async fn delete_role(
     AuthUser(user_id): AuthUser,
     Path((team_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system {
         return Err(ApiError::Forbidden("the built-in owner role cannot be deleted".to_string()));
@@ -237,8 +250,8 @@ pub async fn assign_role(
     Path((team_id, target_user_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<AssignRoleRequest>,
 ) -> ApiResult<StatusCode> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     // Confirms both that the role really belongs to this team and that the
     // target is really a member of it, so the insert below fails with a
     // clear ApiError instead of a raw foreign-key-violation.
@@ -274,7 +287,7 @@ pub async fn unassign_role(
     Path((team_id, target_user_id, role_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
     let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system && target_user_id == team.owner_id {
         return Err(ApiError::Conflict("the owner's built-in role can't be unassigned".to_string()));

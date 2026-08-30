@@ -1,10 +1,12 @@
-//! Teams + Team Members. No role/permission awareness yet - every member
-//! sees the same team, only the owner can add/remove members or delete the
-//! team (see migrations/0002 for why there's no per-member role column
-//! yet). Every read here also doubles as an access check: `team_for_member`
-//! returns 404 for both "team doesn't exist" and "you're not a member" -
-//! deliberately indistinguishable, so a non-member can't tell a team apart
-//! from one that was never created at all.
+//! Teams + Team Members. Every read here also doubles as an access check:
+//! `team_for_member` returns 404 for both "team doesn't exist" and "you're
+//! not a member" - deliberately indistinguishable, so a non-member can't
+//! tell a team apart from one that was never created at all. Write/
+//! management endpoints additionally call `authorize()` (see authorize.rs)
+//! for the specific permission that action needs - real RBAC now, not an
+//! `owner_id` comparison; see that module's own doc comment for why the
+//! two are behaviorally identical today (only the seeded Owner role exists
+//! so far) but aren't the same check.
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -14,6 +16,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
+use crate::authorize::authorize;
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{AddMemberRequest, CreateTeamRequest, Team, TeamMember};
 use crate::{permissions, AppState};
@@ -33,13 +36,6 @@ pub(crate) async fn team_for_member(db: &PgPool, team_id: Uuid, user_id: Uuid) -
     .fetch_optional(db)
     .await?;
     team.ok_or_else(|| ApiError::NotFound("team not found".to_string()))
-}
-
-pub(crate) fn require_owner(team: &Team, user_id: Uuid) -> ApiResult<()> {
-    if team.owner_id != user_id {
-        return Err(ApiError::Forbidden("only the team owner can do this".to_string()));
-    }
-    Ok(())
 }
 
 pub async fn create_team(
@@ -165,8 +161,8 @@ pub async fn add_member(
     Path(team_id): Path<Uuid>,
     Json(body): Json<AddMemberRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_MEMBERS_ADD).await?;
 
     let email = body.email.trim().to_lowercase();
     let target_user_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1")
@@ -198,7 +194,7 @@ pub async fn remove_member(
     Path((team_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
     let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_MEMBERS_REMOVE).await?;
 
     // The only owner can't be removed as a member - there would be no one
     // left who could manage the team at all. A real ownership-transfer flow
@@ -226,8 +222,8 @@ pub async fn delete_team(
     AuthUser(user_id): AuthUser,
     Path(team_id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
-    let team = team_for_member(&state.db, team_id, user_id).await?;
-    require_owner(&team, user_id)?;
+    team_for_member(&state.db, team_id, user_id).await?;
+    authorize(&state.db, team_id, user_id, permissions::TEAM_DELETE).await?;
 
     sqlx::query("DELETE FROM teams WHERE id = $1").bind(team_id).execute(&state.db).await?;
     Ok(StatusCode::NO_CONTENT)
