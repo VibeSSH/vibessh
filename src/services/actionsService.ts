@@ -44,3 +44,7 @@ export function stopServerContainer(serverId: string, container: string): Promis
 export function removeServerContainer(serverId: string, container: string): Promise<void> {
   return callCommand<void>("remove_server_container", { serverId, container });
 }
+
+export function getServerContainerLogs(serverId: string, container: string, tail: number): Promise<string> {
+  return callCommand<string>("get_server_container_logs", { serverId, container, tail });
+}

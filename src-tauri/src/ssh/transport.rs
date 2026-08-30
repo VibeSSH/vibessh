@@ -68,6 +68,10 @@ impl ServerConnection for SshSession {
         self.remove_container(container).await
     }
 
+    async fn container_logs(&self, container: &str, tail: u32) -> AppResult<String> {
+        self.container_logs(container, tail).await
+    }
+
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
         self.list_directory(path).await
     }

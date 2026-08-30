@@ -27,6 +27,7 @@ pub trait ServerConnection: Send + Sync {
     async fn start_container(&self, container: &str) -> AppResult<()>;
     async fn stop_container(&self, container: &str) -> AppResult<()>;
     async fn remove_container(&self, container: &str) -> AppResult<()>;
+    async fn container_logs(&self, container: &str, tail: u32) -> AppResult<String>;
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>>;
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()>;
@@ -104,6 +105,10 @@ mod tests {
 
         async fn remove_container(&self, _container: &str) -> AppResult<()> {
             Ok(())
+        }
+
+        async fn container_logs(&self, _container: &str, _tail: u32) -> AppResult<String> {
+            Ok(String::new())
         }
 
         async fn list_directory(&self, _path: &str) -> AppResult<Vec<RemoteFileEntry>> {

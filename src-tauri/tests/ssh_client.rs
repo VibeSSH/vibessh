@@ -118,6 +118,28 @@ async fn connects_authenticates_and_runs_a_real_command() {
 }
 
 #[tokio::test]
+async fn container_logs_clamps_the_tail_and_builds_the_expected_docker_command() {
+    let port = spawn_mock_server().await;
+    let outcome = timeout(Duration::from_secs(5), connect(&credentials(port, TEST_PASSWORD), None))
+        .await
+        .expect("timed out connecting")
+        .expect("connect should succeed");
+
+    // The mock server always exits 7 (see exec_request above), so this
+    // surfaces as an error - but the error carries the mock's echo of the
+    // exact command that ran, which is what this test actually verifies:
+    // an absurd tail request gets clamped to the cap before it ever reaches
+    // a shell command, not passed through unbounded.
+    let err = outcome.session.container_logs("web", 999_999).await.unwrap_err();
+    assert!(
+        err.to_string().contains("docker logs --tail 5000 --timestamps web 2>&1"),
+        "expected the clamped tail in the built command, got: {err}"
+    );
+
+    outcome.session.close().await;
+}
+
+#[tokio::test]
 async fn wrong_password_is_rejected() {
     let port = spawn_mock_server().await;
 
@@ -180,5 +202,3 @@ async fn a_changed_host_key_is_rejected_not_silently_trusted() {
         "expected a host-key-mismatch error, got: {err}"
     );
 }
-
-

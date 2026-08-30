@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { ContainerLogsPanel } from "@/components/servers/ContainerLogsPanel";
 import {
   disableServerService,
   enableServerService,
@@ -86,6 +87,7 @@ export function ActionsPage() {
   const [containersLoading, setContainersLoading] = useState(true);
   const [containersError, setContainersError] = useState<string | null>(null);
 
+  const [viewingLogsFor, setViewingLogsFor] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -243,6 +245,13 @@ export function ActionsPage() {
                 <div className="server-list-actions">
                   <button
                     className="server-list-action"
+                    aria-label={`View logs for ${container.name}`}
+                    onClick={() => setViewingLogsFor(container.name)}
+                  >
+                    <Icon name="terminal" size={14} />
+                  </button>
+                  <button
+                    className="server-list-action"
                     aria-label={container.running ? `Stop ${container.name}` : `Start ${container.name}`}
                     onClick={() =>
                       askConfirm({ kind: "container", name: container.name, verb: container.running ? "stop" : "start" })
@@ -270,6 +279,10 @@ export function ActionsPage() {
           </ul>
         )}
       </Card>
+
+      {viewingLogsFor && (
+        <ContainerLogsPanel serverId={serverId} containerName={viewingLogsFor} onClose={() => setViewingLogsFor(null)} />
+      )}
 
       {confirming && (
         <div className="modal-backdrop" onClick={() => !actionBusy && setConfirming(null)}>

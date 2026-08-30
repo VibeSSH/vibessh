@@ -114,3 +114,14 @@ pub async fn remove_server_container(
 ) -> AppResult<()> {
     services::remove_server_container(&repo, &sessions, server_id, &container).await
 }
+
+#[tauri::command]
+pub async fn get_server_container_logs(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    container: String,
+    tail: u32,
+) -> AppResult<String> {
+    services::server_container_logs(&repo, &sessions, server_id, &container, tail).await
+}

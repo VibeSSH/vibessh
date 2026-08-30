@@ -241,6 +241,17 @@ pub async fn remove_container(
     session.remove_container(container).await
 }
 
+pub async fn container_logs(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    container: &str,
+    tail: u32,
+) -> AppResult<String> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.container_logs(container, tail).await
+}
+
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
     if let Some(session) = sessions.get(server_id).await {
         return Ok(session);

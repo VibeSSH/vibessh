@@ -48,6 +48,27 @@ impl SshSession {
         self.run_docker("rm", container).await
     }
 
+    /// `2>&1` merges the container's stderr into the same stream as its
+    /// stdout, in the order Docker wrote them - splitting them the way
+    /// `execute_command`'s stdout/stderr fields normally would loses the
+    /// actual interleaving, which is exactly what someone debugging a crash
+    /// loop needs to see. `--timestamps` gives each line a real anchor, and
+    /// `tail` is capped so a fat-fingered request for a million lines can't
+    /// make an SSH round trip absurdly slow.
+    pub async fn container_logs(&self, container: &str, tail: u32) -> AppResult<String> {
+        validate_container_ref(container)?;
+        let tail = tail.clamp(1, 5000);
+        let output = self
+            .execute_command(&format!("docker logs --tail {tail} --timestamps {container} 2>&1"))
+            .await?;
+        if output.exit_code != 0 {
+            let detail = output.stdout.trim();
+            let detail = if detail.is_empty() { "docker logs failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't read logs for {container}: {detail}")));
+        }
+        Ok(output.stdout)
+    }
+
     async fn run_docker(&self, action: &str, container: &str) -> AppResult<()> {
         validate_container_ref(container)?;
         let output = self.execute_command(&format!("docker {action} {container}")).await?;

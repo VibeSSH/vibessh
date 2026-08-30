@@ -288,6 +288,24 @@ same `ServerConnection` interface on the Rust side.
       `list_containers()` - all through this exact code path. Cleanup
       independently re-checked afterward confirms nothing already running
       on that shared box was touched
+- [x] Container logs (Actions module) — `container_logs` runs `docker logs
+      --tail N --timestamps <container> 2>&1`, merging stdout/stderr into
+      one stream in the order Docker actually wrote them (splitting them
+      into `execute_command`'s separate stdout/stderr fields would lose
+      that interleaving, exactly what matters when reading a crash loop).
+      `tail` is clamped server-side to 5000 lines so a fat-fingered request
+      can't turn a click into a slow SSH round trip. A terminal-icon button
+      per container row opens `ContainerLogsPanel`, a read-only scrollable
+      log view with a Refresh button, reusing the same modal chrome as the
+      file editor and the systemd/Docker confirm dialogs. Covered by an
+      integration test against the real local `russh::server` mock-exec
+      harness (proves the tail gets clamped and the exact `docker logs`
+      command gets built correctly, by reading it back out of the mock's
+      deterministic echo response) and a one-off manual run against the
+      project's real test server: pulled the last 20 lines from a live,
+      real Pterodactyl-managed Minecraft proxy container and confirmed the
+      output was genuine, current log content (real timestamps, a real
+      player connect/disconnect line), not a placeholder
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -382,7 +400,8 @@ src/                        Frontend (React + TypeScript)
                             AgentPairingFlow (real), CapabilityBadges, MetricsPreview,
                             TerminalView (real, xterm.js over the Terminal module's
                             open/write/resize/close commands), FileEditorPanel (real,
-                            view/edit files under 1MB over read_remote_file/write_remote_file)
+                            view/edit files under 1MB over read_remote_file/write_remote_file),
+                            ContainerLogsPanel (real, docker logs over get_server_container_logs)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
                             Files (/files/:serverId - breadcrumb-navigable directory browser,
                             native-dialog upload/download via tauri-plugin-dialog),
