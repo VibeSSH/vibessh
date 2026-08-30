@@ -65,7 +65,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
           ) : (
             <textarea
               className="form-input form-textarea"
-              style={{ height: 360, fontFamily: "Consolas, 'SF Mono', monospace" }}
+              style={{ height: 360, fontFamily: "var(--font-mono)" }}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}

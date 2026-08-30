@@ -34,12 +34,12 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
 
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: "Consolas, 'SF Mono', monospace",
+      fontFamily: "'JetBrains Mono', Consolas, 'SF Mono', monospace",
       fontSize: 13,
       theme: {
-        background: "#0e1319",
-        foreground: "#e8eef3",
-        cursor: "#22d3ee",
+        background: "#0b1220",
+        foreground: "#9effff",
+        cursor: "#57c7d8",
       },
     });
     const fitAddon = new FitAddon();

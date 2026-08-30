@@ -3,7 +3,7 @@
   align-items: center;
   flex-wrap: wrap;
   font-size: 13px;
-  font-family: "Consolas", "SF Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .files-breadcrumb-item {
@@ -44,5 +44,5 @@
   flex-shrink: 0;
   font-size: 12px;
   color: var(--text-tertiary);
-  font-family: "Consolas", "SF Mono", monospace;
+  font-family: var(--font-mono);
 }

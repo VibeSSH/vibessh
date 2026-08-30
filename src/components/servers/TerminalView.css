@@ -2,7 +2,7 @@
   height: 100%;
   width: 100%;
   padding: 12px;
-  background: #0e1319;
+  background: var(--surface-bg);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   overflow: hidden;

@@ -1,27 +1,40 @@
+/*
+ * Palette values are ported from Voltius's own default dark theme
+ * (github.com/VoltiusApp/voltius, AGPL-3.0 — same license, same product
+ * category), not copied component code: a deep navy ground instead of a
+ * flat near-black, a wider surface-to-elevated-to-modal ladder, and a
+ * teal/cyan accent tuned for contrast against that navy rather than pure
+ * black. Kept our own token names and every component below unchanged -
+ * see the memory/README note on why this is a values port, not a fork.
+ */
 :root {
-  --surface-bg: #0b0f14;
-  --surface-0: #0e1319;
-  --surface-1: #131a22;
-  --surface-2: #1a232d;
-  --surface-3: #23303c;
-  --border: #263542;
+  --surface-bg: #0b1220;
+  --surface-0: #111827;
+  --surface-1: #1c2740;
+  --surface-2: #1e2e42;
+  --surface-3: #2a3f5a;
+  --border: #1e2d42;
+  --border-hover: #2d3f5c;
 
-  --text-primary: #e8eef3;
-  --text-secondary: #93a3b1;
-  --text-tertiary: #5c6b78;
+  --text-primary: #c5d4e8;
+  --text-secondary: #7a8fa6;
+  --text-tertiary: #4a6080;
 
-  --accent: #22d3ee;
-  --accent-hover: #4ddced;
-  --accent-contrast: #04121a;
+  --accent: #57c7d8;
+  --accent-hover: #5fe2f7;
+  --accent-contrast: #04141c;
 
-  --success: #34d399;
-  --danger: #f87171;
-  --danger-hover: #fb8b8b;
-  --warning: #fbbf24;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --danger-hover: #f87171;
+  --warning: #f59e0b;
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  --font-sans: "Inter Variable", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Consolas", "SF Mono", monospace;
 
   color-scheme: dark;
 }
@@ -40,7 +53,7 @@ body,
 body {
   background: var(--surface-bg);
   color: var(--text-primary);
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
