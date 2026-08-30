@@ -1,10 +1,14 @@
-//! Desktop-side half of the Agent Mode transport (Etap D). Owns the
-//! WebSocket connection to one `vibe-agent`: handshake, reconnect with
-//! backoff, and a read timeout that treats a silent connection (no
-//! heartbeat, no events) as dead. Not wired into `ServerConnection` yet —
-//! that lands with Etap E, once pairing gives us real per-server credentials
-//! and a server record to attach this to. For now it's a self-contained,
-//! independently testable client.
+//! Desktop-side half of the Agent Mode transport (Etap D transport, Etap E
+//! pairing). Owns the WebSocket connection to one `vibe-agent`: handshake,
+//! reconnect with backoff, and a read timeout that treats a silent
+//! connection (no heartbeat, no events) as dead. `AgentClientConfig::auth_token`
+//! is either a pairing code (first connection) or a previously issued
+//! credential (every one after); callers are responsible for persisting a
+//! freshly `issued_credential` (OS keyring, never plaintext) so the next
+//! connection can use it instead of the one-time code. Not wired into
+//! `ServerConnection` yet — that's Etap H, once there's a server record to
+//! attach a running client to. For now it's a self-contained, independently
+//! testable client.
 
 use std::time::Duration;
 
@@ -29,7 +33,7 @@ pub struct AgentClientConfig {
     pub url: String,
     pub client_name: String,
     pub client_version: String,
-    /// `None` until Etap E's pairing flow issues a real device credential.
+    /// A pairing code on first connection, the stored credential thereafter.
     pub auth_token: Option<String>,
 }
 
@@ -39,6 +43,11 @@ pub enum AgentConnectionState {
     Connected {
         agent_id: Uuid,
         agent_version: String,
+        /// `Some` exactly once, on the handshake that consumed a pairing
+        /// code. The caller must persist this (OS keyring) and use it as
+        /// `auth_token` from then on - it's not stored by this module,
+        /// which deliberately doesn't know about `storage`/keyring itself.
+        issued_credential: Option<String>,
     },
     Disconnected {
         reason: String,
@@ -109,6 +118,7 @@ async fn connect_and_stream(
     let _ = state_tx.send(AgentConnectionState::Connected {
         agent_id: response.agent_id,
         agent_version: response.agent_version,
+        issued_credential: response.issued_credential,
     });
 
     loop {

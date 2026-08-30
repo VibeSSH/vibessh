@@ -29,6 +29,9 @@ vibessh-protocol = { path = "../protocol" }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+# OS credential store (Windows Credential Manager / macOS Keychain / Linux
+# Secret Service) for agent device credentials - see storage/credentials.rs.
+keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code

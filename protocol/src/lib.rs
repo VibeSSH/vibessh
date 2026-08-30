@@ -2,8 +2,10 @@ mod dto;
 mod error;
 mod events;
 mod handshake;
+mod pairing;
 
 pub use dto::{CommandOutput, ProcessSummary, ServerMetrics, ServiceSummary};
 pub use error::ProtocolErrorCode;
 pub use events::{LogLine, QuickActionProgress, ServerEvent, TerminalClosed, TerminalOutput};
 pub use handshake::{HandshakeRequest, HandshakeResponse, PROTOCOL_VERSION};
+pub use pairing::{generate_pairing_code, PAIRING_CODE_TTL};

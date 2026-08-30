@@ -1,6 +1,7 @@
-//! Proves Etap D from the desktop side against a bare mock agent (no real
+//! Proves Etap D/E from the desktop side against a bare mock agent (no real
 //! `vibe-agent` binary involved, just raw tokio-tungstenite): handshake
-//! succeeds, heartbeats never reach the caller, and a real event does.
+//! succeeds, an issued credential surfaces to the caller, heartbeats never
+//! reach the caller, and a real event does.
 
 use std::time::Duration;
 
@@ -35,6 +36,7 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
             agent_version: "0.0.0-mock".into(),
             protocol_version: PROTOCOL_VERSION,
             error: None,
+            issued_credential: Some("mock-issued-credential".into()),
         };
         ws.send(Message::Text(serde_json::to_string(&response).unwrap()))
             .await
@@ -63,7 +65,7 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
         url: format!("ws://{addr}/ws"),
         client_name: "vibessh-desktop-test".into(),
         client_version: "0.0.0".into(),
-        auth_token: None,
+        auth_token: Some("VIBE-TEST-PAIRING-CODE".into()),
     };
     let (events_tx, mut events_rx) = mpsc::channel(8);
     let (state_tx, mut state_rx) = watch::channel(AgentConnectionState::Connecting);
@@ -71,13 +73,15 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
     let client_task = tokio::spawn(run(config, events_tx, state_tx));
 
     // Wait for the Connected state instead of a fixed sleep.
-    let connected = timeout(Duration::from_secs(2), async {
+    let (connected, issued_credential) = timeout(Duration::from_secs(2), async {
         loop {
             if let AgentConnectionState::Connected {
-                agent_id: got_id, ..
+                agent_id: got_id,
+                issued_credential,
+                ..
             } = &*state_rx.borrow_and_update()
             {
-                return *got_id;
+                return (*got_id, issued_credential.clone());
             }
             state_rx.changed().await.unwrap();
         }
@@ -85,6 +89,7 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
     .await
     .expect("timed out waiting for Connected state");
     assert_eq!(connected, agent_id);
+    assert_eq!(issued_credential.as_deref(), Some("mock-issued-credential"));
 
     let event = timeout(Duration::from_secs(2), events_rx.recv())
         .await

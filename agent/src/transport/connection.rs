@@ -5,6 +5,8 @@ use vibessh_protocol::{
     HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
 
+use crate::pairing::{issue_credential, verify_credential};
+
 use super::{SharedState, HANDSHAKE_TIMEOUT_SECS};
 
 /// Runs the whole lifetime of one client connection: handshake, then the
@@ -77,12 +79,22 @@ async fn perform_handshake(socket: &mut WebSocket, state: &SharedState) -> bool 
         return false;
     }
 
-    // Etap E (pairing) is what actually issues and verifies this token. Until
-    // then every client is accepted, but loudly, so this isn't mistaken for
-    // real authentication in the meantime.
-    if request.auth_token.is_none() {
-        log::warn!("agent: client '{}' connected with no auth token - accepting anyway, pairing isn't implemented yet", request.client_name);
-    }
+    let issued_credential = match authenticate(state, request.auth_token.as_deref()) {
+        AuthOutcome::AlreadyPaired => None,
+        AuthOutcome::NewlyPaired(raw_credential) => Some(raw_credential),
+        AuthOutcome::CredentialIssueFailed => {
+            let _ = send_handshake_rejection(socket, state, ProtocolErrorCode::Internal).await;
+            return false;
+        }
+        AuthOutcome::Rejected => {
+            log::warn!(
+                "agent: rejecting client '{}' - no valid credential or pairing code presented",
+                request.client_name
+            );
+            let _ = send_handshake_rejection(socket, state, ProtocolErrorCode::Unauthorized).await;
+            return false;
+        }
+    };
 
     let response = HandshakeResponse {
         accepted: true,
@@ -90,8 +102,42 @@ async fn perform_handshake(socket: &mut WebSocket, state: &SharedState) -> bool 
         agent_version: state.info.version.clone(),
         protocol_version: PROTOCOL_VERSION,
         error: None,
+        issued_credential,
     };
     send_json(socket, &response).await
+}
+
+enum AuthOutcome {
+    AlreadyPaired,
+    NewlyPaired(String),
+    CredentialIssueFailed,
+    Rejected,
+}
+
+/// Checked in this order: an already-issued credential always wins over a
+/// pairing code (so a stale/leaked pairing code can't be replayed against
+/// an agent that's already paired to someone), then falls back to
+/// consuming a pending pairing code.
+fn authenticate(state: &SharedState, token: Option<&str>) -> AuthOutcome {
+    let Some(token) = token else {
+        return AuthOutcome::Rejected;
+    };
+
+    if verify_credential(&state.data_dir, token) {
+        return AuthOutcome::AlreadyPaired;
+    }
+
+    if state.pairing.try_consume(token) {
+        return match issue_credential(&state.data_dir) {
+            Ok(raw) => AuthOutcome::NewlyPaired(raw),
+            Err(err) => {
+                log::error!("agent: failed to issue a credential after successful pairing: {err}");
+                AuthOutcome::CredentialIssueFailed
+            }
+        };
+    }
+
+    AuthOutcome::Rejected
 }
 
 async fn send_handshake_rejection(
@@ -105,6 +151,7 @@ async fn send_handshake_rejection(
         agent_version: state.info.version.clone(),
         protocol_version: PROTOCOL_VERSION,
         error: Some(code),
+        issued_credential: None,
     };
     send_json(socket, &response).await
 }

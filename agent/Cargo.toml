@@ -26,6 +26,12 @@ vibessh-protocol = { path = "../protocol" }
 # WebSocket realtime) with one dependency instead of stitching two libraries
 # together.
 axum = { version = "0.7", features = ["ws"] }
+sha2 = { workspace = true }
+# `vibe-agent pair <code>` is a short-lived blocking CLI call to the
+# already-running daemon's local control endpoint - not worth spinning up
+# tokio for, so this stays a synchronous, minimal-dependency HTTP client
+# rather than reqwest.
+ureq = { version = "2", features = ["json"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.24"

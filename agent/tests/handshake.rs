@@ -1,7 +1,8 @@
-//! Proves Etap D end-to-end against the real router (not a reimplementation):
-//! a bare WebSocket client performs the handshake and receives a heartbeat,
-//! and a client on the wrong protocol version gets rejected with a reason.
+//! Proves Etap D (transport) and Etap E (pairing) end-to-end against the
+//! real router - a bare WebSocket client, and for the pairing cases the
+//! real local control HTTP endpoint too, not a reimplementation of either.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,57 +14,92 @@ use tokio_tungstenite::tungstenite::Message;
 
 use vibe_agent::identity::AgentIdentity;
 use vibe_agent::info::AgentInfo;
+use vibe_agent::pairing::PairingRegistry;
 use vibe_agent::transport::{self, SharedState};
-use vibessh_protocol::{HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION};
+use vibessh_protocol::{
+    HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
+};
 
-async fn spawn_test_server(heartbeat_interval: Duration) -> (String, Arc<AgentInfo>) {
+struct TestAgent {
+    ws_url: String,
+    control_url: String,
+    agent_id: uuid::Uuid,
+    data_dir: PathBuf,
+}
+
+impl Drop for TestAgent {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.data_dir).ok();
+    }
+}
+
+async fn spawn_test_agent(heartbeat_interval: Duration) -> TestAgent {
     let identity = AgentIdentity {
         id: uuid::Uuid::new_v4(),
         created_at: chrono::Utc::now(),
     };
     let info = Arc::new(AgentInfo::collect(&identity));
+    let data_dir = std::env::temp_dir().join(format!("vibessh-agent-test-{}", uuid::Uuid::new_v4()));
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let ws_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let ws_addr = ws_listener.local_addr().unwrap();
+    let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let control_addr = control_listener.local_addr().unwrap();
 
     let state = SharedState {
         info: info.clone(),
+        data_dir: data_dir.clone(),
+        pairing: PairingRegistry::new(),
         heartbeat_interval,
     };
-    tokio::spawn(transport::serve(listener, state));
 
-    (format!("ws://{addr}/ws"), info)
+    tokio::spawn(transport::serve(ws_listener, state.clone()));
+    tokio::spawn(transport::serve_control(control_listener, state));
+
+    TestAgent {
+        ws_url: format!("ws://{ws_addr}/ws"),
+        control_url: format!("http://{control_addr}/internal/pair"),
+        agent_id: info.id,
+        data_dir,
+    }
 }
 
-#[tokio::test]
-async fn handshake_succeeds_and_heartbeat_follows() {
-    let (url, info) = spawn_test_server(Duration::from_millis(100)).await;
-    let (mut ws, _) = connect_async(&url).await.expect("connect");
-
+async fn handshake_with(url: &str, auth_token: Option<&str>) -> HandshakeResponse {
+    let (mut ws, _) = connect_async(url).await.expect("connect");
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
         client_name: "vibessh-desktop-test".into(),
         client_version: "0.0.0".into(),
-        auth_token: None,
+        auth_token: auth_token.map(str::to_string),
     };
     ws.send(Message::Text(serde_json::to_string(&request).unwrap()))
         .await
         .unwrap();
+    next_json(&mut ws).await
+}
 
-    let response: HandshakeResponse = next_json(&mut ws).await;
-    assert!(response.accepted);
-    assert_eq!(response.agent_id, info.id);
-    assert_eq!(response.protocol_version, PROTOCOL_VERSION);
-    assert!(response.error.is_none());
-
-    let event: ServerEvent = next_json(&mut ws).await;
-    assert!(matches!(event, ServerEvent::Heartbeat));
+/// Registers a code with the real control HTTP endpoint, using the same
+/// `ureq` client the `vibe-agent pair` CLI does (on a blocking thread so it
+/// doesn't stall the single-threaded test runtime the axum server task also
+/// needs to make progress on).
+async fn register_code_via_http(control_url: &str, code: &str) {
+    let url = control_url.to_string();
+    let code = code.to_string();
+    let ok = tokio::task::spawn_blocking(move || {
+        ureq::post(&url)
+            .send_json(ureq::json!({ "code": code }))
+            .map(|response| response.status() == 200)
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap();
+    assert!(ok, "control endpoint did not accept the pairing code");
 }
 
 #[tokio::test]
 async fn handshake_rejects_mismatched_protocol_version() {
-    let (url, _info) = spawn_test_server(Duration::from_secs(30)).await;
-    let (mut ws, _) = connect_async(&url).await.expect("connect");
+    let agent = spawn_test_agent(Duration::from_secs(30)).await;
+    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
 
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION + 1,
@@ -78,6 +114,63 @@ async fn handshake_rejects_mismatched_protocol_version() {
     let response: HandshakeResponse = next_json(&mut ws).await;
     assert!(!response.accepted);
     assert_eq!(response.error, Some(ProtocolErrorCode::VersionMismatch));
+}
+
+#[tokio::test]
+async fn handshake_rejects_missing_or_unknown_token() {
+    let agent = spawn_test_agent(Duration::from_secs(30)).await;
+
+    let response = handshake_with(&agent.ws_url, None).await;
+    assert!(!response.accepted);
+    assert_eq!(response.error, Some(ProtocolErrorCode::Unauthorized));
+
+    let response = handshake_with(&agent.ws_url, Some("not-a-real-code-or-credential")).await;
+    assert!(!response.accepted);
+    assert_eq!(response.error, Some(ProtocolErrorCode::Unauthorized));
+}
+
+#[tokio::test]
+async fn pairing_via_control_endpoint_issues_a_credential_and_burns_the_code() {
+    let agent = spawn_test_agent(Duration::from_millis(200)).await;
+    register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
+
+    let response = handshake_with(&agent.ws_url, Some("VIBE-TEST-CODE")).await;
+    assert!(response.accepted);
+    assert_eq!(response.agent_id, agent.agent_id);
+    let credential = response.issued_credential.expect("expected a newly issued credential");
+
+    // The code was single-use - a second attempt with it must fail now.
+    let replay = handshake_with(&agent.ws_url, Some("VIBE-TEST-CODE")).await;
+    assert!(!replay.accepted);
+    assert_eq!(replay.error, Some(ProtocolErrorCode::Unauthorized));
+
+    // The issued credential, on the other hand, works for reconnecting -
+    // and does NOT mint another credential.
+    let reconnect = handshake_with(&agent.ws_url, Some(&credential)).await;
+    assert!(reconnect.accepted);
+    assert!(reconnect.issued_credential.is_none());
+}
+
+#[tokio::test]
+async fn heartbeat_still_follows_a_successful_pairing_handshake() {
+    let agent = spawn_test_agent(Duration::from_millis(100)).await;
+    register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
+
+    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
+    let request = HandshakeRequest {
+        protocol_version: PROTOCOL_VERSION,
+        client_name: "vibessh-desktop-test".into(),
+        client_version: "0.0.0".into(),
+        auth_token: Some("VIBE-TEST-CODE".into()),
+    };
+    ws.send(Message::Text(serde_json::to_string(&request).unwrap()))
+        .await
+        .unwrap();
+    let response: HandshakeResponse = next_json(&mut ws).await;
+    assert!(response.accepted);
+
+    let event: ServerEvent = next_json(&mut ws).await;
+    assert!(matches!(event, ServerEvent::Heartbeat));
 }
 
 async fn next_json<T: serde::de::DeserializeOwned>(

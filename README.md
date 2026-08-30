@@ -43,9 +43,15 @@ same `ServerConnection` interface on the Rust side.
 - [x] Desktop ↔ Agent protocol — WebSocket, handshake/version check, heartbeat,
       reconnect with backoff, typed event enum (`protocol` crate, shared by
       both sides). TLS deferred to the security review, not skipped
-- [ ] Agent pairing (one-time code, no manual API tokens)
+- [x] Agent pairing — one-time `VIBE-XXXX-XXXX` code registered locally via
+      `vibe-agent pair <code>`, single-use, 5-minute TTL, brute-force budget;
+      issues a durable credential whose hash (never the raw value) is the
+      only thing persisted on the agent, and which the desktop stores in the
+      OS credential store (Windows Credential Manager / Keychain / Secret
+      Service), not a plaintext file
 - [ ] SSH transport implementation
-- [ ] Server storage (SQLite + OS keyring for credentials)
+- [ ] Server storage (SQLite for server records - credential storage already
+      landed early, see pairing above)
 - [ ] Terminal, SFTP, process manager, systemd, Docker
 - [ ] Capability-aware UI, realtime metrics dashboard
 - [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
@@ -79,8 +85,13 @@ npm run tauri dev
 Try the agent on its own (no desktop app needed):
 
 ```bash
-cargo run -p vibe-agent   # Ctrl+C to stop
+cargo run -p vibe-agent                          # start the daemon, Ctrl+C to stop
+cargo run -p vibe-agent -- pair VIBE-XXXX-XXXX   # in a second terminal, once you have a code
 ```
+
+There's no UI to generate a code yet (that's Etap H) - for now, exercise
+pairing through the test suite (`cargo test -p vibe-agent`) or generate one
+yourself with `vibessh_protocol::generate_pairing_code()`.
 
 ## Project structure
 
@@ -108,20 +119,21 @@ src-tauri/                  Desktop backend (Rust, Tauri)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
     ssh/                             Reserved for SshTransport impl
-    storage/                           Reserved for server repository + secrets
+    storage/                           credentials.rs (OS keyring); server repository still reserved
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
   src/
-    main.rs                   Binds the WS server, starts the daemon
-    lib.rs                     Library half - what tests/handshake.rs drives
-    identity.rs                 Durable UUID, persisted to disk
+    main.rs                   CLI entry: `pair <code>` or daemon startup
+    cli.rs                     `vibe-agent pair` - blocking call to the control endpoint
+    lib.rs                      Library half - what tests/handshake.rs drives
+    identity.rs                  Durable UUID, persisted to disk
     info.rs                       AgentInfo DTO (id/version/hostname/os/status)
-    config.rs                       Data/config dir resolution
-    errors.rs                        AgentError/AgentResult (own type, not shared with desktop)
-    capabilities.rs                   Reserved for capability reporting
-    pairing/                            Reserved for the pairing flow
-    transport/                           WebSocket server: handshake, heartbeat, event loop
+    config.rs                      Data/config dir resolution
+    errors.rs                       AgentError/AgentResult (own type, not shared with desktop)
+    capabilities.rs                  Reserved for capability reporting
+    pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
+    transport/                         WS server (handshake, heartbeat) + local-only pairing control HTTP route
 
 protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
   src/
@@ -129,6 +141,7 @@ protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
     events.rs                    ServerEvent enum (metrics.update, terminal.output, ...)
     dto.rs                         CommandOutput, ServerMetrics, ProcessSummary, ServiceSummary
     error.rs                        ProtocolErrorCode
+    pairing.rs                       generate_pairing_code(), PAIRING_CODE_TTL
 
 scripts/
   setup.ps1                  Setup/build launcher
