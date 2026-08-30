@@ -1,0 +1,5 @@
+# Shell scripts must always check out with LF line endings, regardless of a
+# contributor's core.autocrlf setting - a CRLF shebang line breaks them on
+# Linux ("/bin/sh^M: bad interpreter"), which is the only place install.sh
+# is ever actually run.
+*.sh text eol=lf

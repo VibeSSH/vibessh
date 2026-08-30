@@ -49,6 +49,12 @@ same `ServerConnection` interface on the Rust side.
       only thing persisted on the agent, and which the desktop stores in the
       OS credential store (Windows Credential Manager / Keychain / Secret
       Service), not a plaintext file
+- [x] Agent installer — `agent-install/install.sh`: detects OS/arch,
+      downloads + checksums a release, installs a dedicated systemd service
+      as a non-root user. No release published yet, so the download step is
+      unverified in practice; the rest is tested (see `agent-install/README.md`)
+- [ ] Deeper systemd/privilege hardening (which agent features actually need
+      elevated access, and the capability/polkit/sudo-helper model for that)
 - [ ] SSH transport implementation
 - [ ] Server storage (SQLite for server records - credential storage already
       landed early, see pairing above)
@@ -150,6 +156,11 @@ installer/
   header.bmp                 NSIS wizard header banner (150x57)
   sidebar.bmp                NSIS wizard Welcome/Finish page art (164x314)
 
+agent-install/               Linux agent installer (curl | sudo sh) - not
+  install.sh                 the same thing as installer/ above, which is
+  test.sh                    the Windows *desktop app* installer wizard
+  README.md
+
 LICENSE.txt                  Shown on the installer's license page
 ```
 
@@ -173,6 +184,22 @@ dir, since `agent/` made this a Cargo workspace). To restyle it, edit the
 `installer/sidebar.bmp` (keep the exact pixel sizes — NSIS requires them).
 For anything the config can't express, Tauri supports a fully custom `.nsi`
 template via `nsis.template`.
+
+## Agent installer
+
+The *server-side* counterpart to the wizard above: `agent-install/install.sh`
+installs `vibe-agent` on a Linux host as a systemd service, run as:
+
+```sh
+curl -fsSL <release-url>/install.sh | sudo sh
+vibe-agent pair <CODE-SHOWN-IN-VIBESSH>
+```
+
+No release is published yet, so the real one-liner can't be exercised
+end-to-end - see `agent-install/README.md` for what's actually verified
+(architecture/OS detection, checksum logic for real, everything else on a
+real Linux box via `VIBESSH_INSTALL_LOCAL_BINARY`) versus what still needs
+a Linux VM to prove.
 
 ## Icon
 
