@@ -7,6 +7,7 @@
 //! construct. No implementation lands in this phase - this is the
 //! interface Phase 2 (LocalProcessRuntime) onward builds against.
 
+pub mod docker;
 pub mod local_process;
 pub mod remote_process;
 pub mod systemd;
