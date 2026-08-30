@@ -34,18 +34,15 @@ function splitTextListInput(text: string): string[] {
   return text.trim().split(/\s+/).filter((token) => token.length > 0);
 }
 
+/** Matches a bare "java"/"java.exe", or a path ending in one - the binary itself, which has its own dedicated "Java version" field and is never a real JVM flag or program argument. */
+const JAVA_BINARY_TOKEN = /(^|[\\/])java(\.exe)?$/i;
+
 /** A generator like flags.sh hands out one copy-pasteable line - `java -Xmx2G ... -jar server.jar nogui` - meant to be run directly in a shell, not split across VibeSSH's separate Java version / JVM arguments / jar file / program arguments fields. Detects that shape (a `-jar` token present) and splits it back into those pieces - `null` if the text doesn't look like this at all, e.g. plain flags with no `-jar` in them. */
 function parseFullJavaCommand(tokens: string[]): { jvmArgs: string[]; jarPath: string; programArgs: string[] } | null {
   const jarIndex = tokens.indexOf("-jar");
   if (jarIndex === -1 || jarIndex + 1 >= tokens.length) return null;
 
-  let jvmArgs = tokens.slice(0, jarIndex);
-  // A leading bare "java" or a path ending in "java"/"java.exe" - the user
-  // pasted the whole command including the binary itself, which has its
-  // own dedicated field.
-  if (jvmArgs.length > 0 && /(^|[\\/])java(\.exe)?$/i.test(jvmArgs[0])) {
-    jvmArgs = jvmArgs.slice(1);
-  }
+  const jvmArgs = tokens.slice(0, jarIndex).filter((token) => !JAVA_BINARY_TOKEN.test(token));
 
   return { jvmArgs, jarPath: tokens[jarIndex + 1], programArgs: tokens.slice(jarIndex + 2) };
 }
@@ -266,13 +263,33 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                     onChange={(v) => {
                       // A pasted full "java -Xmx2G ... -jar server.jar nogui"
                       // line (the exact shape a flags generator hands out)
-                      // belongs across three separate fields, not crammed
-                      // into this one as one broken argument - see
-                      // parseFullJavaCommand's own doc comment.
-                      if (selectedBlueprint.id === "generic-java" && field.key === "jvmArgs" && Array.isArray(v)) {
+                      // belongs across separate fields, not crammed into
+                      // this one as one broken argument - see
+                      // parseFullJavaCommand's own doc comment. Applies to
+                      // any blueprint with a "jvmArgs" field (generic-java,
+                      // paper) - paper has no "jarPath" field of its own
+                      // (the jar is auto-downloaded), so that piece is just
+                      // dropped there rather than set somewhere nonexistent.
+                      if (field.key === "jvmArgs" && Array.isArray(v)) {
                         const parsed = parseFullJavaCommand(v);
                         if (parsed) {
-                          setFieldValues((prev) => ({ ...prev, jvmArgs: parsed.jvmArgs, jarPath: parsed.jarPath, programArgs: parsed.programArgs }));
+                          const hasJarPathField = selectedBlueprint.fields.some((f) => f.key === "jarPath");
+                          setFieldValues((prev) => ({
+                            ...prev,
+                            jvmArgs: parsed.jvmArgs,
+                            programArgs: parsed.programArgs,
+                            ...(hasJarPathField ? { jarPath: parsed.jarPath } : {}),
+                          }));
+                          return;
+                        }
+                        // No "-jar" token, but a bare "java"/"java.exe" entry
+                        // on its own is never a real JVM flag either (e.g.
+                        // typed by hand into this field by mistake) - it
+                        // would otherwise become an invalid positional
+                        // argument java itself can't parse.
+                        const cleaned = v.filter((token) => !JAVA_BINARY_TOKEN.test(token as string));
+                        if (cleaned.length !== v.length) {
+                          setFieldValue(field.key, cleaned);
                           return;
                         }
                       }
