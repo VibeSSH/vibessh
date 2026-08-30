@@ -35,6 +35,9 @@ fn validate_password(password: &str) -> ApiResult<()> {
     if password.chars().count() < password::MIN_PASSWORD_LEN {
         return Err(ApiError::InvalidInput(format!("password must be at least {} characters", password::MIN_PASSWORD_LEN)));
     }
+    if password.len() > password::MAX_PASSWORD_LEN {
+        return Err(ApiError::InvalidInput(format!("password must be at most {} characters", password::MAX_PASSWORD_LEN)));
+    }
     Ok(())
 }
 
@@ -106,6 +109,13 @@ fn dummy_hash_for_timing_safety() -> &'static str {
 
 pub async fn login(State(state): State<AppState>, Json(body): Json<LoginRequest>) -> ApiResult<Json<AuthResponse>> {
     let email = normalize_email(&body.email);
+
+    // A real password is never anywhere near this long - reject before
+    // spending an Argon2 computation on it, the same DoS concern
+    // MAX_PASSWORD_LEN exists for on the register path.
+    if body.password.len() > password::MAX_PASSWORD_LEN {
+        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+    }
 
     let user: Option<User> = sqlx::query_as(
         "SELECT id, email, password_hash, display_name, created_at FROM users WHERE email = $1",

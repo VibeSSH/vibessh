@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::authorize;
+use crate::authorize::{authorize, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{CreateInvitationRequest, CreatedInvitation, Invitation, Team};
 use crate::teams::team_for_member;
@@ -79,6 +79,13 @@ pub async fn create_invitation(
         if !role_exists {
             return Err(ApiError::NotFound("role not found".to_string()));
         }
+        // An invitation with a role attached grants that role the moment
+        // it's accepted - the inviter can't hand out more power that way
+        // than they could by assigning the role directly (see roles.rs's
+        // assign_role, which enforces the identical rule).
+        let role_permissions: Vec<String> =
+            sqlx::query_scalar("SELECT permission_key FROM role_permissions WHERE role_id = $1").bind(role_id).fetch_all(&state.db).await?;
+        ensure_can_grant(&state.db, team_id, user_id, &role_permissions).await?;
     }
 
     let expires_in_days = body.expires_in_days.unwrap_or(DEFAULT_EXPIRES_IN_DAYS).clamp(1, MAX_EXPIRES_IN_DAYS);

@@ -63,6 +63,24 @@ async fn owner_can_create_a_custom_role_with_a_subset_of_permissions() {
 }
 
 #[tokio::test]
+async fn a_duplicate_permission_in_the_request_is_deduplicated_not_a_server_error() {
+    let (_, owner_token) = register_user().await;
+    let team = create_team(&owner_token, "Team").await;
+    let team_id = team["id"].as_str().unwrap();
+
+    let (status, role) = post_with_bearer(
+        test_router().await,
+        &format!("/teams/{team_id}/roles"),
+        &owner_token,
+        json!({ "name": "Deduped", "permissions": ["team.view", "team.view", "team.update"] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{role}");
+    let perms = role["permissions"].as_array().unwrap();
+    assert_eq!(perms.len(), 2);
+}
+
+#[tokio::test]
 async fn creating_a_role_with_an_unknown_permission_is_rejected() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;

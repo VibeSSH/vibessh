@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::{authorize, effective_permissions};
+use crate::authorize::{authorize, effective_permissions, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{AssignRoleRequest, CreateRoleRequest, Role, RoleWithPermissions, UpdateRoleRequest};
 use crate::permissions;
@@ -66,6 +66,16 @@ fn validate_permission_keys(keys: &[String]) -> ApiResult<()> {
     Ok(())
 }
 
+/// A client sending the same permission twice is harmless (the resulting
+/// role has that permission once, same as if it were sent once) - dedupe
+/// rather than reject, since role_permissions has a real PRIMARY KEY on
+/// (role_id, permission_key) that would otherwise turn a duplicate into an
+/// opaque 500 from the second INSERT's unique-constraint violation.
+fn dedupe_permissions(keys: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    keys.into_iter().filter(|key| seen.insert(key.clone())).collect()
+}
+
 async fn replace_role_permissions(tx: &mut Transaction<'_, Postgres>, role_id: Uuid, keys: &[String]) -> ApiResult<()> {
     sqlx::query("DELETE FROM role_permissions WHERE role_id = $1").bind(role_id).execute(&mut **tx).await?;
     for key in keys {
@@ -107,6 +117,8 @@ pub async fn create_role(
 
     let name = validate_role_name(&body.name)?;
     validate_permission_keys(&body.permissions)?;
+    let permissions_to_grant = dedupe_permissions(body.permissions);
+    ensure_can_grant(&state.db, team_id, user_id, &permissions_to_grant).await?;
 
     let role_id = Uuid::new_v4();
     let now = Utc::now();
@@ -129,7 +141,7 @@ pub async fn create_role(
     }
     insert?;
 
-    for permission in &body.permissions {
+    for permission in &permissions_to_grant {
         sqlx::query("INSERT INTO role_permissions (role_id, permission_key) VALUES ($1, $2)")
             .bind(role_id)
             .bind(permission)
@@ -137,8 +149,16 @@ pub async fn create_role(
             .await?;
     }
 
-    audit::record(&mut tx, team_id, user_id, audit::ROLE_CREATED, "role", Some(role_id), json!({ "name": name, "permissions": body.permissions }))
-        .await?;
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::ROLE_CREATED,
+        "role",
+        Some(role_id),
+        json!({ "name": name, "permissions": permissions_to_grant }),
+    )
+    .await?;
     tx.commit().await?;
 
     let role = Role { id: role_id, team_id, name, description: body.description, is_system: false, created_at: now };
@@ -190,6 +210,8 @@ pub async fn update_role(
 
     let name = validate_role_name(&body.name)?;
     validate_permission_keys(&body.permissions)?;
+    let permissions_to_grant = dedupe_permissions(body.permissions);
+    ensure_can_grant(&state.db, team_id, user_id, &permissions_to_grant).await?;
 
     let now = Utc::now();
     let mut tx = state.db.begin().await?;
@@ -207,9 +229,17 @@ pub async fn update_role(
     }
     update?;
 
-    replace_role_permissions(&mut tx, role_id, &body.permissions).await?;
-    audit::record(&mut tx, team_id, user_id, audit::ROLE_UPDATED, "role", Some(role_id), json!({ "name": name, "permissions": body.permissions }))
-        .await?;
+    replace_role_permissions(&mut tx, role_id, &permissions_to_grant).await?;
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::ROLE_UPDATED,
+        "role",
+        Some(role_id),
+        json!({ "name": name, "permissions": permissions_to_grant }),
+    )
+    .await?;
     tx.commit().await?;
 
     let updated = Role { id: role_id, team_id, name, description: body.description, is_system: false, created_at: role.created_at };
@@ -267,7 +297,10 @@ pub async fn assign_role(
     // Confirms both that the role really belongs to this team and that the
     // target is really a member of it, so the insert below fails with a
     // clear ApiError instead of a raw foreign-key-violation.
-    role_for_team(&state.db, team_id, body.role_id).await?;
+    let role_to_assign = role_for_team(&state.db, team_id, body.role_id).await?;
+    let role_permissions: Vec<String> =
+        sqlx::query_scalar("SELECT permission_key FROM role_permissions WHERE role_id = $1").bind(role_to_assign.id).fetch_all(&state.db).await?;
+    ensure_can_grant(&state.db, team_id, user_id, &role_permissions).await?;
     let target_is_member: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2)")
         .bind(team_id)
         .bind(target_user_id)

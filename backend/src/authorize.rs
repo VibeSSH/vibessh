@@ -63,3 +63,23 @@ pub async fn effective_permissions(db: &PgPool, team_id: Uuid, user_id: Uuid) ->
     .await?;
     Ok(permissions)
 }
+
+/// The "can't grant what you don't have" rule: rejects if `desired`
+/// contains any permission the actor doesn't themselves currently hold.
+/// `team.roles.manage` alone is not enough to define a role, update an
+/// existing one's permission set, assign a role (including the built-in
+/// Owner role) to someone, or invite someone with a role attached, if doing
+/// so would hand out more power than the actor themselves has - otherwise
+/// that one permission would be a de facto "become the owner" button.
+/// Every one of those call sites must call this in addition to `authorize`,
+/// not instead of it: `authorize` checks the actor is allowed to manage
+/// roles at all, this checks the specific grant they're attempting isn't
+/// wider than their own reach.
+pub async fn ensure_can_grant(db: &PgPool, team_id: Uuid, actor_id: Uuid, desired: &[String]) -> ApiResult<()> {
+    let held = effective_permissions(db, team_id, actor_id).await?;
+    let held: std::collections::HashSet<&str> = held.iter().map(String::as_str).collect();
+    if let Some(missing) = desired.iter().find(|permission| !held.contains(permission.as_str())) {
+        return Err(ApiError::Forbidden(format!("you can't grant a permission you don't have: {missing}")));
+    }
+    Ok(())
+}

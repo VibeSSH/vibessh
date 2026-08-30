@@ -8,6 +8,12 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use argon2::Argon2;
 
 pub const MIN_PASSWORD_LEN: usize = 8;
+/// Argon2 is deliberately memory- and CPU-hard - hashing an attacker-
+/// supplied multi-megabyte "password" would burn real server resources for
+/// every request, a cheap denial-of-service lever with no legitimate use
+/// (no real password is anywhere near this long). Callers must enforce
+/// this before ever passing user input to hash_password/verify_password.
+pub const MAX_PASSWORD_LEN: usize = 256;
 
 pub fn hash_password(password: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
