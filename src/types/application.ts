@@ -33,6 +33,19 @@ export interface PortInput {
   externalPort?: number;
 }
 
+/** Mirrors the Rust `HealthCheckType` enum - what `getApplicationHealth` probes beyond "is the process still running" (that check always happens first, regardless of this setting). */
+export type HealthCheckType = "process" | "tcp" | "http" | "minecraftStatus";
+
+/** Mirrors the Rust `HealthStatus` enum's adjacently-tagged `Serialize` shape (`{"status":"healthy"}` / `{"status":"unhealthy","reason":"..."}` / `{"status":"unknown"}`). */
+export type HealthStatus = { status: "healthy" } | { status: "unhealthy"; reason: string } | { status: "unknown" };
+
+/** What `setApplicationHealthCheck` submits - mirrors the Rust `SetHealthCheckInput` DTO. `portId` is required unless `healthCheckType` is `"process"`; `httpPath` is required (and must start with `/`) only for `"http"`. */
+export interface SetHealthCheckInput {
+  healthCheckType: HealthCheckType;
+  portId?: string;
+  httpPath?: string;
+}
+
 export interface Application {
   id: string;
   /** Undefined = Local. There is no separate "location" field - same single source of truth as the Rust `Application::location()` derivation. */
@@ -45,6 +58,10 @@ export interface Application {
   workingDirectory: string;
   status: ApplicationStatus;
   lastStatusCheckAt?: string;
+  healthCheckType: HealthCheckType;
+  /** References an `ApplicationPort` - `undefined` for `"process"`, and also `undefined` if the port a check pointed at has since been removed. */
+  healthCheckPortId?: string;
+  healthCheckHttpPath?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,7 +80,7 @@ export interface ResourceUsage {
   uptimeSeconds?: number;
 }
 
-export type BlueprintFeature = "console" | "logs" | "environment" | "ports";
+export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck";
 
 export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion" | "papermcVersion";
 

@@ -42,7 +42,7 @@ use crate::models::{ApplicationStatus, EnvironmentVariable};
 use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
 
-use super::{ApplicationConsole, ApplicationRuntime, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
 
 /// What `runtime_config` deserializes into for `RuntimeType::Docker`.
 /// `command`, if given, overrides the image's own `ENTRYPOINT`/`CMD` - a
@@ -341,12 +341,9 @@ impl ApplicationRuntime for DockerRuntime {
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds })
     }
 
-    async fn health_check(&self, ctx: &RuntimeContext<'_>) -> AppResult<HealthStatus> {
-        match self.status(ctx).await? {
-            ApplicationStatus::Running => Ok(HealthStatus::Healthy),
-            ApplicationStatus::Failed => Ok(HealthStatus::Unhealthy("the container exited with a non-zero status".into())),
-            _ => Ok(HealthStatus::Unknown),
-        }
+    async fn health_check(&self, ctx: &RuntimeContext<'_>, spec: &HealthCheckSpec) -> AppResult<HealthStatus> {
+        let status = self.status(ctx).await?;
+        health_check::default_health_check(ctx, spec, status, Some("the container exited with a non-zero status")).await
     }
 
     async fn console(&self, _ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {

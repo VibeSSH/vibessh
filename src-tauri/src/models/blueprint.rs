@@ -46,6 +46,7 @@ pub enum BlueprintFeature {
     Logs,
     Environment,
     Ports,
+    HealthCheck,
 }
 
 /// One input a Create Application wizard would collect for this blueprint.

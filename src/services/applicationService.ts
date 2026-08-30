@@ -6,10 +6,12 @@ import type {
   ApplicationStatus,
   Blueprint,
   EnvironmentVariable,
+  HealthStatus,
   JavaInstallation,
   PortInput,
   ResourceUsage,
   RuntimeType,
+  SetHealthCheckInput,
 } from "@/types/application";
 
 /** What the Create Application wizard submits - mirrors the Rust `CreateApplicationFromBlueprintInput` DTO. */
@@ -105,4 +107,13 @@ export function updateApplicationPort(id: string, portId: string, port: PortInpu
 
 export function removeApplicationPort(id: string, portId: string): Promise<void> {
   return callCommand<void>("remove_application_port", { id, portId });
+}
+
+/** Runs the actual probe right now (a TCP/HTTP dial or a Minecraft Server List Ping, depending on how the application's health check is configured) - not a cached value, same "pull, not push" shape as `getApplicationResourceUsage`. */
+export function getApplicationHealth(id: string): Promise<HealthStatus> {
+  return callCommand<HealthStatus>("get_application_health", { id });
+}
+
+export function setApplicationHealthCheck(id: string, input: SetHealthCheckInput): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("set_application_health_check", { id, input });
 }

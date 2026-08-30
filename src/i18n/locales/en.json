@@ -239,6 +239,32 @@
     "invalidForm": "Enter a name and a valid port number (1-65535).",
     "saveError": "Couldn't save the port."
   },
+  "healthCheck": {
+    "title": "Health check",
+    "checkNow": "Check now",
+    "configure": "Configure",
+    "checkError": "Couldn't run the health check.",
+    "type": "Type",
+    "port": "Port",
+    "path": "Path",
+    "portMissing": "No port configured",
+    "noPorts": "This application has no TCP ports declared yet - add one on the Ports tab first.",
+    "choosePort": "Choose a port",
+    "formPortRequired": "Choose a port for this health check type.",
+    "formPathRequired": "The path must start with \"/\".",
+    "saveError": "Couldn't save the health check.",
+    "status": {
+      "healthy": "Healthy",
+      "unhealthy": "Unhealthy",
+      "unknown": "Unknown"
+    },
+    "typeOption": {
+      "process": "Process only",
+      "tcp": "TCP port",
+      "http": "HTTP endpoint",
+      "minecraftStatus": "Minecraft server status"
+    }
+  },
   "deleteApplicationDialog": {
     "title": "Delete application",
     "body": "Delete <1>{{name}}</1>? This removes it from VibeSSH - it won't stop a still-running process/unit/container on its own; stop it first if it's running. This can't be undone."

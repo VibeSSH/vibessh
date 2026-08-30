@@ -30,7 +30,7 @@ use crate::models::ApplicationStatus;
 use crate::ssh::systemd::validate_unit_name;
 use crate::ssh::SshSession;
 
-use super::{ApplicationConsole, ApplicationRuntime, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
 
 /// What `runtime_config` deserializes into for `RuntimeType::Systemd`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,12 +291,9 @@ impl ApplicationRuntime for SystemdRuntime {
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds: None })
     }
 
-    async fn health_check(&self, ctx: &RuntimeContext<'_>) -> AppResult<HealthStatus> {
-        match self.status(ctx).await? {
-            ApplicationStatus::Running => Ok(HealthStatus::Healthy),
-            ApplicationStatus::Failed => Ok(HealthStatus::Unhealthy("the systemd unit reported a failed state".into())),
-            _ => Ok(HealthStatus::Unknown),
-        }
+    async fn health_check(&self, ctx: &RuntimeContext<'_>, spec: &HealthCheckSpec) -> AppResult<HealthStatus> {
+        let status = self.status(ctx).await?;
+        health_check::default_health_check(ctx, spec, status, Some("the systemd unit reported a failed state")).await
     }
 
     async fn console(&self, _ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {

@@ -8,6 +8,7 @@
 //! interface Phase 2 (LocalProcessRuntime) onward builds against.
 
 pub mod docker;
+pub mod health_check;
 pub mod local_process;
 pub mod remote_process;
 pub mod systemd;
@@ -46,11 +47,40 @@ pub struct ResourceUsage {
     pub uptime_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
+/// `Serialize` (tagged, not the default enum encoding - `Unhealthy` carries
+/// data the other two variants don't) so `application_health_check` can hand
+/// this straight to the frontend: `{"status":"healthy"}` /
+/// `{"status":"unhealthy","reason":"..."}` / `{"status":"unknown"}`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
 pub enum HealthStatus {
     Healthy,
-    Unhealthy(String),
+    Unhealthy { reason: String },
     Unknown,
+}
+
+/// What a health check actually probes, resolved once by the service layer
+/// (`application_service::resolve_health_check_spec`) from an Application's
+/// stored `health_check_*` columns plus its ports - see that function's own
+/// doc comment for why resolution can come back `None` instead of `Unknown`
+/// as a spec. Every runtime checks "is the process still running" first
+/// regardless of this (see `health_check::default_health_check`); this is
+/// only the *additional* probe layered on top for anything beyond `Process`.
+#[derive(Debug, Clone)]
+pub enum HealthCheckSpec {
+    Process,
+    /// Plain TCP connect - Local dials `127.0.0.1:port` directly, Remote
+    /// dials from the target host itself over SSH (see
+    /// `health_check::check_tcp`'s doc comment for why "from the host", not
+    /// from the VibeSSH desktop).
+    Tcp { port: u16 },
+    /// `GET path` on `port`, healthy on any 2xx/3xx response - same
+    /// Local-direct/Remote-via-SSH split as `Tcp`.
+    Http { port: u16, path: String },
+    /// The real Minecraft Server List Ping protocol, always dialed directly
+    /// from the VibeSSH desktop (never via SSH) - see
+    /// `health_check::check_minecraft_status`'s doc comment for why.
+    MinecraftStatus { host: String, port: u16 },
 }
 
 #[async_trait::async_trait]
@@ -70,7 +100,12 @@ pub trait ApplicationRuntime: Send + Sync {
 
     async fn status(&self, ctx: &RuntimeContext<'_>) -> AppResult<ApplicationStatus>;
     async fn resource_usage(&self, ctx: &RuntimeContext<'_>) -> AppResult<ResourceUsage>;
-    async fn health_check(&self, ctx: &RuntimeContext<'_>) -> AppResult<HealthStatus>;
+    /// `spec` is resolved once by the caller (see `HealthCheckSpec`'s own
+    /// doc comment), not derived from `ctx` here - keeps each runtime's
+    /// implementation to "check status, then delegate to
+    /// `health_check::default_health_check`" rather than 4 copies of the
+    /// same DB-lookup-and-port-resolution logic.
+    async fn health_check(&self, ctx: &RuntimeContext<'_>, spec: &HealthCheckSpec) -> AppResult<HealthStatus>;
 
     /// `Ok(None)` (not an error) when this runtime/application genuinely
     /// has no interactive console - e.g. a systemd unit with no stdin
@@ -159,7 +194,7 @@ mod tests {
         async fn resource_usage(&self, _ctx: &RuntimeContext<'_>) -> AppResult<ResourceUsage> {
             Err(AppError::Internal("not implemented in stub".into()))
         }
-        async fn health_check(&self, _ctx: &RuntimeContext<'_>) -> AppResult<HealthStatus> {
+        async fn health_check(&self, _ctx: &RuntimeContext<'_>, _spec: &HealthCheckSpec) -> AppResult<HealthStatus> {
             Ok(HealthStatus::Unknown)
         }
         async fn console(&self, _ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {

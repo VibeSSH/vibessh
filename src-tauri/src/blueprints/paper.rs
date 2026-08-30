@@ -34,7 +34,7 @@ impl PaperBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck],
                 fields: vec![
                     BlueprintField {
                         key: "minecraftVersion".to_string(),

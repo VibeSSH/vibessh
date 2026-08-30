@@ -239,6 +239,32 @@
     "invalidForm": "Podaj nazwę i prawidłowy numer portu (1-65535).",
     "saveError": "Nie udało się zapisać portu."
   },
+  "healthCheck": {
+    "title": "Health check",
+    "checkNow": "Sprawdź teraz",
+    "configure": "Konfiguruj",
+    "checkError": "Nie udało się wykonać health checku.",
+    "type": "Typ",
+    "port": "Port",
+    "path": "Ścieżka",
+    "portMissing": "Nie skonfigurowano portu",
+    "noPorts": "Ta aplikacja nie ma jeszcze zadeklarowanych portów TCP - dodaj port w zakładce Porty.",
+    "choosePort": "Wybierz port",
+    "formPortRequired": "Wybierz port dla tego typu health checku.",
+    "formPathRequired": "Ścieżka musi zaczynać się od \"/\".",
+    "saveError": "Nie udało się zapisać health checku.",
+    "status": {
+      "healthy": "Zdrowa",
+      "unhealthy": "Niezdrowa",
+      "unknown": "Nieznany"
+    },
+    "typeOption": {
+      "process": "Tylko proces",
+      "tcp": "Port TCP",
+      "http": "Endpoint HTTP",
+      "minecraftStatus": "Status serwera Minecraft"
+    }
+  },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
     "body": "Usunąć <1>{{name}}</1>? To usuwa ją z VibeSSH - nie zatrzymuje samodzielnie wciąż działającego procesu/usługi/kontenera; jeśli działa, zatrzymaj ją najpierw. Tej operacji nie można cofnąć."

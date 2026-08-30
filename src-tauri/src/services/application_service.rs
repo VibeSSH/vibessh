@@ -13,10 +13,10 @@ use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput,
-    CreateApplicationInput, PortInput,
+    CreateApplicationInput, HealthCheckType, PortInput, SetHealthCheckInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
-use crate::runtime::{self, ApplicationRuntime, ResourceUsage, RuntimeContext};
+use crate::runtime::{self, ApplicationRuntime, HealthCheckSpec, HealthStatus, ResourceUsage, RuntimeContext};
 use crate::services::ssh_service::get_or_connect;
 use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
@@ -320,6 +320,83 @@ pub async fn application_logs(
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
     let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
     runtime.logs(&ctx).await?.tail(max_lines).await
+}
+
+/// Validates a health check configuration before it's stored - beyond the
+/// repository's own "does `port_id` belong to this application" check
+/// (`ApplicationRepository::set_health_check`), `Tcp`/`Http`/
+/// `MinecraftStatus` are meaningless without a port, and `Http` additionally
+/// needs a path that actually starts a request (`curl`/`reqwest` would
+/// otherwise be asked to fetch a URL like `http://host:portfoo`).
+pub fn set_application_health_check(
+    repo: &ApplicationRepository,
+    id: Uuid,
+    input: SetHealthCheckInput,
+) -> AppResult<ApplicationDetail> {
+    if input.health_check_type != HealthCheckType::Process && input.port_id.is_none() {
+        return Err(AppError::InvalidInput("this health check type needs a port".into()));
+    }
+    let http_path = match input.health_check_type {
+        HealthCheckType::Http => {
+            let path = input.http_path.as_deref().unwrap_or("").trim();
+            if !path.starts_with('/') {
+                return Err(AppError::InvalidInput("the HTTP health check path must start with '/'".into()));
+            }
+            Some(path.to_string())
+        }
+        _ => None,
+    };
+    repo.set_health_check(id, input.health_check_type, input.port_id, http_path.as_deref())?;
+    get_application(repo, id)
+}
+
+/// Turns an Application's stored `health_check_*` columns into the
+/// `HealthCheckSpec` its runtime actually probes with - `Ok(None)` (not an
+/// error) whenever the configuration can't be resolved right now (the
+/// referenced port was removed, or the target Server was deleted), matching
+/// `Application::health_check_port_id`'s own doc comment: that case reports
+/// `HealthStatus::Unknown`, not a failure.
+fn resolve_health_check_spec(
+    server_repo: &ServerRepository,
+    application: &Application,
+    ports: &[ApplicationPort],
+) -> AppResult<Option<HealthCheckSpec>> {
+    let resolve_port = || application.health_check_port_id.and_then(|port_id| ports.iter().find(|p| p.id == port_id)).map(|p| p.internal_port);
+
+    Ok(match application.health_check_type {
+        HealthCheckType::Process => Some(HealthCheckSpec::Process),
+        HealthCheckType::Tcp => resolve_port().map(|port| HealthCheckSpec::Tcp { port }),
+        HealthCheckType::Http => {
+            let (Some(port), Some(path)) = (resolve_port(), application.health_check_http_path.clone()) else { return Ok(None) };
+            Some(HealthCheckSpec::Http { port, path })
+        }
+        HealthCheckType::MinecraftStatus => {
+            let Some(port) = resolve_port() else { return Ok(None) };
+            let host = match application.server_id {
+                None => "127.0.0.1".to_string(),
+                Some(server_id) => match server_repo.get(server_id)? {
+                    Some(server) => server.host,
+                    None => return Ok(None),
+                },
+            };
+            Some(HealthCheckSpec::MinecraftStatus { host, port })
+        }
+    })
+}
+
+pub async fn application_health_check(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+) -> AppResult<HealthStatus> {
+    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+    let Some(spec) = resolve_health_check_spec(server_repo, &detail.application, &detail.ports)? else {
+        return Ok(HealthStatus::Unknown);
+    };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    runtime.health_check(&ctx, &spec).await
 }
 
 #[cfg(test)]

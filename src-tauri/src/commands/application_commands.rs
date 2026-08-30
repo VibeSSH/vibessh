@@ -5,9 +5,12 @@ use uuid::Uuid;
 
 use crate::blueprints::BlueprintRegistry;
 use crate::errors::AppResult;
-use crate::models::{Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, PortInput};
+use crate::models::{
+    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, PortInput,
+    SetHealthCheckInput,
+};
 use crate::runtime::local_process::LocalProcessManager;
-use crate::runtime::ResourceUsage;
+use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
@@ -156,6 +159,26 @@ pub async fn get_application_logs(
     max_lines: u32,
 ) -> AppResult<Vec<String>> {
     services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, id, max_lines).await
+}
+
+#[tauri::command]
+pub async fn get_application_health(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+) -> AppResult<HealthStatus> {
+    services::application_health_check(&repo, &server_repo, &sessions, &local_process_manager, id).await
+}
+
+#[tauri::command]
+pub fn set_application_health_check(
+    repo: State<ApplicationRepository>,
+    id: Uuid,
+    input: SetHealthCheckInput,
+) -> AppResult<ApplicationDetail> {
+    services::set_application_health_check(&repo, id, input)
 }
 
 #[tauri::command]

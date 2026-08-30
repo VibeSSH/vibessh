@@ -49,7 +49,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::ApplicationStatus;
 use crate::ssh::SshSession;
 
-use super::{ApplicationConsole, ApplicationRuntime, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
 
 /// What `runtime_config` deserializes into for `RuntimeType::RemoteProcess`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -334,13 +334,13 @@ impl ApplicationRuntime for RemoteProcessRuntime {
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds })
     }
 
-    async fn health_check(&self, ctx: &RuntimeContext<'_>) -> AppResult<HealthStatus> {
-        // No Failed state to map to Unhealthy here (see the module doc
-        // comment) - only Running is ever reported as more than Unknown.
-        match self.status(ctx).await? {
-            ApplicationStatus::Running => Ok(HealthStatus::Healthy),
-            _ => Ok(HealthStatus::Unknown),
-        }
+    async fn health_check(&self, ctx: &RuntimeContext<'_>, spec: &HealthCheckSpec) -> AppResult<HealthStatus> {
+        // No Failed state to report here (see the module doc comment) -
+        // `default_health_check` never sees `ApplicationStatus::Failed`
+        // from this runtime, so `failed_reason` is unreachable and left
+        // `None`.
+        let status = self.status(ctx).await?;
+        health_check::default_health_check(ctx, spec, status, None).await
     }
 
     async fn console(&self, ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {

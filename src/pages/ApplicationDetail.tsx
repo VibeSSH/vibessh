@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
 import { PortsTab } from "@/components/applications/PortsTab";
 import {
   getApplication,
@@ -253,6 +254,10 @@ export function ApplicationDetail() {
                   <span className="wizard-review-value">{new Date(application.createdAt).toLocaleString()}</span>
                 </div>
               </Card>
+
+              {features.includes("healthCheck") && (
+                <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
+              )}
             </div>
           )}
 

@@ -26,7 +26,7 @@ impl GenericBlueprint {
                 // blueprint has no field for one - a "Generic Docker"
                 // blueprint would be its own, separate thing.
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck],
                 fields: vec![
                     BlueprintField {
                         key: "command".to_string(),
