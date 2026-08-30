@@ -15,6 +15,9 @@ use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use serde_json::json;
+
+use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::authorize;
 use crate::errors::{ApiError, ApiResult};
@@ -100,6 +103,8 @@ pub async fn create_team(
         .execute(&mut *tx)
         .await?;
 
+    audit::record(&mut tx, team_id, user_id, audit::TEAM_CREATED, "team", Some(team_id), json!({ "name": name })).await?;
+
     tx.commit().await?;
 
     let team = Team { id: team_id, name: name.to_string(), owner_id: user_id, created_at: now };
@@ -171,11 +176,12 @@ pub async fn add_member(
         .await?;
     let target_user_id = target_user_id.ok_or_else(|| ApiError::NotFound("no account with that email".to_string()))?;
 
+    let mut tx = state.db.begin().await?;
     let insert = sqlx::query("INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, $3)")
         .bind(team_id)
         .bind(target_user_id)
         .bind(Utc::now())
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await;
 
     if let Err(sqlx::Error::Database(db_err)) = &insert {
@@ -184,6 +190,9 @@ pub async fn add_member(
         }
     }
     insert?;
+
+    audit::record(&mut tx, team_id, user_id, audit::MEMBER_ADDED, "user", Some(target_user_id), json!({ "email": email })).await?;
+    tx.commit().await?;
 
     Ok(StatusCode::CREATED)
 }
@@ -204,15 +213,19 @@ pub async fn remove_member(
         return Err(ApiError::Conflict("the team owner can't be removed - transfer ownership first".to_string()));
     }
 
+    let mut tx = state.db.begin().await?;
     let affected = sqlx::query("DELETE FROM team_members WHERE team_id = $1 AND user_id = $2")
         .bind(team_id)
         .bind(target_user_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
     if affected == 0 {
         return Err(ApiError::NotFound("that user isn't a member of this team".to_string()));
     }
+
+    audit::record(&mut tx, team_id, user_id, audit::MEMBER_REMOVED, "user", Some(target_user_id), json!({})).await?;
+    tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -225,6 +238,12 @@ pub async fn delete_team(
     team_for_member(&state.db, team_id, user_id).await?;
     authorize(&state.db, team_id, user_id, permissions::TEAM_DELETE).await?;
 
+    // Deliberately not recording a TEAM_DELETED audit event: audit_events.
+    // team_id is ON DELETE CASCADE (see migrations/0004), so any event
+    // referencing this team_id - including one logging the deletion itself -
+    // would be wiped out by this same DELETE. Preserving a team's audit
+    // trail past its own deletion needs a real soft-delete/archival design,
+    // which is future work, not this stage.
     sqlx::query("DELETE FROM teams WHERE id = $1").bind(team_id).execute(&state.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }

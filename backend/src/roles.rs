@@ -8,9 +8,11 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::Utc;
-use sqlx::PgPool;
+use serde_json::json;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::{authorize, effective_permissions};
 use crate::errors::{ApiError, ApiResult};
@@ -64,17 +66,15 @@ fn validate_permission_keys(keys: &[String]) -> ApiResult<()> {
     Ok(())
 }
 
-async fn replace_role_permissions(db: &PgPool, role_id: Uuid, keys: &[String]) -> ApiResult<()> {
-    let mut tx = db.begin().await?;
-    sqlx::query("DELETE FROM role_permissions WHERE role_id = $1").bind(role_id).execute(&mut *tx).await?;
+async fn replace_role_permissions(tx: &mut Transaction<'_, Postgres>, role_id: Uuid, keys: &[String]) -> ApiResult<()> {
+    sqlx::query("DELETE FROM role_permissions WHERE role_id = $1").bind(role_id).execute(&mut **tx).await?;
     for key in keys {
         sqlx::query("INSERT INTO role_permissions (role_id, permission_key) VALUES ($1, $2)")
             .bind(role_id)
             .bind(key)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 
@@ -110,6 +110,7 @@ pub async fn create_role(
 
     let role_id = Uuid::new_v4();
     let now = Utc::now();
+    let mut tx = state.db.begin().await?;
     let insert = sqlx::query(
         "INSERT INTO roles (id, team_id, name, description, is_system, created_at, updated_at) VALUES ($1, $2, $3, $4, FALSE, $5, $5)",
     )
@@ -118,7 +119,7 @@ pub async fn create_role(
     .bind(&name)
     .bind(&body.description)
     .bind(now)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await;
 
     if let Err(sqlx::Error::Database(db_err)) = &insert {
@@ -132,9 +133,13 @@ pub async fn create_role(
         sqlx::query("INSERT INTO role_permissions (role_id, permission_key) VALUES ($1, $2)")
             .bind(role_id)
             .bind(permission)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
     }
+
+    audit::record(&mut tx, team_id, user_id, audit::ROLE_CREATED, "role", Some(role_id), json!({ "name": name, "permissions": body.permissions }))
+        .await?;
+    tx.commit().await?;
 
     let role = Role { id: role_id, team_id, name, description: body.description, is_system: false, created_at: now };
     Ok((StatusCode::CREATED, Json(with_permissions(&state.db, role).await?)))
@@ -187,12 +192,13 @@ pub async fn update_role(
     validate_permission_keys(&body.permissions)?;
 
     let now = Utc::now();
+    let mut tx = state.db.begin().await?;
     let update = sqlx::query("UPDATE roles SET name = $1, description = $2, updated_at = $3 WHERE id = $4")
         .bind(&name)
         .bind(&body.description)
         .bind(now)
         .bind(role_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await;
     if let Err(sqlx::Error::Database(db_err)) = &update {
         if db_err.is_unique_violation() {
@@ -201,7 +207,10 @@ pub async fn update_role(
     }
     update?;
 
-    replace_role_permissions(&state.db, role_id, &body.permissions).await?;
+    replace_role_permissions(&mut tx, role_id, &body.permissions).await?;
+    audit::record(&mut tx, team_id, user_id, audit::ROLE_UPDATED, "role", Some(role_id), json!({ "name": name, "permissions": body.permissions }))
+        .await?;
+    tx.commit().await?;
 
     let updated = Role { id: role_id, team_id, name, description: body.description, is_system: false, created_at: role.created_at };
     Ok(Json(with_permissions(&state.db, updated).await?))
@@ -219,7 +228,10 @@ pub async fn delete_role(
         return Err(ApiError::Forbidden("the built-in owner role cannot be deleted".to_string()));
     }
 
-    sqlx::query("DELETE FROM roles WHERE id = $1").bind(role_id).execute(&state.db).await?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("DELETE FROM roles WHERE id = $1").bind(role_id).execute(&mut *tx).await?;
+    audit::record(&mut tx, team_id, user_id, audit::ROLE_DELETED, "role", Some(role_id), json!({ "name": role.name })).await?;
+    tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -265,11 +277,12 @@ pub async fn assign_role(
         return Err(ApiError::NotFound("that user isn't a member of this team".to_string()));
     }
 
+    let mut tx = state.db.begin().await?;
     let insert = sqlx::query("INSERT INTO member_roles (team_id, user_id, role_id) VALUES ($1, $2, $3)")
         .bind(team_id)
         .bind(target_user_id)
         .bind(body.role_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await;
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
@@ -277,6 +290,9 @@ pub async fn assign_role(
         }
     }
     insert?;
+
+    audit::record(&mut tx, team_id, user_id, audit::ROLE_ASSIGNED, "user", Some(target_user_id), json!({ "roleId": body.role_id })).await?;
+    tx.commit().await?;
 
     Ok(StatusCode::CREATED)
 }
@@ -293,16 +309,20 @@ pub async fn unassign_role(
         return Err(ApiError::Conflict("the owner's built-in role can't be unassigned".to_string()));
     }
 
+    let mut tx = state.db.begin().await?;
     let affected = sqlx::query("DELETE FROM member_roles WHERE team_id = $1 AND user_id = $2 AND role_id = $3")
         .bind(team_id)
         .bind(target_user_id)
         .bind(role_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?
         .rows_affected();
     if affected == 0 {
         return Err(ApiError::NotFound("that member doesn't have that role".to_string()));
     }
+
+    audit::record(&mut tx, team_id, user_id, audit::ROLE_UNASSIGNED, "user", Some(target_user_id), json!({ "roleId": role_id })).await?;
+    tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -138,3 +138,22 @@ pub struct UpdateRoleRequest {
 pub struct AssignRoleRequest {
     pub role_id: Uuid,
 }
+
+/// `actor_id`/`actor_email`/`actor_display_name` are all nullable together -
+/// null when the acting user's account has since been deleted (see
+/// migrations/0004: `actor_id` is ON DELETE SET NULL specifically so the
+/// event itself survives that, just without a resolvable actor anymore).
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEvent {
+    pub id: Uuid,
+    pub action: String,
+    pub target_type: String,
+    pub target_id: Option<Uuid>,
+    pub result: String,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub actor_id: Option<Uuid>,
+    pub actor_email: Option<String>,
+    pub actor_display_name: Option<String>,
+}

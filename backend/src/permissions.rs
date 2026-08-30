@@ -16,9 +16,10 @@ pub const TEAM_DELETE: &str = "team.delete";
 pub const TEAM_MEMBERS_ADD: &str = "team.members.add";
 pub const TEAM_MEMBERS_REMOVE: &str = "team.members.remove";
 pub const TEAM_ROLES_MANAGE: &str = "team.roles.manage";
+pub const AUDIT_VIEW: &str = "audit.view";
 
 pub const ALL_PERMISSIONS: &[&str] =
-    &[TEAM_VIEW, TEAM_UPDATE, TEAM_DELETE, TEAM_MEMBERS_ADD, TEAM_MEMBERS_REMOVE, TEAM_ROLES_MANAGE];
+    &[TEAM_VIEW, TEAM_UPDATE, TEAM_DELETE, TEAM_MEMBERS_ADD, TEAM_MEMBERS_REMOVE, TEAM_ROLES_MANAGE, AUDIT_VIEW];
 
 pub fn is_known_permission(key: &str) -> bool {
     ALL_PERMISSIONS.contains(&key)

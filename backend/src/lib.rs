@@ -13,6 +13,7 @@ use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+pub mod audit;
 pub mod auth;
 pub mod authorize;
 pub mod errors;
@@ -72,6 +73,7 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         )
         .route("/teams/:team_id/members/:user_id/roles/:role_id", delete(roles::unassign_role))
         .route("/teams/:team_id/me/permissions", get(roles::my_permissions))
+        .route("/teams/:team_id/audit", get(audit::list_audit_events))
         .with_state(state)
 }
 
