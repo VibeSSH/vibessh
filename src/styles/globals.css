@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /*
  * Palette values are ported from Voltius's own default dark theme
  * (github.com/VoltiusApp/voltius, AGPL-3.0 — same license, same product
@@ -37,6 +39,81 @@
   --font-mono: "JetBrains Mono", "Consolas", "SF Mono", monospace;
 
   color-scheme: dark;
+}
+
+/*
+ * `--t-*` is a second, wider naming layer over the same palette above (every
+ * shared hex still lives in exactly one place - the block above - these are
+ * aliases, not new colors) plus the handful of intermediate tiers Voltius's
+ * theme has that we didn't (text-dim, text-bright, bg-input, bg-modal,
+ * bg-card-hover). It exists so component code ported from Voltius - which
+ * addresses colors as `var(--t-bg-card)` / Tailwind's `bg-(--t-bg-card)` -
+ * can be adapted with the names it already uses instead of a find-replace
+ * pass over every value on every port. New tokens here are real values taken
+ * from Voltius's own default theme (voltius/src/themes/presets.ts), the same
+ * porting basis as the block above.
+ */
+:root {
+  --t-bg-terminal: var(--surface-bg);
+  --t-bg-base: var(--surface-0);
+  --t-bg-card: var(--surface-1);
+  --t-bg-card-hover: color-mix(in srgb, var(--surface-1) 75%, var(--accent) 12%);
+  --t-bg-elevated: var(--surface-2);
+  --t-bg-input: #141d2b;
+  --t-bg-modal: #1a2437;
+  --t-border: var(--border);
+  --t-border-hover: var(--border-hover);
+  --t-text-dim: #7fa7b8;
+  --t-text-secondary: var(--text-secondary);
+  --t-text-muted: var(--text-tertiary);
+  --t-text-primary: var(--text-primary);
+  --t-text-bright: #e2ebf8;
+  --t-accent: var(--accent);
+  --t-accent-hover: var(--accent-hover);
+  --t-status-connected: var(--success);
+  --t-status-error: var(--danger);
+  --t-status-connecting: var(--warning);
+  --t-status-warning: var(--warning);
+
+  /* Elevation/glass recipe, ported near-verbatim from Voltius's globals.css
+     (voltius/src/styles/globals.css) - plain shadow/blur values, not colors,
+     so there's nothing to re-derive here. */
+  --t-ring: 0 0 0 1px rgba(255, 255, 255, 0.09);
+  --t-ring-strong: 0 0 0 1px rgba(255, 255, 255, 0.13);
+  --t-highlight: inset 0 1.5px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  --t-highlight-strong: inset 0 1.5px 0 rgba(255, 255, 255, 0.24), inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  --t-elev-1: 0 6px 20px -6px rgba(0, 0, 0, 0.55);
+  --t-elev-1-hover: 0 10px 28px -6px rgba(0, 0, 0, 0.65);
+  --t-elev-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --t-elev-3: 0 24px 64px -12px rgba(0, 0, 0, 0.7);
+  --t-card-ring: color-mix(in srgb, var(--t-accent) 22%, transparent);
+  --t-card-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.55);
+}
+
+/* Glass card surface - the "premium" card treatment used for server rows.
+   Ported from Voltius's BaseCard/GLASS_BG (voltius/src/components/shared/BaseCard.tsx). */
+.surface-glass {
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 100%),
+    color-mix(in srgb, var(--t-bg-card) 68%, transparent);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--t-ring), var(--t-elev-1), var(--t-highlight);
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+.surface-glass:hover {
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 45%, transparent 100%),
+    color-mix(in srgb, var(--t-bg-card) 80%, transparent);
+  box-shadow: var(--t-ring-strong), var(--t-elev-1-hover), var(--t-highlight-strong);
+}
+
+/* Button depth system, ported from Voltius's globals.css .btn/.btn-primary/etc. */
+.btn-depth {
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease, background 0.15s ease;
+}
+.btn-depth:active:not(:disabled) {
+  transform: translateY(0.5px);
 }
 
 * {
