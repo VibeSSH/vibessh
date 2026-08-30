@@ -28,6 +28,27 @@ function fieldValueOrDefault(field: BlueprintField, values: Record<string, unkno
   return field.key in values ? values[field.key] : field.defaultValue;
 }
 
+/** Splits on any run of whitespace, not just newlines - one flag per line and a single space-separated line both work the same way, matching how these values are actually space-delimited on a real command line. */
+function splitTextListInput(text: string): string[] {
+  return text.trim().split(/\s+/).filter((token) => token.length > 0);
+}
+
+/** A generator like flags.sh hands out one copy-pasteable line - `java -Xmx2G ... -jar server.jar nogui` - meant to be run directly in a shell, not split across VibeSSH's separate Java version / JVM arguments / jar file / program arguments fields. Detects that shape (a `-jar` token present) and splits it back into those pieces - `null` if the text doesn't look like this at all, e.g. plain flags with no `-jar` in them. */
+function parseFullJavaCommand(tokens: string[]): { jvmArgs: string[]; jarPath: string; programArgs: string[] } | null {
+  const jarIndex = tokens.indexOf("-jar");
+  if (jarIndex === -1 || jarIndex + 1 >= tokens.length) return null;
+
+  let jvmArgs = tokens.slice(0, jarIndex);
+  // A leading bare "java" or a path ending in "java"/"java.exe" - the user
+  // pasted the whole command including the binary itself, which has its
+  // own dedicated field.
+  if (jvmArgs.length > 0 && /(^|[\\/])java(\.exe)?$/i.test(jvmArgs[0])) {
+    jvmArgs = jvmArgs.slice(1);
+  }
+
+  return { jvmArgs, jarPath: tokens[jarIndex + 1], programArgs: tokens.slice(jarIndex + 2) };
+}
+
 function isFieldFilled(field: BlueprintField, values: Record<string, unknown>): boolean {
   const value = fieldValueOrDefault(field, values);
   if (!field.required) return true;
@@ -240,7 +261,21 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                     key={field.key}
                     field={field}
                     value={fieldValueOrDefault(field, fieldValues)}
-                    onChange={(v) => setFieldValue(field.key, v)}
+                    onChange={(v) => {
+                      // A pasted full "java -Xmx2G ... -jar server.jar nogui"
+                      // line (the exact shape a flags generator hands out)
+                      // belongs across three separate fields, not crammed
+                      // into this one as one broken argument - see
+                      // parseFullJavaCommand's own doc comment.
+                      if (selectedBlueprint.id === "generic-java" && field.key === "jvmArgs" && Array.isArray(v)) {
+                        const parsed = parseFullJavaCommand(v);
+                        if (parsed) {
+                          setFieldValues((prev) => ({ ...prev, jvmArgs: parsed.jvmArgs, jarPath: parsed.jarPath, programArgs: parsed.programArgs }));
+                          return;
+                        }
+                      }
+                      setFieldValue(field.key, v);
+                    }}
                     serverId={serverId}
                   />
                 ))}
@@ -358,14 +393,7 @@ function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFiel
         <textarea
           className="form-input form-textarea"
           value={text}
-          onChange={(e) =>
-            onChange(
-              e.target.value
-                .split("\n")
-                .map((line) => line.trim())
-                .filter((line) => line.length > 0),
-            )
-          }
+          onChange={(e) => onChange(splitTextListInput(e.target.value))}
         />
         {field.helpText && <p className="form-note">{field.helpText}</p>}
       </label>
