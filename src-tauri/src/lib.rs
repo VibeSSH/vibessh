@@ -6,7 +6,10 @@ mod blueprints;
 pub mod cloud_client;
 mod commands;
 mod errors;
-mod files;
+// `pub` for the same reason as `agent_client`/`ssh` above - a real-server
+// integration test (`tests/application_files_sftp.rs`) drives
+// `SftpApplicationFileProvider` directly against a live SSH host.
+pub mod files;
 mod models;
 mod runtime;
 mod services;
