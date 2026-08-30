@@ -58,3 +58,8 @@ export function refreshApplicationStatus(id: string): Promise<ApplicationStatus>
 export function getApplicationResourceUsage(id: string): Promise<ResourceUsage> {
   return callCommand<ResourceUsage>("get_application_resource_usage", { id });
 }
+
+/** A snapshot, not a live stream - same pull-on-demand shape as the existing container logs panel; there's no live console/log-streaming infrastructure yet (see runtime::mod's own LogProvider doc comment). */
+export function getApplicationLogs(id: string, maxLines: number): Promise<string[]> {
+  return callCommand<string[]>("get_application_logs", { id, maxLines });
+}

@@ -156,7 +156,8 @@
     "emptyDescription": "Utwórz aplikację na podstawie blueprintu - uruchom komendę lokalnie, albo zarządzaj procesem, usługą systemd lub kontenerem na zdalnym serwerze.",
     "actionError": "Nie udało się wykonać tej akcji.",
     "removedToast": "Usunięto {{name}}",
-    "couldntRemove": "Nie udało się usunąć aplikacji."
+    "couldntRemove": "Nie udało się usunąć aplikacji.",
+    "backToApplications": "Wróć do aplikacji"
   },
   "applicationCard": {
     "local": "Lokalnie",
@@ -165,7 +166,8 @@
     "stopAria": "Zatrzymaj {{name}}",
     "restartAria": "Uruchom ponownie {{name}}",
     "killAria": "Wymuś zakończenie {{name}}",
-    "deleteAria": "Usuń {{name}}"
+    "deleteAria": "Usuń {{name}}",
+    "openAria": "Otwórz {{name}}"
   },
   "applicationStatus": {
     "unknown": "Nieznany",
@@ -174,6 +176,43 @@
     "stopping": "Zatrzymywanie",
     "stopped": "Zatrzymana",
     "failed": "Błąd"
+  },
+  "applicationDetail": {
+    "loadError": "Nie udało się wczytać tej aplikacji.",
+    "logsError": "Nie udało się wczytać logów.",
+    "logsLoading": "Wczytywanie...",
+    "logsEmpty": "Brak danych wyjściowych.",
+    "tabOverview": "Przegląd",
+    "tabLogs": "Logi",
+    "tabEnvironment": "Środowisko",
+    "resourceUsageTitle": "Zużycie zasobów",
+    "detailsTitle": "Szczegóły",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "uptime": "Czas działania",
+    "createdAt": "Utworzono",
+    "notRunning": "Nie działa - zużycie zasobów pojawi się po uruchomieniu.",
+    "environmentEmpty": "Brak ustawionych zmiennych środowiskowych.",
+    "confirmTitle": "{{verb}} aplikację",
+    "couldntDo": "Nie udało się wykonać akcji: {{verb}}.",
+    "verb": {
+      "start": "Uruchom",
+      "stop": "Zatrzymaj",
+      "restart": "Uruchom ponownie",
+      "kill": "Wymuś zakończenie"
+    },
+    "verbPast": {
+      "start": "Uruchomiono {{name}}",
+      "stop": "Zatrzymano {{name}}",
+      "restart": "Uruchomiono ponownie {{name}}",
+      "kill": "Wymuszono zakończenie {{name}}"
+    },
+    "confirmBody": {
+      "start": "Uruchomić <1>{{name}}</1>?",
+      "stop": "Zatrzymać <1>{{name}}</1>? Zostanie zamknięta w sposób kontrolowany.",
+      "restart": "Uruchomić ponownie <1>{{name}}</1>?",
+      "kill": "Wymusić zakończenie <1>{{name}}</1>? Kończy działanie natychmiast, bez kontrolowanego zamknięcia - niezapisany stan zostanie utracony."
+    }
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",

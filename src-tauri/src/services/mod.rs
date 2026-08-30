@@ -7,8 +7,8 @@ mod ssh_service;
 
 pub use app_info_service::get_app_info;
 pub use application_service::{
-    application_resource_usage, create_application, delete_application, get_application, kill_application, list_applications,
-    list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
+    application_logs, application_resource_usage, create_application, delete_application, get_application, kill_application,
+    list_applications, list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
 };
 pub use cloud_service::{
     accept_invitation as cloud_accept_invitation, assign_role as cloud_assign_role, create_invitation as cloud_create_invitation,

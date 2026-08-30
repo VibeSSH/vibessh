@@ -100,6 +100,7 @@ pub fn run() {
             commands::application_commands::kill_application,
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,
+            commands::application_commands::get_application_logs,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,

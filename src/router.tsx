@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Dashboard } from "@/pages/Dashboard";
 import { ActionsPage } from "@/pages/Actions";
 import { Applications } from "@/pages/Applications";
+import { ApplicationDetail } from "@/pages/ApplicationDetail";
 import { FilesPage } from "@/pages/Files";
 import { ModulePicker } from "@/pages/ModulePicker";
 import { MonitorPage } from "@/pages/Monitor";
@@ -19,6 +20,7 @@ export function AppRouter() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/servers" element={<Servers />} />
         <Route path="/applications" element={<Applications />} />
+        <Route path="/applications/:id" element={<ApplicationDetail />} />
         <Route
           path="/terminal"
           element={<ModulePicker titleKey="modulePicker.terminalTitle" subtitleKey="modulePicker.terminalSubtitle" icon="terminal" routePrefix="/terminal" />}

@@ -205,6 +205,24 @@ pub async fn application_resource_usage(
     runtime.resource_usage(&ctx).await
 }
 
+/// The last `max_lines` lines available right now - a snapshot the Logs tab
+/// fetches on open and on manual refresh, same "pull, not push" shape
+/// `ContainerLogsPanel`'s existing `get_server_container_logs` already
+/// uses. Not live-streamed - see `runtime::mod`'s own `LogProvider` doc
+/// comment for why that's a pull-based API in the first place.
+pub async fn application_logs(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+    max_lines: u32,
+) -> AppResult<Vec<String>> {
+    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    runtime.logs(&ctx).await?.tail(max_lines).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,6 +274,19 @@ mod tests {
 
         let refreshed = get_application(&app_repo, detail.application.id).unwrap();
         assert_eq!(refreshed.application.status, ApplicationStatus::Running);
+
+        // The stdout pump runs on its own background task - poll rather
+        // than assume it's already flushed by the time start() returned.
+        let mut saw_output = false;
+        for _ in 0..30 {
+            let lines = application_logs(&app_repo, &server_repo, &sessions, &local_process_manager, detail.application.id, 10).await.unwrap();
+            if lines.iter().any(|line| line.contains("hello-from-application-service")) {
+                saw_output = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(saw_output, "expected application_logs to eventually show the process's stdout");
 
         let status = stop_application(&app_repo, &server_repo, &sessions, &local_process_manager, detail.application.id, true).await.unwrap();
         assert_eq!(status, ApplicationStatus::Stopped);

@@ -108,3 +108,15 @@ pub async fn get_application_resource_usage(
 ) -> AppResult<ResourceUsage> {
     services::application_resource_usage(&repo, &server_repo, &sessions, &local_process_manager, id).await
 }
+
+#[tauri::command]
+pub async fn get_application_logs(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+    max_lines: u32,
+) -> AppResult<Vec<String>> {
+    services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, id, max_lines).await
+}

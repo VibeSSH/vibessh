@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -25,6 +26,7 @@ import "./Applications.css";
 
 export function Applications() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const applications = useApplicationsStore((s) => s.applications);
   const setApplications = useApplicationsStore((s) => s.setApplications);
   const removeApplication = useApplicationsStore((s) => s.removeApplication);
@@ -112,6 +114,7 @@ export function Applications() {
               application={application}
               serverName={servers.find((s) => s.id === application.serverId)?.name}
               busy={busyId === application.id}
+              onOpen={() => navigate(`/applications/${application.id}`)}
               onStart={() => runAction(application.id, () => startApplication(application.id))}
               onStop={() => runAction(application.id, () => stopApplication(application.id, true))}
               onRestart={() => runAction(application.id, () => restartApplication(application.id))}

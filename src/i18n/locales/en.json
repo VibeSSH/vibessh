@@ -156,7 +156,8 @@
     "emptyDescription": "Create one from a blueprint - run a command locally, or manage a process, systemd unit, or container on a remote server.",
     "actionError": "Couldn't complete that action.",
     "removedToast": "Removed {{name}}",
-    "couldntRemove": "Couldn't remove the application."
+    "couldntRemove": "Couldn't remove the application.",
+    "backToApplications": "Back to applications"
   },
   "applicationCard": {
     "local": "Local",
@@ -165,7 +166,8 @@
     "stopAria": "Stop {{name}}",
     "restartAria": "Restart {{name}}",
     "killAria": "Force-kill {{name}}",
-    "deleteAria": "Delete {{name}}"
+    "deleteAria": "Delete {{name}}",
+    "openAria": "Open {{name}}"
   },
   "applicationStatus": {
     "unknown": "Unknown",
@@ -174,6 +176,43 @@
     "stopping": "Stopping",
     "stopped": "Stopped",
     "failed": "Failed"
+  },
+  "applicationDetail": {
+    "loadError": "Couldn't load this application.",
+    "logsError": "Couldn't load logs.",
+    "logsLoading": "Loading...",
+    "logsEmpty": "No output yet.",
+    "tabOverview": "Overview",
+    "tabLogs": "Logs",
+    "tabEnvironment": "Environment",
+    "resourceUsageTitle": "Resource usage",
+    "detailsTitle": "Details",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "uptime": "Uptime",
+    "createdAt": "Created",
+    "notRunning": "Not running - resource usage shows once it's started.",
+    "environmentEmpty": "No environment variables set.",
+    "confirmTitle": "{{verb}} application",
+    "couldntDo": "Couldn't {{verb}} the application.",
+    "verb": {
+      "start": "Start",
+      "stop": "Stop",
+      "restart": "Restart",
+      "kill": "Kill"
+    },
+    "verbPast": {
+      "start": "Started {{name}}",
+      "stop": "Stopped {{name}}",
+      "restart": "Restarted {{name}}",
+      "kill": "Force-killed {{name}}"
+    },
+    "confirmBody": {
+      "start": "Start <1>{{name}}</1>?",
+      "stop": "Stop <1>{{name}}</1>? It will shut down gracefully.",
+      "restart": "Restart <1>{{name}}</1>?",
+      "kill": "Force-kill <1>{{name}}</1>? This ends it immediately, without a graceful shutdown - any unsaved state it was holding is lost."
+    }
   },
   "deleteApplicationDialog": {
     "title": "Delete application",

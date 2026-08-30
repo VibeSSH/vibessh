@@ -19,6 +19,7 @@ interface ApplicationCardProps {
   application: Application;
   serverName?: string;
   busy: boolean;
+  onOpen: () => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
@@ -26,7 +27,7 @@ interface ApplicationCardProps {
   onDelete: () => void;
 }
 
-export function ApplicationCard({ application, serverName, busy, onStart, onStop, onRestart, onKill, onDelete }: ApplicationCardProps) {
+export function ApplicationCard({ application, serverName, busy, onOpen, onStart, onStop, onRestart, onKill, onDelete }: ApplicationCardProps) {
   const { t } = useTranslation();
   const isLocal = !application.serverId;
   const canStart = application.status === "stopped" || application.status === "failed" || application.status === "unknown";
@@ -50,17 +51,20 @@ export function ApplicationCard({ application, serverName, busy, onStart, onStop
       </div>
 
       <div className="application-card-actions">
-        {canStart && (
-          <IconButton icon="play" size="sm" title={t("applicationCard.startAria", { name: application.name })} onClick={onStart} disabled={busy} />
-        )}
-        {canStopOrRestart && (
-          <>
-            <IconButton icon="square" size="sm" title={t("applicationCard.stopAria", { name: application.name })} onClick={onStop} disabled={busy} />
-            <IconButton icon="refresh-cw" size="sm" title={t("applicationCard.restartAria", { name: application.name })} onClick={onRestart} disabled={busy} />
-            <IconButton icon="power" size="sm" danger title={t("applicationCard.killAria", { name: application.name })} onClick={onKill} disabled={busy} />
-          </>
-        )}
-        <IconButton icon="trash" size="sm" danger title={t("applicationCard.deleteAria", { name: application.name })} onClick={onDelete} disabled={busy} />
+        <div className="application-card-actions-group">
+          {canStart && (
+            <IconButton icon="play" size="sm" title={t("applicationCard.startAria", { name: application.name })} onClick={onStart} disabled={busy} />
+          )}
+          {canStopOrRestart && (
+            <>
+              <IconButton icon="square" size="sm" title={t("applicationCard.stopAria", { name: application.name })} onClick={onStop} disabled={busy} />
+              <IconButton icon="refresh-cw" size="sm" title={t("applicationCard.restartAria", { name: application.name })} onClick={onRestart} disabled={busy} />
+              <IconButton icon="power" size="sm" danger title={t("applicationCard.killAria", { name: application.name })} onClick={onKill} disabled={busy} />
+            </>
+          )}
+          <IconButton icon="trash" size="sm" danger title={t("applicationCard.deleteAria", { name: application.name })} onClick={onDelete} disabled={busy} />
+        </div>
+        <IconButton icon="chevron-right" size="sm" title={t("applicationCard.openAria", { name: application.name })} onClick={onOpen} />
       </div>
     </Card>
   );

@@ -51,5 +51,12 @@
 
 .application-card-actions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.application-card-actions-group {
+  display: flex;
   gap: 6px;
 }
