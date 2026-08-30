@@ -318,9 +318,20 @@ async fn run_mysql(connection: &SshSession, host: &DatabaseHost, admin_password:
 /// password never appears in a `ps`-visible argument list, only in this
 /// one exec channel's own environment - see `docs/APPLICATIONS_ARCHITECTURE.md`
 /// Section 12.1.
+///
+/// `--protocol=TCP` is required, not cosmetic: the `mysql` client silently
+/// switches to a local Unix socket - ignoring `-P`/`-h` and, critically,
+/// the `MYSQL_PWD`/`-u` auth this whole flow depends on - whenever `-h` is
+/// literally `"localhost"` (as opposed to `"127.0.0.1"` or any other
+/// value). A socket connection then authenticates as whatever OS user is
+/// running the SSH session, not `admin_username`, which fails outright on
+/// a `root` account still using the `auth_socket`/`unix_socket` plugin
+/// (the default on most Debian/Ubuntu MySQL/MariaDB installs) - exactly
+/// the confusing "Access denied for user 'root'@'localhost'" this forces
+/// a real TCP connection to avoid, regardless of what `host.host` is set to.
 fn build_mysql_command(host: &DatabaseHost, admin_password: &str, sql: &str) -> String {
     format!(
-        "MYSQL_PWD={} mysql -h {} -P {} -u {} -e {}",
+        "MYSQL_PWD={} mysql --protocol=TCP -h {} -P {} -u {} -e {}",
         shell_quote(admin_password),
         shell_quote(&host.host),
         host.port,
@@ -410,12 +421,23 @@ mod tests {
     fn build_mysql_command_uses_mysql_pwd_not_a_visible_dash_p_flag() {
         let host = stub_host();
         let command = build_mysql_command(&host, "adminpass", "SELECT 1;");
-        assert!(command.starts_with("MYSQL_PWD='adminpass' mysql"));
+        assert!(command.starts_with("MYSQL_PWD='adminpass' mysql --protocol=TCP"));
         assert!(!command.contains("-p'adminpass'"), "the password must never be passed as a -p flag");
         assert!(command.contains("-h '127.0.0.1'"));
         assert!(command.contains("-P 3306"));
         assert!(command.contains("-u 'root'"));
         assert!(command.contains("-e 'SELECT 1;'"));
+    }
+
+    #[test]
+    fn build_mysql_command_forces_tcp_even_when_the_host_is_literally_localhost() {
+        // The mysql client silently switches to a Unix socket - bypassing
+        // MYSQL_PWD/-u auth entirely - whenever `-h` is exactly "localhost".
+        // --protocol=TCP is what stops that from happening.
+        let mut host = stub_host();
+        host.host = "localhost".to_string();
+        let command = build_mysql_command(&host, "adminpass", "SELECT 1;");
+        assert!(command.contains("--protocol=TCP"), "{command}");
     }
 
     #[test]
