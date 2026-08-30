@@ -1,4 +1,4 @@
-pub use vibessh_protocol::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerMetrics};
+pub use vibessh_protocol::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerMetrics, ServiceSummary};
 
 use crate::errors::AppResult;
 
@@ -14,6 +14,7 @@ pub trait ServerConnection: Send + Sync {
     async fn execute_command(&self, command: &str) -> AppResult<CommandOutput>;
     async fn get_metrics(&self) -> AppResult<ServerMetrics>;
     async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>>;
+    async fn list_services(&self) -> AppResult<Vec<ServiceSummary>>;
     async fn restart_service(&self, service_name: &str) -> AppResult<()>;
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>>;
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
@@ -45,6 +46,10 @@ mod tests {
         }
 
         async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>> {
+            Ok(vec![])
+        }
+
+        async fn list_services(&self) -> AppResult<Vec<ServiceSummary>> {
             Ok(vec![])
         }
 

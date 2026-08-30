@@ -7,6 +7,7 @@
 pub mod client;
 mod monitor;
 mod sftp;
+mod systemd;
 mod transport;
 
 pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};

@@ -13,7 +13,7 @@ use crate::ssh::{self, SshAuth, SshCredentials, SshSession, TerminalHandle};
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
-use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerMetrics};
+use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerMetrics, ServiceSummary};
 
 /// Connects with whatever's in `input` directly - no server id, no keyring,
 /// no persisted host key, since nothing has been saved yet to persist
@@ -112,6 +112,21 @@ pub async fn list_processes(
 ) -> AppResult<Vec<ProcessSummary>> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.list_processes().await
+}
+
+pub async fn list_services(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Vec<ServiceSummary>> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.list_services().await
+}
+
+pub async fn restart_service(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    service_name: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.restart_service(service_name).await
 }
 
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {

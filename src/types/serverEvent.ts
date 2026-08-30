@@ -20,6 +20,14 @@ export interface ProcessSummary {
   command: string;
 }
 
+/** Mirrors the Rust `ServiceSummary` struct. */
+export interface ServiceSummary {
+  name: string;
+  active: boolean;
+  enabled: boolean;
+  description: string;
+}
+
 /**
  * Mirrors the Rust `ServerEvent` enum's JSON shape (serde `tag = "type"`,
  * dot-notation variant names). Only `metrics.update` (Etap J) is ever

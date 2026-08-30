@@ -1,12 +1,10 @@
 //! Adapts `SshSession` (pure protocol mechanics, see `client.rs`/`sftp.rs`/
-//! `monitor.rs`) to the app's transport-agnostic `ServerConnection` trait.
-//! Everything except `restart_service` is real now - systemd unit control
-//! is a later stage (Quick Actions) that needs its own remote-side
-//! mechanics beyond what's built so far, so it stays a stub until that
-//! stage lands instead of faking a shape nothing has verified yet.
-use crate::errors::{AppError, AppResult};
+//! `monitor.rs`/`systemd.rs`) to the app's transport-agnostic
+//! `ServerConnection` trait. Every method is real - none of this is a stub
+//! standing in for a later stage.
+use crate::errors::AppResult;
 use crate::ssh::client::SshSession;
-use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerConnection, ServerMetrics};
+use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerConnection, ServerMetrics, ServiceSummary};
 
 #[async_trait::async_trait]
 impl ServerConnection for SshSession {
@@ -22,8 +20,12 @@ impl ServerConnection for SshSession {
         self.list_processes().await
     }
 
-    async fn restart_service(&self, _service_name: &str) -> AppResult<()> {
-        Err(not_yet_implemented("restart_service"))
+    async fn list_services(&self) -> AppResult<Vec<ServiceSummary>> {
+        self.list_services().await
+    }
+
+    async fn restart_service(&self, service_name: &str) -> AppResult<()> {
+        self.restart_service(service_name).await
     }
 
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
@@ -37,8 +39,4 @@ impl ServerConnection for SshSession {
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         self.write_file(path, contents).await
     }
-}
-
-fn not_yet_implemented(what: &str) -> AppError {
-    AppError::Internal(format!("SSH {what} isn't implemented yet - Etap 3 only covers running commands"))
 }

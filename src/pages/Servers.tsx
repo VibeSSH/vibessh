@@ -130,6 +130,13 @@ export function Servers() {
                     </button>
                     <button
                       className="server-list-action"
+                      aria-label={`Quick actions for ${server.name}`}
+                      onClick={() => navigate(`/actions/${server.id}`)}
+                    >
+                      <Icon name="zap" size={14} />
+                    </button>
+                    <button
+                      className="server-list-action"
                       aria-label={`Edit ${server.name}`}
                       onClick={() => {
                         setEditingServer(server);

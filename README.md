@@ -184,7 +184,32 @@ same `ServerConnection` interface on the Rust side.
       matched to the exact byte, uptime matched to within seconds, and the
       process count matched within the small margin expected between two
       separate samples of a busy box's process churn
-- [ ] Systemd/Docker quick actions
+- [x] Systemd quick actions (Actions module) — unlike the agent's own
+      systemd support (Etap G), this needs no polkit rule or unit
+      allowlist: an SSH session already runs as whatever user it
+      authenticated as, so `systemctl restart <unit>` here has exactly the
+      privileges that user would have typing the same command by hand -
+      there's no separate elevation mechanism sitting in front of it to
+      secure. What *does* need guarding is that a service name reaches a
+      remote shell command at all: `restart_service` validates it against
+      systemd's own allowed character set and requires a `.service` suffix
+      *before* it's ever spliced into a command string, so nothing shaped
+      like `nginx; rm -rf /` gets anywhere near a shell. `list_services`
+      combines `systemctl list-units`+`list-unit-files` in one round trip
+      to get active and enabled state together. The frontend lists every
+      service with a filter box and a restart button behind a confirm
+      dialog, reached from a lightning-bolt icon on each SSH server's row.
+      Covered by unit tests (rejects real injection payloads, parses a
+      realistic aligned `systemctl` listing correctly - this caught a real
+      parsing bug during development, where naive whitespace-splitting on
+      individually-aligned columns silently produced zero results) and a
+      one-off manual run against the project's real test server: listed
+      178 real service units with correct active/enabled state for four
+      known services (nginx, mariadb, docker, the vibessh-agent itself),
+      then created a disposable throwaway unit, restarted it for real
+      through this exact code path, and confirmed cleanup left no trace -
+      nothing already running on that shared box was ever touched
+- [ ] Docker quick actions
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -282,10 +307,11 @@ src/                        Frontend (React + TypeScript)
                             view/edit files under 1MB over read_remote_file/write_remote_file)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
                             Files (/files/:serverId - breadcrumb-navigable directory browser),
-                            Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview)
+                            Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview),
+                            Actions (/actions/:serverId - systemd service list + restart-behind-confirm)
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
-                            terminalService.ts, filesService.ts, monitorService.ts)
+                            terminalService.ts, filesService.ts, monitorService.ts, actionsService.ts)
   stores/                   Zustand stores (serversStore.ts - SSH-mode rows are Etap 2-persisted, agent-mode rows still session-only)
   types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics),
                             files.ts (RemoteFileEntry)
@@ -295,7 +321,7 @@ src-tauri/                  Desktop backend (Rust, Tauri)
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
                              server_commands.rs, ssh_commands.rs, terminal_commands.rs,
-                             file_commands.rs, monitor_commands.rs
+                             file_commands.rs, monitor_commands.rs, actions_commands.rs
     services/                 Business logic, incl. server_service.rs (validation +
                               repository/keyring orchestration), ssh_service.rs
                               (resolves a Server + keyring secret into ssh::connect's/
@@ -310,6 +336,8 @@ src-tauri/                  Desktop backend (Rust, Tauri)
     ssh/                             client.rs (connect/TOFU/auth/exec/open_terminal, `russh`),
                                      sftp.rs (list_directory/read_file/write_file, `russh-sftp`),
                                      monitor.rs (get_metrics/list_processes over `/proc`+`ps`),
+                                     systemd.rs (list_services/restart_service, shell-injection-
+                                     safe unit name validation),
                                      transport.rs (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
                                        server id); server_repository.rs (SQLite, Etap 2 servers +
