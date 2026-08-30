@@ -20,6 +20,16 @@ pub async fn list_remote_directory(
 }
 
 #[tauri::command]
+pub async fn create_remote_directory(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    path: String,
+) -> AppResult<()> {
+    services::create_remote_directory(&repo, &sessions, server_id, &path).await
+}
+
+#[tauri::command]
 pub async fn read_remote_file(
     repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,

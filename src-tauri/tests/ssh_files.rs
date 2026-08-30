@@ -24,6 +24,7 @@ const TEST_PASSWORD: &str = "correct-horse-battery-staple";
 #[derive(Default, Clone)]
 struct InMemoryFs {
     files: Arc<TokioMutex<HashMap<String, Vec<u8>>>>,
+    dirs: Arc<TokioMutex<std::collections::HashSet<String>>>,
 }
 
 #[derive(Clone)]
@@ -183,7 +184,8 @@ impl russh_sftp::server::Handler for MockSftpHandler {
 
         let prefix = if path.ends_with('/') { path } else { format!("{path}/") };
         let files = self.fs.files.lock().await;
-        let entries: Vec<File> = files
+        let dirs = self.fs.dirs.lock().await;
+        let mut entries: Vec<File> = files
             .iter()
             .filter(|(p, _)| p.starts_with(&prefix) && !p[prefix.len()..].contains('/'))
             .map(|(p, content)| {
@@ -194,7 +196,18 @@ impl russh_sftp::server::Handler for MockSftpHandler {
                 File::new(name, attrs)
             })
             .collect();
+        entries.extend(dirs.iter().filter(|p| p.starts_with(&prefix) && !p[prefix.len()..].contains('/')).map(|p| {
+            let name = p[prefix.len()..].to_string();
+            let mut attrs = FileAttributes::empty();
+            attrs.permissions = Some(0o040755); // directory
+            File::new(name, attrs)
+        }));
         Ok(Name { id, files: entries })
+    }
+
+    async fn mkdir(&mut self, id: u32, path: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
+        self.fs.dirs.lock().await.insert(path);
+        Ok(ok_status(id))
     }
 }
 
@@ -329,6 +342,40 @@ fn unique_suffix() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock should be after the epoch")
         .as_nanos()
+}
+
+#[tokio::test]
+async fn creates_a_directory_and_lists_it_alongside_files() {
+    let fs = InMemoryFs::default();
+    let port = spawn_mock_server(fs).await;
+    let outcome = timeout(Duration::from_secs(5), connect(&credentials(port), None))
+        .await
+        .expect("timed out connecting")
+        .expect("connect should succeed");
+
+    outcome
+        .session
+        .write_file("/uploads/notes.txt", b"hello")
+        .await
+        .expect("seeding a file should succeed");
+    outcome
+        .session
+        .create_directory("/uploads/backups")
+        .await
+        .expect("create_directory should succeed");
+
+    let entries = outcome
+        .session
+        .list_directory("/uploads")
+        .await
+        .expect("listing the directory should succeed");
+    assert_eq!(entries.len(), 2);
+    let dir_entry = entries.iter().find(|e| e.name == "backups").expect("new directory should be listed");
+    assert!(dir_entry.is_dir);
+    let file_entry = entries.iter().find(|e| e.name == "notes.txt").expect("existing file should still be listed");
+    assert!(!file_entry.is_dir);
+
+    outcome.session.close().await;
 }
 
 #[tokio::test]

@@ -17,7 +17,8 @@ pub use cloud_service::{
 pub use ping_service::ping_server;
 pub use server_service::{create_server, delete_server, get_server, list_servers, update_server};
 pub use ssh_service::{
-    container_logs as server_container_logs, disable_service as disable_server_service,
+    container_logs as server_container_logs, create_directory as create_remote_directory,
+    disable_service as disable_server_service,
     download_file as download_remote_file, enable_service as enable_server_service,
     execute_command as execute_ssh_command, get_metrics as get_server_metrics, list_containers as list_server_containers,
     list_directory as list_remote_directory, list_processes as list_server_processes,

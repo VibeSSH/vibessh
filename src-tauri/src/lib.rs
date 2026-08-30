@@ -81,6 +81,7 @@ pub fn run() {
             commands::terminal_commands::resize_terminal,
             commands::terminal_commands::close_terminal,
             commands::file_commands::list_remote_directory,
+            commands::file_commands::create_remote_directory,
             commands::file_commands::read_remote_file,
             commands::file_commands::write_remote_file,
             commands::file_commands::download_remote_file,

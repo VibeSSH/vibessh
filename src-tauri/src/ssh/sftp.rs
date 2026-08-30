@@ -44,6 +44,13 @@ impl SshSession {
             .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")))
     }
 
+    pub async fn create_directory(&self, path: &str) -> AppResult<()> {
+        let sftp = self.sftp().await?;
+        sftp.create_dir(path)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't create directory {path}: {err}")))
+    }
+
     /// Creates `path` if it doesn't exist yet, truncates it if it does -
     /// "save" semantics for a file editor, not `SftpSession::write`'s
     /// plain overwrite-only behavior (which fails on a path that isn't

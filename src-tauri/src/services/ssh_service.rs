@@ -97,6 +97,16 @@ pub async fn write_file(
     session.write_file(path, contents).await
 }
 
+pub async fn create_directory(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    path: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.create_directory(path).await
+}
+
 pub async fn download_file(
     repo: &ServerRepository,
     sessions: &SshSessionManager,
