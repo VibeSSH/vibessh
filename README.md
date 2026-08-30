@@ -386,6 +386,66 @@ same `ServerConnection` interface on the Rust side.
       change didn't expose anything on the test server, which firewalls the
       port by default
 - [ ] Private host mesh — future, architecture reserved for it, not built yet
+- [~] Voltius-matched UI — reworking VibeSSH's frontend to match Voltius's
+      (github.com/VoltiusApp/voltius, same AGPL-3.0 license) actual look and
+      tooling, not just porting design-token *values* the way the palette
+      above originally was. In progress; landed so far:
+      - Tailwind CSS v4 (`@tailwindcss/vite`) alongside the existing plain
+        CSS custom properties, plus a `--t-*` alias layer over the same
+        tokens so Voltius's own component code (`var(--t-bg-card)`,
+        `bg-(--t-bg-card)`) ports with its own names intact instead of a
+        value-by-value translation pass every time
+      - Real lucide icons via `@iconify/react` + `@iconify-json/lucide`
+        (Voltius's own combination), replacing hand-drawn SVG path
+        approximations - a small hand-picked offline subset
+        (`scripts/generate-lucide-subset.mjs`), not the full ~1800-icon
+        collection or a runtime fetch. Hit and fixed a real bug: the
+        default `@iconify/react` entry's async `<Icon>` throws under Vite's
+        dependency pre-bundling when nothing async is ever actually needed
+        (every icon here is registered synchronously) - switched to their
+        dedicated `/offline` entry, which doesn't have the broken code path
+        at all
+      - Servers page rebuilt as a card grid matching Voltius's grid-layout
+        `HostCard` almost exactly: glass surface (backdrop-blur + their
+        ring/elevation/highlight shadow recipe), a status dot that pings
+        while online, and the flagship element - a mini terminal preview
+        bleeding into the card's own corner radius (traffic-light dots,
+        `user@host` in terminal colors, blinking cursor on hover) that
+        opens a real terminal session on click. Dropped everything tied to
+        features VibeSSH doesn't have (pin, team presence, cloud sync,
+        vault move/copy, snippets)
+      - Layout adopts Voltius's chrome-frame/chrome-slab window layering:
+        one frame color painted once across the app, sidebar sitting
+        directly on it with no border of its own, and the content area as
+        a lighter "slab" floating on top with a rounded top-left corner and
+        an ambient shadow
+      - Buttons and the generic `Card` component adopt Voltius's
+        ring+elevation depth recipe (a subtle ring shadow, brightness
+        shift on hover/active) instead of flat background-color swaps;
+        `Card` deliberately stays opaque (no blur) rather than glass, since
+        Voltius itself reserves the blurred treatment for grid object
+        cards and keeps dense/text-heavy surfaces legible
+      - File editor is real `@uiw/react-codemirror` now (same library
+        Voltius uses), with syntax highlighting via a theme+HighlightStyle
+        built from VibeSSH's own tokens (`cmTheme.ts`) and a language
+        picked by file extension/name (`editorLanguage.ts`) covering
+        json/yaml/js/ts/py/md/css/html/xml/sql plus shell/properties/
+        nginx/dockerfile/toml (the last five have no maintained dedicated
+        CodeMirror package, so they come from `@codemirror/legacy-modes`)
+      - Terminal picked up the four `@xterm/addon-*` packages Voltius uses
+        beyond fit: clickable links, OSC 52 clipboard integration,
+        GPU-accelerated rendering (graceful fallback to canvas on a lost
+        WebGL context), and a real Ctrl+F find-in-scrollback bar backed by
+        the search addon
+      - Every stage above was verified in the browser as it landed
+        (screenshots, and for backend-touching pieces like the editor and
+        terminal, a mocked Tauri backend to exercise real data paths) - see
+        each stage's own commit for what was specifically checked
+      - Not yet ported: the same surface language on Dashboard/Terminal/
+        Files/Monitor/Actions/Settings beyond what the shared `Button`/
+        `Card` changes already reach, and Voltius's `NavBar` tab-bar pattern
+        (VibeSSH keeps its own route-based sidebar navigation model - only
+        the *look*, not the navigation architecture, is being matched)
 
 Built in stages on purpose — each one lands as something that actually runs
 and can be tested, not a partial slice of a bigger unfinished feature.
