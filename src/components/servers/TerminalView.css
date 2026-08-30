@@ -1,3 +1,9 @@
+.terminal-view-wrap {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
 .terminal-view {
   height: 100%;
   width: 100%;
@@ -10,4 +16,44 @@
 
 .terminal-view .xterm {
   height: 100%;
+}
+
+.terminal-search-bar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  box-shadow: var(--t-ring), var(--t-elev-2);
+  color: var(--text-tertiary);
+  animation: fadeIn 120ms ease-out both;
+}
+
+.terminal-search-input {
+  width: 180px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.terminal-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.terminal-search-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-3);
 }

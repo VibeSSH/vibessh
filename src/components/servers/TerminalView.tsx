@@ -1,7 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import "@xterm/xterm/css/xterm.css";
+import { Icon } from "@/components/ui/Icon";
 import {
   closeTerminal,
   onTerminalClosed,
@@ -24,9 +29,20 @@ interface TerminalViewProps {
  * into xterm - no line buffering or parsing on this side, xterm handles the
  * ANSI escape sequences a real shell sends (colors, cursor movement, the
  * whole thing) the same way any other terminal emulator does.
+ *
+ * Addon set matches Voltius's own terminal (fit/search/web-links/webgl/
+ * clipboard - voltius's package.json lists the same five @xterm/addon-*
+ * packages): web-links makes URLs in output clickable, clipboard wires up
+ * OSC 52 so remote programs (tmux, vim) can set the local clipboard, webgl
+ * is GPU-accelerated rendering with a graceful fallback to the default
+ * canvas renderer on context loss, and search backs the Ctrl+F bar below.
  */
 export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -42,8 +58,28 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
         cursor: "#57c7d8",
       },
     });
+
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+
+    const searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
+    searchAddonRef.current = searchAddon;
+
+    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new ClipboardAddon());
+
+    // WebGL context can be lost (GPU driver reset, too many contexts) -
+    // xterm's own recommended pattern is to dispose and let it fall back to
+    // the default canvas renderer rather than leaving the terminal broken.
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => webglAddon.dispose());
+      term.loadAddon(webglAddon);
+    } catch {
+      // WebGL unavailable in this environment - canvas rendering still works.
+    }
+
     term.open(container);
     fitAddon.fit();
 
@@ -82,6 +118,19 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
       if (terminalId) writeToTerminal(terminalId, data).catch(() => {});
     });
 
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type === "keydown" && event.ctrlKey && event.key.toLowerCase() === "f") {
+        setSearchOpen(true);
+        queueMicrotask(() => searchInputRef.current?.focus());
+        return false;
+      }
+      if (event.type === "keydown" && event.key === "Escape") {
+        setSearchOpen(false);
+        return false;
+      }
+      return true;
+    });
+
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
       if (terminalId) resizeTerminal(terminalId, term.cols, term.rows).catch(() => {});
@@ -96,9 +145,50 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
       unlistenClosed();
       if (terminalId) closeTerminal(terminalId).catch(() => {});
       term.dispose();
+      searchAddonRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
-  return <div ref={containerRef} className="terminal-view" />;
+  function runSearch(direction: "next" | "previous") {
+    if (!searchTerm) return;
+    const addon = searchAddonRef.current;
+    if (!addon) return;
+    if (direction === "next") addon.findNext(searchTerm);
+    else addon.findPrevious(searchTerm);
+  }
+
+  return (
+    <div className="terminal-view-wrap">
+      {searchOpen && (
+        <div className="terminal-search-bar">
+          <Icon name="search" size={14} />
+          <input
+            ref={searchInputRef}
+            className="terminal-search-input"
+            placeholder="Find in terminal..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              if (e.target.value) searchAddonRef.current?.findNext(e.target.value, { incremental: true });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runSearch(e.shiftKey ? "previous" : "next");
+              if (e.key === "Escape") setSearchOpen(false);
+            }}
+          />
+          <button className="terminal-search-btn" onClick={() => runSearch("previous")} aria-label="Previous match">
+            <Icon name="chevron-left" size={14} />
+          </button>
+          <button className="terminal-search-btn" onClick={() => runSearch("next")} aria-label="Next match">
+            <Icon name="chevron-right" size={14} />
+          </button>
+          <button className="terminal-search-btn" onClick={() => setSearchOpen(false)} aria-label="Close search">
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
+      <div ref={containerRef} className="terminal-view" />
+    </div>
+  );
 }
