@@ -1,15 +1,23 @@
-/* Sidebar sits directly on this frame color with no border of its own (see
-   Sidebar.css) so it reads as one continuous backplate the content "slab"
-   floats on - Voltius's chrome-frame/chrome-slab pattern, ported in
-   globals.css. */
-.app-layout {
+/* app-shell is the whole window: a custom titlebar (decorations: false, see
+   TitleBar.tsx) stacked above the sidebar+content row. Sidebar sits directly
+   on the frame color with no border of its own (see Sidebar.css) so it reads
+   as one continuous backplate the content "slab" floats on - Voltius's
+   chrome-frame/chrome-slab pattern, ported in globals.css. */
+.app-shell {
   display: flex;
+  flex-direction: column;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
 }
-.app-layout.chrome-frame {
+.app-shell.chrome-frame {
   background: var(--t-bg-terminal);
+}
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .app-layout-main {

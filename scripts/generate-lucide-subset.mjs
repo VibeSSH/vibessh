@@ -45,6 +45,7 @@ const ICON_NAMES = [
   "pin",
   "wifi",
   "wifi-off",
+  "minus",
 ];
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
