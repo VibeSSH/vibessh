@@ -1,8 +1,9 @@
 /* app-shell is the whole window: a custom titlebar (decorations: false, see
-   TitleBar.tsx) stacked above the content slab. The slab now spans the full
-   width - the earlier two-column sidebar+content layout was replaced by a
-   single-column layout with NavBar's horizontal tabs on top, so there's no
-   second column left to size against. */
+   TitleBar.tsx) stacked above everything else. Below it, app-body splits
+   into Rail (narrow icon rail, sits directly on the frame color) and the
+   content slab - Voltius's own DesktopShell.tsx has the same two-level
+   split (TitleBar full-width on top, then a row of [VaultSidebar][slab]
+   underneath it). */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -14,18 +15,22 @@
   background: var(--t-bg-terminal);
 }
 
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .app-layout-main {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
-  margin: 0 8px 8px 8px;
+  min-width: 0;
+  margin: 0 8px 8px 0;
   background: var(--t-bg-base);
   overflow: hidden;
-  /* .chrome-slab (globals.css) only rounds the top-left corner, right for
-     Voltius's own sidebar+slab split - with no sidebar here the slab is
-     symmetric, so both top corners round to match. */
-  border-top-right-radius: var(--radius-lg);
+  /* .chrome-slab (globals.css) already rounds only the top-left corner -
+     correct here, Rail occupies the space to its left. */
 }
 
 .app-layout-content {

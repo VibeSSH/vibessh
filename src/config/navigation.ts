@@ -1,10 +1,11 @@
 import type { NavModule } from "@/types/common";
 
-/** Core pages available from Etap 1 onward. */
+/** Core pages available from Etap 1 onward. Settings isn't here - it moved
+ * to its own icon in the Rail (see Rail.tsx), so it isn't duplicated
+ * between two separate navigation surfaces. */
 export const primaryNav: NavModule[] = [
   { id: "dashboard", label: "Dashboard", path: "/", icon: "layout-grid" },
   { id: "servers", label: "Servers", path: "/servers", icon: "server" },
-  { id: "settings", label: "Settings", path: "/settings", icon: "settings" },
 ];
 
 /**

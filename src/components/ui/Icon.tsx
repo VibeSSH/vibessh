@@ -58,6 +58,8 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   wifi: "wifi",
   "wifi-off": "wifi-off",
   minus: "minus",
+  bell: "bell",
+  user: "user-round",
 };
 
 interface IconProps {

@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
-import { AddServerModal } from "@/components/servers/AddServerModal";
 import { DeleteServerDialog } from "@/components/servers/DeleteServerDialog";
 import { ServerCard } from "@/components/servers/ServerCard";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { deleteServer, listServers, serverSummaryToManagedServer } from "@/services/serverService";
+import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
@@ -17,8 +17,6 @@ import "@/components/servers/forms.css";
 
 export function Servers() {
   const navigate = useNavigate();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingServer, setEditingServer] = useState<ManagedServer | null>(null);
   const [deletingServer, setDeletingServer] = useState<ManagedServer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -26,6 +24,8 @@ export function Servers() {
   const servers = useServersStore((s) => s.servers);
   const setServers = useServersStore((s) => s.setServers);
   const removeServer = useServersStore((s) => s.removeServer);
+  const openForCreate = useServerModalStore((s) => s.openForCreate);
+  const openForEdit = useServerModalStore((s) => s.openForEdit);
 
   const needle = filter.trim().toLowerCase();
   const filteredServers = useMemo(
@@ -44,11 +44,6 @@ export function Servers() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  function closeModal() {
-    setModalOpen(false);
-    setEditingServer(null);
-  }
 
   async function handleConfirmDelete() {
     if (!deletingServer) return;
@@ -73,7 +68,7 @@ export function Servers() {
           <h1 className="page-title">Servers</h1>
           <p className="page-subtitle">Manage the remote servers VibeSSH connects to.</p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
+        <Button onClick={openForCreate}>
           <Icon name="plug" size={16} />
           Add server
         </Button>
@@ -113,10 +108,7 @@ export function Servers() {
                   onOpenFiles={() => navigate(`/files/${server.id}`)}
                   onOpenMonitor={() => navigate(`/monitor/${server.id}`)}
                   onOpenActions={() => navigate(`/actions/${server.id}`)}
-                  onEdit={() => {
-                    setEditingServer(server);
-                    setModalOpen(true);
-                  }}
+                  onEdit={() => openForEdit(server)}
                   onDelete={() => {
                     setDeleteError(null);
                     setDeletingServer(server);
@@ -128,7 +120,6 @@ export function Servers() {
         </>
       )}
 
-      {modalOpen && <AddServerModal onClose={closeModal} editingServer={editingServer ?? undefined} />}
       {deletingServer && (
         <DeleteServerDialog
           serverName={deletingServer.name}
