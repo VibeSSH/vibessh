@@ -437,15 +437,33 @@ same `ServerConnection` interface on the Rust side.
         GPU-accelerated rendering (graceful fallback to canvas on a lost
         WebGL context), and a real Ctrl+F find-in-scrollback bar backed by
         the search addon
+      - Dashboard was wired to real server data while it was being touched
+        for this pass (it had never actually read `useServersStore` -
+        hardcoded zero stats and a permanent empty state) and now reuses
+        `ServerCard` for a "recent servers" grid identical to the Servers
+        page; `onEdit`/`onDelete` are optional on `ServerCardProps` so a
+        read-mostly surface like this one can omit them, matching Voltius
+        using a simpler card on its own Dashboard than the full `HostCard`
+      - Every modal in the app (`AddServerModal`, `DeleteServerDialog`,
+        `FileEditorPanel`, `ContainerLogsPanel`, the Actions confirm
+        dialog) shares one `.modal-panel` class, now on Voltius's opaque
+        `.surface-modal-solid` recipe (no blur - every modal here is
+        form/code/log-text-heavy, exactly what their own docs say to keep
+        opaque) instead of a flat border
       - Every stage above was verified in the browser as it landed
-        (screenshots, and for backend-touching pieces like the editor and
-        terminal, a mocked Tauri backend to exercise real data paths) - see
-        each stage's own commit for what was specifically checked
-      - Not yet ported: the same surface language on Dashboard/Terminal/
-        Files/Monitor/Actions/Settings beyond what the shared `Button`/
-        `Card` changes already reach, and Voltius's `NavBar` tab-bar pattern
-        (VibeSSH keeps its own route-based sidebar navigation model - only
-        the *look*, not the navigation architecture, is being matched)
+        (screenshots, and for backend-touching pieces like the editor,
+        terminal, monitor, and actions pages, a mocked Tauri backend to
+        exercise real data paths) - see each stage's own commit for what
+        was specifically checked. A full sweep across every real page
+        (Dashboard/Servers/Terminal/Files/Monitor/Actions/Settings) with
+        mocked data confirmed the shared `Card`/`Button`/`Icon`/modal
+        updates already carry the look through consistently - none of
+        those pages needed their own page-specific styling to catch up
+      - Not ported, deliberately: Voltius's `NavBar` tab-bar navigation
+        pattern and its vault-sidebar object model - VibeSSH keeps its own
+        route-based sidebar navigation, since only the *look* was asked
+        for here, not a rebuild of the navigation architecture around
+        features (vaults, teams) this app doesn't have
 
 Built in stages on purpose — each one lands as something that actually runs
 and can be tested, not a partial slice of a bigger unfinished feature.
