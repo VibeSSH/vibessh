@@ -40,8 +40,9 @@ interface ServerCardProps {
   onOpenFiles: () => void;
   onOpenMonitor: () => void;
   onOpenActions: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** Omitted on read-mostly surfaces (Dashboard's recent-servers view) - matches Voltius using a simpler card there instead of the full HostCard's edit/delete affordances. */
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 /**
@@ -82,8 +83,8 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
 
         <div className="server-card-footer">
           <div className="server-card-actions">
-            <ServerCardActionButton icon="trash" title={`Remove ${server.name}`} danger onClick={onDelete} />
-            <ServerCardActionButton icon="edit" title={`Edit ${server.name}`} onClick={onEdit} />
+            {onDelete && <ServerCardActionButton icon="trash" title={`Remove ${server.name}`} danger onClick={onDelete} />}
+            {onEdit && <ServerCardActionButton icon="edit" title={`Edit ${server.name}`} onClick={onEdit} />}
             {!isAgent && <ServerCardActionButton icon="folder" title={`Browse files on ${server.name}`} onClick={onOpenFiles} />}
             {!isAgent && <ServerCardActionButton icon="activity" title={`Monitor ${server.name}`} onClick={onOpenMonitor} />}
             {!isAgent && <ServerCardActionButton icon="zap" title={`Quick actions for ${server.name}`} onClick={onOpenActions} />}
