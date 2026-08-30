@@ -16,11 +16,13 @@ use uuid::Uuid;
 use crate::auth::AuthUser;
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{AddMemberRequest, CreateTeamRequest, Team, TeamMember};
-use crate::AppState;
+use crate::{permissions, AppState};
+
+pub const OWNER_ROLE_NAME: &str = "Owner";
 
 const MAX_TEAM_NAME_LEN: usize = 100;
 
-async fn team_for_member(db: &PgPool, team_id: Uuid, user_id: Uuid) -> ApiResult<Team> {
+pub(crate) async fn team_for_member(db: &PgPool, team_id: Uuid, user_id: Uuid) -> ApiResult<Team> {
     let team: Option<Team> = sqlx::query_as(
         "SELECT t.id, t.name, t.owner_id, t.created_at FROM teams t
          JOIN team_members tm ON tm.team_id = t.id
@@ -33,7 +35,7 @@ async fn team_for_member(db: &PgPool, team_id: Uuid, user_id: Uuid) -> ApiResult
     team.ok_or_else(|| ApiError::NotFound("team not found".to_string()))
 }
 
-fn require_owner(team: &Team, user_id: Uuid) -> ApiResult<()> {
+pub(crate) fn require_owner(team: &Team, user_id: Uuid) -> ApiResult<()> {
     if team.owner_id != user_id {
         return Err(ApiError::Forbidden("only the team owner can do this".to_string()));
     }
@@ -56,9 +58,11 @@ pub async fn create_team(
     let team_id = Uuid::new_v4();
     let now = Utc::now();
 
-    // Creating a team and making its creator both owner and member is one
-    // atomic step - there's never a moment where a team exists with no
-    // members at all.
+    // Creating a team, making its creator both owner and member, seeding
+    // the team's "Owner" role (every permission in the catalog), and
+    // assigning that role to the creator is all one atomic step - there's
+    // never a moment where a team exists with no members, or a member with
+    // no way to manage what they just created.
     let mut tx = state.db.begin().await?;
     sqlx::query("INSERT INTO teams (id, name, owner_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)")
         .bind(team_id)
@@ -73,6 +77,33 @@ pub async fn create_team(
         .bind(now)
         .execute(&mut *tx)
         .await?;
+
+    let owner_role_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO roles (id, team_id, name, description, is_system, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, TRUE, $5, $5)",
+    )
+    .bind(owner_role_id)
+    .bind(team_id)
+    .bind(OWNER_ROLE_NAME)
+    .bind("Full control over the team - every permission, cannot be edited or deleted.")
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+    for permission in permissions::ALL_PERMISSIONS {
+        sqlx::query("INSERT INTO role_permissions (role_id, permission_key) VALUES ($1, $2)")
+            .bind(owner_role_id)
+            .bind(permission)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("INSERT INTO member_roles (team_id, user_id, role_id) VALUES ($1, $2, $3)")
+        .bind(team_id)
+        .bind(user_id)
+        .bind(owner_role_id)
+        .execute(&mut *tx)
+        .await?;
+
     tx.commit().await?;
 
     let team = Team { id: team_id, name: name.to_string(), owner_id: user_id, created_at: now };

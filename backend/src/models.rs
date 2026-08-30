@@ -83,11 +83,58 @@ pub struct TeamMember {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTeamRequest {
     pub name: String,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddMemberRequest {
     pub email: String,
+}
+
+#[derive(sqlx::FromRow, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Role {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_system: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleWithPermissions {
+    #[serde(flatten)]
+    pub role: Role,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRoleRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub permissions: Vec<String>,
+}
+
+/// Full-replace semantics for `permissions` (like SshServerForm on the
+/// desktop side always submitting the whole record) - simpler and less
+/// error-prone than a partial add/remove-permission API for what's still a
+/// short list per role.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoleRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignRoleRequest {
+    pub role_id: Uuid,
 }

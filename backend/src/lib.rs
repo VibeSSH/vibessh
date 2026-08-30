@@ -18,7 +18,9 @@ pub mod errors;
 pub mod jwt;
 pub mod models;
 pub mod password;
+pub mod permissions;
 pub mod refresh_token;
+pub mod roles;
 pub mod teams;
 
 #[derive(Clone)]
@@ -60,6 +62,14 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/teams/:team_id", get(teams::get_team).delete(teams::delete_team))
         .route("/teams/:team_id/members", get(teams::list_members).post(teams::add_member))
         .route("/teams/:team_id/members/:user_id", delete(teams::remove_member))
+        .route("/permissions", get(roles::list_permissions))
+        .route("/teams/:team_id/roles", get(roles::list_roles).post(roles::create_role))
+        .route("/teams/:team_id/roles/:role_id", get(roles::get_role).patch(roles::update_role).delete(roles::delete_role))
+        .route(
+            "/teams/:team_id/members/:user_id/roles",
+            get(roles::list_member_roles).post(roles::assign_role),
+        )
+        .route("/teams/:team_id/members/:user_id/roles/:role_id", delete(roles::unassign_role))
         .with_state(state)
 }
 

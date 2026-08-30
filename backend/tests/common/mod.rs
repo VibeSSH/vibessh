@@ -54,6 +54,10 @@ pub async fn post_with_bearer(app: Router, uri: &str, token: &str, body: Value) 
     request(app, "POST", uri, Some(body), Some(token)).await
 }
 
+pub async fn patch(app: Router, uri: &str, token: &str, body: Value) -> (StatusCode, Value) {
+    request(app, "PATCH", uri, Some(body), Some(token)).await
+}
+
 async fn request(app: Router, method: &str, uri: &str, body: Option<Value>, token: Option<&str>) -> (StatusCode, Value) {
     let mut builder = Request::builder().method(method).uri(uri);
     if let Some(token) = token {
@@ -68,7 +72,13 @@ async fn request(app: Router, method: &str, uri: &str, body: Option<Value>, toke
     let response = app.oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap() };
+    let json = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(|err| {
+            panic!("{method} {uri} returned a non-JSON body ({err}): {:?}", String::from_utf8_lossy(&bytes))
+        })
+    };
     (status, json)
 }
 
