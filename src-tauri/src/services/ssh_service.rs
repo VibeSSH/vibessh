@@ -13,7 +13,7 @@ use crate::ssh::{self, SshAuth, SshCredentials, SshSession, TerminalHandle};
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
-use crate::transport::CommandOutput;
+use crate::transport::{CommandOutput, RemoteFileEntry};
 
 /// Connects with whatever's in `input` directly - no server id, no keyring,
 /// no persisted host key, since nothing has been saved yet to persist
@@ -63,6 +63,37 @@ pub async fn open_terminal(
 ) -> AppResult<TerminalHandle> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.open_terminal(cols, rows, on_output, on_closed).await
+}
+
+pub async fn list_directory(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    path: &str,
+) -> AppResult<Vec<RemoteFileEntry>> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.list_directory(path).await
+}
+
+pub async fn read_file(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    path: &str,
+) -> AppResult<Vec<u8>> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.read_file(path).await
+}
+
+pub async fn write_file(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    path: &str,
+    contents: &[u8],
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.write_file(path, contents).await
 }
 
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {

@@ -31,7 +31,7 @@ export function TerminalPage() {
       </div>
 
       {closedReason !== undefined && (
-        <p className="terminal-page-note">
+        <p className="page-error-note">
           {closedReason ? `Session ended: ${closedReason}` : "Session ended."} Reopen this page to reconnect.
         </p>
       )}

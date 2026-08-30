@@ -116,6 +116,13 @@ export function Servers() {
                     </button>
                     <button
                       className="server-list-action"
+                      aria-label={`Browse files on ${server.name}`}
+                      onClick={() => navigate(`/files/${server.id}`)}
+                    >
+                      <Icon name="folder" size={14} />
+                    </button>
+                    <button
+                      className="server-list-action"
                       aria-label={`Edit ${server.name}`}
                       onClick={() => {
                         setEditingServer(server);

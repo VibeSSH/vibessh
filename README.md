@@ -140,7 +140,30 @@ same `ServerConnection` interface on the Rust side.
       run against the project's real test server: a genuine interactive
       `bash` session, MOTD banner, colored prompt, and a command's output
       all round-tripped correctly
-- [ ] SFTP, process manager, systemd, Docker
+- [x] SFTP (Files module) — `russh-sftp` runs the SFTP subsystem over a
+      channel on the same `russh` connection, not a separate transport;
+      `SshSession` negotiates it lazily on first use (`SshSession::sftp`)
+      and reuses it for every later call. `list_directory`/`read_file`/
+      `write_file` fill in `ServerConnection`'s three remaining stubs for
+      real, giving `RemoteFileEntry` (name/path/is_dir/is_symlink/size/
+      modified) a genuine home. `write_file` deliberately doesn't use
+      `SftpSession::write`'s plain semantics (open-for-write only, which
+      fails on a path that doesn't exist yet) - it opens with CREATE|
+      TRUNCATE|WRITE instead, so saving a brand-new file from the UI just
+      works instead of erroring on the first save. The frontend is a
+      breadcrumb-navigable directory browser (reached from a folder icon on
+      each SSH server's row) with a small text editor for files under 1MB -
+      opening a file, editing it, and saving goes through real
+      read_file/write_file calls, not a mock. Verified with integration
+      tests against a real local `russh::server` running the real
+      `russh_sftp` server-side protocol handling, backed by an in-memory
+      filesystem (write a new file → read it back → see it in a directory
+      listing with the right size; overwrite/truncate correctness; a
+      missing file fails cleanly and promptly rather than hanging), and a
+      one-off manual run against the project's real test server: wrote a
+      file over real SFTP, read it back byte-for-byte, and saw it with the
+      correct size and modification time in a real directory listing
+- [ ] Process manager, systemd, Docker
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -234,23 +257,27 @@ src/                        Frontend (React + TypeScript)
                             includes "Test connection"), DeleteServerDialog,
                             AgentPairingFlow (real), CapabilityBadges, MetricsPreview,
                             TerminalView (real, xterm.js over the Terminal module's
-                            open/write/resize/close commands)
-  pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId)
+                            open/write/resize/close commands), FileEditorPanel (real,
+                            view/edit files under 1MB over read_remote_file/write_remote_file)
+  pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
+                            Files (/files/:serverId - breadcrumb-navigable directory browser)
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
-                            terminalService.ts)
+                            terminalService.ts, filesService.ts)
   stores/                   Zustand stores (serversStore.ts - SSH-mode rows are Etap 2-persisted, agent-mode rows still session-only)
-  types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics)
+  types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics),
+                            files.ts (RemoteFileEntry)
   config/                   Navigation/module config
 
 src-tauri/                  Desktop backend (Rust, Tauri)
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
-                             server_commands.rs, ssh_commands.rs, terminal_commands.rs
+                             server_commands.rs, ssh_commands.rs, terminal_commands.rs,
+                             file_commands.rs
     services/                 Business logic, incl. server_service.rs (validation +
                               repository/keyring orchestration), ssh_service.rs
                               (resolves a Server + keyring secret into ssh::connect's/
-                              open_terminal's input)
+                              open_terminal's/list_directory's input)
     models/                    DTOs shared with the frontend (incl. Server/ServerInput/ConnectionMode)
     errors/                     Shared AppError/AppResult
     state/                       AppState, PairingSession (Etap H), SshSessionManager (Etap 3 -
@@ -259,12 +286,14 @@ src-tauri/                  Desktop backend (Rust, Tauri)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
     ssh/                             client.rs (connect/TOFU/auth/exec/open_terminal, `russh`),
+                                     sftp.rs (list_directory/read_file/write_file, `russh-sftp`),
                                      transport.rs (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
                                        server id); server_repository.rs (SQLite, Etap 2 servers +
                                        Etap 3 ssh_known_hosts)
-  tests/                       agent_client.rs, ssh_client.rs, ssh_terminal.rs (all drive real
-                               protocol code against a local mock server, not a reimplementation of it)
+  tests/                       agent_client.rs, ssh_client.rs, ssh_terminal.rs, ssh_files.rs (all
+                               drive real protocol code against a local mock server, not a
+                               reimplementation of it)
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)

@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use russh::keys::{load_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{client, ChannelMsg, Disconnect};
-use tokio::sync::mpsc;
+use russh_sftp::client::SftpSession;
+use tokio::sync::{mpsc, OnceCell};
 
 use crate::errors::{AppError, AppResult};
 use vibessh_protocol::CommandOutput;
@@ -34,8 +35,13 @@ pub enum SshAuth {
 /// A live, authenticated connection to one server. Each `execute_command`
 /// opens its own channel over this connection - cheap, and means one long
 /// command can't block a concurrent one the way a single shared channel would.
+/// `sftp` is different: negotiating the subsystem is comparatively
+/// expensive, and every `SftpSession` method only needs `&self`, so it's
+/// opened lazily on first use and reused for every SFTP call after - see
+/// `ssh/sftp.rs`.
 pub struct SshSession {
     handle: client::Handle<TofuHandler>,
+    sftp: OnceCell<SftpSession>,
 }
 
 /// What `connect` produced: the session itself, plus the host key fingerprint
@@ -99,7 +105,10 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
         .expect("check_server_key always runs during key exchange, before connect() can resolve");
 
     Ok(ConnectOutcome {
-        session: SshSession { handle },
+        session: SshSession {
+            handle,
+            sftp: OnceCell::new(),
+        },
         host_key_fingerprint,
     })
 }
@@ -140,6 +149,27 @@ impl SshSession {
 
     pub async fn close(&self) {
         let _ = self.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+    }
+
+    /// Lazily negotiates the SFTP subsystem on first use and reuses it for
+    /// every call after - see `ssh/sftp.rs`, which is the only other caller.
+    pub(super) async fn sftp(&self) -> AppResult<&SftpSession> {
+        self.sftp
+            .get_or_try_init(|| async {
+                let channel = self
+                    .handle
+                    .channel_open_session()
+                    .await
+                    .map_err(|err| AppError::Connection(format!("couldn't open an SFTP channel: {err}")))?;
+                channel
+                    .request_subsystem(true, "sftp")
+                    .await
+                    .map_err(|err| AppError::Connection(format!("couldn't start the SFTP subsystem: {err}")))?;
+                SftpSession::new(channel.into_stream())
+                    .await
+                    .map_err(|err| AppError::Connection(format!("SFTP handshake failed: {err}")))
+            })
+            .await
     }
 
     /// Opens an interactive PTY + shell and spawns a background task that

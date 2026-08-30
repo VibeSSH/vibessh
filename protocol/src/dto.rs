@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Result of a one-shot command execution. Used by `ServerConnection::execute_command`
@@ -39,6 +40,21 @@ pub struct ProcessSummary {
     pub cpu_percent: f32,
     pub ram_bytes: u64,
     pub command: String,
+}
+
+/// One entry from a directory listing (`ServerConnection::list_directory`).
+/// `path` is the full remote path, already joined with the directory that
+/// was listed - callers never need to do their own path-joining to
+/// navigate into a subdirectory or open a file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteFileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub size: u64,
+    pub modified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

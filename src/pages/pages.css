@@ -55,3 +55,12 @@
   color: var(--text-secondary);
   font-weight: 400;
 }
+
+.page-error-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
+  color: var(--danger);
+  font-size: 13px;
+}

@@ -1,0 +1,48 @@
+.files-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-family: "Consolas", "SF Mono", monospace;
+}
+
+.files-breadcrumb-item {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.files-breadcrumb-item:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.files-breadcrumb-sep {
+  color: var(--text-tertiary);
+  margin: 0 2px;
+}
+
+.files-entry-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 6px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.files-entry-name:hover {
+  color: var(--accent);
+}
+
+.files-entry-size {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-family: "Consolas", "SF Mono", monospace;
+}
