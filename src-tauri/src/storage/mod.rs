@@ -5,4 +5,5 @@
 //! records themselves; it never touches secrets, see `credentials`.
 
 pub mod credentials;
+pub mod migrations;
 pub mod server_repository;

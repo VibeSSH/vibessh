@@ -41,6 +41,10 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "sync-s
 # Server records (Etap 2) - "bundled" statically links SQLite so users don't
 # need a system libsqlite3 install.
 rusqlite = { version = "0.32", features = ["bundled"] }
+# Versioned schema migrations (user_version-based) for the local SQLite store
+# - replaces the old CREATE TABLE IF NOT EXISTS approach, which had no
+# migration history and couldn't express an actual schema change.
+rusqlite_migration = "1"
 # SSH transport (Etap 3) - pure Rust, async/tokio-native. "ring" instead of
 # the default aws-lc-rs backend: aws-lc-rs needs cmake to build its C/asm
 # core, which isn't guaranteed to be installed; ring builds with just the

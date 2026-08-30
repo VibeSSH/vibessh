@@ -11,9 +11,47 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{AgentStatus, AuthenticationType, ConnectionMode, Server, ServerInput};
+use crate::storage::migrations::migrations;
 
 pub struct ServerRepository {
     conn: Mutex<Connection>,
+}
+
+/// A database written by a pre-migration-framework build already has the
+/// `servers`/`ssh_known_hosts` tables (created via the old bare
+/// `CREATE TABLE IF NOT EXISTS` calls) but SQLite's `user_version` is still
+/// its default of 0 - indistinguishable, as far as `user_version` alone is
+/// concerned, from a brand new empty database. Running migration 1's
+/// `CREATE TABLE` against it would fail with "table already exists" instead
+/// of recognizing the schema is already there. If `servers` exists and
+/// `user_version` is still 0, this stamps it to 1 directly (no SQL
+/// re-executed - the schema already matches migration 1 verbatim) so
+/// `to_latest` sees a fully-migrated database and does nothing. Runs once
+/// per real upgrade, the very first time an existing user's database is
+/// opened by a build that has the migration framework.
+fn bootstrap_legacy_schema(conn: &Connection) -> AppResult<()> {
+    let user_version: i64 = conn
+        .query_row("PRAGMA user_version", (), |row| row.get(0))
+        .map_err(|err| AppError::Storage(format!("failed to read the database's user_version: {err}")))?;
+    if user_version != 0 {
+        return Ok(());
+    }
+
+    let already_has_servers_table: bool = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'servers'",
+            (),
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|err| AppError::Storage(format!("failed to inspect the database's existing tables: {err}")))?
+        > 0;
+    if !already_has_servers_table {
+        return Ok(());
+    }
+
+    conn.execute_batch("PRAGMA user_version = 1")
+        .map_err(|err| AppError::Storage(format!("failed to stamp the legacy database's schema version: {err}")))?;
+    Ok(())
 }
 
 impl ServerRepository {
@@ -23,41 +61,19 @@ impl ServerRepository {
                 AppError::Storage(format!("failed to create the server database directory: {err}"))
             })?;
         }
-        let conn = Connection::open(db_path)
+        let mut conn = Connection::open(db_path)
             .map_err(|err| AppError::Storage(format!("failed to open the server database: {err}")))?;
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS servers (
-                id                   TEXT PRIMARY KEY,
-                name                 TEXT NOT NULL,
-                host                 TEXT NOT NULL,
-                ssh_port             INTEGER NOT NULL,
-                username             TEXT NOT NULL,
-                authentication_type  TEXT NOT NULL,
-                private_key_path     TEXT,
-                connection_mode      TEXT NOT NULL,
-                agent_id             TEXT,
-                agent_status         TEXT,
-                group_id             TEXT,
-                created_at           TEXT NOT NULL,
-                updated_at           TEXT NOT NULL
-            )",
-            (),
-        )
-        .map_err(|err| AppError::Storage(format!("failed to create the servers table: {err}")))?;
+        bootstrap_legacy_schema(&conn)?;
 
-        // Etap 3's TOFU host key store - a separate table, not a column on
-        // `servers`, since it's connection-security bookkeeping rather than
-        // server metadata, and it's fine for a row to not exist yet (no
-        // connection made) or to change independently of the server's own
-        // fields being edited.
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS ssh_known_hosts (
-                server_id    TEXT PRIMARY KEY,
-                fingerprint  TEXT NOT NULL
-            )",
-            (),
-        )
-        .map_err(|err| AppError::Storage(format!("failed to create the ssh_known_hosts table: {err}")))?;
+        // `servers` (server metadata) and `ssh_known_hosts` (Etap 3's TOFU
+        // host key store, kept as its own table rather than a column on
+        // `servers` since it's connection-security bookkeeping that's fine
+        // to be absent or to change independently of the server's own
+        // fields) are both defined in storage::migrations - see there for
+        // how future schema changes get added.
+        migrations()
+            .to_latest(&mut conn)
+            .map_err(|err| AppError::Storage(format!("failed to migrate the server database: {err}")))?;
 
         Ok(Self { conn: Mutex::new(conn) })
     }
@@ -378,6 +394,52 @@ mod tests {
         let repo = temp_repository();
         let err = repo.update(Uuid::new_v4(), &test_input("Ghost")).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn opening_a_pre_migration_framework_database_preserves_its_data() {
+        // Reproduces a real upgrade: a database written by the old
+        // CREATE TABLE IF NOT EXISTS code (user_version left at the SQLite
+        // default of 0) must open cleanly under the new migration-based
+        // code, with its existing row intact - not fail with "table already
+        // exists", and not silently drop the data.
+        let path = std::env::temp_dir().join(format!("vibessh-legacy-test-{}.sqlite3", Uuid::new_v4()));
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS servers (
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL,
+                    ssh_port INTEGER NOT NULL, username TEXT NOT NULL,
+                    authentication_type TEXT NOT NULL, private_key_path TEXT,
+                    connection_mode TEXT NOT NULL, agent_id TEXT, agent_status TEXT,
+                    group_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                )",
+                (),
+            )
+            .unwrap();
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS ssh_known_hosts (server_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)",
+                (),
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+                 VALUES ('11111111-1111-1111-1111-111111111111', 'Legacy', 'legacy.example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+                (),
+            )
+            .unwrap();
+        }
+
+        let repo = ServerRepository::open(&path).expect("opening a legacy database should not fail");
+        let servers = repo.list().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "Legacy");
+
+        // Re-opening it again (every launch after the upgrade) must also
+        // stay a no-op migration, not re-trigger the bootstrap path.
+        drop(repo);
+        let repo_again = ServerRepository::open(&path).expect("re-opening the now-migrated database should not fail");
+        assert_eq!(repo_again.list().unwrap().len(), 1);
     }
 
     #[test]
