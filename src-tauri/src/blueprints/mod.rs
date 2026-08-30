@@ -62,7 +62,7 @@ pub fn validate_inputs(blueprint: &Blueprint, inputs: &HashMap<String, serde_jso
 
 fn validate_field_type(field: &BlueprintField, value: &serde_json::Value) -> AppResult<()> {
     let matches_type = match field.field_type {
-        BlueprintFieldType::Text | BlueprintFieldType::Path => value.is_string(),
+        BlueprintFieldType::Text | BlueprintFieldType::Path | BlueprintFieldType::JavaVersion => value.is_string(),
         BlueprintFieldType::Number => value.is_number(),
         BlueprintFieldType::Boolean => value.is_boolean(),
         BlueprintFieldType::TextList => value.is_array() && value.as_array().is_some_and(|items| items.iter().all(serde_json::Value::is_string)),

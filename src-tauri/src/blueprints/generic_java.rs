@@ -27,11 +27,11 @@ impl GenericJavaBlueprint {
                 fields: vec![
                     BlueprintField {
                         key: "javaBinary".to_string(),
-                        label: "Java binary".to_string(),
-                        field_type: BlueprintFieldType::Path,
+                        label: "Java version".to_string(),
+                        field_type: BlueprintFieldType::JavaVersion,
                         required: false,
                         default_value: Some(serde_json::Value::String("java".to_string())),
-                        help_text: Some("Overrides which java is used, e.g. for a specific JDK install.".to_string()),
+                        help_text: Some("Detected Java installations - pick one, or enter a path yourself.".to_string()),
                     },
                     BlueprintField {
                         key: "jarPath".to_string(),

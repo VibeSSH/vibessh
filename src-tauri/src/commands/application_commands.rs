@@ -8,7 +8,7 @@ use crate::errors::AppResult;
 use crate::models::{Application, ApplicationDetail, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput};
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::ResourceUsage;
-use crate::services;
+use crate::services::{self, JavaInstallation};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::server_repository::ServerRepository;
@@ -119,4 +119,13 @@ pub async fn get_application_logs(
     max_lines: u32,
 ) -> AppResult<Vec<String>> {
     services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, id, max_lines).await
+}
+
+#[tauri::command]
+pub async fn detect_java_installations(
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Option<Uuid>,
+) -> AppResult<Vec<JavaInstallation>> {
+    services::detect_java_installations(&server_repo, &sessions, server_id).await
 }

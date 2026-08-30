@@ -101,6 +101,7 @@ pub fn run() {
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,
             commands::application_commands::get_application_logs,
+            commands::application_commands::detect_java_installations,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,

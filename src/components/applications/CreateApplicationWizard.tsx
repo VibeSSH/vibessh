@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { createApplication } from "@/services/applicationService";
+import { createApplication, detectJavaInstallations } from "@/services/applicationService";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
-import type { Blueprint, BlueprintField, EnvironmentVariable, RuntimeType } from "@/types/application";
+import type { Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
 import { listBlueprints } from "@/services/applicationService";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -236,7 +236,13 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
             {step === 3 && selectedBlueprint && (
               <div className="wizard-field-list">
                 {selectedBlueprint.fields.map((field) => (
-                  <BlueprintFieldInput key={field.key} field={field} value={fieldValueOrDefault(field, fieldValues)} onChange={(v) => setFieldValue(field.key, v)} />
+                  <BlueprintFieldInput
+                    key={field.key}
+                    field={field}
+                    value={fieldValueOrDefault(field, fieldValues)}
+                    onChange={(v) => setFieldValue(field.key, v)}
+                    serverId={serverId}
+                  />
                 ))}
               </div>
             )}
@@ -320,9 +326,14 @@ interface BlueprintFieldInputProps {
   field: BlueprintField;
   value: unknown;
   onChange: (value: unknown) => void;
+  serverId: string | null;
 }
 
-function BlueprintFieldInput({ field, value, onChange }: BlueprintFieldInputProps) {
+function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFieldInputProps) {
+  if (field.fieldType === "javaVersion") {
+    return <JavaVersionFieldInput field={field} value={value} onChange={onChange} serverId={serverId} />;
+  }
+
   if (field.fieldType === "boolean") {
     return (
       <label className="form-field">
@@ -373,6 +384,87 @@ function BlueprintFieldInput({ field, value, onChange }: BlueprintFieldInputProp
         value={typeof value === "string" || typeof value === "number" ? value : ""}
         onChange={(e) => onChange(field.fieldType === "number" ? Number(e.target.value) : e.target.value)}
       />
+      {field.helpText && <p className="form-note">{field.helpText}</p>}
+    </label>
+  );
+}
+
+interface JavaVersionFieldInputProps {
+  field: BlueprintField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  serverId: string | null;
+}
+
+/** A picker built from real, detected Java installations (local scan, or a remote SSH scan when a server is chosen) - falls back to a plain path input when nothing was detected, or when the user explicitly asks for a custom path via the dropdown's own option for it. */
+function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersionFieldInputProps) {
+  const { t } = useTranslation();
+  const [installations, setInstallations] = useState<JavaInstallation[] | null>(null);
+  const [detecting, setDetecting] = useState(true);
+  const [customPath, setCustomPath] = useState(false);
+
+  useEffect(() => {
+    setDetecting(true);
+    setInstallations(null);
+    detectJavaInstallations(serverId ?? undefined)
+      .then(setInstallations)
+      .catch(() => setInstallations([]))
+      .finally(() => setDetecting(false));
+  }, [serverId]);
+
+  const currentValue = typeof value === "string" ? value : "";
+  const label = (
+    <span className="form-label">
+      {field.label}
+      {field.required ? " *" : ""}
+    </span>
+  );
+
+  if (detecting) {
+    return (
+      <label className="form-field">
+        {label}
+        <p className="form-note">{t("createApplicationWizard.detectingJava")}</p>
+      </label>
+    );
+  }
+
+  const hasDetected = installations !== null && installations.length > 0;
+  if (!hasDetected || customPath) {
+    return (
+      <label className="form-field">
+        {label}
+        <input className="form-input" value={currentValue} onChange={(e) => onChange(e.target.value)} />
+        {hasDetected && (
+          <Button variant="ghost" size="sm" onClick={() => setCustomPath(false)}>
+            {t("createApplicationWizard.backToDetectedJava")}
+          </Button>
+        )}
+        {!hasDetected && <p className="form-note">{t("createApplicationWizard.noJavaDetected")}</p>}
+        {field.helpText && <p className="form-note">{field.helpText}</p>}
+      </label>
+    );
+  }
+
+  const matchesDetected = installations.some((installation) => installation.path === currentValue);
+  return (
+    <label className="form-field">
+      {label}
+      <select
+        className="form-input"
+        value={matchesDetected ? currentValue : ""}
+        onChange={(e) => (e.target.value === "__custom__" ? setCustomPath(true) : onChange(e.target.value))}
+      >
+        <option value="" disabled>
+          {t("createApplicationWizard.chooseJava")}
+        </option>
+        {installations.map((installation) => (
+          <option key={installation.path} value={installation.path}>
+            {installation.label} — {installation.path}
+          </option>
+        ))}
+        <option value="__custom__">{t("createApplicationWizard.customJavaPath")}</option>
+      </select>
       {field.helpText && <p className="form-note">{field.helpText}</p>}
     </label>
   );

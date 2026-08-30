@@ -1,5 +1,5 @@
 import { callCommand } from "./tauri";
-import type { Application, ApplicationDetail, ApplicationStatus, Blueprint, EnvironmentVariable, ResourceUsage, RuntimeType } from "@/types/application";
+import type { Application, ApplicationDetail, ApplicationStatus, Blueprint, EnvironmentVariable, JavaInstallation, ResourceUsage, RuntimeType } from "@/types/application";
 
 /** What the Create Application wizard submits - mirrors the Rust `CreateApplicationFromBlueprintInput` DTO. */
 export interface CreateApplicationInput {
@@ -62,4 +62,9 @@ export function getApplicationResourceUsage(id: string): Promise<ResourceUsage> 
 /** A snapshot, not a live stream - same pull-on-demand shape as the existing container logs panel; there's no live console/log-streaming infrastructure yet (see runtime::mod's own LogProvider doc comment). */
 export function getApplicationLogs(id: string, maxLines: number): Promise<string[]> {
   return callCommand<string[]>("get_application_logs", { id, maxLines });
+}
+
+/** Real, actually-installed Java runtimes - `serverId` undefined detects on this machine, set detects on that Remote server over SSH. Best-effort: an empty array just means the wizard's free-text fallback stays available, not an error. */
+export function detectJavaInstallations(serverId?: string): Promise<JavaInstallation[]> {
+  return callCommand<JavaInstallation[]>("detect_java_installations", { serverId });
 }

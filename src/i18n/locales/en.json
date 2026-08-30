@@ -244,6 +244,11 @@
       "docker": "Docker container"
     },
     "noRuntimeForLocation": "This blueprint doesn't support any runtime for the chosen location.",
+    "detectingJava": "Looking for installed Java runtimes...",
+    "chooseJava": "Choose a Java installation",
+    "customJavaPath": "Enter a path myself...",
+    "backToDetectedJava": "Choose from detected installations instead",
+    "noJavaDetected": "No Java installation was detected automatically - enter a path yourself.",
     "environmentNote": "Optional - variables the application can read from its own environment.",
     "environmentKeyPlaceholder": "KEY",
     "environmentValuePlaceholder": "value",

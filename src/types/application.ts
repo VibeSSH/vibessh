@@ -56,7 +56,13 @@ export interface ResourceUsage {
 
 export type BlueprintFeature = "console" | "logs" | "environment" | "ports";
 
-export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList";
+export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion";
+
+/** A real, detected Java installation - see `detectJavaInstallations`. */
+export interface JavaInstallation {
+  path: string;
+  label: string;
+}
 
 export interface BlueprintField {
   key: string;

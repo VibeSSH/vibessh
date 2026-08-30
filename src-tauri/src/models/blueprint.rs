@@ -71,4 +71,13 @@ pub enum BlueprintFieldType {
     Number,
     Boolean,
     TextList,
+    /// A path, same as `Path` for validation/storage purposes - the
+    /// frontend renders it differently: a picker populated from
+    /// `detect_java_installations` (real, actually-installed JVMs) with a
+    /// free-text fallback, rather than a plain input the user has to know
+    /// a path for. Not a generic "Select" type - there's nothing else
+    /// today that needs host-detected, dynamically-populated options, and
+    /// inventing that generality before a second user exists would be
+    /// speculative.
+    JavaVersion,
 }
