@@ -1,6 +1,7 @@
 mod app_info_service;
 mod application_service;
 mod cloud_service;
+mod database_service;
 mod java_service;
 mod papermc_service;
 mod ping_service;
@@ -15,6 +16,11 @@ pub use application_service::{
     delete_application, get_application, kill_application, list_application_ports, list_applications, list_blueprints,
     refresh_application_status, remove_application_port, restart_application, set_application_health_check,
     set_application_resource_limits, start_application, stop_application, update_application_port,
+};
+pub use database_service::{
+    create_application_database, create_database_host, delete_application_database, delete_database_host,
+    list_application_databases, list_database_hosts, reset_application_database_password, reveal_application_database_password,
+    set_database_host_phpmyadmin,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use papermc_service::PapermcBuild;

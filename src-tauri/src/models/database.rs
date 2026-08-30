@@ -92,6 +92,13 @@ pub struct ApplicationDatabase {
     pub created_at: DateTime<Utc>,
 }
 
+/// Deliberately carries no password field - `DatabaseRepository::
+/// create_database` only ever writes the columns this struct's own fields
+/// name (`application_databases` has no password column, see that table's
+/// own migration comment), and the generated user's password is stored
+/// separately, straight into the OS keyring, by whichever caller generated
+/// it (`services::database_service::create_application_database`) - never
+/// routed through this DTO or the repository at all.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateApplicationDatabaseInput {
@@ -100,5 +107,4 @@ pub struct CreateApplicationDatabaseInput {
     pub database_name: String,
     pub username: String,
     pub connections_from: String,
-    pub password: String,
 }

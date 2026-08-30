@@ -92,7 +92,7 @@ export interface ResourceUsage {
   uptimeSeconds?: number;
 }
 
-export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck";
+export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck" | "databases";
 
 export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion" | "papermcVersion";
 

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { DatabasesTab } from "@/components/applications/DatabasesTab";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
 import { PortsTab } from "@/components/applications/PortsTab";
 import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
@@ -32,7 +33,7 @@ import "./ApplicationDetail.css";
 const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "logs" | "environment" | "ports";
+type Tab = "overview" | "logs" | "environment" | "ports" | "databases";
 type Verb = "start" | "stop" | "restart" | "kill";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -216,6 +217,11 @@ export function ApplicationDetail() {
                 {t("applicationDetail.tabPorts")}
               </button>
             )}
+            {features.includes("databases") && (
+              <button className={`modal-tab ${tab === "databases" ? "modal-tab-active" : ""}`} onClick={() => setTab("databases")}>
+                {t("applicationDetail.tabDatabases")}
+              </button>
+            )}
           </div>
 
           {tab === "overview" && (
@@ -299,6 +305,8 @@ export function ApplicationDetail() {
           )}
 
           {tab === "ports" && <PortsTab applicationId={id} />}
+
+          {tab === "databases" && <DatabasesTab applicationId={id} />}
         </>
       )}
 

@@ -56,6 +56,7 @@ const ICON_NAMES = [
   "eye",
   "eye-off",
   "box",
+  "database",
 ];
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));

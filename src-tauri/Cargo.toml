@@ -26,6 +26,10 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
 vibessh-protocol = { path = "../protocol" }
+# Generated database names/usernames/passwords for Application Databases
+# (services::database_service) - same workspace version `protocol`'s own
+# generate_pairing_code already uses, not a new choice.
+rand = { workspace = true }
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
 # "process" (LocalProcessRuntime, Applications Phase 2) is new here -
@@ -83,6 +87,10 @@ windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Fou
 # doesn't bind sockets itself.
 tokio = { version = "1", features = ["net"] }
 # tests/ssh_client.rs's mock SSH server needs a host key - russh's own
-# `PrivateKey::random` wants a rand 0.10-shaped RNG, unrelated to (and
-# coexisting fine alongside) the workspace's rand 0.8 used elsewhere.
-rand = "0.10"
+# `PrivateKey::random` wants a rand 0.10-shaped RNG. Renamed via `package =`
+# (rather than plain `rand = "0.10"`) because the workspace's rand 0.8 is
+# now also a real `[dependencies]` entry above (services::database_service's
+# generated names/passwords) - two same-named `rand` crates at different
+# versions in one test build is a hard "multiple candidates" compile error,
+# not just a style choice.
+rand010 = { package = "rand", version = "0.10" }

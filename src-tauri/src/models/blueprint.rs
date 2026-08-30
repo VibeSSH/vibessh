@@ -47,6 +47,12 @@ pub enum BlueprintFeature {
     Environment,
     Ports,
     HealthCheck,
+    /// Gates the Databases tab (docs/APPLICATIONS_ARCHITECTURE.md Section
+    /// 12.2) - not declared by every blueprint the way Health Check/Ports
+    /// are; a self-managed database only makes sense for something that
+    /// actually talks to one, matching the original brief's own
+    /// Paper/Velocity/Generic Java tab list.
+    Databases,
 }
 
 /// One input a Create Application wizard would collect for this blueprint.

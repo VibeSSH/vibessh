@@ -68,7 +68,7 @@ impl Handler for MockHandler {
 /// returns the port to connect to.
 async fn spawn_mock_server() -> u16 {
     let config = Arc::new(russh::server::Config {
-        keys: vec![PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()],
+        keys: vec![PrivateKey::random(&mut rand010::rng(), Algorithm::Ed25519).unwrap()],
         preferred: Preferred::default(),
         ..Default::default()
     });

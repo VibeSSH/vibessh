@@ -106,6 +106,25 @@ impl DatabaseRepository {
         Ok(())
     }
 
+    /// Links (or unlinks, `application_id: None`) the built-in phpMyAdmin
+    /// Blueprint instance deployed for this host (Section 12.3) - set once
+    /// an admin deploys one, separate from `create_host` since a host is
+    /// usually registered before phpMyAdmin exists to point it at.
+    pub fn update_phpmyadmin_application(&self, id: Uuid, application_id: Option<Uuid>) -> AppResult<DatabaseHost> {
+        let conn = self.lock();
+        let affected = conn
+            .execute(
+                "UPDATE database_hosts SET phpmyadmin_application_id = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id.to_string(), application_id.map(|a| a.to_string()), Utc::now().to_rfc3339()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to update the database host: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("database host {id}")));
+        }
+        drop(conn);
+        self.get_host(id)?.ok_or_else(|| AppError::NotFound(format!("database host {id}")))
+    }
+
     // ---- ApplicationDatabase ----
 
     /// `database_name` must be unique per `database_host_id` (the table's
@@ -329,6 +348,25 @@ mod tests {
     }
 
     #[test]
+    fn update_phpmyadmin_application_links_then_unlinks() {
+        let (repo, path) = temp_repository();
+        let host = repo.create_host(&host_input()).unwrap();
+        let application_id = create_stub_application(&path);
+
+        let linked = repo.update_phpmyadmin_application(host.id, Some(application_id)).unwrap();
+        assert_eq!(linked.phpmyadmin_application_id, Some(application_id));
+
+        let unlinked = repo.update_phpmyadmin_application(host.id, None).unwrap();
+        assert_eq!(unlinked.phpmyadmin_application_id, None);
+    }
+
+    #[test]
+    fn update_phpmyadmin_application_of_an_unknown_host_is_not_found() {
+        let (repo, _path) = temp_repository();
+        assert!(matches!(repo.update_phpmyadmin_application(Uuid::new_v4(), None), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
     fn delete_host_with_a_provisioned_database_is_rejected_not_a_raw_storage_error() {
         let (repo, path) = temp_repository();
         let host = repo.create_host(&host_input()).unwrap();
@@ -339,7 +377,6 @@ mod tests {
             database_name: "vibessh_app1".to_string(),
             username: "vibessh_app1_user".to_string(),
             connections_from: "%".to_string(),
-            password: "s3cret".to_string(),
         })
         .unwrap();
 
@@ -360,7 +397,6 @@ mod tests {
                 database_name: "vibessh_app1".to_string(),
                 username: "vibessh_app1_user".to_string(),
                 connections_from: "%".to_string(),
-                password: "s3cret".to_string(),
             })
             .unwrap();
 
@@ -384,7 +420,6 @@ mod tests {
             database_name: "vibessh_app1".to_string(),
             username: "vibessh_app1_user".to_string(),
             connections_from: "%".to_string(),
-            password: "s3cret".to_string(),
         };
         repo.create_database(&input).unwrap();
 
@@ -405,7 +440,6 @@ mod tests {
                 database_name: "vibessh_app1".to_string(),
                 username: "vibessh_app1_user".to_string(),
                 connections_from: "%".to_string(),
-                password: "s3cret".to_string(),
             })
             .unwrap();
         }
@@ -423,7 +457,6 @@ mod tests {
             database_name: "app_a_db".to_string(),
             username: "app_a_user".to_string(),
             connections_from: "%".to_string(),
-            password: "s3cret".to_string(),
         })
         .unwrap();
         repo.create_database(&CreateApplicationDatabaseInput {
@@ -432,7 +465,6 @@ mod tests {
             database_name: "app_b_db".to_string(),
             username: "app_b_user".to_string(),
             connections_from: "%".to_string(),
-            password: "s3cret".to_string(),
         })
         .unwrap();
 
@@ -452,7 +484,6 @@ mod tests {
                 database_name: "vibessh_app1".to_string(),
                 username: "vibessh_app1_user".to_string(),
                 connections_from: "%".to_string(),
-                password: "s3cret".to_string(),
             })
             .unwrap();
 

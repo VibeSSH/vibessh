@@ -5,6 +5,7 @@ pub mod actions_commands;
 pub mod app_commands;
 pub mod application_commands;
 pub mod cloud_commands;
+pub mod database_commands;
 pub mod file_commands;
 pub mod monitor_commands;
 pub mod pairing_commands;

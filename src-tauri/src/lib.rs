@@ -63,6 +63,9 @@ pub fn run() {
             // ApplicationRepository::open's own doc comment for why this
             // is a second independent Connection rather than a shared one.
             app.manage(ApplicationRepository::open(&db_path)?);
+            // Same physical file again - Application Databases (Phase 11)
+            // foreign keys into both `applications` and `servers`.
+            app.manage(storage::database_repository::DatabaseRepository::open(&db_path)?);
 
             let config_dir = app.path().app_config_dir()?;
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
@@ -111,6 +114,15 @@ pub fn run() {
             commands::application_commands::set_application_health_check,
             commands::application_commands::set_application_resource_limits,
             commands::application_commands::detect_java_installations,
+            commands::database_commands::list_database_hosts,
+            commands::database_commands::create_database_host,
+            commands::database_commands::delete_database_host,
+            commands::database_commands::set_database_host_phpmyadmin,
+            commands::database_commands::list_application_databases,
+            commands::database_commands::create_application_database,
+            commands::database_commands::delete_application_database,
+            commands::database_commands::reveal_application_database_password,
+            commands::database_commands::reset_application_database_password,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,
