@@ -327,7 +327,7 @@ mod tests {
     async fn default_health_check_reports_unknown_without_probing_when_the_process_isnt_running() {
         let application = stub_application(None);
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         // `Tcp { port: 1 }` would fail to connect if actually probed (nothing
         // listens on port 1) - reaching `Unknown` here instead of
         // `Unhealthy` proves the probe was skipped entirely.
@@ -339,7 +339,7 @@ mod tests {
     async fn default_health_check_reports_unhealthy_with_the_given_reason_when_failed() {
         let application = stub_application(None);
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         let result = default_health_check(&ctx, &HealthCheckSpec::Process, ApplicationStatus::Failed, Some("exited with status 1")).await.unwrap();
         match result {
             HealthStatus::Unhealthy { reason } => assert_eq!(reason, "exited with status 1"),
@@ -351,7 +351,7 @@ mod tests {
     async fn default_health_check_reports_healthy_for_a_running_process_check() {
         let application = stub_application(None);
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         let result = default_health_check(&ctx, &HealthCheckSpec::Process, ApplicationStatus::Running, None).await.unwrap();
         assert!(matches!(result, HealthStatus::Healthy));
     }
@@ -366,7 +366,7 @@ mod tests {
 
         let application = stub_application(None);
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
 
         assert!(matches!(check_tcp(&ctx, port).await.unwrap(), HealthStatus::Healthy));
 
@@ -390,7 +390,7 @@ mod tests {
 
         let application = stub_application(None);
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         assert!(matches!(check_http(&ctx, port, "/health").await.unwrap(), HealthStatus::Healthy));
     }
 
@@ -433,7 +433,7 @@ mod tests {
     async fn tcp_and_http_checks_on_a_remote_application_without_a_connection_are_an_internal_error_not_a_panic() {
         let application = stub_application(Some(uuid::Uuid::new_v4()));
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         assert!(check_tcp(&ctx, 25565).await.is_err());
         assert!(check_http(&ctx, 8080, "/").await.is_err());
     }

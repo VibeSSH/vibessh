@@ -8,18 +8,19 @@
 //! Docker stays a later, explicit decision made with a real feature in
 //! hand, not granted on spec.
 //!
+//! **Port publishing** (`-p bind:external:internal/proto`, in
+//! `build_create_command`) only happens for a declared `ApplicationPort`
+//! whose `external_port` is actually set - one without it is documentation
+//! of an internal-only port (e.g. a database another container reaches over
+//! the Docker network), not something meant to be reachable from outside
+//! the host, so it gets no `-p` flag at all.
+//!
 //! **Deliberately out of scope for this phase, not forgotten**:
-//! - **Port publishing** (`-p host:container`) - `RuntimeContext` doesn't
-//!   carry `ApplicationPort` rows (only `environment`, added in Phase 2 for
-//!   the same kind of reason), and the architecture doc's own roadmap
-//!   assigns full port CRUD/collision-handling to Phase 10. Containers
-//!   created here publish nothing; reaching one from outside the host needs
-//!   that later work.
-//! - **Volumes / bind mounts** - same reasoning as ports: nothing here
-//!   mounts `working_directory` or anything else into the container. This
-//!   also shapes `start()`'s own behavior below (recreate-avoidance): with
-//!   no volume, a container's writable layer is the *only* place its own
-//!   state (a world save, a database's files, ...) lives.
+//! - **Volumes / bind mounts** - nothing here mounts `working_directory` or
+//!   anything else into the container. This also shapes `start()`'s own
+//!   behavior below (recreate-avoidance): with no volume, a container's
+//!   writable layer is the *only* place its own state (a world save, a
+//!   database's files, ...) lives.
 //!
 //! **Unlike `runtime::systemd`/`runtime::remote_process`, `start()` does
 //! NOT unconditionally recreate.** Those runtimes persist only *config*
@@ -38,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{ApplicationStatus, EnvironmentVariable};
+use crate::models::{ApplicationStatus, EnvironmentVariable, PortProtocol};
 use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
 
@@ -153,6 +154,9 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     }
     validate_environment(ctx.environment)?;
     validate_resource_limits(config.memory_limit_mb, config.cpu_limit_cores)?;
+    for port in ctx.ports {
+        reject_newlines(&port.bind_address, "a port's bind address")?;
+    }
 
     let mut command = format!("docker create --name {} ", shell_quote(name));
     if let Some(mb) = config.memory_limit_mb {
@@ -160,6 +164,19 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     }
     if let Some(cores) = config.cpu_limit_cores {
         command.push_str(&format!("--cpus {cores} "));
+    }
+    for port in ctx.ports {
+        // `external_port` unset means "declared but not meant to be
+        // reachable from outside the container's own network" (e.g. a
+        // database another container reaches internally) - see
+        // `ApplicationPort::external_port`'s own doc comment. Only publish
+        // the ones that actually asked for it.
+        let Some(external_port) = port.external_port else { continue };
+        let proto = match port.protocol {
+            PortProtocol::Tcp => "tcp",
+            PortProtocol::Udp => "udp",
+        };
+        command.push_str(&format!("-p {} ", shell_quote(&format!("{}:{external_port}:{}/{proto}", port.bind_address, port.internal_port))));
     }
     for env in ctx.environment {
         command.push_str(&format!("-e {}={} ", env.key, shell_quote(&env.value)));
@@ -409,7 +426,7 @@ impl LogProvider for DockerLogs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Application, HealthCheckType, RuntimeType};
+    use crate::models::{Application, ApplicationPort, HealthCheckType, RuntimeType};
 
     fn stub_application(id: Uuid) -> Application {
         Application {
@@ -502,7 +519,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5) };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
         assert!(command.contains("--memory 512m"), "{command}");
@@ -510,12 +527,69 @@ mod tests {
         assert!(command.find("--memory").unwrap() < command.find("alpine:latest").unwrap());
     }
 
+    fn stub_port(protocol: PortProtocol, bind_address: &str, internal_port: u16, external_port: Option<u16>) -> ApplicationPort {
+        ApplicationPort {
+            id: Uuid::new_v4(),
+            application_id: Uuid::new_v4(),
+            name: "game".to_string(),
+            protocol,
+            bind_address: bind_address.to_string(),
+            internal_port,
+            external_port,
+            required: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn build_create_command_publishes_only_ports_with_an_external_port_set() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let runtime_config = serde_json::json!({});
+        let ports = vec![
+            stub_port(PortProtocol::Tcp, "0.0.0.0", 25565, Some(25565)),
+            stub_port(PortProtocol::Udp, "0.0.0.0", 24454, Some(24454)),
+            stub_port(PortProtocol::Tcp, "127.0.0.1", 3306, None),
+        ];
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(command.contains("-p '0.0.0.0:25565:25565/tcp'"), "{command}");
+        assert!(command.contains("-p '0.0.0.0:24454:24454/udp'"), "{command}");
+        // The port with no external_port must not be published at all.
+        assert!(!command.contains("3306"), "{command}");
+        assert!(command.find("-p").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_create_command_publishes_nothing_when_no_ports_are_declared() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(!command.contains("-p "));
+    }
+
+    #[test]
+    fn build_create_command_rejects_a_newline_in_a_ports_bind_address() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let runtime_config = serde_json::json!({});
+        let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
+
+        assert!(build_create_command(&ctx, &config, "vibessh-app-test").is_err());
+    }
+
     #[test]
     fn build_create_command_omits_limit_flags_when_unset() {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
         assert!(!command.contains("--memory"));
@@ -526,7 +600,7 @@ mod tests {
     fn build_create_command_rejects_a_zero_memory_limit_or_non_positive_cpu_limit() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
         let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None };
         assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test").is_err());
@@ -539,7 +613,7 @@ mod tests {
     async fn methods_that_need_a_connection_fail_cleanly_without_one() {
         let application = stub_application(Uuid::new_v4());
         let config = serde_json::json!({ "image": "alpine:latest", "command": [] });
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         let runtime = DockerRuntime::new();
 
         assert!(matches!(runtime.validate(&ctx).await, Err(AppError::Internal(_))));

@@ -16,7 +16,7 @@ pub mod systemd;
 use std::sync::Arc;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Application, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
+use crate::models::{Application, ApplicationPort, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Everything a runtime call needs, resolved once per command rather than
@@ -30,6 +30,13 @@ pub struct RuntimeContext<'a> {
     /// - added once `LocalProcessRuntime` (Phase 2) needed it to actually
     /// launch a process; every other trait method is free to ignore it.
     pub environment: &'a [EnvironmentVariable],
+    /// From the `application_ports` table - added once `DockerRuntime`
+    /// needed real port publishing (`docker create -p`), the same reason
+    /// `environment` was added above. Every other runtime is free to
+    /// ignore it; Local/Remote process/systemd have no equivalent
+    /// "publish a port" step of their own (a process already binds
+    /// wherever its own config tells it to).
+    pub ports: &'a [ApplicationPort],
     /// `None` for `RuntimeType::LocalProcess`; `Some` (from
     /// `SshSessionManager`, same cache every other remote feature already
     /// shares) for every Remote runtime type.
@@ -256,7 +263,7 @@ mod tests {
         let runtime: Box<dyn ApplicationRuntime> = Box::new(StubRuntime);
         let application = stub_application();
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Unknown);

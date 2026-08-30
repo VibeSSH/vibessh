@@ -235,7 +235,7 @@ pub async fn start_application(
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.start(&ctx).await?;
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
@@ -249,7 +249,7 @@ pub async fn stop_application(
     graceful: bool,
 ) -> AppResult<ApplicationStatus> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.stop(&ctx, graceful).await?;
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
@@ -262,7 +262,7 @@ pub async fn restart_application(
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.restart(&ctx).await?;
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
@@ -275,7 +275,7 @@ pub async fn kill_application(
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.kill(&ctx).await?;
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
@@ -288,7 +288,7 @@ pub async fn refresh_application_status(
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
 
@@ -300,7 +300,7 @@ pub async fn application_resource_usage(
     id: Uuid,
 ) -> AppResult<ResourceUsage> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.resource_usage(&ctx).await
 }
 
@@ -318,7 +318,7 @@ pub async fn application_logs(
     max_lines: u32,
 ) -> AppResult<Vec<String>> {
     let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.logs(&ctx).await?.tail(max_lines).await
 }
 
@@ -431,7 +431,7 @@ pub async fn application_health_check(
     let Some(spec) = resolve_health_check_spec(server_repo, &detail.application, &detail.ports)? else {
         return Ok(HealthStatus::Unknown);
     };
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, connection };
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
     runtime.health_check(&ctx, &spec).await
 }
 

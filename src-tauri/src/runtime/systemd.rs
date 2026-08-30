@@ -427,7 +427,7 @@ mod tests {
         let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()], memory_limit_mb: None, cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into() }];
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 
         let unit_file = render_unit_file(&ctx, &config).unwrap();
 
@@ -445,7 +445,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = SystemdConfig { command: "/bin/sh\nrm -rf /".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
 
         assert!(render_unit_file(&ctx, &config).is_err());
     }
@@ -456,7 +456,7 @@ mod tests {
         let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }];
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 
         assert!(render_unit_file(&ctx, &config).is_err());
     }
@@ -466,14 +466,14 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let without_limits = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let config_value = serde_json::to_value(&without_limits).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
         let unit_file = render_unit_file(&ctx, &without_limits).unwrap();
         assert!(!unit_file.contains("MemoryMax"));
         assert!(!unit_file.contains("CPUQuota"));
 
         let with_limits = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: Some(1024), cpu_limit_cores: Some(1.5) };
         let config_value = serde_json::to_value(&with_limits).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
         let unit_file = render_unit_file(&ctx, &with_limits).unwrap();
         assert!(unit_file.contains("MemoryAccounting=yes\n"));
         assert!(unit_file.contains("MemoryMax=1024M\n"));
@@ -488,12 +488,12 @@ mod tests {
 
         let zero_memory = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None };
         let config_value = serde_json::to_value(&zero_memory).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
         assert!(render_unit_file(&ctx, &zero_memory).is_err());
 
         let negative_cpu = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0) };
         let config_value = serde_json::to_value(&negative_cpu).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
         assert!(render_unit_file(&ctx, &negative_cpu).is_err());
     }
 
@@ -525,7 +525,7 @@ mod tests {
     async fn methods_that_need_a_connection_fail_cleanly_without_one() {
         let application = stub_application(Uuid::new_v4());
         let config = serde_json::json!({ "command": "/usr/bin/java", "args": [] });
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
         let runtime = SystemdRuntime::new();
 
         assert!(matches!(runtime.validate(&ctx).await, Err(AppError::Internal(_))));

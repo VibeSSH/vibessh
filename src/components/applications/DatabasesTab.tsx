@@ -24,7 +24,7 @@ interface DatabasesTabProps {
   applicationId: string;
 }
 
-/** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, and per-row regenerate/remove. The "Open in phpMyAdmin" button from that same section is deliberately not built yet: it needs `tauri-plugin-shell` (not a dependency) and a real, browser-reachable URL for the deployed phpMyAdmin container, which needs Docker port publishing (`runtime::docker` doesn't wire `-p` yet, a separate known gap) - shipping a button that can't actually open anything would be exactly the "half-working feature" the architecture doc's own Section 39 says not to ship. */
+/** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, and per-row regenerate/remove. The "Open in phpMyAdmin" button from that same section is deliberately not built yet: it needs `tauri-plugin-shell` (not a dependency) to open a URL in the system browser. Docker port publishing (`runtime::docker`'s `-p` flags) is wired now, so a phpMyAdmin container with a declared, published port is actually reachable - only the "open it" plumbing itself is still missing, not shipping a button that can't work at all. */
 export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const { t } = useTranslation();
   const [databases, setDatabases] = useState<ApplicationDatabase[]>([]);
