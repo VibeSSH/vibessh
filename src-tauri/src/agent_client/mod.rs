@@ -13,6 +13,7 @@
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use serde::Serialize;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
@@ -37,9 +38,12 @@ pub struct AgentClientConfig {
     pub auth_token: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
 pub enum AgentConnectionState {
+    #[serde(rename = "connecting")]
     Connecting,
+    #[serde(rename = "connected")]
     Connected {
         agent_id: Uuid,
         agent_version: String,
@@ -49,9 +53,8 @@ pub enum AgentConnectionState {
         /// which deliberately doesn't know about `storage`/keyring itself.
         issued_credential: Option<String>,
     },
-    Disconnected {
-        reason: String,
-    },
+    #[serde(rename = "disconnected")]
+    Disconnected { reason: String },
 }
 
 /// Runs until `events_tx`'s receiver is dropped: connects, hands off

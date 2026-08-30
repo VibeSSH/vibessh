@@ -12,6 +12,10 @@ const paths: Record<string, string> = {
   "chevron-left": "M15 18l-6-6 6-6",
   "chevron-right": "M9 18l6-6-6-6",
   plug: "M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0zM12 18v4",
+  x: "M18 6 6 18M6 6l12 12",
+  copy: "M9 9h10v10H9zM5 15V5h10",
+  check: "M20 6 9 17l-5-5",
+  key: "M15 7a4 4 0 1 1-4 4M2 21l7-7M9 14l3 3M13 10l3 3",
 };
 
 interface IconProps {

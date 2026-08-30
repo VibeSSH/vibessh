@@ -63,11 +63,24 @@ same `ServerConnection` interface on the Rust side.
       them yet, so nothing is granted yet. Verified for real: empty
       allowlist denies, adding a unit allows it, other units stay denied,
       and the agent genuinely cannot rewrite its own allowlist
+- [x] Desktop UI for pairing (Etap H, partial) — "Add Server" modal with two
+      real tabs: **Install Vibe Agent** actually generates a pairing code,
+      starts `agent_client::run` via a Tauri command, and streams connection
+      state to the UI over Tauri events (Connecting → Connected, with a
+      live TTL countdown and a "generate new code" escape hatch) - this is
+      real, not mocked, verified against a real WebSocket handshake.
+      **Connect with SSH** is real UI with no backend to submit to yet
+      (`SshTransport` is Etap 3). Paired/added servers show in a list with
+      type (SSH/Agent) and status badges - session-only for now, since
+      server storage (Etap 2) isn't built
 - [ ] SSH transport implementation
 - [ ] Server storage (SQLite for server records - credential storage already
-      landed early, see pairing above)
+      landed early, see pairing above; the server *list* is currently
+      in-memory only, see Etap H)
 - [ ] Terminal, SFTP, process manager, systemd, Docker
-- [ ] Capability-aware UI, realtime metrics dashboard
+- [ ] Capability-aware UI, realtime metrics dashboard — no agent reports
+      capabilities yet (Etap I), so the Dashboard doesn't show badges for
+      data that doesn't exist
 - [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
 - [ ] Private host mesh — future, architecture reserved for it, not built yet
 
@@ -103,9 +116,9 @@ cargo run -p vibe-agent                          # start the daemon, Ctrl+C to s
 cargo run -p vibe-agent -- pair VIBE-XXXX-XXXX   # in a second terminal, once you have a code
 ```
 
-There's no UI to generate a code yet (that's Etap H) - for now, exercise
-pairing through the test suite (`cargo test -p vibe-agent`) or generate one
-yourself with `vibessh_protocol::generate_pairing_code()`.
+The desktop app's Servers page ("Add server" → "Install Vibe Agent") now
+generates and uses pairing codes for you - the commands above are for
+testing the agent standalone, without the desktop app running.
 
 ## Project structure
 
@@ -116,20 +129,21 @@ src/                        Frontend (React + TypeScript)
   components/
     layout/                 Sidebar, Topbar, AppLayout
     ui/                     Reusable design-system components
+    servers/                AddServerModal, SshServerForm (placeholder), AgentPairingFlow (real)
   pages/                    Dashboard, Servers, Settings
   hooks/
-  services/                 Tauri command wrappers
-  stores/                   Zustand stores
-  types/
+  services/                 Tauri command wrappers (incl. pairingService.ts)
+  stores/                   Zustand stores (incl. serversStore.ts - session-only until Etap 2)
+  types/                    incl. pairing.ts, mirroring AgentConnectionState
   config/                   Navigation/module config
 
 src-tauri/                  Desktop backend (Rust, Tauri)
   src/
-    commands/                Tauri command entry points (thin)
+    commands/                Tauri command entry points (thin), incl. pairing_commands.rs
     services/                 Business logic
     models/                    DTOs shared with the frontend (incl. Server/ConnectionMode)
     errors/                     Shared AppError/AppResult
-    state/                       AppState
+    state/                       AppState, PairingSession (Etap H's running-task handle)
     transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
     agent_client/                  WebSocket client half of the Agent Mode transport
     ssh/                             Reserved for SshTransport impl

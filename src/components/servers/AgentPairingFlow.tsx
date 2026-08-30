@@ -1,0 +1,209 @@
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
+import { useServersStore } from "@/stores/serversStore";
+import {
+  cancelAgentPairing,
+  generatePairingCode,
+  getPairingCodeTtlSeconds,
+  onAgentPairingState,
+  startAgentPairing,
+} from "@/services/pairingService";
+import type { AgentConnectionState } from "@/types/pairing";
+import "./forms.css";
+
+const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agent-install/install.sh";
+
+interface AgentPairingFlowProps {
+  onPaired: () => void;
+}
+
+export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("7420");
+  const [code, setCode] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [connectionState, setConnectionState] = useState<AgentConnectionState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const ttlRef = useRef<number>(300);
+  const upsertServer = useServersStore((s) => s.upsertServer);
+
+  useEffect(() => {
+    getPairingCodeTtlSeconds()
+      .then((ttl) => {
+        ttlRef.current = ttl;
+      })
+      .catch(() => {});
+
+    const unlistenPromise = onAgentPairingState((state) => {
+      setConnectionState(state);
+      if (state.status === "connected") {
+        upsertServer({
+          id: state.agentId,
+          name: host || state.agentId.slice(0, 8),
+          host,
+          connectionMode: "agent",
+          status: "online",
+          agentId: state.agentId,
+          agentVersion: state.agentVersion,
+        });
+      }
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+      cancelAgentPairing().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (remainingSeconds === null || connectionState?.status === "connected") return;
+    if (remainingSeconds <= 0) return;
+    const id = window.setInterval(() => {
+      setRemainingSeconds((s) => (s === null ? null : Math.max(0, s - 1)));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [remainingSeconds, connectionState]);
+
+  async function handleGenerate() {
+    setBusy(true);
+    setBackendError(null);
+    try {
+      const newCode = await generatePairingCode();
+      setCode(newCode);
+      setRemainingSeconds(ttlRef.current);
+      setConnectionState(null);
+      await startAgentPairing(host, Number(port), newCode);
+    } catch (err) {
+      setBackendError(err instanceof Error ? err.message : "Couldn't reach the VibeSSH backend.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCopy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // clipboard access denied - nothing useful to do about it here
+    }
+  }
+
+  const expired = remainingSeconds === 0 && connectionState?.status !== "connected";
+  const minutes = remainingSeconds !== null ? Math.floor(remainingSeconds / 60) : 0;
+  const seconds = remainingSeconds !== null ? remainingSeconds % 60 : 0;
+
+  return (
+    <div className="server-form">
+      <div className="form-row">
+        <label className="form-field form-field-grow">
+          <span className="form-label">Host</span>
+          <input
+            className="form-input"
+            placeholder="203.0.113.10"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            disabled={connectionState?.status === "connected"}
+          />
+        </label>
+        <label className="form-field form-field-narrow">
+          <span className="form-label">Port</span>
+          <input
+            className="form-input"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            disabled={connectionState?.status === "connected"}
+          />
+        </label>
+      </div>
+
+      <div className="form-field">
+        <span className="form-label">1. Install the agent on that server</span>
+        <div className="code-block">
+          <span className="code-block-text">curl -fsSL {INSTALL_URL} | sudo sh</span>
+          <button
+            type="button"
+            className="code-block-copy"
+            onClick={() => handleCopy(`curl -fsSL ${INSTALL_URL} | sudo sh`)}
+            aria-label="Copy install command"
+          >
+            <Icon name="copy" size={14} />
+          </button>
+        </div>
+        <p className="form-note">
+          No release is published yet, so this exact URL isn't live — see
+          the project README. Once installed, come back here.
+        </p>
+      </div>
+
+      <div className="form-field">
+        <span className="form-label">2. Pair it</span>
+        {!code ? (
+          <>
+            <Button onClick={handleGenerate} disabled={busy || !host}>
+              <Icon name="key" size={16} />
+              Generate pairing code
+            </Button>
+            {backendError && (
+              <p className="form-note" style={{ color: "var(--danger)" }}>
+                {backendError}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="pairing-code-display">
+              <span className="pairing-code-value">{code}</span>
+              {connectionState?.status !== "connected" && remainingSeconds !== null && (
+                <span className={`pairing-code-timer ${remainingSeconds < 60 ? "pairing-code-timer-low" : ""}`}>
+                  {expired ? "Expired" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
+                </span>
+              )}
+            </div>
+
+            <div
+              className={`pairing-status ${
+                connectionState?.status === "connected"
+                  ? "pairing-status-connected"
+                  : connectionState?.status === "disconnected" && expired
+                  ? "pairing-status-error"
+                  : ""
+              }`}
+            >
+              {connectionState?.status === "connected" ? (
+                <>
+                  <Icon name="check" size={16} />
+                  Connected — agent {connectionState.agentVersion}
+                </>
+              ) : expired ? (
+                <>
+                  <Icon name="x" size={16} />
+                  Code expired — generate a new one
+                </>
+              ) : (
+                <>
+                  <span className="pairing-spinner" />
+                  Waiting for agent on the server to connect...
+                </>
+              )}
+            </div>
+
+            {connectionState?.status !== "connected" && (
+              <Button variant="secondary" onClick={handleGenerate} disabled={busy || !host}>
+                Generate new code
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+
+      {connectionState?.status === "connected" && (
+        <div className="form-actions">
+          <Button onClick={onPaired}>Done</Button>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -2,3 +2,4 @@
 // hidden `__cmd__*` items the `#[tauri::command]` macro emits alongside
 // each function — those only resolve through the function's real path.
 pub mod app_commands;
+pub mod pairing_commands;
