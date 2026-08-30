@@ -1,0 +1,176 @@
+<div align="center">
+
+# VibeSSH
+
+**A hybrid SSH/SFTP desktop client for Linux servers.**
+Fast in SSH mode, no install required — superpowered with an optional Rust agent.
+
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE.txt)
+![Status](https://img.shields.io/badge/status-early%20development-orange)
+
+</div>
+
+---
+
+VibeSSH is a desktop app (Tauri + React + TypeScript + Rust) that plays the
+role of Termius + WinSCP + htop + a lightweight Pterodactyl-style panel, but
+as a native desktop client instead of a web panel.
+
+It connects to your servers in one of two modes:
+
+- **SSH Mode** — plain SSH/SFTP. Nothing to install on the server, works
+  with any box you can already `ssh` into.
+- **Agent Mode** — pair an optional `vibe-agent` daemon on the server for
+  realtime metrics, logs, and a more capable terminal, without giving up
+  SSH Mode's simplicity for servers where you'd rather not install anything.
+
+The frontend never knows which mode it's talking to — both go through the
+same `ServerConnection` interface on the Rust side.
+
+## Modules
+
+- **VibeSSH Terminal** — interactive, multi-session SSH terminal
+- **VibeSSH Files** — SFTP file manager
+- **VibeSSH Monitor** — dashboard, process manager, systemd, Docker, ports
+- **VibeSSH Actions** — scripted multi-step quick actions
+- **VibeSSH Pro** — advanced features (incl. a Minecraft server module)
+
+## Roadmap
+
+- [x] App shell — layout, routing, design system, reusable components
+- [x] Connection model + transport abstraction (`ServerConnection` trait)
+- [x] Vibe Agent skeleton — standalone daemon, durable identity, no network yet
+- [ ] Desktop ↔ Agent protocol (HTTPS + WebSocket, realtime events)
+- [ ] Agent pairing (one-time code, no manual API tokens)
+- [ ] SSH transport implementation
+- [ ] Server storage (SQLite + OS keyring for credentials)
+- [ ] Terminal, SFTP, process manager, systemd, Docker
+- [ ] Capability-aware UI, realtime metrics dashboard
+- [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
+- [ ] Private host mesh — future, architecture reserved for it, not built yet
+
+Built in stages on purpose — each one lands as something that actually runs
+and can be tested, not a partial slice of a bigger unfinished feature.
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org) 18+
+- [Rust](https://rustup.rs) (stable toolchain)
+- On Windows: [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) runtime (preinstalled on modern Windows 10/11)
+- On Windows: MSVC build tools (`winget install Microsoft.VisualStudio.2022.BuildTools` with the C++ workload) — required by Rust, not specific to this project
+
+## Getting started
+
+```bash
+./scripts/setup.ps1        # check prerequisites, npm install
+./scripts/setup.ps1 -Dev   # run the desktop app in dev mode
+./scripts/setup.ps1 -Build # build the Windows installer
+```
+
+Or manually:
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Try the agent on its own (no desktop app needed):
+
+```bash
+cargo run -p vibe-agent   # Ctrl+C to stop
+```
+
+## Project structure
+
+```
+Cargo.toml                  Workspace root (members: src-tauri, agent)
+
+src/                        Frontend (React + TypeScript)
+  components/
+    layout/                 Sidebar, Topbar, AppLayout
+    ui/                     Reusable design-system components
+  pages/                    Dashboard, Servers, Settings
+  hooks/
+  services/                 Tauri command wrappers
+  stores/                   Zustand stores
+  types/
+  config/                   Navigation/module config
+
+src-tauri/                  Desktop backend (Rust, Tauri)
+  src/
+    commands/                Tauri command entry points (thin)
+    services/                 Business logic
+    models/                    DTOs shared with the frontend (incl. Server/ConnectionMode)
+    errors/                     Shared AppError/AppResult
+    state/                       AppState
+    transport/                    ServerConnection trait + shared DTOs (CommandOutput, ServerMetrics, ProcessInfo)
+    ssh/                            Reserved for SshTransport impl
+    storage/                          Reserved for server repository + secrets
+  icons/                       App icon set (placeholder — see below)
+
+agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
+  src/
+    main.rs                   Entry point: identity, startup log, idle loop
+    identity.rs                 Durable UUID, persisted to disk
+    info.rs                       AgentInfo DTO (id/version/hostname/os/status)
+    config.rs                       Data/config dir resolution
+    errors.rs                        AgentError/AgentResult (own type, not shared with desktop)
+    capabilities.rs                   Reserved for capability reporting
+    pairing/                            Reserved for the pairing flow
+    transport/                           Reserved for the desktop<->agent protocol
+
+scripts/
+  setup.ps1                  Setup/build launcher
+
+installer/
+  header.bmp                 NSIS wizard header banner (150x57)
+  sidebar.bmp                NSIS wizard Welcome/Finish page art (164x314)
+
+LICENSE.txt                  Shown on the installer's license page
+```
+
+## Installer wizard
+
+`npm run tauri build` (or `./scripts/setup.ps1 -Build`) produces a real
+Windows installer wizard via NSIS — not a custom-built one, Tauri generates
+it from `src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
+
+1. Language selector (Polish / English)
+2. Welcome page (branded with `installer/sidebar.bmp`)
+3. License page (`LICENSE.txt` — full AGPL-3.0-or-later text)
+4. Install scope: just me / all users (`installMode: "both"`)
+5. Install directory
+6. Installing... progress
+7. Finish
+
+Output lands in `target/release/bundle/nsis/*.exe` (workspace-root target
+dir, since `agent/` made this a Cargo workspace). To restyle it, edit the
+`nsis` block in `tauri.conf.json` or swap `installer/header.bmp` and
+`installer/sidebar.bmp` (keep the exact pixel sizes — NSIS requires them).
+For anything the config can't express, Tauri supports a fully custom `.nsi`
+template via `nsis.template`.
+
+## Icon
+
+`src-tauri/icons/` currently holds a placeholder generated from
+`public/vibessh-mark.svg`. Drop the real VibeSSH mark in as a single square
+PNG (ideally 1024x1024) and regenerate the full set with the Tauri CLI:
+
+```bash
+npm run tauri icon path/to/vibessh-icon.png
+```
+
+This overwrites `src-tauri/icons/*` with correctly sized PNG/ICO/ICNS files.
+Update `public/vibessh-mark.svg` (used in the sidebar) separately if you
+swap the mark.
+
+## License
+
+VibeSSH is open source, licensed under the [GNU AGPL v3.0 or later](LICENSE.txt).
+In short: if you run a modified version as a network service, you must make
+that version's source available to its users, and any redistribution stays
+under the same license.
+
+UI/UX takes inspiration from other open-source terminal clients (e.g.
+[Voltius](https://github.com/VoltiusApp/voltius), also AGPL-3.0) but is
+implemented as original code — ideas, not vendored code.

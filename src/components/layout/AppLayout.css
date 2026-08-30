@@ -1,0 +1,20 @@
+.app-layout {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface-bg);
+}
+
+.app-layout-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.app-layout-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}

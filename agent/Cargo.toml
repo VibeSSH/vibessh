@@ -1,0 +1,23 @@
+[package]
+name = "vibe-agent"
+version.workspace = true
+description = "VibeSSH Agent - lightweight daemon for realtime server management"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vibe-agent"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "time"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+env_logger = "0.11"
+hostname = "0.4"
+os_info = "3"
+dirs = "5"

@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri", "agent"]
+
+# Desktop app (src-tauri) and Vibe Agent (agent) are independent binaries —
+# the agent never depends on Tauri, the desktop never depends on the agent.
+# This table only pins shared dependency versions so they don't drift.
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+log = "0.4"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
