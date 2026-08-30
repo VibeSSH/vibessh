@@ -2,6 +2,7 @@ mod app_info;
 mod application;
 mod blueprint;
 mod cloud;
+mod database;
 mod server;
 
 pub use app_info::AppInfo;
@@ -11,6 +12,7 @@ pub use application::{
     SetResourceLimitsInput, UpdateApplicationInput,
 };
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType};
+pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
 pub use cloud::{
     CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,
     CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile,

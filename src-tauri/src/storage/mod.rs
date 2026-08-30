@@ -7,5 +7,6 @@
 pub mod application_repository;
 pub mod cloud_config;
 pub mod credentials;
+pub mod database_repository;
 pub mod migrations;
 pub mod server_repository;

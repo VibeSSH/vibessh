@@ -123,6 +123,50 @@ pub fn migrations() -> Migrations<'static> {
             ALTER TABLE applications ADD COLUMN health_check_port_id TEXT REFERENCES application_ports(id) ON DELETE SET NULL;
             ALTER TABLE applications ADD COLUMN health_check_http_path TEXT;",
         ),
+        // Migration 4: Application Databases - Phase 11 *foundation only*
+        // (docs/APPLICATIONS_ARCHITECTURE.md Section 12 / Section 10 phase
+        // list). Schema + types land here; the actual provisioning
+        // (`mysql`/`mariadb` CLI execution over SSH), the phpMyAdmin
+        // Blueprint, and the Databases tab UI are deliberately not built
+        // yet - these tables exist so that later work has real, tested
+        // storage rather than designing it from scratch. `server_id`
+        // nullable (a shared/external DB host that isn't itself a VibeSSH
+        // Server stays representable) and ON DELETE RESTRICT (same
+        // reasoning `applications.server_id` already uses - a Server with a
+        // database host attached must not become deletable out from under
+        // it by accident). `admin_password`/the generated per-database
+        // user's password both live in the OS keyring
+        // (storage::credentials, SecretKind::DatabaseHostAdmin /
+        // SecretKind::ApplicationDatabaseUser), keyed by each row's own id -
+        // never a column here, same rule every other secret in this
+        // codebase follows.
+        M::up(
+            "CREATE TABLE database_hosts (
+                id                         TEXT PRIMARY KEY,
+                server_id                  TEXT REFERENCES servers(id) ON DELETE RESTRICT,
+                name                       TEXT NOT NULL,
+                engine                     TEXT NOT NULL,
+                host                       TEXT NOT NULL,
+                port                       INTEGER NOT NULL DEFAULT 3306,
+                admin_username             TEXT NOT NULL,
+                phpmyadmin_application_id  TEXT REFERENCES applications(id) ON DELETE SET NULL,
+                created_at                 TEXT NOT NULL,
+                updated_at                 TEXT NOT NULL
+            );
+            CREATE INDEX database_hosts_server_id_idx ON database_hosts (server_id);
+
+            CREATE TABLE application_databases (
+                id                TEXT PRIMARY KEY,
+                application_id    TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                database_host_id  TEXT NOT NULL REFERENCES database_hosts(id) ON DELETE RESTRICT,
+                database_name     TEXT NOT NULL,
+                username          TEXT NOT NULL,
+                connections_from  TEXT NOT NULL DEFAULT '%',
+                created_at        TEXT NOT NULL,
+                UNIQUE(database_host_id, database_name)
+            );
+            CREATE INDEX application_databases_application_id_idx ON application_databases (application_id);",
+        ),
     ])
 }
 
@@ -198,6 +242,83 @@ mod tests {
         assert_eq!(health_check_type, "process");
         assert_eq!(port_id, None);
         assert_eq!(http_path, None);
+    }
+
+    #[test]
+    fn migration_4_creates_the_database_tables_with_a_working_uniqueness_constraint() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('database_hosts', 'application_databases')",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 2);
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO database_hosts (id, name, engine, host, port, admin_username, created_at, updated_at)
+             VALUES ('h1', 'Main DB host', 'mysql', '127.0.0.1', 3306, 'root', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d1', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user', '%', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // Same database_host_id + database_name again must be rejected - the
+        // UNIQUE constraint is what `database_repository` relies on instead
+        // of doing its own pre-check race.
+        let duplicate = conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d2', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user_2', '%', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn a_database_host_with_a_provisioned_database_cannot_be_deleted() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO database_hosts (id, name, engine, host, port, admin_username, created_at, updated_at)
+             VALUES ('h1', 'Main DB host', 'mysql', '127.0.0.1', 3306, 'root', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d1', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user', '%', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let err = conn.execute("DELETE FROM database_hosts WHERE id = 'h1'", ()).unwrap_err();
+        let rusqlite::Error::SqliteFailure(sqlite_err, message) = &err else {
+            panic!("expected a SqliteFailure, got {err:?}");
+        };
+        assert_eq!(sqlite_err.code, rusqlite::ErrorCode::ConstraintViolation);
+        assert!(message.as_deref().unwrap_or_default().contains("FOREIGN KEY"), "unexpected message: {message:?}");
     }
 
     #[test]

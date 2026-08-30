@@ -23,6 +23,14 @@ pub enum SecretKind {
     SshPassword,
     /// Passphrase for an SSH private key file, when the key has one.
     SshKeyPassphrase,
+    /// A `DatabaseHost`'s admin password (Phase 11 foundation - see
+    /// `models::database`) - keyed by the `DatabaseHost`'s own `id`, not a
+    /// server id, but `store_secret`/`load_secret`/`delete_secret` take any
+    /// `Uuid` as that namespace regardless of what kind of row it names.
+    DatabaseHostAdmin,
+    /// A generated `ApplicationDatabase` user's password (Phase 11
+    /// foundation) - keyed by the `ApplicationDatabase`'s own `id`.
+    ApplicationDatabaseUser,
 }
 
 impl SecretKind {
@@ -31,6 +39,8 @@ impl SecretKind {
             SecretKind::AgentCredential => "agent-credential",
             SecretKind::SshPassword => "ssh-password",
             SecretKind::SshKeyPassphrase => "ssh-key-passphrase",
+            SecretKind::DatabaseHostAdmin => "database-host-admin",
+            SecretKind::ApplicationDatabaseUser => "application-database-user",
         }
     }
 }
@@ -190,5 +200,26 @@ mod tests {
         );
         // The third kind was never written for this server id.
         assert_eq!(load_secret(server_id, SecretKind::SshKeyPassphrase).unwrap(), None);
+    }
+
+    #[test]
+    fn database_secret_kinds_store_load_and_delete_via_the_real_os_keyring() {
+        let _guard = lock();
+        let host_id = Uuid::new_v4();
+        let database_id = Uuid::new_v4();
+        let _cleanup_host = Cleanup(host_id, SecretKind::DatabaseHostAdmin);
+        let _cleanup_database = Cleanup(database_id, SecretKind::ApplicationDatabaseUser);
+
+        store_secret(host_id, SecretKind::DatabaseHostAdmin, "admin-password").unwrap();
+        store_secret(database_id, SecretKind::ApplicationDatabaseUser, "generated-user-password").unwrap();
+
+        assert_eq!(load_secret(host_id, SecretKind::DatabaseHostAdmin).unwrap(), Some("admin-password".to_string()));
+        assert_eq!(
+            load_secret(database_id, SecretKind::ApplicationDatabaseUser).unwrap(),
+            Some("generated-user-password".to_string())
+        );
+
+        delete_secret(host_id, SecretKind::DatabaseHostAdmin).unwrap();
+        assert_eq!(load_secret(host_id, SecretKind::DatabaseHostAdmin).unwrap(), None);
     }
 }
