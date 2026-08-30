@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -19,6 +19,7 @@ pub mod jwt;
 pub mod models;
 pub mod password;
 pub mod refresh_token;
+pub mod teams;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -55,6 +56,10 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        .route("/teams", post(teams::create_team).get(teams::list_teams))
+        .route("/teams/:team_id", get(teams::get_team).delete(teams::delete_team))
+        .route("/teams/:team_id/members", get(teams::list_members).post(teams::add_member))
+        .route("/teams/:team_id/members/:user_id", delete(teams::remove_member))
         .with_state(state)
 }
 

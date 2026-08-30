@@ -60,3 +60,34 @@ pub struct AuthResponse {
     pub access_token_expires_at: i64,
     pub refresh_token: String,
 }
+
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Team {
+    pub id: Uuid,
+    pub name: String,
+    pub owner_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A row from `team_members` joined against `users` - everything a member
+/// list needs to render without a second round trip per row.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMember {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub joined_at: DateTime<Utc>,
+    pub is_owner: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTeamRequest {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+pub struct AddMemberRequest {
+    pub email: String,
+}

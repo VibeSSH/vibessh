@@ -9,7 +9,14 @@ use serde::Serialize;
 #[derive(Debug)]
 pub enum ApiError {
     InvalidInput(String),
+    /// Not authenticated at all, or the credentials/token presented are
+    /// invalid - a client seeing this is expected to try to re-authenticate.
     Unauthorized(String),
+    /// Authenticated as someone real, but that person isn't allowed to do
+    /// this - re-authenticating would never fix it, so this must never be
+    /// confused with Unauthorized (a client that retries a 401 by
+    /// refreshing tokens would just get the same 403 again).
+    Forbidden(String),
     Conflict(String),
     NotFound(String),
     /// The message here is for the server log only - `IntoResponse` never
@@ -23,6 +30,7 @@ impl std::fmt::Display for ApiError {
         match self {
             ApiError::InvalidInput(msg) => write!(f, "invalid input: {msg}"),
             ApiError::Unauthorized(msg) => write!(f, "unauthorized: {msg}"),
+            ApiError::Forbidden(msg) => write!(f, "forbidden: {msg}"),
             ApiError::Conflict(msg) => write!(f, "conflict: {msg}"),
             ApiError::NotFound(msg) => write!(f, "not found: {msg}"),
             ApiError::Internal(msg) => write!(f, "internal error: {msg}"),
@@ -43,6 +51,7 @@ impl IntoResponse for ApiError {
         let (status, kind, message) = match self {
             ApiError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, "invalid_input", msg),
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "unauthorized", msg),
+            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, "forbidden", msg),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, "not_found", msg),
             ApiError::Internal(msg) => {
