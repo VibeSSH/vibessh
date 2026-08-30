@@ -45,6 +45,16 @@ pub fn list_servers(repo: &ServerRepository) -> AppResult<Vec<Server>> {
     repo.list()
 }
 
+pub fn upsert_agent_server(repo: &ServerRepository, name: &str, host: &str, agent_id: Uuid) -> AppResult<Server> {
+    if name.trim().is_empty() {
+        return Err(AppError::InvalidInput("server name cannot be empty".into()));
+    }
+    if host.trim().is_empty() {
+        return Err(AppError::InvalidInput("host cannot be empty".into()));
+    }
+    repo.upsert_agent(name, host, agent_id)
+}
+
 fn persist_secrets(id: Uuid, input: &ServerInput) -> AppResult<()> {
     if let Some(password) = non_blank(&input.password) {
         credentials::store_secret(id, SecretKind::SshPassword, password)?;
@@ -184,6 +194,21 @@ mod tests {
         );
 
         let _ = credentials::delete_secret(server.id, SecretKind::SshPassword);
+    }
+
+    #[test]
+    fn upsert_agent_server_rejects_an_empty_name() {
+        let repo = temp_repo();
+        let err = upsert_agent_server(&repo, "  ", "203.0.113.20", Uuid::new_v4()).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn upsert_agent_server_persists_a_real_row() {
+        let repo = temp_repo();
+        let agent_id = Uuid::new_v4();
+        let server = upsert_agent_server(&repo, "Prod Agent", "203.0.113.20", agent_id).unwrap();
+        assert_eq!(get_server(&repo, server.id).unwrap().agent_id, Some(agent_id));
     }
 
     #[test]

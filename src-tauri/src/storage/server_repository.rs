@@ -124,6 +124,74 @@ impl ServerRepository {
         Ok(server)
     }
 
+    /// Persists an agent-paired server, the missing piece behind Etap H's
+    /// own "still only show for the current session" note (see README) -
+    /// the schema already had `connection_mode`/`agent_id`/`agent_status`
+    /// columns from day one, this was just never called for anything but
+    /// `ConnectionMode::Ssh`. Upserts by `agent_id` rather than always
+    /// inserting, so re-pairing an already-known agent updates its existing
+    /// row instead of creating a duplicate. `agent_status` is always stored
+    /// as `Disconnected` here regardless of the live connection this call
+    /// is racing to record - the value that matters at *this* moment lives
+    /// in the frontend's session-only Zustand store; what's written to disk
+    /// only gets read back after the process (and every live connection
+    /// with it) is long gone, so `Connected` would be a stale lie by the
+    /// time anything reads it again.
+    pub fn upsert_agent(&self, name: &str, host: &str, agent_id: Uuid) -> AppResult<Server> {
+        if let Some(existing) = self.get_by_agent_id(agent_id)? {
+            let updated = Server {
+                name: name.to_string(),
+                host: host.to_string(),
+                agent_status: Some(AgentStatus::Disconnected),
+                updated_at: Utc::now(),
+                ..existing
+            };
+            let conn = self.lock();
+            conn.execute(
+                "UPDATE servers SET name = ?2, host = ?3, agent_status = ?4, updated_at = ?5 WHERE id = ?1",
+                params![
+                    updated.id.to_string(),
+                    updated.name,
+                    updated.host,
+                    agent_status_to_str(AgentStatus::Disconnected),
+                    updated.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to update agent server: {err}")))?;
+            return Ok(updated);
+        }
+
+        let now = Utc::now();
+        let server = Server {
+            id: Uuid::new_v4(),
+            name: name.to_string(),
+            host: host.to_string(),
+            // Not meaningful for agent mode - the WebSocket connection this
+            // server uses has its own port, negotiated during pairing, not
+            // stored per-row. Zero/empty are the same "not applicable"
+            // sentinel these NOT NULL columns already use nowhere else.
+            ssh_port: 0,
+            username: String::new(),
+            authentication_type: AuthenticationType::Password,
+            private_key_path: None,
+            connection_mode: ConnectionMode::Agent,
+            agent_id: Some(agent_id),
+            agent_status: Some(AgentStatus::Disconnected),
+            group_id: None,
+            created_at: now,
+            updated_at: now,
+        };
+        self.insert(&server)?;
+        Ok(server)
+    }
+
+    fn get_by_agent_id(&self, agent_id: Uuid) -> AppResult<Option<Server>> {
+        self.lock()
+            .query_row(&format!("{SELECT_COLUMNS} FROM servers WHERE agent_id = ?1"), params![agent_id.to_string()], row_to_server)
+            .optional()
+            .map_err(|err| AppError::Storage(format!("failed to look up server by agent id: {err}")))
+    }
+
     fn insert(&self, server: &Server) -> AppResult<()> {
         let conn = self.lock();
         conn.execute(
@@ -440,6 +508,43 @@ mod tests {
         drop(repo);
         let repo_again = ServerRepository::open(&path).expect("re-opening the now-migrated database should not fail");
         assert_eq!(repo_again.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn upsert_agent_creates_a_row_that_survives_a_reopen() {
+        let path = std::env::temp_dir().join(format!("vibessh-agent-test-{}.sqlite3", Uuid::new_v4()));
+        let agent_id = Uuid::new_v4();
+        {
+            let repo = ServerRepository::open(&path).unwrap();
+            let server = repo.upsert_agent("Prod Agent", "203.0.113.20", agent_id).unwrap();
+            assert_eq!(server.connection_mode, ConnectionMode::Agent);
+            assert_eq!(server.agent_id, Some(agent_id));
+            assert_eq!(server.agent_status, Some(AgentStatus::Disconnected));
+        }
+
+        // Reopening simulates the next app launch - the row must still be
+        // there, which is exactly the gap this method closes (previously
+        // agent-paired servers only ever lived in the frontend's in-memory
+        // store, gone the moment the app closed).
+        let repo = ServerRepository::open(&path).unwrap();
+        let servers = repo.list().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "Prod Agent");
+        assert_eq!(servers[0].agent_id, Some(agent_id));
+    }
+
+    #[test]
+    fn upsert_agent_on_an_already_known_agent_id_updates_instead_of_duplicating() {
+        let repo = temp_repository();
+        let agent_id = Uuid::new_v4();
+        let first = repo.upsert_agent("Old Name", "203.0.113.20", agent_id).unwrap();
+
+        let second = repo.upsert_agent("New Name", "203.0.113.21", agent_id).unwrap();
+        assert_eq!(second.id, first.id, "re-pairing the same agent should update its row, not create a new one");
+        assert_eq!(second.name, "New Name");
+        assert_eq!(second.host, "203.0.113.21");
+
+        assert_eq!(repo.list().unwrap().len(), 1);
     }
 
     #[test]

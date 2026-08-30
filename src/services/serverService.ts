@@ -21,6 +21,11 @@ export function listServers(): Promise<ServerSummary[]> {
   return callCommand<ServerSummary[]>("list_servers");
 }
 
+/** Persists an agent-paired server to the local SQLite store, same as SSH-mode servers already were - previously these only ever lived in the session-only Zustand store and vanished on app restart. Upserts by agent id, so re-pairing an already-known agent updates its existing row instead of creating a duplicate. */
+export function upsertAgentServer(name: string, host: string, agentId: string): Promise<ServerSummary> {
+  return callCommand<ServerSummary>("upsert_agent_server", { name, host, agentId });
+}
+
 export function createServer(input: ServerFormInput): Promise<ServerSummary> {
   return callCommand<ServerSummary>("create_server", { input });
 }

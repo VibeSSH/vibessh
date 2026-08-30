@@ -10,7 +10,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import type { CloudServer } from "@/types/cloud";
 import "./ServersSection.css";
 
-export function ServersSection({ teamId }: { teamId: string }) {
+export function ServersSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
   const { t } = useTranslation();
   const [servers, setServers] = useState<CloudServer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,43 +85,47 @@ export function ServersSection({ teamId }: { teamId: string }) {
                   {server.host}:{server.sshPort}
                 </span>
               </div>
-              <button
-                className="server-list-action"
-                title={t("teamServers.removeAria", { name: server.name })}
-                aria-label={t("teamServers.removeAria", { name: server.name })}
-                onClick={() => handleDelete(server)}
-              >
-                <Icon name="trash" size={14} />
-              </button>
+              {canManage && (
+                <button
+                  className="server-list-action"
+                  title={t("teamServers.removeAria", { name: server.name })}
+                  aria-label={t("teamServers.removeAria", { name: server.name })}
+                  onClick={() => handleDelete(server)}
+                >
+                  <Icon name="trash" size={14} />
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
 
-      <form className="team-servers-form" onSubmit={handleCreate}>
-        <div className="team-servers-form-row">
-          <input className="form-input" placeholder={t("teamServers.namePlaceholder")} value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="form-input" placeholder={t("teamServers.hostPlaceholder")} value={host} onChange={(e) => setHost(e.target.value)} />
-          <input
-            className="form-input team-servers-port-input"
-            placeholder={t("teamServers.portPlaceholder")}
-            value={sshPort}
-            onChange={(e) => setSshPort(e.target.value)}
-            inputMode="numeric"
-          />
-          <input
-            className="form-input"
-            placeholder={t("teamServers.usernamePlaceholder")}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <Button type="submit" disabled={saving || !name.trim() || !host.trim()}>
-            <Icon name="plus" size={14} />
-            {saving ? t("common.loading") : t("teamServers.add")}
-          </Button>
-        </div>
-        <p className="form-note">{t("teamServers.noSecretsNote")}</p>
-      </form>
+      {canManage && (
+        <form className="team-servers-form" onSubmit={handleCreate}>
+          <div className="team-servers-form-row">
+            <input className="form-input" placeholder={t("teamServers.namePlaceholder")} value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="form-input" placeholder={t("teamServers.hostPlaceholder")} value={host} onChange={(e) => setHost(e.target.value)} />
+            <input
+              className="form-input team-servers-port-input"
+              placeholder={t("teamServers.portPlaceholder")}
+              value={sshPort}
+              onChange={(e) => setSshPort(e.target.value)}
+              inputMode="numeric"
+            />
+            <input
+              className="form-input"
+              placeholder={t("teamServers.usernamePlaceholder")}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            <Button type="submit" disabled={saving || !name.trim() || !host.trim()}>
+              <Icon name="plus" size={14} />
+              {saving ? t("common.loading") : t("teamServers.add")}
+            </Button>
+          </div>
+          <p className="form-note">{t("teamServers.noSecretsNote")}</p>
+        </form>
+      )}
     </Card>
   );
 }

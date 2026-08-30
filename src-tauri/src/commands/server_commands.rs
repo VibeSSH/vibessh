@@ -30,3 +30,8 @@ pub fn get_server(repo: State<ServerRepository>, id: Uuid) -> AppResult<Server> 
 pub fn list_servers(repo: State<ServerRepository>) -> AppResult<Vec<Server>> {
     services::list_servers(&repo)
 }
+
+#[tauri::command]
+pub fn upsert_agent_server(repo: State<ServerRepository>, name: String, host: String, agent_id: Uuid) -> AppResult<Server> {
+    services::upsert_agent_server(&repo, &name, &host, agent_id)
+}

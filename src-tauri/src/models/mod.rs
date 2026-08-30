@@ -4,7 +4,7 @@ mod server;
 
 pub use app_info::AppInfo;
 pub use cloud::{
-    CloudAuthResponse, CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo, CloudTeam, CloudTeamMember,
-    CloudUserProfile,
+    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,
+    CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 pub use server::{AgentStatus, AuthenticationType, ConnectionMode, Server, ServerInput};

@@ -73,6 +73,7 @@ pub fn run() {
             commands::server_commands::delete_server,
             commands::server_commands::get_server,
             commands::server_commands::list_servers,
+            commands::server_commands::upsert_agent_server,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
             commands::ssh_commands::ping_server,
@@ -121,6 +122,15 @@ pub fn run() {
             commands::cloud_commands::cloud_list_servers,
             commands::cloud_commands::cloud_create_server,
             commands::cloud_commands::cloud_delete_server,
+            commands::cloud_commands::cloud_my_permissions,
+            commands::cloud_commands::cloud_remove_member,
+            commands::cloud_commands::cloud_delete_team,
+            commands::cloud_commands::cloud_list_invitations,
+            commands::cloud_commands::cloud_create_invitation,
+            commands::cloud_commands::cloud_revoke_invitation,
+            commands::cloud_commands::cloud_accept_invitation,
+            commands::cloud_commands::cloud_decline_invitation,
+            commands::cloud_commands::cloud_list_audit_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

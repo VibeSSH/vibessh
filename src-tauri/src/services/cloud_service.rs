@@ -7,7 +7,10 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile};
+use crate::models::{
+    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo,
+    CloudTeam, CloudTeamMember, CloudUserProfile,
+};
 use crate::state::cloud_session::{CloudSession, CloudState};
 use crate::storage::credentials;
 
@@ -200,4 +203,64 @@ pub async fn delete_server(state: &CloudState, team_id: Uuid, server_id: Uuid) -
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;
     inner.client.delete_server(&token, team_id, server_id).await
+}
+
+pub async fn my_permissions(state: &CloudState, team_id: Uuid) -> AppResult<Vec<String>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.my_permissions(&token, team_id).await
+}
+
+pub async fn remove_member(state: &CloudState, team_id: Uuid, user_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.remove_member(&token, team_id, user_id).await
+}
+
+pub async fn delete_team(state: &CloudState, team_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.delete_team(&token, team_id).await
+}
+
+pub async fn list_invitations(state: &CloudState, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_invitations(&token, team_id).await
+}
+
+pub async fn create_invitation(
+    state: &CloudState,
+    team_id: Uuid,
+    email: &str,
+    role_id: Option<Uuid>,
+    expires_in_days: Option<i64>,
+) -> AppResult<CloudCreatedInvitation> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.create_invitation(&token, team_id, email, role_id, expires_in_days).await
+}
+
+pub async fn revoke_invitation(state: &CloudState, team_id: Uuid, invitation_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.revoke_invitation(&token, team_id, invitation_id).await
+}
+
+pub async fn accept_invitation(state: &CloudState, token: &str) -> AppResult<CloudTeam> {
+    let access_token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.accept_invitation(&access_token, token).await
+}
+
+pub async fn decline_invitation(state: &CloudState, token: &str) -> AppResult<()> {
+    let access_token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.decline_invitation(&access_token, token).await
+}
+
+pub async fn list_audit_events(state: &CloudState, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_audit_events(&token, team_id, limit, offset).await
 }

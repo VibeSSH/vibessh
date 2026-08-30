@@ -11,6 +11,7 @@ import {
   onAgentPairingState,
   startAgentPairing,
 } from "@/services/pairingService";
+import { upsertAgentServer } from "@/services/serverService";
 import type { AgentConnectionState } from "@/types/pairing";
 import type { ServerMetrics } from "@/types/serverEvent";
 import { CapabilityBadges } from "./CapabilityBadges";
@@ -53,12 +54,37 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
       })
       .catch(() => {});
 
-    const unlistenPromise = onAgentPairingState((state) => {
+    const unlistenPromise = onAgentPairingState(async (state) => {
       setConnectionState(state);
-      if (state.status === "connected") {
+      if (state.status !== "connected") return;
+
+      const name = host || state.agentId.slice(0, 8);
+      try {
+        // Persists a real row so this server survives past this session -
+        // previously agent-paired servers only ever lived in this
+        // component's own upsertServer call below, gone the moment the app
+        // closed (see README's own "still only show for the current
+        // session" note on Etap H).
+        const persisted = await upsertAgentServer(name, host, state.agentId);
+        upsertServer({
+          id: persisted.id,
+          name: persisted.name,
+          host: persisted.host,
+          connectionMode: "agent",
+          status: "online",
+          agentId: state.agentId,
+          agentVersion: state.agentVersion,
+          capabilities: state.capabilities,
+          createdAt: persisted.createdAt,
+        });
+      } catch {
+        // Persistence failed (e.g. this is running outside a real Tauri
+        // webview, as it does for this app's own browser-preview UI checks)
+        // - the live connection still works, just without surviving a
+        // restart, same as before this was ever persisted at all.
         upsertServer({
           id: state.agentId,
-          name: host || state.agentId.slice(0, 8),
+          name,
           host,
           connectionMode: "agent",
           status: "online",

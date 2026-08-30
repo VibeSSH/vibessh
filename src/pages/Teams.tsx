@@ -6,13 +6,14 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { cloudCreateTeam, cloudListTeams } from "@/services/cloudService";
+import { cloudAcceptInvitation, cloudCreateTeam, cloudDeclineInvitation, cloudListTeams } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudTeam } from "@/types/cloud";
 import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
 import "./Teams.css";
+import "@/components/servers/forms.css";
 
 export function Teams() {
   const { t } = useTranslation();
@@ -22,6 +23,9 @@ export function Teams() {
   const [error, setError] = useState<string | null>(null);
   const [newTeamName, setNewTeamName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [invitationToken, setInvitationToken] = useState("");
+  const [invitationBusy, setInvitationBusy] = useState(false);
+  const [invitationError, setInvitationError] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -52,12 +56,63 @@ export function Teams() {
     }
   }
 
+  async function handleAcceptInvitation() {
+    const token = invitationToken.trim();
+    if (!token) return;
+    setInvitationBusy(true);
+    setInvitationError(null);
+    try {
+      const team = await cloudAcceptInvitation(token);
+      setInvitationToken("");
+      toastSuccess(t("teams.acceptedInvitationToast", { name: team.name }));
+      load();
+    } catch (err) {
+      setInvitationError(err instanceof Error ? err.message : t("teams.couldntAcceptInvitation"));
+    } finally {
+      setInvitationBusy(false);
+    }
+  }
+
+  async function handleDeclineInvitation() {
+    const token = invitationToken.trim();
+    if (!token) return;
+    setInvitationBusy(true);
+    setInvitationError(null);
+    try {
+      await cloudDeclineInvitation(token);
+      setInvitationToken("");
+      toastSuccess(t("teams.declinedInvitationToast"));
+    } catch (err) {
+      setInvitationError(err instanceof Error ? err.message : t("teams.couldntDeclineInvitation"));
+    } finally {
+      setInvitationBusy(false);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-header">
         <h1 className="page-title">{t("teams.title")}</h1>
         <p className="page-subtitle">{t("teams.subtitle")}</p>
       </div>
+
+      <Card title={t("teams.acceptInvitationTitle")} subtitle={t("teams.acceptInvitationSubtitle")}>
+        <div className="teams-accept-row">
+          <input
+            className="form-input"
+            placeholder={t("teams.invitationTokenPlaceholder")}
+            value={invitationToken}
+            onChange={(e) => setInvitationToken(e.target.value)}
+          />
+          <Button type="button" variant="secondary" onClick={handleDeclineInvitation} disabled={invitationBusy || !invitationToken.trim()}>
+            {t("teams.decline")}
+          </Button>
+          <Button type="button" onClick={handleAcceptInvitation} disabled={invitationBusy || !invitationToken.trim()}>
+            {invitationBusy ? t("common.loading") : t("teams.accept")}
+          </Button>
+        </div>
+        {invitationError && <p className="form-note form-note-danger form-note-spaced">{invitationError}</p>}
+      </Card>
 
       <Card title={t("teams.createTitle")}>
         <form className="teams-create-row" onSubmit={handleCreate}>
