@@ -191,28 +191,56 @@ same `ServerConnection` interface on the Rust side.
       privileges that user would have typing the same command by hand -
       there's no separate elevation mechanism sitting in front of it to
       secure. What *does* need guarding is that a service name reaches a
-      remote shell command at all: `restart_service` validates it against
+      remote shell command at all: every verb funnels through one
+      `run_systemctl` helper that validates the unit name against
       systemd's own allowed character set and requires a `.service` suffix
       *before* it's ever spliced into a command string, so nothing shaped
-      like `nginx; rm -rf /` gets anywhere near a shell. `list_services`
-      combines `systemctl list-units`+`list-unit-files` in one round trip
-      to get active and enabled state together. The frontend lists every
-      service with a filter box and a restart button behind a confirm
-      dialog, reached from a lightning-bolt icon on each SSH server's row.
-      Covered by unit tests (rejects real injection payloads, parses a
-      realistic aligned `systemctl` listing correctly - this caught a real
-      parsing bug during development, where naive whitespace-splitting on
-      individually-aligned columns silently produced zero results) and a
-      one-off manual run against the project's real test server: listed
-      178 real service units with correct active/enabled state for four
-      known services (nginx, mariadb, docker, the vibessh-agent itself),
-      then created a disposable throwaway unit, restarted it for real
-      through this exact code path, and confirmed cleanup left no trace -
-      nothing already running on that shared box was ever touched
+      like `nginx; rm -rf /` gets anywhere near a shell. Beyond restart,
+      the module now exposes start/stop/enable/disable per unit
+      (`enable_service` runs `systemctl enable --now` in one round trip,
+      since "enable" alone would leave a unit stopped until next boot -
+      not what clicking Enable on a currently-inspected unit implies).
+      `list_services` combines `systemctl list-units`+`list-unit-files` in
+      one round trip to get active and enabled state together - and builds
+      its result from `list-unit-files` (the complete, load-state-
+      independent universe of every unit systemd knows about from a file)
+      enriched with `list-units`, rather than the other way around. That
+      ordering matters: `list-units --all` only shows units systemd
+      currently has *loaded in memory*, and a stopped `oneshot`/
+      `RemainAfterExit` unit gets garbage-collected out of that list even
+      with `--all`, despite its file still being on disk. The original
+      implementation iterated from `list-units` and merely enriched with
+      enabled-state, so a unit that had just been stopped and disabled
+      would silently vanish from what the UI showed - caught by a real
+      end-to-end run (see below), not the unit tests, since the original
+      test fixtures happened to always keep every sample unit "loaded".
+      The frontend lists every service with a filter box and start/stop,
+      restart, and enable/disable icon buttons, each behind a confirm
+      dialog (destructive verbs - stop, disable - get the danger button
+      styling; start/restart/enable don't), reached from each SSH server's
+      row. Covered by unit tests (rejects real injection payloads, parses
+      a realistic aligned `systemctl` listing correctly - this caught a
+      real parsing bug during development, where naive whitespace-
+      splitting on individually-aligned columns silently produced zero
+      results; a dedicated test also covers a unit real but not currently
+      loaded, the exact shape of the list-unit-files-vs-list-units bug) and
+      two rounds of manual verification against the project's real test
+      server: first the original listing/restart run (178 real service
+      units with correct active/enabled state for four known services),
+      then a full lifecycle run driving a disposable throwaway unit through
+      start → enable → disable → stop and asserting the reported state
+      after each step, which is what caught the list-vanishing bug above -
+      the fix was verified by rerunning the same lifecycle end to end
+      afterward and confirming the unit stayed visible with correct state
+      throughout. Cleanup independently re-checked afterward
+      (`systemctl list-unit-files` for the throwaway unit) confirms nothing
+      already running on that shared box was ever touched and no trace was
+      left behind
 - [x] Docker quick actions (Actions module) — same reasoning as the systemd
       half: no separate elevation mechanism, `docker restart <container>`
       over SSH runs with exactly the privileges (or `docker` group
-      membership) the authenticated user already has. `restart_container`
+      membership) the authenticated user already has. Every verb (start,
+      stop, restart, remove) funnels through one `run_docker` helper that
       validates the container name/ID against Docker's own allowed
       character set before it's ever spliced into a shell command, exactly
       like `systemd.rs`'s unit-name validation. `list_containers` uses
@@ -220,16 +248,21 @@ same `ServerConnection` interface on the Rust side.
       {{.State}}'` - a `|` delimiter rather than a template `\t` escape
       (not guaranteed to survive a shell round trip the same way a literal
       character does), safe because neither Docker names nor image
-      references can ever contain one. The Actions page gained a second
-      section, Docker containers, sharing the same restart-behind-a-confirm-
-      dialog UI as the systemd section. Covered by unit tests (injection
-      rejection, parsing a realistic multi-container listing) and a one-off
-      manual run against the project's real test server: listed 5 real
+      references can ever contain one. The Actions page's Docker
+      containers section shares the same icon-button-behind-a-confirm-
+      dialog UI as the systemd section (start/stop toggle, restart,
+      remove - remove is styled as destructive, since it deletes the
+      container rather than just stopping it). Covered by unit tests
+      (injection rejection, parsing a realistic multi-container listing)
+      and two rounds of manual verification against the project's real
+      test server: first the original listing/restart run (5 real
       Pterodactyl-managed Minecraft server containers with correct image/
-      status/running state, then created a disposable throwaway container,
-      restarted it for real through this exact code path, and confirmed
-      cleanup left no trace - nothing already running on that shared box
-      was touched
+      status/running state), then a full lifecycle run - `docker create`
+      a disposable throwaway container, then start → assert running,
+      stop → assert not running, remove → assert gone from
+      `list_containers()` - all through this exact code path. Cleanup
+      independently re-checked afterward confirms nothing already running
+      on that shared box was touched
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -329,7 +362,7 @@ src/                        Frontend (React + TypeScript)
                             Files (/files/:serverId - breadcrumb-navigable directory browser),
                             Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview),
                             Actions (/actions/:serverId - systemd services + Docker containers,
-                            both restart-behind-a-confirm-dialog)
+                            start/stop/restart/enable-disable/remove, each behind a confirm dialog)
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
                             terminalService.ts, filesService.ts, monitorService.ts, actionsService.ts)

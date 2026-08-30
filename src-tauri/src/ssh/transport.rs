@@ -30,12 +30,40 @@ impl ServerConnection for SshSession {
         self.restart_service(service_name).await
     }
 
+    async fn start_service(&self, service_name: &str) -> AppResult<()> {
+        self.start_service(service_name).await
+    }
+
+    async fn stop_service(&self, service_name: &str) -> AppResult<()> {
+        self.stop_service(service_name).await
+    }
+
+    async fn enable_service(&self, service_name: &str) -> AppResult<()> {
+        self.enable_service(service_name).await
+    }
+
+    async fn disable_service(&self, service_name: &str) -> AppResult<()> {
+        self.disable_service(service_name).await
+    }
+
     async fn list_containers(&self) -> AppResult<Vec<ContainerSummary>> {
         self.list_containers().await
     }
 
     async fn restart_container(&self, container: &str) -> AppResult<()> {
         self.restart_container(container).await
+    }
+
+    async fn start_container(&self, container: &str) -> AppResult<()> {
+        self.start_container(container).await
+    }
+
+    async fn stop_container(&self, container: &str) -> AppResult<()> {
+        self.stop_container(container).await
+    }
+
+    async fn remove_container(&self, container: &str) -> AppResult<()> {
+        self.remove_container(container).await
     }
 
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {

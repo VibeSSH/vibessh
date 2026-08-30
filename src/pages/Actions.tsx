@@ -6,10 +6,17 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import {
+  disableServerService,
+  enableServerService,
   listServerContainers,
   listServerServices,
+  removeServerContainer,
   restartServerContainer,
   restartServerService,
+  startServerContainer,
+  startServerService,
+  stopServerContainer,
+  stopServerService,
 } from "@/services/actionsService";
 import { useServersStore } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
@@ -21,9 +28,49 @@ import "@/components/servers/forms.css";
 
 const MAX_ROWS_SHOWN = 200;
 
-type PendingRestart =
-  | { kind: "service"; name: string }
-  | { kind: "container"; name: string };
+type ServiceVerb = "start" | "stop" | "restart" | "enable" | "disable";
+type ContainerVerb = "start" | "stop" | "restart" | "remove";
+
+type PendingAction =
+  | { kind: "service"; name: string; verb: ServiceVerb }
+  | { kind: "container"; name: string; verb: ContainerVerb };
+
+const VERB_LABEL: Record<ServiceVerb | ContainerVerb, string> = {
+  start: "Start",
+  stop: "Stop",
+  restart: "Restart",
+  enable: "Enable",
+  disable: "Disable",
+  remove: "Remove",
+};
+
+const VERB_PAST: Record<ServiceVerb | ContainerVerb, string> = {
+  start: "Started",
+  stop: "Stopped",
+  restart: "Restarted",
+  enable: "Enabled",
+  disable: "Disabled",
+  remove: "Removed",
+};
+
+const VERB_BODY: Record<ServiceVerb | ContainerVerb, string> = {
+  start: "Start {name}?",
+  stop: "Stop {name}? Anything using it loses its connection.",
+  restart: "Restart {name}? Anything using it may briefly disconnect.",
+  enable: "Enable {name}? It will start automatically on boot.",
+  disable: "Disable {name}? It won't start automatically on boot anymore.",
+  remove: "Remove {name}? This deletes the container, not just stops it - it can't be undone.",
+};
+
+/** stop/disable/remove interrupt or end something and read as the "careful" action; start/restart/enable don't. */
+const VERB_IS_DESTRUCTIVE: Record<ServiceVerb | ContainerVerb, boolean> = {
+  start: false,
+  stop: true,
+  restart: false,
+  enable: false,
+  disable: true,
+  remove: true,
+};
 
 export function ActionsPage() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -39,9 +86,9 @@ export function ActionsPage() {
   const [containersLoading, setContainersLoading] = useState(true);
   const [containersError, setContainersError] = useState<string | null>(null);
 
-  const [confirming, setConfirming] = useState<PendingRestart | null>(null);
-  const [restarting, setRestarting] = useState(false);
-  const [restartError, setRestartError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<PendingAction | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadServices = useCallback(() => {
     if (!serverId) return;
@@ -73,24 +120,42 @@ export function ActionsPage() {
   const needle = serviceFilter.trim().toLowerCase();
   const filteredServices = needle ? services.filter((s) => s.name.toLowerCase().includes(needle)) : services;
 
-  async function handleConfirmRestart() {
+  function askConfirm(action: PendingAction) {
+    setConfirming(action);
+    setActionError(null);
+  }
+
+  async function handleConfirmAction() {
     if (!confirming || !serverId) return;
-    setRestarting(true);
-    setRestartError(null);
+    setActionBusy(true);
+    setActionError(null);
     try {
       if (confirming.kind === "service") {
-        await restartServerService(serverId, confirming.name);
+        const call = {
+          start: startServerService,
+          stop: stopServerService,
+          restart: restartServerService,
+          enable: enableServerService,
+          disable: disableServerService,
+        }[confirming.verb];
+        await call(serverId, confirming.name);
         loadServices();
       } else {
-        await restartServerContainer(serverId, confirming.name);
+        const call = {
+          start: startServerContainer,
+          stop: stopServerContainer,
+          restart: restartServerContainer,
+          remove: removeServerContainer,
+        }[confirming.verb];
+        await call(serverId, confirming.name);
         loadContainers();
       }
-      toastSuccess(`Restarted ${confirming.name}`);
+      toastSuccess(`${VERB_PAST[confirming.verb]} ${confirming.name}`);
       setConfirming(null);
     } catch (err) {
-      setRestartError(err instanceof Error ? err.message : "Couldn't restart this.");
+      setActionError(err instanceof Error ? err.message : `Couldn't ${confirming.verb} this.`);
     } finally {
-      setRestarting(false);
+      setActionBusy(false);
     }
   }
 
@@ -128,16 +193,29 @@ export function ActionsPage() {
                 </div>
                 <Badge tone={service.active ? "success" : "neutral"}>{service.active ? "Active" : "Inactive"}</Badge>
                 <Badge tone="neutral">{service.enabled ? "Enabled" : "Disabled"}</Badge>
-                <button
-                  className="server-list-action"
-                  aria-label={`Restart ${service.name}`}
-                  onClick={() => {
-                    setConfirming({ kind: "service", name: service.name });
-                    setRestartError(null);
-                  }}
-                >
-                  <Icon name="zap" size={14} />
-                </button>
+                <div className="server-list-actions">
+                  <button
+                    className="server-list-action"
+                    aria-label={service.active ? `Stop ${service.name}` : `Start ${service.name}`}
+                    onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.active ? "stop" : "start" })}
+                  >
+                    <Icon name={service.active ? "square" : "play"} size={14} />
+                  </button>
+                  <button
+                    className="server-list-action"
+                    aria-label={`Restart ${service.name}`}
+                    onClick={() => askConfirm({ kind: "service", name: service.name, verb: "restart" })}
+                  >
+                    <Icon name="zap" size={14} />
+                  </button>
+                  <button
+                    className="server-list-action"
+                    aria-label={service.enabled ? `Disable ${service.name}` : `Enable ${service.name}`}
+                    onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.enabled ? "disable" : "enable" })}
+                  >
+                    <Icon name="power" size={14} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -162,16 +240,31 @@ export function ActionsPage() {
                   </span>
                 </div>
                 <Badge tone={container.running ? "success" : "neutral"}>{container.running ? "Running" : "Stopped"}</Badge>
-                <button
-                  className="server-list-action"
-                  aria-label={`Restart ${container.name}`}
-                  onClick={() => {
-                    setConfirming({ kind: "container", name: container.name });
-                    setRestartError(null);
-                  }}
-                >
-                  <Icon name="zap" size={14} />
-                </button>
+                <div className="server-list-actions">
+                  <button
+                    className="server-list-action"
+                    aria-label={container.running ? `Stop ${container.name}` : `Start ${container.name}`}
+                    onClick={() =>
+                      askConfirm({ kind: "container", name: container.name, verb: container.running ? "stop" : "start" })
+                    }
+                  >
+                    <Icon name={container.running ? "square" : "play"} size={14} />
+                  </button>
+                  <button
+                    className="server-list-action"
+                    aria-label={`Restart ${container.name}`}
+                    onClick={() => askConfirm({ kind: "container", name: container.name, verb: "restart" })}
+                  >
+                    <Icon name="zap" size={14} />
+                  </button>
+                  <button
+                    className="server-list-action"
+                    aria-label={`Remove ${container.name}`}
+                    onClick={() => askConfirm({ kind: "container", name: container.name, verb: "remove" })}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -179,29 +272,37 @@ export function ActionsPage() {
       </Card>
 
       {confirming && (
-        <div className="modal-backdrop" onClick={() => !restarting && setConfirming(null)}>
+        <div className="modal-backdrop" onClick={() => !actionBusy && setConfirming(null)}>
           <div className="modal-panel" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">Restart {confirming.kind === "service" ? "service" : "container"}</h2>
+              <h2 className="modal-title">
+                {VERB_LABEL[confirming.verb]} {confirming.kind === "service" ? "service" : "container"}
+              </h2>
               <button className="modal-close" onClick={() => setConfirming(null)} aria-label="Close">
                 <Icon name="x" size={16} />
               </button>
             </div>
             <div className="modal-body">
               <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5 }}>
-                Restart <strong>{confirming.name}</strong>? Anything using it may briefly disconnect.
+                {VERB_BODY[confirming.verb].split("{name}")[0]}
+                <strong>{confirming.name}</strong>
+                {VERB_BODY[confirming.verb].split("{name}")[1]}
               </p>
-              {restartError && (
+              {actionError && (
                 <p className="form-note" style={{ color: "var(--danger)", marginBottom: 12 }}>
-                  {restartError}
+                  {actionError}
                 </p>
               )}
               <div className="form-actions" style={{ gap: 8 }}>
-                <Button variant="secondary" onClick={() => setConfirming(null)} disabled={restarting}>
+                <Button variant="secondary" onClick={() => setConfirming(null)} disabled={actionBusy}>
                   Cancel
                 </Button>
-                <Button variant="danger" onClick={handleConfirmRestart} disabled={restarting}>
-                  Restart
+                <Button
+                  variant={VERB_IS_DESTRUCTIVE[confirming.verb] ? "danger" : "primary"}
+                  onClick={handleConfirmAction}
+                  disabled={actionBusy}
+                >
+                  {VERB_LABEL[confirming.verb]}
                 </Button>
               </div>
             </div>

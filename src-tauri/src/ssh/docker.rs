@@ -29,24 +29,37 @@ impl SshSession {
     }
 
     pub async fn restart_container(&self, container: &str) -> AppResult<()> {
+        self.run_docker("restart", container).await
+    }
+
+    pub async fn start_container(&self, container: &str) -> AppResult<()> {
+        self.run_docker("start", container).await
+    }
+
+    pub async fn stop_container(&self, container: &str) -> AppResult<()> {
+        self.run_docker("stop", container).await
+    }
+
+    /// A stopped container only, same as clicking "Delete" in Docker
+    /// Desktop - a running one must be stopped first rather than silently
+    /// force-killed, so a slow shutdown (a database flushing to disk, say)
+    /// isn't cut short by a UI click.
+    pub async fn remove_container(&self, container: &str) -> AppResult<()> {
+        self.run_docker("rm", container).await
+    }
+
+    async fn run_docker(&self, action: &str, container: &str) -> AppResult<()> {
         validate_container_ref(container)?;
-        let output = self.execute_command(&format!("docker restart {container}")).await?;
+        let output = self.execute_command(&format!("docker {action} {container}")).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
-            let detail = if detail.is_empty() { "docker restart failed".to_string() } else { detail.to_string() };
-            return Err(AppError::Connection(format!("couldn't restart {container}: {detail}")));
+            let detail = if detail.is_empty() { format!("docker {action} failed") } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't {action} {container}: {detail}")));
         }
         Ok(())
     }
 }
 
-/// Docker container names/IDs are restricted to `[a-zA-Z0-9][a-zA-Z0-9_.-]*`
-/// (the daemon itself rejects anything else at creation time) - checking
-/// against that same set before a name ever reaches a remote shell command
-/// means there's no string this function accepts that could smuggle in a
-/// second command. A generous but finite length cap guards against a
-/// pathological input that's technically all-valid-characters but absurdly
-/// long.
 /// Parses `LIST_COMMAND`'s `|`-delimited output into `ContainerSummary`s.
 /// A line with an unexpected field count (e.g. truncated output) is
 /// skipped rather than erroring the whole listing.
@@ -66,6 +79,13 @@ fn parse_docker_ps_output(stdout: &str) -> Vec<ContainerSummary> {
     containers
 }
 
+/// Docker container names/IDs are restricted to `[a-zA-Z0-9][a-zA-Z0-9_.-]*`
+/// (the daemon itself rejects anything else at creation time) - checking
+/// against that same set before a name ever reaches a remote shell command
+/// means there's no string this function accepts that could smuggle in a
+/// second command. A generous but finite length cap guards against a
+/// pathological input that's technically all-valid-characters but absurdly
+/// long.
 fn validate_container_ref(name: &str) -> AppResult<()> {
     let starts_ok = name.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
     let chars_ok = name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));

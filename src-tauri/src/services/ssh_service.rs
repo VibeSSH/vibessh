@@ -129,6 +129,46 @@ pub async fn restart_service(
     session.restart_service(service_name).await
 }
 
+pub async fn start_service(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    service_name: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.start_service(service_name).await
+}
+
+pub async fn stop_service(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    service_name: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.stop_service(service_name).await
+}
+
+pub async fn enable_service(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    service_name: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.enable_service(service_name).await
+}
+
+pub async fn disable_service(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    service_name: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.disable_service(service_name).await
+}
+
 pub async fn list_containers(
     repo: &ServerRepository,
     sessions: &SshSessionManager,
@@ -146,6 +186,36 @@ pub async fn restart_container(
 ) -> AppResult<()> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.restart_container(container).await
+}
+
+pub async fn start_container(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    container: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.start_container(container).await
+}
+
+pub async fn stop_container(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    container: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.stop_container(container).await
+}
+
+pub async fn remove_container(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    container: &str,
+) -> AppResult<()> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.remove_container(container).await
 }
 
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {

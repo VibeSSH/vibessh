@@ -9,10 +9,38 @@ export function restartServerService(serverId: string, serviceName: string): Pro
   return callCommand<void>("restart_server_service", { serverId, serviceName });
 }
 
+export function startServerService(serverId: string, serviceName: string): Promise<void> {
+  return callCommand<void>("start_server_service", { serverId, serviceName });
+}
+
+export function stopServerService(serverId: string, serviceName: string): Promise<void> {
+  return callCommand<void>("stop_server_service", { serverId, serviceName });
+}
+
+export function enableServerService(serverId: string, serviceName: string): Promise<void> {
+  return callCommand<void>("enable_server_service", { serverId, serviceName });
+}
+
+export function disableServerService(serverId: string, serviceName: string): Promise<void> {
+  return callCommand<void>("disable_server_service", { serverId, serviceName });
+}
+
 export function listServerContainers(serverId: string): Promise<ContainerSummary[]> {
   return callCommand<ContainerSummary[]>("list_server_containers", { serverId });
 }
 
 export function restartServerContainer(serverId: string, container: string): Promise<void> {
   return callCommand<void>("restart_server_container", { serverId, container });
+}
+
+export function startServerContainer(serverId: string, container: string): Promise<void> {
+  return callCommand<void>("start_server_container", { serverId, container });
+}
+
+export function stopServerContainer(serverId: string, container: string): Promise<void> {
+  return callCommand<void>("stop_server_container", { serverId, container });
+}
+
+export function removeServerContainer(serverId: string, container: string): Promise<void> {
+  return callCommand<void>("remove_server_container", { serverId, container });
 }

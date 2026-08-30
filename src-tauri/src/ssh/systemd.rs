@@ -21,17 +21,40 @@ impl SshSession {
     pub async fn list_services(&self) -> AppResult<Vec<ServiceSummary>> {
         let output = self.execute_command(LIST_COMMAND).await?;
         let (units_section, files_section) = split_two_sections(&output.stdout);
-        let enabled = parse_unit_files(files_section);
-        Ok(parse_units(units_section, &enabled))
+        Ok(parse_units(units_section, files_section))
     }
 
     pub async fn restart_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("restart", service_name).await
+    }
+
+    pub async fn start_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("start", service_name).await
+    }
+
+    pub async fn stop_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("stop", service_name).await
+    }
+
+    /// `--now` starts it in the same round trip - "enable" alone would leave
+    /// the unit stopped until the next boot, which isn't what a user
+    /// clicking "Enable" on a currently-inspected unit expects.
+    pub async fn enable_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("enable --now", service_name).await
+    }
+
+    pub async fn disable_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("disable --now", service_name).await
+    }
+
+    async fn run_systemctl(&self, action: &str, service_name: &str) -> AppResult<()> {
         validate_unit_name(service_name)?;
-        let output = self.execute_command(&format!("systemctl restart {service_name}")).await?;
+        let verb = action.split_whitespace().next().unwrap_or(action);
+        let output = self.execute_command(&format!("systemctl {action} {service_name}")).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "systemctl exited with an error".to_string() } else { detail.to_string() };
-            return Err(AppError::Connection(format!("couldn't restart {service_name}: {detail}")));
+            return Err(AppError::Connection(format!("couldn't {verb} {service_name}: {detail}")));
         }
         Ok(())
     }
@@ -59,27 +82,56 @@ fn split_two_sections(output: &str) -> (&str, &str) {
     }
 }
 
-/// `systemctl list-unit-files --type=service --no-legend --plain` lines:
-/// `unit.service   enabled` / `disabled` / `static` / `masked` / etc. Only
-/// `enabled` (and `enabled-runtime`) count as "will start on boot" -
-/// everything else, `static` included, is not something a human would call
-/// "enabled".
-fn parse_unit_files(section: &str) -> std::collections::HashMap<String, bool> {
-    let mut enabled = std::collections::HashMap::new();
-    for line in section.lines() {
+/// `systemctl list-units --all` only shows units systemd currently has
+/// *loaded* - an inactive oneshot unit (or really any unit systemd decides
+/// to garbage-collect once nothing references it) drops out of that list
+/// entirely, `--all` notwithstanding, even though its unit file is still
+/// right there on disk. `list-unit-files` is the complete, load-state-
+/// independent universe of every unit systemd knows about from a file, so
+/// this builds the result from *that* list and enriches each entry with
+/// load/active state and description where `list-units` happens to have a
+/// live entry for it - never the other way around, or an unloaded-but-real
+/// unit would silently vanish from what the UI shows.
+fn parse_units(units_section: &str, files_section: &str) -> Vec<ServiceSummary> {
+    let loaded = parse_loaded_units(units_section);
+
+    let mut services = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for line in files_section.lines() {
         let mut fields = line.split_whitespace();
         let (Some(name), Some(state)) = (fields.next(), fields.next()) else { continue };
-        enabled.insert(name.to_string(), state.starts_with("enabled"));
+        if !seen.insert(name.to_string()) {
+            continue;
+        }
+        let (active, description) = loaded.get(name).cloned().unwrap_or((false, String::new()));
+        services.push(ServiceSummary {
+            name: name.to_string(),
+            active,
+            enabled: state.starts_with("enabled"),
+            description,
+        });
     }
-    enabled
+
+    // A loaded unit with no backing file at all (transient units, some
+    // generator-produced ones) still deserves to be listed - "not enabled"
+    // is the honest fallback rather than dropping it.
+    for (name, (active, description)) in loaded {
+        if seen.insert(name.clone()) {
+            services.push(ServiceSummary { name, active, enabled: false, description });
+        }
+    }
+
+    services
 }
 
 /// `systemctl list-units --type=service --all --no-legend --plain` lines:
 /// `unit.service loaded active running Some description text`. The
 /// description is free text with spaces, so it's everything after the
-/// fourth field, not a fifth `split_whitespace` token.
-fn parse_units(section: &str, enabled: &std::collections::HashMap<String, bool>) -> Vec<ServiceSummary> {
-    let mut services = Vec::new();
+/// fourth field, not a fifth `split_whitespace` token. Returns (active,
+/// description) per unit name.
+fn parse_loaded_units(section: &str) -> std::collections::HashMap<String, (bool, String)> {
+    let mut loaded = std::collections::HashMap::new();
     for line in section.lines() {
         let mut fields = line.split_whitespace();
         let Some(name) = fields.next() else { continue };
@@ -87,15 +139,9 @@ fn parse_units(section: &str, enabled: &std::collections::HashMap<String, bool>)
         let Some(active_state) = fields.next() else { continue };
         let Some(_sub_state) = fields.next() else { continue };
         let description = fields.collect::<Vec<_>>().join(" ");
-
-        services.push(ServiceSummary {
-            name: name.to_string(),
-            active: active_state == "active",
-            enabled: enabled.get(name).copied().unwrap_or(false),
-            description,
-        });
+        loaded.insert(name.to_string(), (active_state == "active", description));
     }
-    services
+    loaded
 }
 
 #[cfg(test)]
@@ -129,10 +175,14 @@ mod tests {
             "getty@.service                               static\n",
         );
         let (units_section, files_section) = split_two_sections(output);
-        let enabled = parse_unit_files(files_section);
-        let services = parse_units(units_section, &enabled);
+        let services = parse_units(units_section, files_section);
 
-        assert_eq!(services.len(), 3);
+        // nginx + mariadb + getty@.service (the template, from list-unit-files)
+        // + getty@tty1.service (a live instance, loaded but not itself in
+        // list-unit-files) = 4, not 3 - a unit that's real but not
+        // currently loaded (unlike this fixture, but see the next test)
+        // must never silently disappear just because list-units dropped it.
+        assert_eq!(services.len(), 4);
 
         let nginx = services.iter().find(|s| s.name == "nginx.service").unwrap();
         assert!(nginx.active);
@@ -146,8 +196,32 @@ mod tests {
         // getty@tty1.service isn't itself in the unit-files listing (only
         // its template getty@.service is) - it should fall back to "not
         // enabled" rather than erroring or panicking on a missing key.
-        let getty = services.iter().find(|s| s.name == "getty@tty1.service").unwrap();
-        assert!(getty.active);
-        assert!(!getty.enabled);
+        let getty_instance = services.iter().find(|s| s.name == "getty@tty1.service").unwrap();
+        assert!(getty_instance.active);
+        assert!(!getty_instance.enabled);
+
+        let getty_template = services.iter().find(|s| s.name == "getty@.service").unwrap();
+        assert!(!getty_template.enabled);
+    }
+
+    #[test]
+    fn a_unit_that_is_real_but_not_currently_loaded_still_appears() {
+        // The exact scenario that caught this: a oneshot unit gets started,
+        // then stopped/disabled, and systemd garbage-collects it out of
+        // `list-units --all` even though the file is still on disk and
+        // `list-unit-files` still reports it.
+        let output = concat!(
+            "===UNITS===\n",
+            "===FILES===\n",
+            "vibessh-check.service                       disabled\n",
+        );
+        let (units_section, files_section) = split_two_sections(output);
+        let services = parse_units(units_section, files_section);
+
+        assert_eq!(services.len(), 1);
+        let unit = &services[0];
+        assert_eq!(unit.name, "vibessh-check.service");
+        assert!(!unit.active, "an unloaded unit must report inactive, not vanish");
+        assert!(!unit.enabled);
     }
 }

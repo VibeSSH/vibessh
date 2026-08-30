@@ -16,8 +16,15 @@ pub trait ServerConnection: Send + Sync {
     async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>>;
     async fn list_services(&self) -> AppResult<Vec<ServiceSummary>>;
     async fn restart_service(&self, service_name: &str) -> AppResult<()>;
+    async fn start_service(&self, service_name: &str) -> AppResult<()>;
+    async fn stop_service(&self, service_name: &str) -> AppResult<()>;
+    async fn enable_service(&self, service_name: &str) -> AppResult<()>;
+    async fn disable_service(&self, service_name: &str) -> AppResult<()>;
     async fn list_containers(&self) -> AppResult<Vec<ContainerSummary>>;
     async fn restart_container(&self, container: &str) -> AppResult<()>;
+    async fn start_container(&self, container: &str) -> AppResult<()>;
+    async fn stop_container(&self, container: &str) -> AppResult<()>;
+    async fn remove_container(&self, container: &str) -> AppResult<()>;
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>>;
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()>;
@@ -59,11 +66,39 @@ mod tests {
             Ok(())
         }
 
+        async fn start_service(&self, _service_name: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn stop_service(&self, _service_name: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn enable_service(&self, _service_name: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn disable_service(&self, _service_name: &str) -> AppResult<()> {
+            Ok(())
+        }
+
         async fn list_containers(&self) -> AppResult<Vec<ContainerSummary>> {
             Ok(vec![])
         }
 
         async fn restart_container(&self, _container: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn start_container(&self, _container: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn stop_container(&self, _container: &str) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn remove_container(&self, _container: &str) -> AppResult<()> {
             Ok(())
         }
 
