@@ -1,16 +1,14 @@
 //! VibeSSH Backend entry point.
 //!
-//! This is the first real slice of the production roadmap's P0 foundation:
-//! a scaffold that connects to Postgres, runs versioned migrations, and
-//! serves a health check that actually queries the database rather than
-//! just confirming the process is alive. Team/Roles/Permissions/Invitations/
-//! Audit land on top of this in later stages - this stage's only job is to
-//! prove the scaffold itself is real and correctly wired. Router-building
-//! logic lives in `lib.rs` so it's directly testable (see `tests/health.rs`)
-//! without going through a spawned process.
+//! This is the P0 foundation's accounts stage on top of last stage's
+//! scaffold: connects to Postgres, runs migrations, and serves
+//! register/login/refresh/logout/me alongside the existing health check.
+//! Router-building logic lives in `lib.rs` so it's directly testable (see
+//! `tests/`) without going through a spawned process.
 
 use std::net::SocketAddr;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use vibessh_backend::{build_router, connect_and_migrate};
 
@@ -31,6 +29,12 @@ async fn run() -> Result<(), String> {
     let database_url = std::env::var("DATABASE_URL").map_err(|_| {
         "DATABASE_URL is not set - e.g. postgres://vibessh_app:PASSWORD@localhost:5432/vibessh".to_string()
     })?;
+    let jwt_secret = std::env::var("JWT_SECRET").map_err(|_| {
+        "JWT_SECRET is not set - generate one with e.g. `openssl rand -base64 48`".to_string()
+    })?;
+    if jwt_secret.len() < 32 {
+        return Err("JWT_SECRET is too short - use at least 32 bytes of real randomness".to_string());
+    }
     let bind_addr: SocketAddr = std::env::var("VIBESSH_BACKEND_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8787".to_string())
         .parse()
@@ -38,7 +42,7 @@ async fn run() -> Result<(), String> {
 
     log::info!("connecting to the database...");
     let db = connect_and_migrate(&database_url).await?;
-    let app = build_router(db);
+    let app = build_router(db, Arc::from(jwt_secret.into_bytes()));
 
     log::info!("listening on http://{bind_addr}");
     let listener = tokio::net::TcpListener::bind(bind_addr)
