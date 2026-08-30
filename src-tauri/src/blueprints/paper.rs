@@ -39,7 +39,7 @@ impl PaperBlueprint {
                     BlueprintField {
                         key: "minecraftVersion".to_string(),
                         label: "Minecraft version".to_string(),
-                        field_type: BlueprintFieldType::MinecraftVersion,
+                        field_type: BlueprintFieldType::PapermcVersion,
                         required: true,
                         default_value: None,
                         help_text: Some("The matching Paper server jar is downloaded automatically.".to_string()),

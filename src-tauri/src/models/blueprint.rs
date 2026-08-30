@@ -81,8 +81,12 @@ pub enum BlueprintFieldType {
     /// speculative.
     JavaVersion,
     /// A string, same as `Text` for validation/storage purposes - the
-    /// frontend renders it as a picker populated from
-    /// `list_paper_versions` (the real, current PaperMC release list), same
+    /// frontend renders it as a picker populated from whichever PaperMC
+    /// project's release list matches the field (`list_paper_versions` /
+    /// `list_velocity_versions`, keyed off the field's own `key`), same
     /// "dynamic picker, not a hand-typed value" shape as `JavaVersion`.
-    MinecraftVersion,
+    /// Named for the API family, not "Minecraft version" - Velocity's own
+    /// release numbers (`"3.4.0"`) aren't Minecraft version numbers at all,
+    /// even though Paper's happen to be.
+    PapermcVersion,
 }

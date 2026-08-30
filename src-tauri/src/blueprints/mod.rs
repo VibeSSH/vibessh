@@ -34,10 +34,12 @@ use crate::ssh::SshSession;
 mod generic;
 mod generic_java;
 mod paper;
+mod velocity;
 
 pub use generic::GenericBlueprint;
 pub use generic_java::GenericJavaBlueprint;
 pub use paper::PaperBlueprint;
+pub use velocity::VelocityBlueprint;
 
 /// What a blueprint's `provision` step needs to actually reach the host the
 /// application will run on - `None` connection = Local (act on the local
@@ -96,7 +98,7 @@ pub fn validate_inputs(blueprint: &Blueprint, inputs: &HashMap<String, serde_jso
 
 fn validate_field_type(field: &BlueprintField, value: &serde_json::Value) -> AppResult<()> {
     let matches_type = match field.field_type {
-        BlueprintFieldType::Text | BlueprintFieldType::Path | BlueprintFieldType::JavaVersion | BlueprintFieldType::MinecraftVersion => {
+        BlueprintFieldType::Text | BlueprintFieldType::Path | BlueprintFieldType::JavaVersion | BlueprintFieldType::PapermcVersion => {
             value.is_string()
         }
         BlueprintFieldType::Number => value.is_number(),
@@ -176,6 +178,8 @@ impl BlueprintRegistry {
         handlers.insert(generic_java.blueprint().id.clone(), Box::new(generic_java));
         let paper = PaperBlueprint::new();
         handlers.insert(paper.blueprint().id.clone(), Box::new(paper));
+        let velocity = VelocityBlueprint::new();
+        handlers.insert(velocity.blueprint().id.clone(), Box::new(velocity));
         Self { handlers }
     }
 
@@ -253,9 +257,10 @@ mod tests {
         assert!(registry.get("generic").is_some());
         assert!(registry.get("generic-java").is_some());
         assert!(registry.get("paper").is_some());
+        assert!(registry.get("velocity").is_some());
         assert!(registry.get("nonexistent").is_none());
 
         let ids: Vec<&str> = registry.list().iter().map(|blueprint| blueprint.id.as_str()).collect();
-        assert_eq!(ids, vec!["generic", "generic-java", "paper"]);
+        assert_eq!(ids, vec!["generic", "generic-java", "paper", "velocity"]);
     }
 }

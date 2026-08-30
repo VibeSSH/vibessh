@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
-import { createApplication, detectJavaInstallations, listPaperVersions } from "@/services/applicationService";
+import { createApplication, detectJavaInstallations, listPaperVersions, listVelocityVersions } from "@/services/applicationService";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
 import type { Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
@@ -388,8 +388,8 @@ function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFiel
     return <JavaVersionFieldInput field={field} value={value} onChange={onChange} serverId={serverId} />;
   }
 
-  if (field.fieldType === "minecraftVersion") {
-    return <MinecraftVersionFieldInput field={field} value={value} onChange={onChange} />;
+  if (field.fieldType === "papermcVersion") {
+    return <PapermcVersionFieldInput field={field} value={value} onChange={onChange} />;
   }
 
   if (field.fieldType === "boolean") {
@@ -526,26 +526,32 @@ function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersion
   );
 }
 
-interface MinecraftVersionFieldInputProps {
+interface PapermcVersionFieldInputProps {
   field: BlueprintField;
   value: unknown;
   onChange: (value: unknown) => void;
 }
 
-/** A picker populated from the real, current PaperMC release list - falls back to a plain text input (with the load error, if any, shown rather than hidden) if the list couldn't be fetched at all, e.g. no network. */
-function MinecraftVersionFieldInput({ field, value, onChange }: MinecraftVersionFieldInputProps) {
+/** Which papermc.io project's release list this field's own key means - "minecraftVersion" (PaperBlueprint) and "velocityVersion" (VelocityBlueprint) are the only two fields with this field type today. */
+function fetchVersionsFor(fieldKey: string): Promise<string[]> {
+  return fieldKey === "velocityVersion" ? listVelocityVersions() : listPaperVersions();
+}
+
+/** A picker populated from the real, current PaperMC release list for whichever project this field belongs to - falls back to a plain text input (with the load error, if any, shown rather than hidden) if the list couldn't be fetched at all, e.g. no network. */
+function PapermcVersionFieldInput({ field, value, onChange }: PapermcVersionFieldInputProps) {
   const { t } = useTranslation();
   const [versions, setVersions] = useState<string[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    listPaperVersions()
+    fetchVersionsFor(field.key)
       .then(setVersions)
       .catch((err) => {
         setVersions([]);
         setLoadError(err instanceof Error ? err.message : String(err));
       });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field.key]);
 
   const currentValue = typeof value === "string" ? value : "";
   const label = (
@@ -559,7 +565,7 @@ function MinecraftVersionFieldInput({ field, value, onChange }: MinecraftVersion
     return (
       <label className="form-field">
         {label}
-        <p className="form-note">{t("createApplicationWizard.loadingMinecraftVersions")}</p>
+        <p className="form-note">{t("createApplicationWizard.loadingVersions")}</p>
       </label>
     );
   }
@@ -569,7 +575,7 @@ function MinecraftVersionFieldInput({ field, value, onChange }: MinecraftVersion
       <label className="form-field">
         {label}
         <input className="form-input" value={currentValue} onChange={(e) => onChange(e.target.value)} placeholder="1.21.11" />
-        {loadError && <p className="form-note form-note-danger">{t("createApplicationWizard.minecraftVersionsError", { error: loadError })}</p>}
+        {loadError && <p className="form-note form-note-danger">{t("createApplicationWizard.versionsLoadError", { error: loadError })}</p>}
         {field.helpText && <p className="form-note">{field.helpText}</p>}
       </label>
     );
@@ -580,7 +586,7 @@ function MinecraftVersionFieldInput({ field, value, onChange }: MinecraftVersion
       {label}
       <select className="form-input" value={currentValue} onChange={(e) => onChange(e.target.value)}>
         <option value="" disabled>
-          {t("createApplicationWizard.chooseMinecraftVersion")}
+          {t("createApplicationWizard.chooseVersion")}
         </option>
         {versions.map((version) => (
           <option key={version} value={version}>

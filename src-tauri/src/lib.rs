@@ -91,6 +91,7 @@ pub fn run() {
             commands::pairing_commands::cancel_agent_pairing,
             commands::application_commands::list_applications,
             commands::application_commands::list_paper_versions,
+            commands::application_commands::list_velocity_versions,
             commands::application_commands::get_application,
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,

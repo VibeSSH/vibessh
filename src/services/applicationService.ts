@@ -73,3 +73,8 @@ export function detectJavaInstallations(serverId?: string): Promise<JavaInstalla
 export function listPaperVersions(): Promise<string[]> {
   return callCommand<string[]>("list_paper_versions");
 }
+
+/** Same idea as listPaperVersions, for the Velocity proxy - a different papermc.io project, so a separate list. */
+export function listVelocityVersions(): Promise<string[]> {
+  return callCommand<string[]>("list_velocity_versions");
+}

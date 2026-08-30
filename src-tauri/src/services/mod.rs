@@ -2,10 +2,12 @@ mod app_info_service;
 mod application_service;
 mod cloud_service;
 mod java_service;
-mod paper_service;
+mod papermc_service;
 mod ping_service;
 mod server_service;
 mod ssh_service;
+
+use crate::errors::AppResult;
 
 pub use app_info_service::get_app_info;
 pub use application_service::{
@@ -13,7 +15,29 @@ pub use application_service::{
     list_applications, list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
-pub use paper_service::{latest_build as latest_paper_build, list_versions as list_paper_versions};
+pub use papermc_service::PapermcBuild;
+
+/// Thin, project-fixed wrappers over `papermc_service`'s own
+/// project-parameterized functions - `blueprints::{PaperBlueprint,
+/// VelocityBlueprint}` and their matching Tauri commands each only ever
+/// need one specific project, so callers don't have to know or repeat the
+/// literal `"paper"`/`"velocity"` id themselves.
+pub async fn list_paper_versions() -> AppResult<Vec<String>> {
+    papermc_service::list_versions("paper").await
+}
+
+pub async fn latest_paper_build(version: &str) -> AppResult<PapermcBuild> {
+    papermc_service::latest_build("paper", version).await
+}
+
+pub async fn list_velocity_versions() -> AppResult<Vec<String>> {
+    papermc_service::list_versions("velocity").await
+}
+
+pub async fn latest_velocity_build(version: &str) -> AppResult<PapermcBuild> {
+    papermc_service::latest_build("velocity", version).await
+}
+
 pub use cloud_service::{
     accept_invitation as cloud_accept_invitation, assign_role as cloud_assign_role, create_invitation as cloud_create_invitation,
     create_role as cloud_create_role, create_server as cloud_create_server, create_team as cloud_create_team,
