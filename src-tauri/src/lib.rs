@@ -2,6 +2,7 @@
 // can drive it directly - everything else here only needs in-crate tests
 // (pairing_commands' own test lives inside that module, see its file for why).
 pub mod agent_client;
+mod blueprints;
 pub mod cloud_client;
 mod commands;
 mod errors;
