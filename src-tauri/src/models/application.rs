@@ -168,6 +168,19 @@ pub struct SetHealthCheckInput {
     pub http_path: Option<String>,
 }
 
+/// What `services::set_application_resource_limits` accepts - `None` clears
+/// that particular limit rather than leaving it untouched, same "this is
+/// the whole desired state, not a patch" shape `SetHealthCheckInput` uses.
+/// Only meaningful for `RuntimeType::Docker`/`RuntimeType::Systemd` - see
+/// that function's own doc comment for why `LocalProcess`/`RemoteProcess`
+/// reject this outright instead of silently accepting and ignoring it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetResourceLimitsInput {
+    pub memory_limit_mb: Option<u32>,
+    pub cpu_limit_cores: Option<f32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentVariable {

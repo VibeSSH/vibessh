@@ -265,6 +265,19 @@
       "minecraftStatus": "Minecraft server status"
     }
   },
+  "resourceLimits": {
+    "title": "Resource limits",
+    "dockerNote": "A change here only takes effect the next time this container is recreated (removed and started again) - same as an edited image or command.",
+    "memory": "Memory",
+    "memoryPlaceholder": "e.g. 2048",
+    "cpu": "CPU",
+    "cpuPlaceholder": "e.g. 1.5",
+    "unlimited": "Unlimited",
+    "cores": "{{count}} cores",
+    "edit": "Edit",
+    "invalidForm": "Enter a positive number, or leave a field blank for no limit.",
+    "saveError": "Couldn't save the resource limits."
+  },
   "deleteApplicationDialog": {
     "title": "Delete application",
     "body": "Delete <1>{{name}}</1>? This removes it from VibeSSH - it won't stop a still-running process/unit/container on its own; stop it first if it's running. This can't be undone."

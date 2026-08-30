@@ -13,8 +13,8 @@ pub use app_info_service::get_app_info;
 pub use application_service::{
     add_application_port, application_health_check, application_logs, application_resource_usage, create_application,
     delete_application, get_application, kill_application, list_application_ports, list_applications, list_blueprints,
-    refresh_application_status, remove_application_port, restart_application, set_application_health_check, start_application,
-    stop_application, update_application_port,
+    refresh_application_status, remove_application_port, restart_application, set_application_health_check,
+    set_application_resource_limits, start_application, stop_application, update_application_port,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use papermc_service::PapermcBuild;

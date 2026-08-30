@@ -30,14 +30,35 @@ use crate::models::ApplicationStatus;
 use crate::ssh::systemd::validate_unit_name;
 use crate::ssh::SshSession;
 
-use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+use super::{
+    health_check, validate_resource_limits, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider,
+    ResourceUsage, RuntimeContext,
+};
 
 /// What `runtime_config` deserializes into for `RuntimeType::Systemd`.
+///
+/// `memory_limit_mb`/`cpu_limit_cores` are set through
+/// `services::set_application_resource_limits`, not the Create Application
+/// wizard - see that function's own doc comment. Unlike
+/// `runtime::docker::DockerConfig`'s equivalent fields, a change here takes
+/// effect on the *next* start/restart automatically: `start()` below
+/// rewrites the unit file unconditionally every time, there's no "only
+/// applied at creation" gap to work around for a systemd unit the way there
+/// is for a Docker container's writable layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemdConfig {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
+    pub memory_limit_mb: Option<u32>,
+    /// Fractional CPU cores, same unit `DockerConfig::cpu_limit_cores` uses
+    /// - converted to systemd's own `CPUQuota=<percent>%` at render time
+    /// (1 core = 100%) so the UI can offer one consistent "CPU cores" input
+    /// regardless of which runtime type an Application actually uses.
+    #[serde(default)]
+    pub cpu_limit_cores: Option<f32>,
 }
 
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<SystemdConfig> {
@@ -114,6 +135,26 @@ fn is_valid_env_key(key: &str) -> bool {
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_') && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// `MemoryMax=`/`CPUQuota=` lines for `[Service]`, plus the
+/// `*Accounting=yes` directives older systemd (pre-231) needs to actually
+/// enforce them - modern systemd turns accounting on implicitly once a
+/// limit directive is present, but setting it explicitly is harmless and
+/// costs nothing. Empty string when neither limit is set, so `start()`'s
+/// unit file is byte-for-byte what it always was for an Application with no
+/// limits configured.
+fn resource_limit_lines(config: &SystemdConfig) -> AppResult<String> {
+    validate_resource_limits(config.memory_limit_mb, config.cpu_limit_cores)?;
+    let mut lines = String::new();
+    if let Some(mb) = config.memory_limit_mb {
+        lines.push_str(&format!("MemoryAccounting=yes\nMemoryMax={mb}M\n"));
+    }
+    if let Some(cores) = config.cpu_limit_cores {
+        let percent = (cores * 100.0).round() as u32;
+        lines.push_str(&format!("CPUAccounting=yes\nCPUQuota={percent}%\n"));
+    }
+    Ok(lines)
+}
+
 fn render_unit_file(ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResult<String> {
     reject_newlines(&config.command, "the command")?;
     for arg in &config.args {
@@ -137,14 +178,17 @@ fn render_unit_file(ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResu
         environment_lines.push_str(&format!("Environment={}\n", quote_unit_value(&format!("{}={}", env.key, env.value))));
     }
 
+    let resource_lines = resource_limit_lines(config)?;
+
     Ok(format!(
         "[Unit]\nDescription=VibeSSH managed application: {}\nAfter=network.target\n\n\
-         [Service]\nType=simple\nWorkingDirectory={}\nExecStart={}\n{}Restart=on-failure\nRestartSec=5\n\n\
+         [Service]\nType=simple\nWorkingDirectory={}\nExecStart={}\n{}{}Restart=on-failure\nRestartSec=5\n\n\
          [Install]\nWantedBy=multi-user.target\n",
         escape_specifiers(&ctx.application.name),
         escape_specifiers(&ctx.application.working_directory),
         exec_start,
         environment_lines,
+        resource_lines,
     ))
 }
 
@@ -380,7 +424,7 @@ mod tests {
     #[test]
     fn render_unit_file_produces_a_well_formed_service_section() {
         let application = stub_application(Uuid::new_v4());
-        let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()] };
+        let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()], memory_limit_mb: None, cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into() }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, connection: None };
@@ -399,7 +443,7 @@ mod tests {
     #[test]
     fn render_unit_file_rejects_a_newline_in_the_command() {
         let application = stub_application(Uuid::new_v4());
-        let config = SystemdConfig { command: "/bin/sh\nrm -rf /".into(), args: vec![] };
+        let config = SystemdConfig { command: "/bin/sh\nrm -rf /".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
 
@@ -409,12 +453,48 @@ mod tests {
     #[test]
     fn render_unit_file_rejects_an_invalid_environment_key() {
         let application = stub_application(Uuid::new_v4());
-        let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec![] };
+        let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, connection: None };
 
         assert!(render_unit_file(&ctx, &config).is_err());
+    }
+
+    #[test]
+    fn render_unit_file_adds_memory_and_cpu_directives_only_when_set() {
+        let application = stub_application(Uuid::new_v4());
+        let without_limits = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config_value = serde_json::to_value(&without_limits).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let unit_file = render_unit_file(&ctx, &without_limits).unwrap();
+        assert!(!unit_file.contains("MemoryMax"));
+        assert!(!unit_file.contains("CPUQuota"));
+
+        let with_limits = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: Some(1024), cpu_limit_cores: Some(1.5) };
+        let config_value = serde_json::to_value(&with_limits).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        let unit_file = render_unit_file(&ctx, &with_limits).unwrap();
+        assert!(unit_file.contains("MemoryAccounting=yes\n"));
+        assert!(unit_file.contains("MemoryMax=1024M\n"));
+        assert!(unit_file.contains("CPUAccounting=yes\n"));
+        // 1.5 cores -> 150%, matching CPUQuota's own "percent of one CPU" unit.
+        assert!(unit_file.contains("CPUQuota=150%\n"));
+    }
+
+    #[test]
+    fn render_unit_file_rejects_a_zero_memory_limit_or_non_positive_cpu_limit() {
+        let application = stub_application(Uuid::new_v4());
+
+        let zero_memory = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None };
+        let config_value = serde_json::to_value(&zero_memory).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        assert!(render_unit_file(&ctx, &zero_memory).is_err());
+
+        let negative_cpu = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0) };
+        let config_value = serde_json::to_value(&negative_cpu).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], connection: None };
+        assert!(render_unit_file(&ctx, &negative_cpu).is_err());
     }
 
     #[test]

@@ -46,6 +46,18 @@ export interface SetHealthCheckInput {
   httpPath?: string;
 }
 
+/** What `setApplicationResourceLimits` submits - mirrors the Rust `SetResourceLimitsInput` DTO. `undefined` clears that particular limit rather than leaving it untouched. Only accepted for a `"docker"`/`"systemd"` application - see that function's own doc comment for why `"localProcess"`/`"remoteProcess"` reject it outright. */
+export interface SetResourceLimitsInput {
+  memoryLimitMb?: number;
+  cpuLimitCores?: number;
+}
+
+/** The subset of a Docker/systemd application's own `runtimeConfig` shape this UI reads/writes - the rest of that shape (image, command, ...) is opaque here, same as `ApplicationDetail.runtimeConfig`'s own `unknown` type says. */
+export interface ResourceLimitsConfig {
+  memoryLimitMb?: number;
+  cpuLimitCores?: number;
+}
+
 export interface Application {
   id: string;
   /** Undefined = Local. There is no separate "location" field - same single source of truth as the Rust `Application::location()` derivation. */

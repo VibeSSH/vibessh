@@ -15,7 +15,7 @@ pub mod systemd;
 
 use std::sync::Arc;
 
-use crate::errors::AppResult;
+use crate::errors::{AppError, AppResult};
 use crate::models::{Application, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
 use crate::ssh::SshSession;
 
@@ -151,6 +151,25 @@ pub fn runtime_for(runtime_type: RuntimeType, local_process_manager: Arc<local_p
     }
 }
 
+/// Shared by `runtime::docker::build_create_command`,
+/// `runtime::systemd::resource_limit_lines`, and
+/// `services::set_application_resource_limits` - the same "a limit, if
+/// given, must be a positive value" rule applies in all three places, so
+/// it's written once rather than three times.
+pub fn validate_resource_limits(memory_limit_mb: Option<u32>, cpu_limit_cores: Option<f32>) -> AppResult<()> {
+    if let Some(mb) = memory_limit_mb {
+        if mb == 0 {
+            return Err(AppError::InvalidInput("the memory limit must be greater than 0".into()));
+        }
+    }
+    if let Some(cores) = cpu_limit_cores {
+        if !(cores > 0.0) {
+            return Err(AppError::InvalidInput("the CPU limit must be greater than 0".into()));
+        }
+    }
+    Ok(())
+}
+
 pub fn runtime_type_display_name(runtime_type: RuntimeType) -> &'static str {
     match runtime_type {
         RuntimeType::LocalProcess => "Local Process",
@@ -242,5 +261,14 @@ mod tests {
         runtime.start(&ctx).await.unwrap();
         assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Unknown);
         assert!(runtime.console(&ctx).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn validate_resource_limits_rejects_zero_memory_and_non_positive_cpu_but_accepts_reasonable_values() {
+        assert!(validate_resource_limits(None, None).is_ok());
+        assert!(validate_resource_limits(Some(512), Some(1.5)).is_ok());
+        assert!(validate_resource_limits(Some(0), None).is_err());
+        assert!(validate_resource_limits(None, Some(0.0)).is_err());
+        assert!(validate_resource_limits(None, Some(-1.0)).is_err());
     }
 }

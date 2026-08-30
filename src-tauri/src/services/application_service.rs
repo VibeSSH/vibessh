@@ -13,7 +13,7 @@ use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput,
-    CreateApplicationInput, HealthCheckType, PortInput, SetHealthCheckInput,
+    CreateApplicationInput, HealthCheckType, PortInput, RuntimeType, SetHealthCheckInput, SetResourceLimitsInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{self, ApplicationRuntime, HealthCheckSpec, HealthStatus, ResourceUsage, RuntimeContext};
@@ -350,6 +350,42 @@ pub fn set_application_health_check(
     get_application(repo, id)
 }
 
+/// Patches the `memoryLimitMb`/`cpuLimitCores` keys inside an Application's
+/// own `runtime_config` - the same keys `runtime::docker::DockerConfig` and
+/// `runtime::systemd::SystemdConfig` both read, under one shared name so
+/// the frontend can offer a single "CPU cores" input regardless of which of
+/// the two runtime types an Application actually uses. Rejected outright
+/// for `LocalProcess`/`RemoteProcess`: there's no OS-level mechanism this
+/// codebase can enforce a limit through for a bare child process the way
+/// Docker/systemd already provide natively, and silently accepting a
+/// setting that does nothing would be exactly the "pretend two runtimes
+/// have identical capabilities" the architecture doc warns against, not an
+/// honest gap.
+pub fn set_application_resource_limits(
+    repo: &ApplicationRepository,
+    id: Uuid,
+    input: SetResourceLimitsInput,
+) -> AppResult<ApplicationDetail> {
+    let detail = get_application(repo, id)?;
+    if !matches!(detail.application.runtime_type, RuntimeType::Docker | RuntimeType::Systemd) {
+        return Err(AppError::InvalidInput("resource limits are only supported for Docker and systemd applications".into()));
+    }
+    runtime::validate_resource_limits(input.memory_limit_mb, input.cpu_limit_cores)?;
+
+    let mut runtime_config = detail.runtime_config.clone();
+    let object = runtime_config.as_object_mut().ok_or_else(|| AppError::Internal("runtime_config wasn't a JSON object".into()))?;
+    match input.memory_limit_mb {
+        Some(mb) => object.insert("memoryLimitMb".to_string(), serde_json::json!(mb)),
+        None => object.remove("memoryLimitMb"),
+    };
+    match input.cpu_limit_cores {
+        Some(cores) => object.insert("cpuLimitCores".to_string(), serde_json::json!(cores)),
+        None => object.remove("cpuLimitCores"),
+    };
+
+    repo.update_runtime_config(id, &runtime_config)
+}
+
 /// Turns an Application's stored `health_check_*` columns into the
 /// `HealthCheckSpec` its runtime actually probes with - `Ok(None)` (not an
 /// error) whenever the configuration can't be resolved right now (the
@@ -402,7 +438,6 @@ pub async fn application_health_check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::RuntimeType;
 
     /// A real `ApplicationRepository` + `ServerRepository` against a fresh
     /// temp SQLite file, a real `LocalProcessManager`, and the real
@@ -541,5 +576,70 @@ mod tests {
 
         remove_application_port(&app_repo, application_id, added.id).unwrap();
         assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
+    }
+
+    fn create_raw(app_repo: &ApplicationRepository, runtime_type: RuntimeType, runtime_config: serde_json::Value) -> ApplicationDetail {
+        // Bypasses `create_application`'s blueprint/runtime-type compatibility
+        // check deliberately - Docker isn't one of the built-in blueprints'
+        // `supported_runtime_types` yet (a real, separate gap, not this
+        // test's concern), so this goes straight through the repository the
+        // same way `runtime::docker`'s own unit tests build a stub
+        // `Application` rather than going through the service layer.
+        app_repo
+            .create(&CreateApplicationInput {
+                server_id: None,
+                name: "Resource Limits Test App".to_string(),
+                description: None,
+                blueprint_id: "generic".to_string(),
+                blueprint_version: 1,
+                runtime_type,
+                working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config,
+                metadata: serde_json::json!({}),
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn set_application_resource_limits_rejects_a_runtime_type_that_cant_enforce_them() {
+        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
+
+        let result = set_application_resource_limits(&app_repo, local.application.id, SetResourceLimitsInput { memory_limit_mb: Some(512), cpu_limit_cores: None });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_application_resource_limits_patches_and_clears_the_docker_runtime_config() {
+        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "image": "alpine:latest", "command": [] }));
+
+        let updated = set_application_resource_limits(
+            &app_repo,
+            docker.application.id,
+            SetResourceLimitsInput { memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5) },
+        )
+        .unwrap();
+        assert_eq!(updated.runtime_config["memoryLimitMb"], serde_json::json!(512));
+        assert_eq!(updated.runtime_config["cpuLimitCores"], serde_json::json!(1.5));
+        // The rest of the config (set at creation, untouched by this call)
+        // must survive the patch - this isn't a full runtime_config replace.
+        assert_eq!(updated.runtime_config["image"], serde_json::json!("alpine:latest"));
+
+        let cleared =
+            set_application_resource_limits(&app_repo, docker.application.id, SetResourceLimitsInput { memory_limit_mb: None, cpu_limit_cores: None }).unwrap();
+        assert!(cleared.runtime_config.get("memoryLimitMb").is_none());
+        assert!(cleared.runtime_config.get("cpuLimitCores").is_none());
+    }
+
+    #[test]
+    fn set_application_resource_limits_rejects_a_zero_memory_limit() {
+        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let systemd = create_raw(&app_repo, RuntimeType::Systemd, serde_json::json!({ "command": "/usr/bin/java", "args": [] }));
+
+        let result = set_application_resource_limits(&app_repo, systemd.application.id, SetResourceLimitsInput { memory_limit_mb: Some(0), cpu_limit_cores: None });
+        assert!(result.is_err());
     }
 }

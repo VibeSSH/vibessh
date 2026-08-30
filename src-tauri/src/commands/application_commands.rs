@@ -7,7 +7,7 @@ use crate::blueprints::BlueprintRegistry;
 use crate::errors::AppResult;
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, PortInput,
-    SetHealthCheckInput,
+    SetHealthCheckInput, SetResourceLimitsInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{HealthStatus, ResourceUsage};
@@ -179,6 +179,15 @@ pub fn set_application_health_check(
     input: SetHealthCheckInput,
 ) -> AppResult<ApplicationDetail> {
     services::set_application_health_check(&repo, id, input)
+}
+
+#[tauri::command]
+pub fn set_application_resource_limits(
+    repo: State<ApplicationRepository>,
+    id: Uuid,
+    input: SetResourceLimitsInput,
+) -> AppResult<ApplicationDetail> {
+    services::set_application_resource_limits(&repo, id, input)
 }
 
 #[tauri::command]

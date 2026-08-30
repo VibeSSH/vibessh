@@ -265,6 +265,19 @@
       "minecraftStatus": "Status serwera Minecraft"
     }
   },
+  "resourceLimits": {
+    "title": "Limity zasobów",
+    "dockerNote": "Zmiana zadziała dopiero przy następnym utworzeniu tego kontenera od nowa (usunięcie i ponowne uruchomienie) - tak samo jak zmieniony obraz czy komenda.",
+    "memory": "Pamięć",
+    "memoryPlaceholder": "np. 2048",
+    "cpu": "CPU",
+    "cpuPlaceholder": "np. 1.5",
+    "unlimited": "Bez limitu",
+    "cores": "{{count}} rdzeni",
+    "edit": "Edytuj",
+    "invalidForm": "Podaj liczbę dodatnią albo zostaw pole puste, żeby nie ustawiać limitu.",
+    "saveError": "Nie udało się zapisać limitów zasobów."
+  },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
     "body": "Usunąć <1>{{name}}</1>? To usuwa ją z VibeSSH - nie zatrzymuje samodzielnie wciąż działającego procesu/usługi/kontenera; jeśli działa, zatrzymaj ją najpierw. Tej operacji nie można cofnąć."

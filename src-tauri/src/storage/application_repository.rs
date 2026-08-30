@@ -131,6 +131,27 @@ impl ApplicationRepository {
         self.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))
     }
 
+    /// Rewrites only the stored `runtime_config` JSON - unlike `update`,
+    /// doesn't touch name/description/working_directory or bump
+    /// `updated_at`. Used by `services::set_application_resource_limits`,
+    /// which patches just the memory/CPU limit keys inside whatever shape
+    /// the application's own runtime type already uses, not a full
+    /// application edit.
+    pub fn update_runtime_config(&self, id: Uuid, runtime_config: &serde_json::Value) -> AppResult<ApplicationDetail> {
+        let conn = self.lock();
+        let affected = conn
+            .execute(
+                "UPDATE application_runtime_config SET config_json = ?2 WHERE application_id = ?1",
+                params![id.to_string(), runtime_config.to_string()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to update runtime config: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("application {id}")));
+        }
+        drop(conn);
+        self.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))
+    }
+
     /// Separate from `update` deliberately - refreshing status from a
     /// runtime happens far more often than editing an application's
     /// config, and shouldn't bump `updated_at` (which is meant to reflect

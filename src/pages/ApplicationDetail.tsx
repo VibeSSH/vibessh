@@ -9,6 +9,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
 import { PortsTab } from "@/components/applications/PortsTab";
+import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
 import {
   getApplication,
   getApplicationLogs,
@@ -257,6 +258,10 @@ export function ApplicationDetail() {
 
               {features.includes("healthCheck") && (
                 <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
+              )}
+
+              {(application.runtimeType === "docker" || application.runtimeType === "systemd") && (
+                <ResourceLimitsCard applicationId={id} application={application} onSaved={reload} />
               )}
             </div>
           )}

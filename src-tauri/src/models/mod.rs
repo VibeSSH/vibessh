@@ -8,7 +8,7 @@ pub use app_info::AppInfo;
 pub use application::{
     Application, ApplicationDetail, ApplicationLocation, ApplicationPort, ApplicationStatus, CreateApplicationFromBlueprintInput,
     CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortProtocol, RuntimeType, SetHealthCheckInput,
-    UpdateApplicationInput,
+    SetResourceLimitsInput, UpdateApplicationInput,
 };
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType};
 pub use cloud::{

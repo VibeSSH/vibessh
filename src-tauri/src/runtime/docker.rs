@@ -42,16 +42,31 @@ use crate::models::{ApplicationStatus, EnvironmentVariable};
 use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
 
-use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+use super::{
+    health_check, validate_resource_limits, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider,
+    ResourceUsage, RuntimeContext,
+};
 
 /// What `runtime_config` deserializes into for `RuntimeType::Docker`.
 /// `command`, if given, overrides the image's own `ENTRYPOINT`/`CMD` - a
 /// container created without one just runs the image as authored.
+///
+/// `memory_limit_mb`/`cpu_limit_cores` are set through
+/// `services::set_application_resource_limits`, not the Create Application
+/// wizard - see that function's own doc comment. They're only baked in at
+/// `docker create` time (see `create_container`), so, same as an edited
+/// `image`/`command`, a change here doesn't reach an already-existing
+/// container until it's removed and recreated.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DockerConfig {
     pub image: String,
     #[serde(default)]
     pub command: Vec<String>,
+    #[serde(default)]
+    pub memory_limit_mb: Option<u32>,
+    #[serde(default)]
+    pub cpu_limit_cores: Option<f32>,
 }
 
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<DockerConfig> {
@@ -126,15 +141,26 @@ async fn container_exists(connection: &SshSession, name: &str) -> AppResult<bool
     Ok(output.exit_code == 0)
 }
 
-async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
+/// Pure command-string construction, separated from `create_container`'s
+/// actual SSH exec so the resource-limit flag placement can be unit tested
+/// without a live connection - same split `runtime::systemd::render_unit_file`
+/// already uses for the same reason.
+fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<String> {
     validate_container_ref(name)?;
     reject_newlines(&config.image, "the image")?;
     for arg in &config.command {
         reject_newlines(arg, "a command argument")?;
     }
     validate_environment(ctx.environment)?;
+    validate_resource_limits(config.memory_limit_mb, config.cpu_limit_cores)?;
 
     let mut command = format!("docker create --name {} ", shell_quote(name));
+    if let Some(mb) = config.memory_limit_mb {
+        command.push_str(&format!("--memory {mb}m "));
+    }
+    if let Some(cores) = config.cpu_limit_cores {
+        command.push_str(&format!("--cpus {cores} "));
+    }
     for env in ctx.environment {
         command.push_str(&format!("-e {}={} ", env.key, shell_quote(&env.value)));
     }
@@ -143,7 +169,11 @@ async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, con
         command.push(' ');
         command.push_str(&shell_quote(arg));
     }
+    Ok(command)
+}
 
+async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
+    let command = build_create_command(ctx, config, name)?;
     let output = connection.execute_command(&command).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
@@ -465,6 +495,44 @@ mod tests {
     fn validate_environment_rejects_a_bad_key_but_accepts_a_good_one() {
         assert!(validate_environment(&[EnvironmentVariable { key: "PORT".into(), value: "25565".into() }]).is_ok());
         assert!(validate_environment(&[EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }]).is_err());
+    }
+
+    #[test]
+    fn build_create_command_includes_memory_and_cpu_flags_before_the_image_when_set() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5) };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(command.contains("--memory 512m"), "{command}");
+        assert!(command.contains("--cpus 1.5"), "{command}");
+        assert!(command.find("--memory").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_create_command_omits_limit_flags_when_unset() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(!command.contains("--memory"));
+        assert!(!command.contains("--cpus"));
+    }
+
+    #[test]
+    fn build_create_command_rejects_a_zero_memory_limit_or_non_positive_cpu_limit() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], connection: None };
+
+        let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None };
+        assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test").is_err());
+
+        let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0) };
+        assert!(build_create_command(&ctx, &negative_cpu, "vibessh-app-test").is_err());
     }
 
     #[tokio::test]

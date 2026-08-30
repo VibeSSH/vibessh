@@ -12,6 +12,7 @@ import type {
   ResourceUsage,
   RuntimeType,
   SetHealthCheckInput,
+  SetResourceLimitsInput,
 } from "@/types/application";
 
 /** What the Create Application wizard submits - mirrors the Rust `CreateApplicationFromBlueprintInput` DTO. */
@@ -116,4 +117,9 @@ export function getApplicationHealth(id: string): Promise<HealthStatus> {
 
 export function setApplicationHealthCheck(id: string, input: SetHealthCheckInput): Promise<ApplicationDetail> {
   return callCommand<ApplicationDetail>("set_application_health_check", { id, input });
+}
+
+/** Only accepted for a Docker/systemd application - see the Rust `set_application_resource_limits`'s own doc comment for why a Local/Remote process application rejects this outright instead of silently accepting and ignoring it. */
+export function setApplicationResourceLimits(id: string, input: SetResourceLimitsInput): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("set_application_resource_limits", { id, input });
 }
