@@ -5,7 +5,7 @@ use crate::errors::AppResult;
 use crate::services;
 use crate::state::SshSessionManager;
 use crate::storage::server_repository::ServerRepository;
-use crate::transport::ServiceSummary;
+use crate::transport::{ContainerSummary, ServiceSummary};
 
 #[tauri::command]
 pub async fn list_server_services(
@@ -24,4 +24,23 @@ pub async fn restart_server_service(
     service_name: String,
 ) -> AppResult<()> {
     services::restart_server_service(&repo, &sessions, server_id, &service_name).await
+}
+
+#[tauri::command]
+pub async fn list_server_containers(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+) -> AppResult<Vec<ContainerSummary>> {
+    services::list_server_containers(&repo, &sessions, server_id).await
+}
+
+#[tauri::command]
+pub async fn restart_server_container(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    container: String,
+) -> AppResult<()> {
+    services::restart_server_container(&repo, &sessions, server_id, &container).await
 }

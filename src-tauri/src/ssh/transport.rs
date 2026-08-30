@@ -1,10 +1,12 @@
 //! Adapts `SshSession` (pure protocol mechanics, see `client.rs`/`sftp.rs`/
-//! `monitor.rs`/`systemd.rs`) to the app's transport-agnostic
+//! `monitor.rs`/`systemd.rs`/`docker.rs`) to the app's transport-agnostic
 //! `ServerConnection` trait. Every method is real - none of this is a stub
 //! standing in for a later stage.
 use crate::errors::AppResult;
 use crate::ssh::client::SshSession;
-use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerConnection, ServerMetrics, ServiceSummary};
+use crate::transport::{
+    CommandOutput, ContainerSummary, ProcessSummary, RemoteFileEntry, ServerConnection, ServerMetrics, ServiceSummary,
+};
 
 #[async_trait::async_trait]
 impl ServerConnection for SshSession {
@@ -26,6 +28,14 @@ impl ServerConnection for SshSession {
 
     async fn restart_service(&self, service_name: &str) -> AppResult<()> {
         self.restart_service(service_name).await
+    }
+
+    async fn list_containers(&self) -> AppResult<Vec<ContainerSummary>> {
+        self.list_containers().await
+    }
+
+    async fn restart_container(&self, container: &str) -> AppResult<()> {
+        self.restart_container(container).await
     }
 
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {

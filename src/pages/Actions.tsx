@@ -4,9 +4,14 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import { listServerServices, restartServerService } from "@/services/actionsService";
+import {
+  listServerContainers,
+  listServerServices,
+  restartServerContainer,
+  restartServerService,
+} from "@/services/actionsService";
 import { useServersStore } from "@/stores/serversStore";
-import type { ServiceSummary } from "@/types/serverEvent";
+import type { ContainerSummary, ServiceSummary } from "@/types/serverEvent";
 import "./pages.css";
 import "./Actions.css";
 import "@/components/servers/AddServerModal.css";
@@ -14,48 +19,73 @@ import "@/components/servers/forms.css";
 
 const MAX_ROWS_SHOWN = 200;
 
+type PendingRestart =
+  | { kind: "service"; name: string }
+  | { kind: "container"; name: string };
+
 export function ActionsPage() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
 
   const [services, setServices] = useState<ServiceSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-  const [confirming, setConfirming] = useState<ServiceSummary | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const [serviceFilter, setServiceFilter] = useState("");
+
+  const [containers, setContainers] = useState<ContainerSummary[]>([]);
+  const [containersLoading, setContainersLoading] = useState(true);
+  const [containersError, setContainersError] = useState<string | null>(null);
+
+  const [confirming, setConfirming] = useState<PendingRestart | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  const loadServices = useCallback(() => {
     if (!serverId) return;
-    setLoading(true);
-    setError(null);
+    setServicesLoading(true);
+    setServicesError(null);
     listServerServices(serverId)
       .then((loaded) => setServices([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't list services."))
-      .finally(() => setLoading(false));
+      .catch((err) => setServicesError(err instanceof Error ? err.message : "Couldn't list services."))
+      .finally(() => setServicesLoading(false));
   }, [serverId]);
 
-  useEffect(load, [load]);
+  const loadContainers = useCallback(() => {
+    if (!serverId) return;
+    setContainersLoading(true);
+    setContainersError(null);
+    listServerContainers(serverId)
+      .then((loaded) => setContainers([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
+      .catch((err) => setContainersError(err instanceof Error ? err.message : "Couldn't list containers."))
+      .finally(() => setContainersLoading(false));
+  }, [serverId]);
+
+  useEffect(loadServices, [loadServices]);
+  useEffect(loadContainers, [loadContainers]);
 
   if (!serverId) {
     return <Navigate to="/servers" replace />;
   }
 
-  const needle = filter.trim().toLowerCase();
-  const filtered = needle ? services.filter((s) => s.name.toLowerCase().includes(needle)) : services;
+  const needle = serviceFilter.trim().toLowerCase();
+  const filteredServices = needle ? services.filter((s) => s.name.toLowerCase().includes(needle)) : services;
 
   async function handleConfirmRestart() {
     if (!confirming || !serverId) return;
     setRestarting(true);
     setRestartError(null);
     try {
-      await restartServerService(serverId, confirming.name);
+      if (confirming.kind === "service") {
+        await restartServerService(serverId, confirming.name);
+        loadServices();
+      } else {
+        await restartServerContainer(serverId, confirming.name);
+        loadContainers();
+      }
       setConfirming(null);
-      load();
     } catch (err) {
-      setRestartError(err instanceof Error ? err.message : "Couldn't restart this service.");
+      setRestartError(err instanceof Error ? err.message : "Couldn't restart this.");
     } finally {
       setRestarting(false);
     }
@@ -74,20 +104,20 @@ export function ActionsPage() {
         </Button>
       </div>
 
-      {error && <p className="page-error-note">{error}</p>}
+      {servicesError && <p className="page-error-note">{servicesError}</p>}
 
       <Card title="Systemd services" subtitle={`${services.length} units`}>
         <input
           className="form-input actions-filter"
           placeholder="Filter by name..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          value={serviceFilter}
+          onChange={(e) => setServiceFilter(e.target.value)}
         />
-        {loading ? (
+        {servicesLoading ? (
           <p className="settings-muted">Loading...</p>
         ) : (
           <ul className="server-list">
-            {filtered.slice(0, MAX_ROWS_SHOWN).map((service) => (
+            {filteredServices.slice(0, MAX_ROWS_SHOWN).map((service) => (
               <li key={service.name} className="server-list-item">
                 <div className="server-list-main">
                   <span className="server-list-name">{service.name}</span>
@@ -99,7 +129,41 @@ export function ActionsPage() {
                   className="server-list-action"
                   aria-label={`Restart ${service.name}`}
                   onClick={() => {
-                    setConfirming(service);
+                    setConfirming({ kind: "service", name: service.name });
+                    setRestartError(null);
+                  }}
+                >
+                  <Icon name="zap" size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {containersError && <p className="page-error-note">{containersError}</p>}
+
+      <Card title="Docker containers" subtitle={`${containers.length} containers`}>
+        {containersLoading ? (
+          <p className="settings-muted">Loading...</p>
+        ) : containers.length === 0 ? (
+          <p className="settings-muted">No containers, or Docker isn't installed on this server.</p>
+        ) : (
+          <ul className="server-list">
+            {containers.map((container) => (
+              <li key={container.id} className="server-list-item">
+                <div className="server-list-main">
+                  <span className="server-list-name">{container.name}</span>
+                  <span className="server-list-host">
+                    {container.image} · {container.status}
+                  </span>
+                </div>
+                <Badge tone={container.running ? "success" : "neutral"}>{container.running ? "Running" : "Stopped"}</Badge>
+                <button
+                  className="server-list-action"
+                  aria-label={`Restart ${container.name}`}
+                  onClick={() => {
+                    setConfirming({ kind: "container", name: container.name });
                     setRestartError(null);
                   }}
                 >
@@ -115,7 +179,7 @@ export function ActionsPage() {
         <div className="modal-backdrop" onClick={() => !restarting && setConfirming(null)}>
           <div className="modal-panel" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2 className="modal-title">Restart service</h2>
+              <h2 className="modal-title">Restart {confirming.kind === "service" ? "service" : "container"}</h2>
               <button className="modal-close" onClick={() => setConfirming(null)} aria-label="Close">
                 <Icon name="x" size={16} />
               </button>

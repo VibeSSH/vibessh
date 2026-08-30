@@ -28,6 +28,15 @@ export interface ServiceSummary {
   description: string;
 }
 
+/** Mirrors the Rust `ContainerSummary` struct. */
+export interface ContainerSummary {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  running: boolean;
+}
+
 /**
  * Mirrors the Rust `ServerEvent` enum's JSON shape (serde `tag = "type"`,
  * dot-notation variant names). Only `metrics.update` (Etap J) is ever

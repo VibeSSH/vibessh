@@ -65,3 +65,19 @@ pub struct ServiceSummary {
     pub enabled: bool,
     pub description: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerSummary {
+    /// Short (12-char) container ID, exactly as `docker ps` shows it -
+    /// restart accepts this or `name` interchangeably, same as the `docker`
+    /// CLI itself does.
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    /// Docker's own human-readable status text, e.g. "Up 3 hours" or
+    /// "Exited (0) 2 days ago" - not reparsed into a duration, since the
+    /// exact wording is more informative than a normalized number here.
+    pub status: String,
+    pub running: bool,
+}

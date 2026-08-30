@@ -209,7 +209,27 @@ same `ServerConnection` interface on the Rust side.
       then created a disposable throwaway unit, restarted it for real
       through this exact code path, and confirmed cleanup left no trace -
       nothing already running on that shared box was ever touched
-- [ ] Docker quick actions
+- [x] Docker quick actions (Actions module) — same reasoning as the systemd
+      half: no separate elevation mechanism, `docker restart <container>`
+      over SSH runs with exactly the privileges (or `docker` group
+      membership) the authenticated user already has. `restart_container`
+      validates the container name/ID against Docker's own allowed
+      character set before it's ever spliced into a shell command, exactly
+      like `systemd.rs`'s unit-name validation. `list_containers` uses
+      `docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|
+      {{.State}}'` - a `|` delimiter rather than a template `\t` escape
+      (not guaranteed to survive a shell round trip the same way a literal
+      character does), safe because neither Docker names nor image
+      references can ever contain one. The Actions page gained a second
+      section, Docker containers, sharing the same restart-behind-a-confirm-
+      dialog UI as the systemd section. Covered by unit tests (injection
+      rejection, parsing a realistic multi-container listing) and a one-off
+      manual run against the project's real test server: listed 5 real
+      Pterodactyl-managed Minecraft server containers with correct image/
+      status/running state, then created a disposable throwaway container,
+      restarted it for real through this exact code path, and confirmed
+      cleanup left no trace - nothing already running on that shared box
+      was touched
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -308,7 +328,8 @@ src/                        Frontend (React + TypeScript)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
                             Files (/files/:serverId - breadcrumb-navigable directory browser),
                             Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview),
-                            Actions (/actions/:serverId - systemd service list + restart-behind-confirm)
+                            Actions (/actions/:serverId - systemd services + Docker containers,
+                            both restart-behind-a-confirm-dialog)
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
                             terminalService.ts, filesService.ts, monitorService.ts, actionsService.ts)
@@ -338,6 +359,8 @@ src-tauri/                  Desktop backend (Rust, Tauri)
                                      monitor.rs (get_metrics/list_processes over `/proc`+`ps`),
                                      systemd.rs (list_services/restart_service, shell-injection-
                                      safe unit name validation),
+                                     docker.rs (list_containers/restart_container, same
+                                     validation approach as systemd.rs),
                                      transport.rs (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
                                        server id); server_repository.rs (SQLite, Etap 2 servers +
