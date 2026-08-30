@@ -100,7 +100,26 @@ same `ServerConnection` interface on the Rust side.
       Verified end-to-end against the test server through a real WebSocket
       handshake: reported RAM/disk totals matched what `free -h`/`df -h`
       showed on that box independently
-- [ ] Security review pass (pairing, TLS, secret storage, privilege escalation)
+- [x] Security review (Etap K) — full writeup in `docs/security-review.md`
+      covering all 16 areas the plan calls out, with LOW/MEDIUM/HIGH/CRITICAL
+      severities. Two CRITICALs, fixed: (1) the pairing code and issued
+      credential were transmitted in plaintext - the public endpoint is now
+      `wss://` with a self-signed certificate the agent generates and
+      persists (defeats passive eavesdropping; an active MITM on the very
+      first connection is a documented residual risk - there's no side
+      channel to pin a cert fingerprint ahead of time yet); (2) the pairing
+      control endpoint had no code-level guarantee of staying loopback-only
+      - the agent now refuses to start if it isn't, verified for real. One
+      HIGH, fixed: `store_agent_credential` (OS keyring) existed and was
+      tested but was never actually called from the pairing flow - it is
+      now. Verified against the project's test server, not just unit tests:
+      `openssl s_client` completing a real TLS handshake against the
+      deployed agent, and the loopback-enforcement refusal triggering for
+      real with a misconfigured bind address. Also documents why the
+      agent's default bind changed to `0.0.0.0` as a result (TLS + auth are
+      the real protection now, not network placement) and confirms that
+      change didn't expose anything on the test server, which firewalls the
+      port by default
 - [ ] Private host mesh — future, architecture reserved for it, not built yet
 
 Built in stages on purpose — each one lands as something that actually runs
@@ -181,6 +200,7 @@ agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
     errors.rs                       AgentError/AgentResult (own type, not shared with desktop)
     capabilities.rs                  detect() - real systemd/docker/minecraft/terminal detection
     metrics.rs                        MetricsCollector - real CPU/RAM/disk/load/uptime/network via sysinfo
+    tls.rs                             Self-signed cert generation/persistence (Etap K)
     pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
     transport/                         WS server (handshake, heartbeat, metrics tick) + local-only pairing control HTTP route
 

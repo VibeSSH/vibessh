@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum_server::tls_rustls::RustlsConfig;
 use tokio::net::TcpListener;
 
 use vibe_agent::cli;
@@ -10,11 +11,11 @@ use vibe_agent::pairing::PairingRegistry;
 use vibe_agent::transport::{self, SharedState};
 use vibe_agent::DEFAULT_CONTROL_BIND;
 
-/// No TLS and no enforced auth yet (Etap D/E territory) - binding to
-/// loopback only until pairing (Etap E) and the security review (Etap K)
-/// land keeps an accidentally-exposed dev instance from being reachable
-/// over the network.
-const DEFAULT_BIND_ADDR: &str = "127.0.0.1:7420";
+/// Binds to all interfaces by default: this is the endpoint a desktop
+/// somewhere else on the internet actually needs to reach. TLS (Etap K)
+/// and pairing-code/credential auth are what make that safe to expose, not
+/// network placement.
+const DEFAULT_BIND_ADDR: &str = "0.0.0.0:7420";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -70,9 +71,40 @@ async fn run_daemon() {
         }
     };
 
-    log::info!("listening on {} (ws://.../ws)", listener.local_addr().unwrap());
+    // Etap K: the control endpoint has no authentication of its own at all
+    // - its entire security model is "loopback-only, so reaching it already
+    // implies shell-level trust" (see docs/agent-privileges.md). That was
+    // previously only a comment; a typo'd or copy-pasted
+    // VIBESSH_AGENT_CONTROL_BIND would have silently exposed pairing
+    // control to the network with zero auth. Refusing to start is the fix.
+    let control_ip = control_listener.local_addr().unwrap().ip();
+    if !control_ip.is_loopback() {
+        log::error!(
+            "refusing to start: pairing control endpoint is bound to {control_ip}, which is not loopback. \
+             This endpoint has no authentication - it must never be reachable from the network. \
+             Check VIBESSH_AGENT_CONTROL_BIND."
+        );
+        std::process::exit(1);
+    }
+
+    let tls_paths = match vibe_agent::tls::load_or_create(&config.data_dir) {
+        Ok(paths) => paths,
+        Err(err) => {
+            log::error!("failed to load or create the TLS certificate: {err}");
+            std::process::exit(1);
+        }
+    };
+    let tls_config = match RustlsConfig::from_pem_file(&tls_paths.cert_path, &tls_paths.key_path).await {
+        Ok(config) => config,
+        Err(err) => {
+            log::error!("failed to load the TLS certificate into the server: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    log::info!("listening on {} (wss://.../ws)", listener.local_addr().unwrap());
     log::info!(
-        "pairing control on {} (loopback only)",
+        "pairing control on {} (loopback only, enforced)",
         control_listener.local_addr().unwrap()
     );
     if vibe_agent::pairing::has_paired_credential(&config.data_dir) {
@@ -91,7 +123,7 @@ async fn run_daemon() {
     };
 
     tokio::select! {
-        result = transport::serve(listener, state.clone()) => {
+        result = transport::serve(listener, state.clone(), tls_config) => {
             if let Err(err) = result {
                 log::error!("server error: {err}");
             }

@@ -17,6 +17,18 @@ Then, on the same machine:
 vibe-agent pair <CODE-SHOWN-IN-VIBESSH>
 ```
 
+The agent listens on `0.0.0.0:7420` by default (TLS + pairing-code/credential
+auth are what make that safe - see `docs/security-review.md`), but
+`install.sh` does not touch your firewall. For the desktop to actually
+reach it from elsewhere, allow the port explicitly, e.g.:
+
+```sh
+ufw allow 7420/tcp
+```
+
+Opening a firewall port isn't something an installer should do silently -
+this is a deliberate, separate step.
+
 `<release-url>` isn't live yet - `VibeSSH/vibessh` has no published releases
 and is currently a private repo, so there's nothing for `curl` to fetch
 until that changes. `BASE_URL` already points at the real place releases

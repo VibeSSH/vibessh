@@ -1,12 +1,13 @@
-//! Desktop <-> Agent transport (Etap D) plus the local pairing control
-//! endpoint (Etap E). Plain HTTP for now — TLS is deliberately deferred to
-//! the Etap K security review rather than bolted on here with a
-//! self-signed dev cert. axum covers both the WebSocket realtime channel
-//! and the request/response HTTP endpoints, so there's one server library,
-//! not two - though the *public* WS server and the *local-only* control
-//! server below are still two separate listeners, deliberately, so a
-//! change to the public bind address can never accidentally expose pairing
-//! control.
+//! Desktop <-> Agent transport (Etap D), TLS (Etap K), plus the local
+//! pairing control endpoint (Etap E). axum covers both the WebSocket
+//! realtime channel and the request/response HTTP endpoints, so there's
+//! one server library, not two - though the *public* WS server and the
+//! *local-only* control server below are still two separate listeners,
+//! deliberately, so a change to the public bind address can never
+//! accidentally expose pairing control. Only the public server is TLS -
+//! the control endpoint never leaves loopback, so there's no network path
+//! for TLS to protect there (see `main.rs`'s startup check, which refuses
+//! to run at all if that assumption is ever violated).
 
 mod connection;
 mod control;
@@ -20,6 +21,7 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
+use axum_server::tls_rustls::RustlsConfig;
 use tokio::net::TcpListener;
 
 use crate::info::AgentInfo;
@@ -51,12 +53,15 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> i
     ws.on_upgrade(move |socket| connection::handle(socket, state))
 }
 
-/// Serves the public WebSocket endpoint forever on an already-bound
-/// listener. Splitting bind from serve lets tests bind `127.0.0.1:0`, read
-/// back the OS-assigned port via `TcpListener::local_addr()`, and only then
-/// start accepting connections.
-pub async fn serve(listener: TcpListener, state: SharedState) -> std::io::Result<()> {
-    axum::serve(listener, router(state)).await
+/// Serves the public WebSocket endpoint over TLS forever on an
+/// already-bound listener. Splitting bind from serve lets tests bind
+/// `127.0.0.1:0`, read back the OS-assigned port via
+/// `TcpListener::local_addr()`, and only then start accepting connections.
+pub async fn serve(listener: TcpListener, state: SharedState, tls_config: RustlsConfig) -> std::io::Result<()> {
+    let std_listener = listener.into_std()?;
+    axum_server::from_tcp_rustls(std_listener, tls_config)
+        .serve(router(state).into_make_service())
+        .await
 }
 
 /// Serves the local-only pairing control endpoint. Callers must only ever

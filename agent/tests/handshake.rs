@@ -7,10 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
 use vibe_agent::identity::AgentIdentity;
 use vibe_agent::info::AgentInfo;
@@ -19,6 +20,29 @@ use vibe_agent::transport::{self, SharedState};
 use vibessh_protocol::{
     HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
+
+/// The agent's certificate is self-signed (Etap K - no CA for an arbitrary
+/// self-hosted VPS), so tests need the same "accept it anyway" connector
+/// real desktop clients use (`agent_client`) instead of the default
+/// validating one, which would reject every connection here.
+async fn connect_insecure<R: IntoClientRequest + Unpin>(
+    request: R,
+) -> WebSocketStream<MaybeTlsStream<TcpStream>> {
+    let connector = native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .build()
+        .expect("failed to build a permissive TLS connector for tests");
+    let (ws, _) = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        None,
+        false,
+        Some(Connector::NativeTls(connector)),
+    )
+    .await
+    .expect("connect");
+    ws
+}
 
 struct TestAgent {
     ws_url: String,
@@ -41,6 +65,11 @@ async fn spawn_test_agent(heartbeat_interval: Duration, metrics_interval: Durati
     let info = Arc::new(AgentInfo::collect(&identity));
     let data_dir = std::env::temp_dir().join(format!("vibessh-agent-test-{}", uuid::Uuid::new_v4()));
 
+    let tls_paths = vibe_agent::tls::load_or_create(&data_dir).expect("failed to generate a test TLS certificate");
+    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&tls_paths.cert_path, &tls_paths.key_path)
+        .await
+        .expect("failed to load the test TLS certificate");
+
     let ws_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let ws_addr = ws_listener.local_addr().unwrap();
     let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -54,11 +83,11 @@ async fn spawn_test_agent(heartbeat_interval: Duration, metrics_interval: Durati
         metrics_interval,
     };
 
-    tokio::spawn(transport::serve(ws_listener, state.clone()));
+    tokio::spawn(transport::serve(ws_listener, state.clone(), tls_config));
     tokio::spawn(transport::serve_control(control_listener, state));
 
     TestAgent {
-        ws_url: format!("ws://{ws_addr}/ws"),
+        ws_url: format!("wss://{ws_addr}/ws"),
         control_url: format!("http://{control_addr}/internal/pair"),
         agent_id: info.id,
         data_dir,
@@ -66,7 +95,7 @@ async fn spawn_test_agent(heartbeat_interval: Duration, metrics_interval: Durati
 }
 
 async fn handshake_with(url: &str, auth_token: Option<&str>) -> HandshakeResponse {
-    let (mut ws, _) = connect_async(url).await.expect("connect");
+    let mut ws = connect_insecure(url).await;
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
         client_name: "vibessh-desktop-test".into(),
@@ -100,7 +129,7 @@ async fn register_code_via_http(control_url: &str, code: &str) {
 #[tokio::test]
 async fn handshake_rejects_mismatched_protocol_version() {
     let agent = spawn_test_agent(Duration::from_secs(30), Duration::from_secs(30)).await;
-    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
+    let mut ws = connect_insecure(&agent.ws_url).await;
 
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION + 1,
@@ -157,7 +186,7 @@ async fn heartbeat_still_follows_a_successful_pairing_handshake() {
     let agent = spawn_test_agent(Duration::from_millis(100), Duration::from_secs(30)).await;
     register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
 
-    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
+    let mut ws = connect_insecure(&agent.ws_url).await;
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
         client_name: "vibessh-desktop-test".into(),
@@ -186,7 +215,7 @@ async fn metrics_update_follows_a_successful_handshake_with_sane_values() {
 
     // Reconnect to read the event stream from a clean handshake instead of
     // consuming handshake_with's own connection, which it already closed.
-    let (mut ws, _) = connect_async(&agent.ws_url).await.expect("connect");
+    let mut ws = connect_insecure(&agent.ws_url).await;
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
         client_name: "vibessh-desktop-test".into(),

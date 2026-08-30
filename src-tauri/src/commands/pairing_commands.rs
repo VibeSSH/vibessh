@@ -19,6 +19,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::agent_client::{self, AgentClientConfig, AgentConnectionState};
 use crate::state::PairingSession;
+use crate::storage::credentials;
 use vibessh_protocol::ServerEvent;
 
 /// Frontend listens with `listen(PAIRING_STATE_EVENT, ...)` from
@@ -64,7 +65,30 @@ pub fn spawn_pairing_session<F, E>(
             if state_rx.changed().await.is_err() {
                 return; // state_tx dropped - the run task ended or was aborted
             }
-            on_state_change(state_rx.borrow_and_update().clone());
+            let state = state_rx.borrow_and_update().clone();
+
+            // Etap K: this used to be issued and then simply discarded once
+            // the pairing modal closed - the OS-keyring storage existed and
+            // was tested (Etap E) but nothing ever called it. Persisting it
+            // here, not in the frontend, means every path that produces a
+            // credential (this one today, a future "reconnect" flow
+            // tomorrow) goes through the same one place.
+            if let AgentConnectionState::Connected {
+                agent_id,
+                issued_credential: Some(credential),
+                ..
+            } = &state
+            {
+                let agent_id = *agent_id;
+                let credential = credential.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(err) = credentials::store_agent_credential(agent_id, &credential) {
+                        log::error!("failed to store the issued agent credential in the OS keyring: {err}");
+                    }
+                });
+            }
+
+            on_state_change(state);
         }
     });
 
@@ -81,7 +105,7 @@ pub fn spawn_pairing_session<F, E>(
 #[tauri::command]
 pub fn start_agent_pairing(app: AppHandle, session: State<PairingSession>, host: String, port: u16, pairing_code: String) {
     let config = AgentClientConfig {
-        url: format!("ws://{host}:{port}/ws"),
+        url: format!("wss://{host}:{port}/ws"),
         client_name: "VibeSSH Desktop".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         auth_token: Some(pairing_code),

@@ -37,7 +37,19 @@ ureq = { version = "2", features = ["json"] }
 # already does correctly across kernel/cgroup/filesystem edge cases - the
 # same reasoning as using axum instead of a bespoke HTTP layer.
 sysinfo = "0.39"
+# TLS for the public WebSocket endpoint (Etap K security review) - defeats
+# passive eavesdropping on the pairing code / issued credential, which
+# were plaintext before this. Self-signed (no CA infra for an arbitrary
+# self-hosted VPS agent); see src/tls.rs for what this does and doesn't
+# protect against.
+rcgen = "0.13"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+# Explicit (not just pulled in transitively by axum-server) so we can
+# select+install the process-wide crypto backend ourselves - rustls 0.23
+# refuses to guess when more than one is reachable. See tls.rs.
+rustls = { version = "0.23", features = ["ring"] }
 
 [dev-dependencies]
-tokio-tungstenite = "0.24"
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
+native-tls = "0.2"

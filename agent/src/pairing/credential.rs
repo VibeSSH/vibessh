@@ -11,7 +11,7 @@ const CREDENTIAL_FILE_NAME: &str = "paired_credential.json";
 
 /// Only ever written to disk - the raw credential this is a hash of exists
 /// only in memory for the moment it's generated and handed back over the
-/// (still plaintext, Etap D/K note) WebSocket connection.
+/// TLS-encrypted WebSocket connection (Etap K).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PersistedCredential {

@@ -27,8 +27,12 @@ vibessh-protocol = { path = "../protocol" }
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
-tokio-tungstenite = "0.24"
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
+# Agent connections are wss:// with a self-signed cert (Etap K - no CA for
+# an arbitrary self-hosted VPS agent) - see agent_client/mod.rs for what
+# accepting that cert does and doesn't protect against.
+native-tls = "0.2"
 # OS credential store (Windows Credential Manager / macOS Keychain / Linux
 # Secret Service) for agent device credentials - see storage/credentials.rs.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service", "crypto-rust"] }

@@ -10,6 +10,7 @@ pub mod identity;
 pub mod info;
 pub mod metrics;
 pub mod pairing;
+pub mod tls;
 pub mod transport;
 
 /// Bind address for the local pairing control endpoint. Always loopback,
