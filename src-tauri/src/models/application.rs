@@ -43,6 +43,22 @@ pub enum ApplicationStatus {
     Failed,
 }
 
+/// What `ApplicationRuntime::health_check` actually probes, beyond "is the
+/// process still running" (that check always happens first, regardless of
+/// this setting - see each runtime's own `health_check` implementation).
+/// `Tcp`/`Http` need `health_check_port_id`; `Http` additionally needs
+/// `health_check_http_path`; `MinecraftStatus` needs `health_check_port_id`
+/// but speaks the real Minecraft Server List Ping protocol on it rather
+/// than a plain connect - see `runtime::health_check`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HealthCheckType {
+    Process,
+    Tcp,
+    Http,
+    MinecraftStatus,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Application {
@@ -56,6 +72,15 @@ pub struct Application {
     pub working_directory: String,
     pub status: ApplicationStatus,
     pub last_status_check_at: Option<DateTime<Utc>>,
+    pub health_check_type: HealthCheckType,
+    /// References an `ApplicationPort` - `None` for `HealthCheckType::Process`
+    /// (nothing to check beyond the process itself), and also `None` if the
+    /// port a check was pointed at has since been removed (the FK is
+    /// `ON DELETE SET NULL`, not a hard failure) - either way, a check that
+    /// needs a port but doesn't have one resolves to `HealthStatus::Unknown`,
+    /// not an error.
+    pub health_check_port_id: Option<Uuid>,
+    pub health_check_http_path: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -128,6 +153,19 @@ pub struct UpdateApplicationInput {
     pub working_directory: String,
     pub runtime_config: serde_json::Value,
     pub metadata: serde_json::Value,
+}
+
+/// A separate, small input rather than folding this into
+/// `UpdateApplicationInput` - health check configuration is its own concern
+/// with its own validation (does `port_id`, if any, actually belong to this
+/// application?), not part of the general name/description/working-
+/// directory edit flow.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetHealthCheckInput {
+    pub health_check_type: HealthCheckType,
+    pub port_id: Option<Uuid>,
+    pub http_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

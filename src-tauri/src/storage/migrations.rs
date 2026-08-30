@@ -108,6 +108,21 @@ pub fn migrations() -> Migrations<'static> {
                 metadata_json  TEXT NOT NULL
             );",
         ),
+        // Migration 3: health check configuration, straight on `applications`
+        // rather than a new table - it's 1-3 scalar fields per application,
+        // not a real per-row CRUD/collision concern the way ports are.
+        // `health_check_type` defaults to `'process'` (the only kind every
+        // existing row can honestly claim - a plain "is the process still
+        // running" check, same as before this migration existed at all).
+        // `health_check_port_id` references `application_ports` -
+        // `ON DELETE SET NULL` so removing the port a health check pointed
+        // at doesn't fail, it just leaves the check unable to run (treated
+        // as Unknown, not an error) until reconfigured.
+        M::up(
+            "ALTER TABLE applications ADD COLUMN health_check_type TEXT NOT NULL DEFAULT 'process';
+            ALTER TABLE applications ADD COLUMN health_check_port_id TEXT REFERENCES application_ports(id) ON DELETE SET NULL;
+            ALTER TABLE applications ADD COLUMN health_check_http_path TEXT;",
+        ),
     ])
 }
 
@@ -161,6 +176,28 @@ mod tests {
             )
             .unwrap();
         assert_eq!(table_count, 5);
+    }
+
+    #[test]
+    fn migration_3_adds_health_check_columns_defaulting_to_process() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let (health_check_type, port_id, http_path): (String, Option<String>, Option<String>) = conn
+            .query_row("SELECT health_check_type, health_check_port_id, health_check_http_path FROM applications WHERE id = 'a1'", (), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(health_check_type, "process");
+        assert_eq!(port_id, None);
+        assert_eq!(http_path, None);
     }
 
     #[test]

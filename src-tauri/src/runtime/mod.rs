@@ -15,7 +15,7 @@ pub mod systemd;
 use std::sync::Arc;
 
 use crate::errors::AppResult;
-use crate::models::{Application, ApplicationStatus, EnvironmentVariable, RuntimeType};
+use crate::models::{Application, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Everything a runtime call needs, resolved once per command rather than
@@ -189,6 +189,9 @@ mod tests {
             working_directory: "/tmp".to_string(),
             status: ApplicationStatus::Unknown,
             last_status_check_at: None,
+            health_check_type: HealthCheckType::Process,
+            health_check_port_id: None,
+            health_check_http_path: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

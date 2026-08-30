@@ -382,7 +382,7 @@ impl LogProvider for DockerLogs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Application, RuntimeType};
+    use crate::models::{Application, HealthCheckType, RuntimeType};
 
     fn stub_application(id: Uuid) -> Application {
         Application {
@@ -396,6 +396,9 @@ mod tests {
             working_directory: "/srv/my-app".to_string(),
             status: ApplicationStatus::Unknown,
             last_status_check_at: None,
+            health_check_type: HealthCheckType::Process,
+            health_check_port_id: None,
+            health_check_http_path: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

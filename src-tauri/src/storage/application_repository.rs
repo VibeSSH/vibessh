@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, PortInput,
-    PortProtocol, RuntimeType, UpdateApplicationInput,
+    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
+    PortInput, PortProtocol, RuntimeType, UpdateApplicationInput,
 };
 use crate::storage::migrations::migrations;
 
@@ -148,6 +148,39 @@ impl ApplicationRepository {
             return Err(AppError::NotFound(format!("application {id}")));
         }
         Ok(())
+    }
+
+    /// If `port_id` is `Some`, it must be one of *this* application's own
+    /// ports - pointing a health check at another application's port would
+    /// silently check the wrong thing, not just be a dangling reference.
+    pub fn set_health_check(
+        &self,
+        id: Uuid,
+        health_check_type: HealthCheckType,
+        port_id: Option<Uuid>,
+        http_path: Option<&str>,
+    ) -> AppResult<Application> {
+        let conn = self.lock();
+        if let Some(port_id) = port_id {
+            let owns_port = self
+                .list_ports_locked(&conn, id)?
+                .iter()
+                .any(|port| port.id == port_id);
+            if !owns_port {
+                return Err(AppError::InvalidInput(format!("port {port_id} doesn't belong to application {id}")));
+            }
+        }
+        let affected = conn
+            .execute(
+                "UPDATE applications SET health_check_type = ?2, health_check_port_id = ?3, health_check_http_path = ?4 WHERE id = ?1",
+                params![id.to_string(), health_check_type_to_str(health_check_type), port_id.map(|p| p.to_string()), http_path],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to update health check config: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("application {id}")));
+        }
+        conn.query_row(&format!("{APPLICATION_COLUMNS} FROM applications WHERE id = ?1"), params![id.to_string()], row_to_application)
+            .map_err(|err| AppError::Storage(format!("failed to reload application: {err}")))
     }
 
     pub fn delete(&self, id: Uuid) -> AppResult<()> {
@@ -404,7 +437,8 @@ fn storage_or_fk_error(err: rusqlite::Error, referenced: &str) -> AppError {
 }
 
 const APPLICATION_COLUMNS: &str = "SELECT id, server_id, name, description, blueprint_id, blueprint_version, \
-     runtime_type, working_directory, status, last_status_check_at, created_at, updated_at";
+     runtime_type, working_directory, status, last_status_check_at, health_check_type, health_check_port_id, \
+     health_check_http_path, created_at, updated_at";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     Ok(Application {
@@ -418,8 +452,11 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         working_directory: row.get(7)?,
         status: status_from_str(&row.get::<_, String>(8)?),
         last_status_check_at: row.get::<_, Option<String>>(9)?.map(|v| parse_timestamp(v)),
-        created_at: parse_timestamp(row.get::<_, String>(10)?),
-        updated_at: parse_timestamp(row.get::<_, String>(11)?),
+        health_check_type: health_check_type_from_str(&row.get::<_, String>(10)?),
+        health_check_port_id: row.get::<_, Option<String>>(11)?.map(parse_uuid),
+        health_check_http_path: row.get(12)?,
+        created_at: parse_timestamp(row.get::<_, String>(13)?),
+        updated_at: parse_timestamp(row.get::<_, String>(14)?),
     })
 }
 
@@ -486,6 +523,24 @@ fn status_from_str(value: &str) -> ApplicationStatus {
         "stopped" => ApplicationStatus::Stopped,
         "failed" => ApplicationStatus::Failed,
         _ => ApplicationStatus::Unknown,
+    }
+}
+
+fn health_check_type_to_str(value: HealthCheckType) -> &'static str {
+    match value {
+        HealthCheckType::Process => "process",
+        HealthCheckType::Tcp => "tcp",
+        HealthCheckType::Http => "http",
+        HealthCheckType::MinecraftStatus => "minecraft_status",
+    }
+}
+
+fn health_check_type_from_str(value: &str) -> HealthCheckType {
+    match value {
+        "tcp" => HealthCheckType::Tcp,
+        "http" => HealthCheckType::Http,
+        "minecraft_status" => HealthCheckType::MinecraftStatus,
+        _ => HealthCheckType::Process,
     }
 }
 

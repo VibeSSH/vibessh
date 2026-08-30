@@ -7,7 +7,8 @@ mod server;
 pub use app_info::AppInfo;
 pub use application::{
     Application, ApplicationDetail, ApplicationLocation, ApplicationPort, ApplicationStatus, CreateApplicationFromBlueprintInput,
-    CreateApplicationInput, EnvironmentVariable, PortInput, PortProtocol, RuntimeType, UpdateApplicationInput,
+    CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortProtocol, RuntimeType, SetHealthCheckInput,
+    UpdateApplicationInput,
 };
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType};
 pub use cloud::{
