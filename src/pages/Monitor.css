@@ -1,3 +1,9 @@
+.monitor-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
 .monitor-process-table-wrap {
   overflow-x: auto;
 }

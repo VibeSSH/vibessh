@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { MetricsPreview } from "@/components/servers/MetricsPreview";
+import { MetricsHistoryChart } from "@/components/servers/MetricsHistoryChart";
 import { getServerMetrics, listServerProcesses } from "@/services/monitorService";
 import { useServersStore } from "@/stores/serversStore";
 import type { ProcessSummary, ServerMetrics } from "@/types/serverEvent";
@@ -13,6 +14,28 @@ import "./pages.css";
 import "./Monitor.css";
 
 const POLL_INTERVAL_MS = 5000;
+/** 5 minutes of history at the poll interval above - long enough to see a trend, short enough to stay a lightweight in-memory array. */
+const HISTORY_LENGTH = 60;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatPercent(value: number): string {
+  return `${value.toFixed(0)}%`;
+}
+
+function formatRate(bytesPerSec: number): string {
+  return `${formatBytes(bytesPerSec)}/s`;
+}
 
 export function MonitorPage() {
   const { serverId } = useParams<{ serverId: string }>();
@@ -20,12 +43,14 @@ export function MonitorPage() {
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
 
   const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
+  const [history, setHistory] = useState<ServerMetrics[]>([]);
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!serverId) return;
     let cancelled = false;
+    setHistory([]);
 
     async function poll() {
       try {
@@ -35,6 +60,7 @@ export function MonitorPage() {
         ]);
         if (cancelled) return;
         setMetrics(nextMetrics);
+        setHistory((prev) => [...prev, nextMetrics].slice(-HISTORY_LENGTH));
         setProcesses([...nextProcesses].sort((a, b) => b.ramBytes - a.ramBytes));
         setError(null);
       } catch (err) {
@@ -74,6 +100,27 @@ export function MonitorPage() {
         {metrics ? <MetricsPreview metrics={metrics} /> : <SkeletonRows count={3} height={52} />}
       </Card>
 
+      <Card
+        title="History"
+        subtitle={history.length > 1 ? `last ${Math.round((history.length * POLL_INTERVAL_MS) / 1000 / 60)}m` : "collecting..."}
+      >
+        {history.length === 0 ? (
+          <SkeletonRows count={2} height={70} />
+        ) : (
+          <div className="monitor-history-grid">
+            <MetricsHistoryChart label="CPU" values={history.map((m) => m.cpuUsagePercent)} formatValue={formatPercent} minScale={100} />
+            <MetricsHistoryChart
+              label="RAM"
+              values={history.map((m) => (m.ramTotalBytes > 0 ? (m.ramUsedBytes / m.ramTotalBytes) * 100 : 0))}
+              formatValue={formatPercent}
+              minScale={100}
+            />
+            <MetricsHistoryChart label="Network in" values={history.map((m) => m.networkRxBytesPerSec)} formatValue={formatRate} />
+            <MetricsHistoryChart label="Network out" values={history.map((m) => m.networkTxBytesPerSec)} formatValue={formatRate} />
+          </div>
+        )}
+      </Card>
+
       <Card title="Processes" subtitle={`${processes.length} running, sorted by memory`}>
         {processes.length === 0 ? (
           <SkeletonRows count={6} height={28} />
@@ -106,16 +153,4 @@ export function MonitorPage() {
       </Card>
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
 }

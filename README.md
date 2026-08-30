@@ -209,6 +209,22 @@ same `ServerConnection` interface on the Rust side.
       matched to the exact byte, uptime matched to within seconds, and the
       process count matched within the small margin expected between two
       separate samples of a busy box's process churn
+- [x] Historical charts (Monitor module) — the Monitor page now keeps its
+      own rolling window of the last 60 poll samples (5 minutes at the
+      existing 5s interval) in component state, cleared whenever the viewed
+      server changes, and renders CPU%/RAM%/network-in/network-out
+      sparklines from it via a new `MetricsHistoryChart` - plain inline SVG
+      (a polyline scaled into a fixed viewBox plus a filled area under it),
+      not a charting library, since a few dozen points is all this needs.
+      Deliberately separate from `MetricsPreview`'s gauges rather than
+      folded into them: those also back Agent mode's push-fed live preview,
+      which has no local sample buffer to chart from, so this only touches
+      the SSH-mode polling page. No dedicated frontend test run here (the
+      project has no frontend test runner yet) - verified by type-checking
+      and a production build; the actual charts need a real polling session
+      to look at, which needs the native window this session couldn't drive
+      unattended, so this one specifically is worth a manual look before
+      trusting it fully
 - [x] Systemd quick actions (Actions module) — unlike the agent's own
       systemd support (Etap G), this needs no polkit rule or unit
       allowlist: an SSH session already runs as whatever user it
@@ -405,7 +421,8 @@ src/                        Frontend (React + TypeScript)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
                             Files (/files/:serverId - breadcrumb-navigable directory browser,
                             native-dialog upload/download via tauri-plugin-dialog),
-                            Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview),
+                            Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview,
+                            plus a 5-minute rolling MetricsHistoryChart history for CPU/RAM/network),
                             Actions (/actions/:serverId - systemd services + Docker containers,
                             start/stop/restart/enable-disable/remove, each behind a confirm dialog)
   hooks/
