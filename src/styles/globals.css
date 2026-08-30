@@ -123,14 +123,6 @@
   box-shadow: var(--t-ring-strong), var(--t-elev-1-hover), var(--t-highlight-strong);
 }
 
-/* Button depth system, ported from Voltius's globals.css .btn/.btn-primary/etc. */
-.btn-depth {
-  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease, background 0.15s ease;
-}
-.btn-depth:active:not(:disabled) {
-  transform: translateY(0.5px);
-}
-
 * {
   box-sizing: border-box;
 }

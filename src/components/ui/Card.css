@@ -1,9 +1,16 @@
+/*
+ * Elevation without blur - Voltius reserves backdrop-filter glass for
+ * grid-layout object cards (ServerCard here) and keeps dense, text-heavy
+ * surfaces (their word: changelog/settings) opaque for legibility, on the
+ * same ring+elevation shadow scale so both still read as one system. See
+ * their docs/design-surfaces.md note reproduced in ServerCard.css.
+ */
 .card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
+  background: var(--t-bg-card);
   border-radius: var(--radius-md);
   padding: 16px;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  box-shadow: var(--t-ring), var(--t-elev-1);
+  transition: box-shadow 150ms ease;
 }
 
 .card-header {

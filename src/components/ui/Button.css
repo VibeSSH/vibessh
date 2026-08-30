@@ -1,3 +1,9 @@
+/*
+ * Depth recipe ported from Voltius's .btn/.btn-primary/etc
+ * (voltius/src/styles/globals.css): a ring + hover brightness shift instead
+ * of a flat background-color swap, so buttons read as raised controls
+ * consistent with the glass-card elevation system rather than flat fills.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -10,35 +16,37 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 100ms ease;
+  transition: filter 150ms ease, box-shadow 150ms ease, background 150ms ease, transform 60ms ease;
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: translateY(0.5px) scale(0.98);
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .btn-primary {
   background: var(--accent);
   color: var(--accent-contrast);
-  transition: background-color 120ms ease, box-shadow 120ms ease, transform 100ms ease;
+  box-shadow: var(--t-ring);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  filter: brightness(1.08);
+}
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.97);
 }
 
 .btn-secondary {
-  background: var(--surface-2);
+  background: var(--t-bg-elevated);
   color: var(--text-primary);
-  border-color: var(--border);
+  box-shadow: var(--t-ring);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--surface-3);
+  background: var(--t-bg-card-hover);
 }
 
 .btn-ghost {
@@ -46,14 +54,18 @@
   color: var(--text-secondary);
 }
 .btn-ghost:hover:not(:disabled) {
-  background: var(--surface-2);
   color: var(--text-primary);
+  background: color-mix(in srgb, #ffffff 6%, transparent);
 }
 
 .btn-danger {
   background: var(--danger);
   color: white;
+  box-shadow: var(--t-ring);
 }
 .btn-danger:hover:not(:disabled) {
-  background: var(--danger-hover);
+  filter: brightness(1.08);
+}
+.btn-danger:active:not(:disabled) {
+  filter: brightness(0.97);
 }
