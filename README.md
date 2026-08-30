@@ -416,10 +416,9 @@ same `ServerConnection` interface on the Rust side.
         vault move/copy, snippets)
       - Layout adopts Voltius's chrome-frame/chrome-slab window layering:
         one frame color painted once across the app, the content area as a
-        lighter "slab" floating on top with a rounded top corner and an
-        ambient shadow (both top corners once the vertical sidebar this
-        started as was replaced by NavBar - see below - since the slab
-        became symmetric with nothing eating into one side of it anymore)
+        lighter "slab" floating on top with a rounded top-left corner and
+        an ambient shadow (only top-left, not both, now that navigation is
+        back to a Sidebar+Rail occupying the left edge - see below)
       - Buttons and the generic `Card` component adopt Voltius's
         ring+elevation depth recipe (a subtle ring shadow, brightness
         shift on hover/active) instead of flat background-color swaps;
@@ -470,14 +469,20 @@ same `ServerConnection` interface on the Rust side.
         outside a real Tauri webview - this project's whole UI-verification
         workflow runs in a plain browser, so resolution is lazy + cached
         with a try/catch fallback to inert buttons instead
-      - Navigation: replaced the vertical sidebar with Voltius's horizontal
-        `NavBar` tab strip after the user said (looking at the native build)
-        they specifically disliked the sidebar. Voltius uses NavBar to
-        switch sections *within* a vault; VibeSSH has no vault concept, so
-        the tabs carry the app's real top-level sections instead (unchanged
-        otherwise). Sidebar.tsx/css, Topbar.tsx/css, and uiStore.ts (only
-        existed for the sidebar's collapse state) were deleted, not left
-        unused
+      - Navigation: initially replaced the vertical sidebar with Voltius's
+        horizontal `NavBar` tab strip after the user said (looking at the
+        native build) they specifically disliked the sidebar - Voltius uses
+        NavBar to switch sections *within* a vault, and since VibeSSH has no
+        vault concept the tabs carried the app's real top-level sections
+        instead. That didn't hold up as the app grew a nested navigation
+        structure (Main/Workspace groups, then a Team group gated on being
+        signed in) a single flat row of tabs has no room for, so navigation
+        went back to a real sidebar - `Sidebar.tsx`/`Sidebar.css`, now
+        grouped and collapsible rather than the flat list it was before
+        NavBar, with each group's expanded state and the sidebar's own
+        collapsed state persisted per device. `NavBar`/`Topbar` and the
+        `uiStore` built for this stage were removed once nothing referenced
+        them anymore
       - A "Filter servers..." input above the card grid (Voltius's own
         toolbar has the same), and two corrections to ServerCard caught by
         that same reference screenshot: the status dot was overlaid on the
