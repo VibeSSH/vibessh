@@ -20,12 +20,16 @@
   min-height: 0;
 }
 
+/* No top margin - Sidebar has none either (it spans the full height of
+   .app-layout flush to the top), so a top margin here alone pushed this
+   column's content down relative to the sidebar's own brand row and
+   collapse button, a visible misalignment a screenshot caught. */
 .app-layout-main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  margin: 8px 8px 8px 0;
+  margin: 0 8px 8px 0;
   background: var(--t-bg-base);
   overflow: hidden;
 }

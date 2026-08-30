@@ -42,7 +42,9 @@ export function TitleBar() {
 
   return (
     <div className="titlebar" onMouseDown={handleMouseDown}>
-      <span className="titlebar-title">VibeSSH</span>
+      {/* No app-name label here - the Sidebar's own brand row sits directly
+          underneath and showing "VibeSSH" in both looked like broken,
+          overlapping text rather than two separate rows. */}
       <div className="titlebar-controls">
         <button className="titlebar-btn" onClick={() => currentWindow()?.minimize()} aria-label="Minimize">
           <Icon name="minus" size={16} />

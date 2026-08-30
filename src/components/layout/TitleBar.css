@@ -1,19 +1,11 @@
 .titlebar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   height: 40px;
   min-height: 40px;
-  padding-left: 14px;
   background: transparent;
   user-select: none;
-}
-
-.titlebar-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  letter-spacing: 0.02em;
 }
 
 .titlebar-controls {
