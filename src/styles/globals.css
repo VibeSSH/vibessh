@@ -88,6 +88,21 @@
   --t-elev-3: 0 24px 64px -12px rgba(0, 0, 0, 0.7);
   --t-card-ring: color-mix(in srgb, var(--t-accent) 22%, transparent);
   --t-card-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.55);
+
+  /* Chrome layering - the recessed window frame (sidebar) and the raised
+     content slab that floats on top of it, ported from Voltius's
+     .chrome-frame/.chrome-slab (voltius/src/styles/globals.css). */
+  --t-slab-highlight: inset 1px 1px 0 0 rgba(255, 255, 255, 0.09);
+  --t-slab-shadow: -12px 0 32px -20px rgba(0, 0, 0, 0.6), 0 -10px 28px -22px rgba(0, 0, 0, 0.5);
+}
+
+.chrome-frame {
+  background: var(--t-bg-terminal);
+}
+
+.chrome-slab {
+  border-top-left-radius: var(--r-lg);
+  box-shadow: var(--t-slab-highlight), var(--t-slab-shadow);
 }
 
 /* Glass card surface - the "premium" card treatment used for server rows.

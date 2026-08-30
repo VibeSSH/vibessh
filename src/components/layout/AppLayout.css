@@ -1,9 +1,15 @@
+/* Sidebar sits directly on this frame color with no border of its own (see
+   Sidebar.css) so it reads as one continuous backplate the content "slab"
+   floats on - Voltius's chrome-frame/chrome-slab pattern, ported in
+   globals.css. */
 .app-layout {
   display: flex;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: var(--surface-bg);
+}
+.app-layout.chrome-frame {
+  background: var(--t-bg-terminal);
 }
 
 .app-layout-main {
@@ -11,6 +17,9 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  margin: 8px 8px 8px 0;
+  background: var(--t-bg-base);
+  overflow: hidden;
 }
 
 .app-layout-content {

@@ -1,3 +1,6 @@
+/* Transparent - the sidebar reveals the app-level .chrome-frame background
+   behind it, so it reads as one continuous backplate the content slab floats
+   on rather than a separately-colored panel with its own seam. */
 .sidebar {
   position: relative;
   display: flex;
@@ -5,8 +8,7 @@
   width: 232px;
   min-width: 232px;
   height: 100%;
-  background: var(--surface-0);
-  border-right: 1px solid var(--border);
+  background: transparent;
   transition: width 150ms ease, min-width 150ms ease;
 }
 

@@ -6,9 +6,9 @@ import "./AppLayout.css";
 
 export function AppLayout() {
   return (
-    <div className="app-layout">
+    <div className="app-layout chrome-frame">
       <Sidebar />
-      <div className="app-layout-main">
+      <div className="app-layout-main chrome-slab">
         <Topbar />
         <main className="app-layout-content">
           <Outlet />
