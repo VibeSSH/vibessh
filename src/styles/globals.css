@@ -31,9 +31,12 @@
   --danger-hover: #f87171;
   --warning: #f59e0b;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Matches Voltius's own --r-sm/--r-md/--r-lg (0.625rem/0.875rem/1.125rem
+     at their 15px root font-size) - softer, larger rounding than this
+     project's original 6/10/14px scale. */
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 17px;
 
   --font-sans: "Inter Variable", -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Consolas", "SF Mono", monospace;
@@ -61,6 +64,7 @@
   --t-bg-elevated: var(--surface-2);
   --t-bg-input: #141d2b;
   --t-bg-modal: #1a2437;
+  --t-bg-card-avatar: #5fe2f746;
   --t-border: var(--border);
   --t-border-hover: var(--border-hover);
   --t-text-dim: #7fa7b8;
@@ -74,6 +78,18 @@
   --t-status-error: var(--danger);
   --t-status-connecting: var(--warning);
   --t-status-warning: var(--warning);
+  /* Voltius's own radius token names (--r-sm/--r-md/--r-lg) - components
+     ported from their source reference these directly. Real bug caught
+     late: these were referenced throughout ServerCard.css/globals.css
+     without ever being defined, so every corner using them silently
+     rendered as a hard 0px square instead of rounded the whole time an
+     undefined var() with no fallback is invalid at computed-value time,
+     which resets border-radius to its initial value, not to 0 visibly
+     flagged anywhere - caught only by checking a live element's
+     getComputedStyle directly. */
+  --r-sm: var(--radius-sm);
+  --r-md: var(--radius-md);
+  --r-lg: var(--radius-lg);
 
   /* Elevation/glass recipe, ported near-verbatim from Voltius's globals.css
      (voltius/src/styles/globals.css) - plain shadow/blur values, not colors,
@@ -121,6 +137,21 @@
     linear-gradient(140deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 45%, transparent 100%),
     color-mix(in srgb, var(--t-bg-card) 80%, transparent);
   box-shadow: var(--t-ring-strong), var(--t-elev-1-hover), var(--t-highlight-strong);
+}
+
+/* Glossy macOS-app-icon-style tile: light-to-dark diagonal sheen + a colored
+   ambient glow, ported from Voltius's glossyTileStyle/neutralTileStyle
+   (voltius/src/utils/icons.ts) - used there for every avatar/distro-icon
+   tile in the app. Parameterized by --tile-base (set per usage) instead of
+   their JS function taking a color argument, since this is plain CSS. */
+.glossy-tile {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--tile-base) 78%, #ffffff 22%) 0%,
+    var(--tile-base) 55%,
+    color-mix(in srgb, var(--tile-base) 84%, #000000 16%) 100%
+  );
+  box-shadow: var(--t-ring), 0 4px 10px -5px color-mix(in srgb, var(--tile-base) 60%, transparent), var(--t-highlight);
 }
 
 * {
@@ -258,4 +289,37 @@ textarea:focus-visible,
   background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
   background-size: 300% 100%;
   animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* ---------- Ripple (ported from Voltius's useRipple.tsx / globals.css) ---------- */
+
+@keyframes ripple-enter-anim {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes ripple-exit-anim {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+}
+
+/* Anything that hosts a ripple needs to clip it and anchor its coordinates. */
+.ripple-host {
+  position: relative;
+  overflow: hidden;
 }

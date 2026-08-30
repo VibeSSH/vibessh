@@ -1,5 +1,6 @@
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
 import { Icon } from "@/components/ui/Icon";
+import { useRipple } from "@/hooks/useRipple";
 import "./TitleBar.css";
 
 /**
@@ -20,6 +21,25 @@ function currentWindow(): Window | null {
     cachedWindow = null;
   }
   return cachedWindow;
+}
+
+interface TitleBarBtnProps {
+  icon: string;
+  size: number;
+  onClick: () => void;
+  className?: string;
+  ariaLabel: string;
+}
+
+/** Matches Voltius's own TitleBarBtn - every one of their window controls also gets the ripple. */
+function TitleBarBtn({ icon, size, onClick, className, ariaLabel }: TitleBarBtnProps) {
+  const { createRipple, rippleEls } = useRipple();
+  return (
+    <button className={`titlebar-btn ripple-host ${className ?? ""}`} onPointerDown={createRipple} onClick={onClick} aria-label={ariaLabel}>
+      {rippleEls}
+      <Icon name={icon} size={size} />
+    </button>
+  );
 }
 
 /**
@@ -46,15 +66,9 @@ export function TitleBar() {
           underneath and showing "VibeSSH" in both looked like broken,
           overlapping text rather than two separate rows. */}
       <div className="titlebar-controls">
-        <button className="titlebar-btn" onClick={() => currentWindow()?.minimize()} aria-label="Minimize">
-          <Icon name="minus" size={16} />
-        </button>
-        <button className="titlebar-btn" onClick={() => currentWindow()?.toggleMaximize()} aria-label="Maximize">
-          <Icon name="square" size={12} />
-        </button>
-        <button className="titlebar-btn titlebar-btn-close" onClick={() => currentWindow()?.close()} aria-label="Close">
-          <Icon name="x" size={16} />
-        </button>
+        <TitleBarBtn icon="minus" size={16} onClick={() => currentWindow()?.minimize()} ariaLabel="Minimize" />
+        <TitleBarBtn icon="square" size={12} onClick={() => currentWindow()?.toggleMaximize()} ariaLabel="Maximize" />
+        <TitleBarBtn icon="x" size={16} onClick={() => currentWindow()?.close()} className="titlebar-btn-close" ariaLabel="Close" />
       </div>
     </div>
   );

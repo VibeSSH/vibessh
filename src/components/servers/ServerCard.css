@@ -17,7 +17,10 @@
   min-width: 0;
 }
 
+/* .glossy-tile (globals.css) - the same light/dark diagonal sheen + colored
+   glow every avatar tile in Voltius has, tinted by --tile-base. */
 .server-card-avatar {
+  --tile-base: var(--t-bg-card-avatar);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,9 +28,10 @@
   height: 34px;
   flex-shrink: 0;
   border-radius: var(--r-sm);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--t-accent) 24%, var(--t-bg-elevated)) 0%, var(--t-bg-elevated) 60%);
-  color: var(--t-accent);
-  box-shadow: var(--t-ring), var(--t-highlight);
+  color: var(--t-text-bright);
+}
+.server-card-avatar-agent {
+  --tile-base: color-mix(in srgb, var(--warning) 55%, var(--t-bg-card-avatar));
 }
 
 /* Status dot sits at the end of the title row (ml-auto in Voltius's own

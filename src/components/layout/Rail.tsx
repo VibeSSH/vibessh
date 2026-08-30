@@ -1,9 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
+import { useRipple } from "@/hooks/useRipple";
 import { useServerModalStore } from "@/stores/serverModalStore";
 import { useToastStore } from "@/stores/toastStore";
 import "./Rail.css";
+
+interface RailButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  icon: string;
+  iconSize?: number;
+}
+
+function RailButton({ icon, iconSize = 18, className, ...rest }: RailButtonProps) {
+  const { createRipple, rippleEls } = useRipple();
+  return (
+    <button className={`rail-btn ripple-host ${className ?? ""}`} onPointerDown={createRipple} {...rest}>
+      {rippleEls}
+      <Icon name={icon} size={iconSize} />
+    </button>
+  );
+}
 
 function formatRelativeTime(at: number): string {
   const seconds = Math.max(0, Math.floor((Date.now() - at) / 1000));
@@ -35,9 +51,7 @@ function NotificationBell() {
 
   return (
     <div className="rail-popover-anchor" ref={anchorRef}>
-      <button className="rail-btn" onClick={() => setOpen((o) => !o)} aria-label="Notifications" title="Notifications">
-        <Icon name="bell" size={18} />
-      </button>
+      <RailButton icon="bell" onClick={() => setOpen((o) => !o)} aria-label="Notifications" title="Notifications" />
       {open && (
         <div className="rail-popover rail-popover-right">
           <div className="rail-popover-header">
@@ -82,9 +96,7 @@ function AccountButton() {
 
   return (
     <div className="rail-popover-anchor" ref={anchorRef}>
-      <button className="rail-btn" onClick={() => setOpen((o) => !o)} aria-label="Account" title="Account">
-        <Icon name="user" size={18} />
-      </button>
+      <RailButton icon="user" onClick={() => setOpen((o) => !o)} aria-label="Account" title="Account" />
       {open && (
         <div className="rail-popover rail-popover-right rail-popover-bottom">
           <div className="rail-popover-header">
@@ -112,17 +124,13 @@ export function Rail() {
 
   return (
     <div className="rail">
-      <button className="rail-btn rail-add-btn" onClick={openForCreate} aria-label="Add server" title="Add server">
-        <Icon name="plus" size={18} />
-      </button>
+      <RailButton icon="plus" className="rail-add-btn" onClick={openForCreate} aria-label="Add server" title="Add server" />
 
       <div className="rail-spacer" />
 
       <AccountButton />
       <NotificationBell />
-      <button className="rail-btn" onClick={() => navigate("/settings")} aria-label="Settings" title="Settings">
-        <Icon name="settings" size={18} />
-      </button>
+      <RailButton icon="settings" onClick={() => navigate("/settings")} aria-label="Settings" title="Settings" />
     </div>
   );
 }

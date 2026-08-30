@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { useRipple } from "@/hooks/useRipple";
 import { usePingStore } from "@/stores/pingStore";
 import type { ManagedServer } from "@/stores/serversStore";
 import type { ServerConnectionStatus } from "@/types/server";
@@ -18,18 +19,21 @@ interface ServerCardActionButtonProps {
   danger?: boolean;
 }
 
-/** Ported from Voltius's CardActionButton (voltius/src/components/shared/CardActionButton.tsx) - always visible on a grid card (their own HostCard passes reveal={false} for this exact layout; hover-reveal is list-mode-only there). */
+/** Ported from Voltius's CardActionButton (voltius/src/components/shared/CardActionButton.tsx) - always visible on a grid card (their own HostCard passes reveal={false} for this exact layout; hover-reveal is list-mode-only there), plus the same ripple-on-press every one of their buttons has. */
 function ServerCardActionButton({ icon, title, onClick, danger }: ServerCardActionButtonProps) {
+  const { createRipple, rippleEls } = useRipple();
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className={`server-card-action ${danger ? "server-card-action-danger" : ""}`}
+      onPointerDown={createRipple}
+      className={`server-card-action ripple-host ${danger ? "server-card-action-danger" : ""}`}
       title={title}
       aria-label={title}
     >
+      {rippleEls}
       <Icon name={icon} size={15} />
     </button>
   );
@@ -66,7 +70,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
     <div className="server-card surface-glass">
       <div className="server-card-body">
         <div className="server-card-header">
-          <div className="server-card-avatar">
+          <div className={`server-card-avatar glossy-tile ${isAgent ? "server-card-avatar-agent" : ""}`}>
             <Icon name={isAgent ? "zap" : "server"} size={16} />
           </div>
           <div className="server-card-title-col">
