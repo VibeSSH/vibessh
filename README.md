@@ -415,10 +415,11 @@ same `ServerConnection` interface on the Rust side.
         features VibeSSH doesn't have (pin, team presence, cloud sync,
         vault move/copy, snippets)
       - Layout adopts Voltius's chrome-frame/chrome-slab window layering:
-        one frame color painted once across the app, sidebar sitting
-        directly on it with no border of its own, and the content area as
-        a lighter "slab" floating on top with a rounded top-left corner and
-        an ambient shadow
+        one frame color painted once across the app, the content area as a
+        lighter "slab" floating on top with a rounded top corner and an
+        ambient shadow (both top corners once the vertical sidebar this
+        started as was replaced by NavBar - see below - since the slab
+        became symmetric with nothing eating into one side of it anymore)
       - Buttons and the generic `Card` component adopt Voltius's
         ring+elevation depth recipe (a subtle ring shadow, brightness
         shift on hover/active) instead of flat background-color swaps;
@@ -459,11 +460,37 @@ same `ServerConnection` interface on the Rust side.
         mocked data confirmed the shared `Card`/`Button`/`Icon`/modal
         updates already carry the look through consistently - none of
         those pages needed their own page-specific styling to catch up
-      - Not ported, deliberately: Voltius's `NavBar` tab-bar navigation
-        pattern and its vault-sidebar object model - VibeSSH keeps its own
-        route-based sidebar navigation, since only the *look* was asked
-        for here, not a rebuild of the navigation architecture around
-        features (vaults, teams) this app doesn't have
+      - Custom titlebar: `decorations: false` + a hand-drawn titlebar
+        (`TitleBar.tsx`) replacing the native OS chrome, matching a
+        screenshot of the real Voltius app the user shared, which showed
+        their frameless window with themed minimize/maximize/close. Dragging
+        is wired by hand (mousedown outside any button/input starts
+        `appWindow.startDragging()`), same as Voltius. Hit a real bug: their
+        own pattern calls `getCurrentWindow()` at module scope, which throws
+        outside a real Tauri webview - this project's whole UI-verification
+        workflow runs in a plain browser, so resolution is lazy + cached
+        with a try/catch fallback to inert buttons instead
+      - Navigation: replaced the vertical sidebar with Voltius's horizontal
+        `NavBar` tab strip after the user said (looking at the native build)
+        they specifically disliked the sidebar. Voltius uses NavBar to
+        switch sections *within* a vault; VibeSSH has no vault concept, so
+        the tabs carry the app's real top-level sections instead (unchanged
+        otherwise). Sidebar.tsx/css, Topbar.tsx/css, and uiStore.ts (only
+        existed for the sidebar's collapse state) were deleted, not left
+        unused
+      - A "Filter servers..." input above the card grid (Voltius's own
+        toolbar has the same), and two corrections to ServerCard caught by
+        that same reference screenshot: the status dot was overlaid on the
+        avatar (their actual code puts it at the end of the title row) and
+        action buttons were hidden behind hover (their grid-layout HostCard
+        passes `reveal={false}` - always visible)
+      - A real reachability check: `ping_server` (Rust) times a raw TCP
+        connect to the server's SSH port (no ICMP - that needs elevated
+        privileges on Windows; no SSH auth needed either), polled every 15s
+        per visible server and shown next to the status dot as "N ms",
+        matching the ping-latency reading in the reference screenshot -
+        and, not just cosmetic, the first mechanism that ever updates an
+        SSH-mode server's status away from a permanent "unknown"
 
 Built in stages on purpose — each one lands as something that actually runs
 and can be tested, not a partial slice of a bigger unfinished feature.
