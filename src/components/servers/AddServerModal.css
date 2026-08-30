@@ -9,15 +9,19 @@
   animation: backdropIn 150ms ease-out both;
 }
 
+/* Opaque "solid content" surface (Voltius's .surface-modal-solid) rather
+   than blurred glass - every modal in this app is text/form-heavy (forms,
+   code, log output), and Voltius reserves the blur for less content-dense
+   floating surfaces. Same ring+elevation scale as everything else, just the
+   strong tier since a modal sits above everything on screen. */
 .modal-panel {
   width: 520px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 96px);
   overflow-y: auto;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
+  background: var(--t-bg-modal);
   border-radius: var(--radius-lg);
-  box-shadow: 0 24px 64px color-mix(in srgb, black 40%, transparent);
+  box-shadow: var(--t-ring-strong), var(--t-elev-3);
   animation: scaleIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
