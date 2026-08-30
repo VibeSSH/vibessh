@@ -11,10 +11,18 @@
   align-items: center;
   gap: 12px;
   padding: 12px 4px;
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: var(--radius-sm);
   border-bottom: 1px solid var(--border);
+  transition: background-color 150ms ease;
 }
 .server-list-item:last-child {
   border-bottom: none;
+}
+.server-list-item:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
 }
 
 .server-list-icon {
@@ -27,6 +35,11 @@
   background: var(--surface-2);
   color: var(--accent);
   flex-shrink: 0;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+.server-list-item:hover .server-list-icon {
+  background: var(--surface-3);
+  transform: translateY(-1px);
 }
 
 .server-list-main {
@@ -63,8 +76,12 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, transform 100ms ease;
 }
 .server-list-action:hover {
-  background: var(--surface-2);
-  color: var(--text-primary);
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.server-list-action:active {
+  transform: scale(0.92);
 }

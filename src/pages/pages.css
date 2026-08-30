@@ -63,4 +63,5 @@
   background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
   color: var(--danger);
   font-size: 13px;
+  animation: fadeIn 200ms ease-out both;
 }

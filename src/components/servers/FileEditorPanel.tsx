@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { bytesToText, readRemoteFile, textToBytes, writeRemoteFile } from "@/services/filesService";
+import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
 import "./AddServerModal.css";
 import "./forms.css";
@@ -38,6 +39,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setError(null);
     try {
       await writeRemoteFile(serverId, entry.path, textToBytes(content));
+      toastSuccess(`Saved ${entry.name}`);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save this file.");

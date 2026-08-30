@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import {
   listServerContainers,
   listServerServices,
@@ -11,6 +12,7 @@ import {
   restartServerService,
 } from "@/services/actionsService";
 import { useServersStore } from "@/stores/serversStore";
+import { toastSuccess } from "@/stores/toastStore";
 import type { ContainerSummary, ServiceSummary } from "@/types/serverEvent";
 import "./pages.css";
 import "./Actions.css";
@@ -83,6 +85,7 @@ export function ActionsPage() {
         await restartServerContainer(serverId, confirming.name);
         loadContainers();
       }
+      toastSuccess(`Restarted ${confirming.name}`);
       setConfirming(null);
     } catch (err) {
       setRestartError(err instanceof Error ? err.message : "Couldn't restart this.");
@@ -114,7 +117,7 @@ export function ActionsPage() {
           onChange={(e) => setServiceFilter(e.target.value)}
         />
         {servicesLoading ? (
-          <p className="settings-muted">Loading...</p>
+          <SkeletonRows />
         ) : (
           <ul className="server-list">
             {filteredServices.slice(0, MAX_ROWS_SHOWN).map((service) => (
@@ -145,7 +148,7 @@ export function ActionsPage() {
 
       <Card title="Docker containers" subtitle={`${containers.length} containers`}>
         {containersLoading ? (
-          <p className="settings-muted">Loading...</p>
+          <SkeletonRows count={3} />
         ) : containers.length === 0 ? (
           <p className="settings-muted">No containers, or Docker isn't installed on this server.</p>
         ) : (

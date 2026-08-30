@@ -10,7 +10,11 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 100ms ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn:disabled {
@@ -21,9 +25,11 @@
 .btn-primary {
   background: var(--accent);
   color: var(--accent-contrast);
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 100ms ease;
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .btn-secondary {

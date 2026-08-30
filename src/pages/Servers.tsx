@@ -10,6 +10,7 @@ import { CapabilityBadges } from "@/components/servers/CapabilityBadges";
 import { DeleteServerDialog } from "@/components/servers/DeleteServerDialog";
 import { deleteServer, listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
+import { toastSuccess } from "@/stores/toastStore";
 import type { ServerConnectionStatus } from "@/types/server";
 import "./pages.css";
 import "./Servers.css";
@@ -61,6 +62,7 @@ export function Servers() {
     try {
       await deleteServer(deletingServer.id);
       removeServer(deletingServer.id);
+      toastSuccess(`Removed ${deletingServer.name}`);
       setDeletingServer(null);
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Couldn't remove the server.");

@@ -4,6 +4,7 @@ import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { MetricsPreview } from "@/components/servers/MetricsPreview";
 import { getServerMetrics, listServerProcesses } from "@/services/monitorService";
 import { useServersStore } from "@/stores/serversStore";
@@ -70,12 +71,12 @@ export function MonitorPage() {
       {error && <p className="page-error-note">{error}</p>}
 
       <Card title="Resources" subtitle={`Refreshes every ${POLL_INTERVAL_MS / 1000}s`}>
-        {metrics ? <MetricsPreview metrics={metrics} /> : <p className="settings-muted">Loading...</p>}
+        {metrics ? <MetricsPreview metrics={metrics} /> : <SkeletonRows count={3} height={52} />}
       </Card>
 
       <Card title="Processes" subtitle={`${processes.length} running, sorted by memory`}>
         {processes.length === 0 ? (
-          <p className="settings-muted">Loading...</p>
+          <SkeletonRows count={6} height={28} />
         ) : (
           <div className="monitor-process-table-wrap">
             <table className="monitor-process-table">

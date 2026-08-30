@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
 import { listRemoteDirectory } from "@/services/filesService";
 import { useServersStore } from "@/stores/serversStore";
@@ -89,7 +90,7 @@ export function FilesPage() {
 
       <Card>
         {loading ? (
-          <p className="settings-muted">Loading...</p>
+          <SkeletonRows />
         ) : entries.length === 0 ? (
           <EmptyState icon="folder" title="Empty directory" description="Nothing here." />
         ) : (

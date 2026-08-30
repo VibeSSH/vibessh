@@ -1,4 +1,5 @@
 import { Outlet } from "react-router-dom";
+import { ToastHost } from "@/components/ui/ToastHost";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import "./AppLayout.css";
@@ -13,6 +14,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <ToastHost />
     </div>
   );
 }

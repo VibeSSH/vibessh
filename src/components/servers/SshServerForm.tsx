@@ -8,6 +8,7 @@ import {
   type ServerFormInput,
 } from "@/services/serverService";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
+import { toastSuccess } from "@/stores/toastStore";
 import type { AuthenticationType } from "@/types/server";
 import "./forms.css";
 
@@ -74,6 +75,7 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
         ? await updateServer(editingServer.id, input)
         : await createServer(input);
       upsertServer(serverSummaryToManagedServer(saved));
+      toastSuccess(isEditing ? `Saved changes to ${saved.name}` : `Added ${saved.name}`);
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the server.");
