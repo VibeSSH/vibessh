@@ -1,0 +1,39 @@
+[package]
+name = "vibessh-backend"
+version.workspace = true
+description = "VibeSSH Backend - the Team/Roles/Permissions/Invitations/Audit service. Self-hostable single binary, not tied to any particular hosting provider (see the production roadmap's Domain & Database Architecture section for why this exists as a separate service from the desktop app's local SQLite cache)."
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "vibessh_backend"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vibessh-backend"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+# Matches the version the vibe-agent crate already uses (see agent/Cargo.toml)
+# - one axum major across the workspace's server-side binaries.
+axum = "0.7"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+uuid = { workspace = true }
+chrono = { workspace = true }
+# Runtime (not compile-time-checked) query API for now - sqlx::query!()'s
+# compile-time checking needs a live DATABASE_URL (or a checked-in .sqlx
+# offline cache) at `cargo build` time, which isn't worth the CI/build
+# complexity yet for a scaffold with no queries beyond a health check.
+# Worth revisiting once the query surface is large enough to want it.
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "migrate", "macros"] }
+
+[dev-dependencies]
+# Drives the real axum Router in-process for tests/health.rs, without
+# binding an actual TCP port.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

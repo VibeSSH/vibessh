@@ -1,10 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "agent", "protocol"]
+members = ["src-tauri", "agent", "protocol", "backend"]
 
 # Desktop app (src-tauri) and Vibe Agent (agent) are independent binaries —
 # the agent never depends on Tauri, the desktop never depends on the agent.
 # Both depend on `protocol` (plain DTOs, no I/O) for the shared wire format.
+# `backend` is the new Team/Roles/Permissions/Audit service (production
+# roadmap P0) - also independent of Tauri and of the agent, since any
+# VibeSSH desktop client or agent should be able to talk to it over the
+# network rather than only the one that happens to be built alongside it.
 # This table only pins shared dependency versions so they don't drift.
 [workspace.package]
 version = "0.1.0"

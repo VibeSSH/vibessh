@@ -531,11 +531,11 @@ testing the agent standalone, without the desktop app running.
 ## Project structure
 
 ```
-Cargo.toml                  Workspace root (members: src-tauri, agent, protocol)
+Cargo.toml                  Workspace root (members: src-tauri, agent, protocol, backend)
 
 src/                        Frontend (React + TypeScript)
   components/
-    layout/                 Sidebar, Topbar, AppLayout
+    layout/                 Sidebar (grouped, collapsible), Rail, TitleBar, AppLayout
     ui/                     Reusable design-system components
     servers/                AddServerModal (add/edit), SshServerForm (real, Etap 2/3 -
                             includes "Test connection"), DeleteServerDialog,
@@ -606,6 +606,22 @@ agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
     tls.rs                             Self-signed cert generation/persistence (Etap K)
     pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
     transport/                         WS server (handshake, heartbeat, metrics tick) + local-only pairing control HTTP route
+
+backend/                     Self-hostable Team/Roles/Permissions/Invitations/Audit
+                             service (Rust, Axum, sqlx, Postgres) - separate network
+                             service, not part of the desktop app's own local SQLite
+  src/
+    lib.rs                     connect_and_migrate() + build_router() - what
+                               tests/health.rs drives directly, in-process
+    main.rs                     Thin binary shell: reads DATABASE_URL/
+                                VIBESSH_BACKEND_BIND, calls into lib.rs, serves
+  migrations/                  Versioned sqlx migrations (empty so far - scaffold
+                               stage only; Team/Roles/etc. tables land here next)
+  tests/
+    health.rs                   Real integration test against a real Postgres
+                                (needs DATABASE_URL - see .env.example)
+  docker-compose.yml / Dockerfile   Reference self-hosted deployment (not
+                                    exercised in dev - no Docker in this environment)
 
 protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
   src/
