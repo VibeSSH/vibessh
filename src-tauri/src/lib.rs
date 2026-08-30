@@ -1,3 +1,6 @@
+// `pub` (not just `mod`) so the integration test in `tests/agent_client.rs`
+// can drive it directly - everything else here only needs in-crate tests.
+pub mod agent_client;
 mod commands;
 mod errors;
 mod models;

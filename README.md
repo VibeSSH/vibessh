@@ -40,7 +40,9 @@ same `ServerConnection` interface on the Rust side.
 - [x] App shell — layout, routing, design system, reusable components
 - [x] Connection model + transport abstraction (`ServerConnection` trait)
 - [x] Vibe Agent skeleton — standalone daemon, durable identity, no network yet
-- [ ] Desktop ↔ Agent protocol (HTTPS + WebSocket, realtime events)
+- [x] Desktop ↔ Agent protocol — WebSocket, handshake/version check, heartbeat,
+      reconnect with backoff, typed event enum (`protocol` crate, shared by
+      both sides). TLS deferred to the security review, not skipped
 - [ ] Agent pairing (one-time code, no manual API tokens)
 - [ ] SSH transport implementation
 - [ ] Server storage (SQLite + OS keyring for credentials)
@@ -83,7 +85,7 @@ cargo run -p vibe-agent   # Ctrl+C to stop
 ## Project structure
 
 ```
-Cargo.toml                  Workspace root (members: src-tauri, agent)
+Cargo.toml                  Workspace root (members: src-tauri, agent, protocol)
 
 src/                        Frontend (React + TypeScript)
   components/
@@ -103,21 +105,30 @@ src-tauri/                  Desktop backend (Rust, Tauri)
     models/                    DTOs shared with the frontend (incl. Server/ConnectionMode)
     errors/                     Shared AppError/AppResult
     state/                       AppState
-    transport/                    ServerConnection trait + shared DTOs (CommandOutput, ServerMetrics, ProcessInfo)
-    ssh/                            Reserved for SshTransport impl
-    storage/                          Reserved for server repository + secrets
+    transport/                    ServerConnection trait (re-exports DTOs from `protocol`)
+    agent_client/                  WebSocket client half of the Agent Mode transport
+    ssh/                             Reserved for SshTransport impl
+    storage/                           Reserved for server repository + secrets
   icons/                       App icon set (placeholder — see below)
 
 agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
   src/
-    main.rs                   Entry point: identity, startup log, idle loop
+    main.rs                   Binds the WS server, starts the daemon
+    lib.rs                     Library half - what tests/handshake.rs drives
     identity.rs                 Durable UUID, persisted to disk
     info.rs                       AgentInfo DTO (id/version/hostname/os/status)
     config.rs                       Data/config dir resolution
     errors.rs                        AgentError/AgentResult (own type, not shared with desktop)
     capabilities.rs                   Reserved for capability reporting
     pairing/                            Reserved for the pairing flow
-    transport/                           Reserved for the desktop<->agent protocol
+    transport/                           WebSocket server: handshake, heartbeat, event loop
+
+protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
+  src/
+    handshake.rs               HandshakeRequest/Response, PROTOCOL_VERSION
+    events.rs                    ServerEvent enum (metrics.update, terminal.output, ...)
+    dto.rs                         CommandOutput, ServerMetrics, ProcessSummary, ServiceSummary
+    error.rs                        ProtocolErrorCode
 
 scripts/
   setup.ps1                  Setup/build launcher

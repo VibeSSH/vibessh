@@ -1,6 +1,4 @@
-mod dto;
-
-pub use dto::{CommandOutput, ProcessInfo, ServerMetrics};
+pub use vibessh_protocol::{CommandOutput, ProcessSummary, ServerMetrics};
 
 use crate::errors::AppResult;
 
@@ -15,7 +13,7 @@ use crate::errors::AppResult;
 pub trait ServerConnection: Send + Sync {
     async fn execute_command(&self, command: &str) -> AppResult<CommandOutput>;
     async fn get_metrics(&self) -> AppResult<ServerMetrics>;
-    async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>>;
+    async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>>;
     async fn restart_service(&self, service_name: &str) -> AppResult<()>;
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()>;
@@ -45,7 +43,7 @@ mod tests {
             Err(AppError::Internal("not implemented in stub".into()))
         }
 
-        async fn list_processes(&self) -> AppResult<Vec<ProcessInfo>> {
+        async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>> {
             Ok(vec![])
         }
 

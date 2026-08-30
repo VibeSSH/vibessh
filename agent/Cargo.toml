@@ -10,7 +10,7 @@ name = "vibe-agent"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "time", "net"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -21,3 +21,12 @@ env_logger = "0.11"
 hostname = "0.4"
 os_info = "3"
 dirs = "5"
+vibessh-protocol = { path = "../protocol" }
+# axum covers both halves of Etap D's transport (HTTP request/response and
+# WebSocket realtime) with one dependency instead of stitching two libraries
+# together.
+axum = { version = "0.7", features = ["ws"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.24"
+futures-util = "0.3"

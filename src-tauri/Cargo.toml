@@ -23,6 +23,14 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
+vibessh-protocol = { path = "../protocol" }
+# WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
+# (`tauri::async_runtime::spawn`) rather than starting a second one.
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+# Only needed by tests/agent_client.rs's mock server; the real client code
+# doesn't bind sockets itself.
+tokio = { version = "1", features = ["net"] }

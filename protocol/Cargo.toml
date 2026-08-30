@@ -1,0 +1,15 @@
+[package]
+name = "vibessh-protocol"
+version.workspace = true
+description = "Shared Desktop<->Agent protocol DTOs for VibeSSH (no I/O, no runtime deps)"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "vibessh_protocol"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

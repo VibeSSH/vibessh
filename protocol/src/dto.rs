@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// Result of a one-shot command execution, regardless of which transport ran it.
+/// Result of a one-shot command execution. Used by `ServerConnection::execute_command`
+/// for both transports: `SshTransport` builds one from the SSH exec channel's
+/// output, `AgentTransport` builds one from the agent's HTTPS response — same
+/// shape either way, so callers never need to know which one they got.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandOutput {
@@ -25,10 +28,19 @@ pub struct ServerMetrics {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessInfo {
+pub struct ProcessSummary {
     pub pid: u32,
     pub user: String,
     pub cpu_percent: f32,
     pub ram_bytes: u64,
     pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceSummary {
+    pub name: String,
+    pub active: bool,
+    pub enabled: bool,
+    pub description: String,
 }
