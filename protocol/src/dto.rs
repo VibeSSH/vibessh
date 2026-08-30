@@ -55,6 +55,12 @@ pub struct RemoteFileEntry {
     pub is_symlink: bool,
     pub size: u64,
     pub modified_at: Option<DateTime<Utc>>,
+    /// POSIX mode bits (e.g. `0o755`), when the source actually reports
+    /// them - `None` rather than a fabricated value on a provider that
+    /// doesn't have a meaningful concept of Unix permissions (Local on
+    /// Windows, for one).
+    #[serde(default)]
+    pub permissions: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

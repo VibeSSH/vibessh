@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, RuntimeType};
+use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
 use crate::services::latest_velocity_build;
 
 use super::{text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
@@ -29,7 +29,7 @@ impl VelocityBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
                         key: "velocityVersion".to_string(),
@@ -63,6 +63,10 @@ impl VelocityBlueprint {
                         default_value: Some(serde_json::json!([])),
                         help_text: Some("Arguments passed to the proxy jar itself.".to_string()),
                     },
+                ],
+                known_files: vec![
+                    KnownFile { path: "velocity.toml".to_string(), label: "velocity.toml".to_string() },
+                    KnownFile { path: "forwarding.secret".to_string(), label: "forwarding.secret".to_string() },
                 ],
                 is_builtin: true,
             },

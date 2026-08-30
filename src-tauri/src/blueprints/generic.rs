@@ -26,7 +26,7 @@ impl GenericBlueprint {
                 // blueprint has no field for one - see
                 // `blueprints::GenericDockerBlueprint` for that.
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
                         key: "command".to_string(),
@@ -45,6 +45,7 @@ impl GenericBlueprint {
                         help_text: Some("Arguments passed to the command, in order.".to_string()),
                     },
                 ],
+                known_files: vec![],
                 is_builtin: true,
             },
         }

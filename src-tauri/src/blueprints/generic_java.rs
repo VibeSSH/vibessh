@@ -23,7 +23,7 @@ impl GenericJavaBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
                         key: "javaBinary".to_string(),
@@ -58,6 +58,7 @@ impl GenericJavaBlueprint {
                         help_text: Some("Arguments passed to the jar itself, after its own -jar entry.".to_string()),
                     },
                 ],
+                known_files: vec![],
                 is_builtin: true,
             },
         }

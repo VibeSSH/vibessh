@@ -6,6 +6,7 @@ mod blueprints;
 pub mod cloud_client;
 mod commands;
 mod errors;
+mod files;
 mod models;
 mod runtime;
 mod services;
@@ -43,6 +44,7 @@ pub fn run() {
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(state::FileTransferManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
         // construct itself with, not just a borrow scoped to one command -
@@ -124,6 +126,22 @@ pub fn run() {
             commands::database_commands::delete_application_database,
             commands::database_commands::reveal_application_database_password,
             commands::database_commands::reset_application_database_password,
+            commands::application_file_commands::list_application_files,
+            commands::application_file_commands::get_application_file_metadata,
+            commands::application_file_commands::read_application_file,
+            commands::application_file_commands::write_application_file,
+            commands::application_file_commands::save_application_file,
+            commands::application_file_commands::create_application_directory,
+            commands::application_file_commands::delete_application_file,
+            commands::application_file_commands::rename_application_file,
+            commands::application_file_commands::copy_application_file,
+            commands::application_file_commands::set_application_file_permissions,
+            commands::application_file_commands::download_application_file,
+            commands::application_file_commands::upload_application_file,
+            commands::application_file_commands::cancel_application_file_transfer,
+            commands::application_file_commands::extract_application_archive,
+            commands::application_file_commands::list_application_file_history,
+            commands::application_file_commands::restore_application_file_history,
             commands::database_commands::get_phpmyadmin_url,
             commands::server_commands::create_server,
             commands::server_commands::update_server,

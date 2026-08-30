@@ -35,7 +35,7 @@ impl GenericDockerBlueprint {
                 // Docker application, so it isn't declared at all rather
                 // than declaring a tab that can only ever show its
                 // read-only fallback state.
-                features: vec![BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck],
+                features: vec![BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
                         key: "image".to_string(),
@@ -54,6 +54,7 @@ impl GenericDockerBlueprint {
                         help_text: Some("Overrides the image's own ENTRYPOINT/CMD, one argument per entry. Leave empty to run the image as authored.".to_string()),
                     },
                 ],
+                known_files: vec![],
                 is_builtin: true,
             },
         }

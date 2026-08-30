@@ -35,6 +35,12 @@ vibessh-protocol = { path = "../protocol" }
 # (services::database_service) - same workspace version `protocol`'s own
 # generate_pairing_code already uses, not a new choice.
 rand = { workspace = true }
+# Archive extraction for Application Files (zip only for the first pass -
+# by far the most common case for a plugin/world/backup upload). `enclosed_name()`
+# is the crate's own Zip Slip guard, used as the first of two path-escape
+# checks in files::archive - the second is the same sandbox/canonicalize
+# jail every other file operation already goes through.
+zip = "2"
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
 # "process" (LocalProcessRuntime, Applications Phase 2) is new here -

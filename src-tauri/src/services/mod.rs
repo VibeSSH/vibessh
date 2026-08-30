@@ -1,4 +1,5 @@
 mod app_info_service;
+mod application_files_service;
 mod application_service;
 mod cloud_service;
 mod database_service;
@@ -11,6 +12,13 @@ mod ssh_service;
 use crate::errors::AppResult;
 
 pub use app_info_service::get_app_info;
+pub use application_files_service::{
+    copy as copy_application_file, create_directory as create_application_directory, delete as delete_application_file,
+    download_file as download_application_file, extract_archive as extract_application_archive, get_metadata as get_application_file_metadata,
+    list_directory as list_application_files, list_file_history, read_file_for_editor as read_application_file, rename as rename_application_file,
+    restore_file_history, save_file as save_application_file, set_permissions as set_application_file_permissions,
+    upload_file as upload_application_file, write_file as write_application_file, FileHistoryVersion,
+};
 pub use application_service::{
     add_application_port, application_health_check, application_logs, application_resource_usage, create_application,
     delete_application, get_application, kill_application, list_application_ports, list_applications, list_blueprints,

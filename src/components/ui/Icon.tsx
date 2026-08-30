@@ -73,6 +73,10 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   eye: "eye",
   "eye-off": "eye-off",
   database: "database",
+  move: "move",
+  archive: "archive",
+  history: "clock",
+  lock: "lock",
 };
 
 interface IconProps {

@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { DatabasesTab } from "@/components/applications/DatabasesTab";
+import { ApplicationFilesTab } from "@/components/applications/files/ApplicationFilesTab";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
 import { PortsTab } from "@/components/applications/PortsTab";
 import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
@@ -33,7 +34,7 @@ import "./ApplicationDetail.css";
 const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "logs" | "environment" | "ports" | "databases";
+type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files";
 type Verb = "start" | "stop" | "restart" | "kill";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -222,6 +223,11 @@ export function ApplicationDetail() {
                 {t("applicationDetail.tabDatabases")}
               </button>
             )}
+            {features.includes("files") && (
+              <button className={`modal-tab ${tab === "files" ? "modal-tab-active" : ""}`} onClick={() => setTab("files")}>
+                {t("applicationDetail.tabFiles")}
+              </button>
+            )}
           </div>
 
           {tab === "overview" && (
@@ -307,6 +313,8 @@ export function ApplicationDetail() {
           {tab === "ports" && <PortsTab applicationId={id} />}
 
           {tab === "databases" && <DatabasesTab applicationId={id} />}
+
+          {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={blueprint?.knownFiles ?? []} />}
         </>
       )}
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, RuntimeType};
+use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
 use crate::services::latest_paper_build;
 
 use super::{bool_input, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
@@ -34,7 +34,7 @@ impl PaperBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
-                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases],
+                features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
                         key: "minecraftVersion".to_string(),
@@ -76,6 +76,13 @@ impl PaperBlueprint {
                         default_value: Some(serde_json::json!(["nogui"])),
                         help_text: Some("Arguments passed to the server jar itself.".to_string()),
                     },
+                ],
+                known_files: vec![
+                    KnownFile { path: "server.properties".to_string(), label: "server.properties".to_string() },
+                    KnownFile { path: "bukkit.yml".to_string(), label: "bukkit.yml".to_string() },
+                    KnownFile { path: "spigot.yml".to_string(), label: "spigot.yml".to_string() },
+                    KnownFile { path: "config/paper-global.yml".to_string(), label: "paper-global.yml".to_string() },
+                    KnownFile { path: "config/paper-world-defaults.yml".to_string(), label: "paper-world-defaults.yml".to_string() },
                 ],
                 is_builtin: true,
             },

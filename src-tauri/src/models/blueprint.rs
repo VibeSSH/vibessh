@@ -32,7 +32,25 @@ pub struct Blueprint {
     pub supported_runtime_types: Vec<RuntimeType>,
     pub features: Vec<BlueprintFeature>,
     pub fields: Vec<BlueprintField>,
+    /// "Quick Files" shortcuts on the Files tab (design brief's Known File
+    /// Shortcuts section) - paths relative to `working_directory` this
+    /// blueprint knows are worth surfacing directly (Paper's
+    /// `server.properties`, Velocity's `velocity.toml`, ...), each opening
+    /// through the exact same Files/editor UI as browsing to it by hand -
+    /// never a separate, blueprint-specific editor.
+    #[serde(default)]
+    pub known_files: Vec<KnownFile>,
     pub is_builtin: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownFile {
+    /// Relative to the Application's own `working_directory` - resolved
+    /// (and sandboxed) through the same `ApplicationFileProvider` any other
+    /// Files path goes through, not a special-cased lookup.
+    pub path: String,
+    pub label: String,
 }
 
 /// UI-facing capabilities this application exposes - not host-level
@@ -53,6 +71,10 @@ pub enum BlueprintFeature {
     /// actually talks to one, matching the original brief's own
     /// Paper/Velocity/Generic Java tab list.
     Databases,
+    /// Gates the Files tab (`files::ApplicationFileProvider`) - declared by
+    /// every built-in blueprint, unlike Databases: any Application has a
+    /// `working_directory` worth browsing, regardless of what runs in it.
+    Files,
 }
 
 /// One input a Create Application wizard would collect for this blueprint.

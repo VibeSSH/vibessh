@@ -11,7 +11,7 @@ pub use application::{
     CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortProtocol, RuntimeType, SetHealthCheckInput,
     SetResourceLimitsInput, UpdateApplicationInput,
 };
-pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType};
+pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType, KnownFile};
 pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
 pub use cloud::{
     CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,

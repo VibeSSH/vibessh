@@ -223,6 +223,7 @@ mod tests {
             supported_runtime_types: vec![],
             features: vec![],
             fields,
+            known_files: vec![],
             is_builtin: true,
         }
     }

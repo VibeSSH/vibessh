@@ -92,7 +92,7 @@ export interface ResourceUsage {
   uptimeSeconds?: number;
 }
 
-export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck" | "databases";
+export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck" | "databases" | "files";
 
 export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion" | "papermcVersion";
 
@@ -112,6 +112,12 @@ export interface BlueprintField {
   helpText?: string;
 }
 
+/** A "Quick Files" shortcut on the Files tab - a path this blueprint knows is worth surfacing directly (Paper's server.properties, Velocity's velocity.toml, ...). Opens through the exact same Files/editor UI as browsing to it by hand. */
+export interface KnownFile {
+  path: string;
+  label: string;
+}
+
 export interface Blueprint {
   id: string;
   name: string;
@@ -121,5 +127,6 @@ export interface Blueprint {
   supportedRuntimeTypes: RuntimeType[];
   features: BlueprintFeature[];
   fields: BlueprintField[];
+  knownFiles: KnownFile[];
   isBuiltin: boolean;
 }
