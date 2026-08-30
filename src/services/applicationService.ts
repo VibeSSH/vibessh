@@ -68,3 +68,8 @@ export function getApplicationLogs(id: string, maxLines: number): Promise<string
 export function detectJavaInstallations(serverId?: string): Promise<JavaInstallation[]> {
   return callCommand<JavaInstallation[]>("detect_java_installations", { serverId });
 }
+
+/** Every currently-available Paper version (from papermc.io), newest first - the same list `PaperBlueprint`'s own provisioning step picks a build from. */
+export function listPaperVersions(): Promise<string[]> {
+  return callCommand<string[]>("list_paper_versions");
+}

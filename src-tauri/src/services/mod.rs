@@ -2,6 +2,7 @@ mod app_info_service;
 mod application_service;
 mod cloud_service;
 mod java_service;
+mod paper_service;
 mod ping_service;
 mod server_service;
 mod ssh_service;
@@ -12,6 +13,7 @@ pub use application_service::{
     list_applications, list_blueprints, refresh_application_status, restart_application, start_application, stop_application,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
+pub use paper_service::{latest_build as latest_paper_build, list_versions as list_paper_versions};
 pub use cloud_service::{
     accept_invitation as cloud_accept_invitation, assign_role as cloud_assign_role, create_invitation as cloud_create_invitation,
     create_role as cloud_create_role, create_server as cloud_create_server, create_team as cloud_create_team,

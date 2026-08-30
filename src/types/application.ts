@@ -56,7 +56,7 @@ export interface ResourceUsage {
 
 export type BlueprintFeature = "console" | "logs" | "environment" | "ports";
 
-export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion";
+export type BlueprintFieldType = "text" | "path" | "number" | "boolean" | "textList" | "javaVersion" | "minecraftVersion";
 
 /** A real, detected Java installation - see `detectJavaInstallations`. */
 export interface JavaInstallation {

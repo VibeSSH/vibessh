@@ -25,22 +25,56 @@
 //! extend (e.g. a second, SQLite-backed source merged into `list()`).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintField, BlueprintFieldType};
+use crate::ssh::SshSession;
 
 mod generic;
 mod generic_java;
+mod paper;
 
 pub use generic::GenericBlueprint;
 pub use generic_java::GenericJavaBlueprint;
+pub use paper::PaperBlueprint;
+
+/// What a blueprint's `provision` step needs to actually reach the host the
+/// application will run on - `None` connection = Local (act on the local
+/// filesystem/process directly), `Some` = Remote (act over this SSH
+/// session). Deliberately the same Local/Remote split
+/// `runtime::RuntimeContext` already uses, not a new concept.
+pub struct ProvisionContext<'a> {
+    pub working_directory: &'a str,
+    pub connection: Option<Arc<SshSession>>,
+}
 
 /// Turns a filled-in set of wizard inputs into the concrete `runtime_config`
 /// JSON stored on an `Application` (`application_runtime_config.config_json`
 /// - what a future `RuntimeContext.runtime_config` gets deserialized from).
+#[async_trait::async_trait]
 pub trait BlueprintHandler: Send + Sync {
     fn blueprint(&self) -> &Blueprint;
     fn render_runtime_config(&self, inputs: &HashMap<String, serde_json::Value>) -> AppResult<serde_json::Value>;
+
+    /// Runs once, at Application creation - after the working directory
+    /// exists, before `render_runtime_config` - for whatever a blueprint
+    /// needs set up before its command can actually run (downloading a
+    /// server jar, writing a EULA acceptance file). Returns inputs
+    /// *discovered* during provisioning (e.g. the real filename of a jar
+    /// whose exact name wasn't known until it was actually downloaded) -
+    /// merged into the input map `render_runtime_config` sees next, so it
+    /// never needs its own network/filesystem access to learn the same
+    /// thing again. The default no-op covers every blueprint that needs
+    /// nothing beyond `render_runtime_config` (Generic, Generic Java) -
+    /// only `PaperBlueprint` overrides this so far.
+    async fn provision(
+        &self,
+        _inputs: &HashMap<String, serde_json::Value>,
+        _context: &ProvisionContext<'_>,
+    ) -> AppResult<HashMap<String, serde_json::Value>> {
+        Ok(HashMap::new())
+    }
 }
 
 /// Every field in `blueprint.fields` is checked for presence (falling back
@@ -62,7 +96,9 @@ pub fn validate_inputs(blueprint: &Blueprint, inputs: &HashMap<String, serde_jso
 
 fn validate_field_type(field: &BlueprintField, value: &serde_json::Value) -> AppResult<()> {
     let matches_type = match field.field_type {
-        BlueprintFieldType::Text | BlueprintFieldType::Path | BlueprintFieldType::JavaVersion => value.is_string(),
+        BlueprintFieldType::Text | BlueprintFieldType::Path | BlueprintFieldType::JavaVersion | BlueprintFieldType::MinecraftVersion => {
+            value.is_string()
+        }
         BlueprintFieldType::Number => value.is_number(),
         BlueprintFieldType::Boolean => value.is_boolean(),
         BlueprintFieldType::TextList => value.is_array() && value.as_array().is_some_and(|items| items.iter().all(serde_json::Value::is_string)),
@@ -97,6 +133,18 @@ pub(crate) fn text_input(inputs: &HashMap<String, serde_json::Value>, blueprint:
     }
 }
 
+/// Reads a boolean input as a plain `bool` - `false` when absent and not
+/// required (an unset "accept this" checkbox is exactly the "no" it looks
+/// like, not an error), used for `PaperBlueprint`'s EULA acceptance field.
+pub(crate) fn bool_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<bool> {
+    let field = find_field(blueprint, key)?;
+    let value = inputs.get(key).or(field.default_value.as_ref());
+    match value.and_then(serde_json::Value::as_bool) {
+        Some(flag) => Ok(flag),
+        None => Ok(false),
+    }
+}
+
 pub(crate) fn text_list_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<Vec<String>> {
     let field = find_field(blueprint, key)?;
     let value = inputs.get(key).or(field.default_value.as_ref());
@@ -126,6 +174,8 @@ impl BlueprintRegistry {
         handlers.insert(generic.blueprint().id.clone(), Box::new(generic));
         let generic_java = GenericJavaBlueprint::new();
         handlers.insert(generic_java.blueprint().id.clone(), Box::new(generic_java));
+        let paper = PaperBlueprint::new();
+        handlers.insert(paper.blueprint().id.clone(), Box::new(paper));
         Self { handlers }
     }
 
@@ -198,13 +248,14 @@ mod tests {
     }
 
     #[test]
-    fn registry_contains_both_builtins_sorted_by_id() {
+    fn registry_contains_every_builtin_sorted_by_id() {
         let registry = BlueprintRegistry::with_builtins();
         assert!(registry.get("generic").is_some());
         assert!(registry.get("generic-java").is_some());
+        assert!(registry.get("paper").is_some());
         assert!(registry.get("nonexistent").is_none());
 
         let ids: Vec<&str> = registry.list().iter().map(|blueprint| blueprint.id.as_str()).collect();
-        assert_eq!(ids, vec!["generic", "generic-java"]);
+        assert_eq!(ids, vec!["generic", "generic-java", "paper"]);
     }
 }

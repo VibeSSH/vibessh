@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::blueprints::BlueprintRegistry;
+use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     Application, ApplicationDetail, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, CreateApplicationInput,
@@ -68,14 +68,26 @@ pub async fn create_application(
         return Err(AppError::InvalidInput(format!("'{}' doesn't support this runtime type", handler.blueprint().name)));
     }
 
-    let blueprint_inputs: HashMap<String, serde_json::Value> = match input.blueprint_inputs {
+    let mut blueprint_inputs: HashMap<String, serde_json::Value> = match input.blueprint_inputs {
         serde_json::Value::Object(map) => map.into_iter().collect(),
         serde_json::Value::Null => HashMap::new(),
         _ => return Err(AppError::InvalidInput("blueprint inputs must be an object".into())),
     };
-    let runtime_config = handler.render_runtime_config(&blueprint_inputs)?;
 
     ensure_working_directory_exists(server_repo, sessions, input.server_id, working_directory).await?;
+
+    // Resolved once, reused for provisioning - the same connection
+    // `start_application` et al. would independently resolve later via
+    // `load_runtime`, just needed here too for a blueprint that has to
+    // reach the target host during creation (PaperBlueprint downloading a
+    // jar over this same connection rather than through the SSH user's
+    // desktop).
+    let connection = resolve_connection(server_repo, sessions, input.server_id).await?;
+    let provision_context = ProvisionContext { working_directory, connection };
+    let discovered = handler.provision(&blueprint_inputs, &provision_context).await?;
+    blueprint_inputs.extend(discovered);
+
+    let runtime_config = handler.render_runtime_config(&blueprint_inputs)?;
 
     let create_input = CreateApplicationInput {
         server_id: input.server_id,

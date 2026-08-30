@@ -19,6 +19,11 @@ pub fn list_applications(repo: State<ApplicationRepository>) -> AppResult<Vec<Ap
 }
 
 #[tauri::command]
+pub async fn list_paper_versions() -> AppResult<Vec<String>> {
+    services::list_paper_versions().await
+}
+
+#[tauri::command]
 pub fn get_application(repo: State<ApplicationRepository>, id: Uuid) -> AppResult<ApplicationDetail> {
     services::get_application(&repo, id)
 }

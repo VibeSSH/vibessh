@@ -80,4 +80,9 @@ pub enum BlueprintFieldType {
     /// inventing that generality before a second user exists would be
     /// speculative.
     JavaVersion,
+    /// A string, same as `Text` for validation/storage purposes - the
+    /// frontend renders it as a picker populated from
+    /// `list_paper_versions` (the real, current PaperMC release list), same
+    /// "dynamic picker, not a hand-typed value" shape as `JavaVersion`.
+    MinecraftVersion,
 }

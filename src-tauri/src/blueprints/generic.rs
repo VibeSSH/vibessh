@@ -57,6 +57,7 @@ impl Default for GenericBlueprint {
     }
 }
 
+#[async_trait::async_trait]
 impl BlueprintHandler for GenericBlueprint {
     fn blueprint(&self) -> &Blueprint {
         &self.definition

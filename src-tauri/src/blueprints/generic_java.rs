@@ -70,6 +70,7 @@ impl Default for GenericJavaBlueprint {
     }
 }
 
+#[async_trait::async_trait]
 impl BlueprintHandler for GenericJavaBlueprint {
     fn blueprint(&self) -> &Blueprint {
         &self.definition
