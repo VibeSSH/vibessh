@@ -62,6 +62,8 @@ pub fn run() {
             commands::file_commands::list_remote_directory,
             commands::file_commands::read_remote_file,
             commands::file_commands::write_remote_file,
+            commands::monitor_commands::get_server_metrics,
+            commands::monitor_commands::list_server_processes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

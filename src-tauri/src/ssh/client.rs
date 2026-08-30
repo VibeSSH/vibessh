@@ -6,7 +6,7 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use russh::keys::{load_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{client, ChannelMsg, Disconnect};
@@ -42,6 +42,21 @@ pub enum SshAuth {
 pub struct SshSession {
     handle: client::Handle<TofuHandler>,
     sftp: OnceCell<SftpSession>,
+    /// CPU% and network rates are deltas between two samples, not values a
+    /// single `/proc` read gives you directly - see `ssh/monitor.rs`. `None`
+    /// on the very first call, same as `agent::metrics::MetricsCollector`
+    /// reports 0 rather than a meaningless number for a sample it has no
+    /// prior point to compare against.
+    metrics_sample: Mutex<Option<MetricsSample>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MetricsSample {
+    pub(super) cpu_idle_jiffies: u64,
+    pub(super) cpu_total_jiffies: u64,
+    pub(super) rx_bytes: u64,
+    pub(super) tx_bytes: u64,
+    pub(super) at: Instant,
 }
 
 /// What `connect` produced: the session itself, plus the host key fingerprint
@@ -108,6 +123,7 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
         session: SshSession {
             handle,
             sftp: OnceCell::new(),
+            metrics_sample: Mutex::new(None),
         },
         host_key_fingerprint,
     })
@@ -149,6 +165,14 @@ impl SshSession {
 
     pub async fn close(&self) {
         let _ = self.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+    }
+
+    /// Swaps in a freshly parsed sample and returns whatever was there
+    /// before (`None` on the first call for this session) - `ssh/monitor.rs`
+    /// diffs the two to get a real rate instead of a single-point-in-time
+    /// number that doesn't mean anything for CPU%/network throughput.
+    pub(super) fn swap_metrics_sample(&self, new_sample: MetricsSample) -> Option<MetricsSample> {
+        std::mem::replace(&mut self.metrics_sample.lock().expect("metrics sample mutex poisoned"), Some(new_sample))
     }
 
     /// Lazily negotiates the SFTP subsystem on first use and reuses it for

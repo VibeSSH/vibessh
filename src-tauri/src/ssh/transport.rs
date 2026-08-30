@@ -1,11 +1,9 @@
-//! Adapts `SshSession` (pure protocol mechanics, see `client.rs`/`sftp.rs`)
-//! to the app's transport-agnostic `ServerConnection` trait.
-//! `execute_command`, `list_directory`, `read_file`, and `write_file` are
-//! real. `get_metrics`/`list_processes`/`restart_service` stay honest stubs
-//! - process manager and systemd are later stages that need their own
-//! remote-side mechanics (e.g. `sysinfo`-equivalent shell parsing) beyond
-//! what's built so far, so they stay stubs until those stages land instead
-//! of faking a shape nothing has verified yet.
+//! Adapts `SshSession` (pure protocol mechanics, see `client.rs`/`sftp.rs`/
+//! `monitor.rs`) to the app's transport-agnostic `ServerConnection` trait.
+//! Everything except `restart_service` is real now - systemd unit control
+//! is a later stage (Quick Actions) that needs its own remote-side
+//! mechanics beyond what's built so far, so it stays a stub until that
+//! stage lands instead of faking a shape nothing has verified yet.
 use crate::errors::{AppError, AppResult};
 use crate::ssh::client::SshSession;
 use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerConnection, ServerMetrics};
@@ -17,11 +15,11 @@ impl ServerConnection for SshSession {
     }
 
     async fn get_metrics(&self) -> AppResult<ServerMetrics> {
-        Err(not_yet_implemented("get_metrics"))
+        self.get_metrics().await
     }
 
     async fn list_processes(&self) -> AppResult<Vec<ProcessSummary>> {
-        Err(not_yet_implemented("list_processes"))
+        self.list_processes().await
     }
 
     async fn restart_service(&self, _service_name: &str) -> AppResult<()> {

@@ -163,7 +163,28 @@ same `ServerConnection` interface on the Rust side.
       one-off manual run against the project's real test server: wrote a
       file over real SFTP, read it back byte-for-byte, and saw it with the
       correct size and modification time in a real directory listing
-- [ ] Process manager, systemd, Docker
+- [x] Process manager / resource monitor (Monitor module) — no agent, no
+      `sysinfo` (that crate only reads the *local* machine), so `ssh/
+      monitor.rs` reads the same `/proc` files and runs the same `ps`/`df`
+      a human would at a shell, over one combined `execute_command` call.
+      CPU% and network throughput are deltas between two samples (not a
+      single `/proc` read - a lone snapshot can't tell you a *rate*), so
+      `SshSession` caches the previous sample and diffs against it, the same
+      idea `agent::metrics::MetricsCollector` uses locally via `sysinfo`;
+      the very first poll after connecting has no prior sample, so it
+      reports 0% CPU / 0 bytes-per-sec rather than a meaningless number.
+      `list_processes` runs `ps -eo pid,user,pcpu,rss,comm`. The frontend
+      polls both every 5s and reuses Etap J's `MetricsPreview` gauges
+      (built for Agent mode's push data) unchanged, plus a process table
+      sorted by memory. Covered by 5 unit tests against realistic `/proc`/
+      `ps` output (a real kernel's actual field layout, not simplified
+      fixtures) and a one-off manual run against the project's real test
+      server, cross-checked against `free -b`/`df -B1`/`uptime -p`/`ps -e`
+      run independently over a second SSH session: RAM and disk totals
+      matched to the exact byte, uptime matched to within seconds, and the
+      process count matched within the small margin expected between two
+      separate samples of a busy box's process churn
+- [ ] Systemd/Docker quick actions
 - [x] Capabilities (Etap I) — the agent detects real host state on every
       accepted handshake (`systemd` via `/run/systemd/system`, `docker` via
       the socket file, `minecraft` by scanning `/proc` for a Java process
@@ -260,10 +281,11 @@ src/                        Frontend (React + TypeScript)
                             open/write/resize/close commands), FileEditorPanel (real,
                             view/edit files under 1MB over read_remote_file/write_remote_file)
   pages/                    Dashboard, Servers, Settings, Terminal (/terminal/:serverId),
-                            Files (/files/:serverId - breadcrumb-navigable directory browser)
+                            Files (/files/:serverId - breadcrumb-navigable directory browser),
+                            Monitor (/monitor/:serverId - polls every 5s, reuses MetricsPreview)
   hooks/
   services/                 Tauri command wrappers (pairingService.ts, serverService.ts,
-                            terminalService.ts, filesService.ts)
+                            terminalService.ts, filesService.ts, monitorService.ts)
   stores/                   Zustand stores (serversStore.ts - SSH-mode rows are Etap 2-persisted, agent-mode rows still session-only)
   types/                    incl. pairing.ts (AgentConnectionState), serverEvent.ts (ServerEvent/ServerMetrics),
                             files.ts (RemoteFileEntry)
@@ -273,11 +295,11 @@ src-tauri/                  Desktop backend (Rust, Tauri)
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
                              server_commands.rs, ssh_commands.rs, terminal_commands.rs,
-                             file_commands.rs
+                             file_commands.rs, monitor_commands.rs
     services/                 Business logic, incl. server_service.rs (validation +
                               repository/keyring orchestration), ssh_service.rs
                               (resolves a Server + keyring secret into ssh::connect's/
-                              open_terminal's/list_directory's input)
+                              open_terminal's/list_directory's/get_metrics's input)
     models/                    DTOs shared with the frontend (incl. Server/ServerInput/ConnectionMode)
     errors/                     Shared AppError/AppResult
     state/                       AppState, PairingSession (Etap H), SshSessionManager (Etap 3 -
@@ -287,6 +309,7 @@ src-tauri/                  Desktop backend (Rust, Tauri)
     agent_client/                  WebSocket client half of the Agent Mode transport
     ssh/                             client.rs (connect/TOFU/auth/exec/open_terminal, `russh`),
                                      sftp.rs (list_directory/read_file/write_file, `russh-sftp`),
+                                     monitor.rs (get_metrics/list_processes over `/proc`+`ps`),
                                      transport.rs (adapts SshSession to ServerConnection) - Etap 3
     storage/                           credentials.rs (OS keyring, multiple secret kinds per
                                        server id); server_repository.rs (SQLite, Etap 2 servers +

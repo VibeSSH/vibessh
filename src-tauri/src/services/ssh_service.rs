@@ -13,7 +13,7 @@ use crate::ssh::{self, SshAuth, SshCredentials, SshSession, TerminalHandle};
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
-use crate::transport::{CommandOutput, RemoteFileEntry};
+use crate::transport::{CommandOutput, ProcessSummary, RemoteFileEntry, ServerMetrics};
 
 /// Connects with whatever's in `input` directly - no server id, no keyring,
 /// no persisted host key, since nothing has been saved yet to persist
@@ -94,6 +94,24 @@ pub async fn write_file(
 ) -> AppResult<()> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.write_file(path, contents).await
+}
+
+/// A fresh sample each call - the CPU%/network-rate delta math lives on
+/// `SshSession` itself (see `ssh/monitor.rs`), keyed off the cached
+/// connection so repeated polling compares against the *previous* poll
+/// rather than resetting to a meaningless first-sample 0 every time.
+pub async fn get_metrics(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<ServerMetrics> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.get_metrics().await
+}
+
+pub async fn list_processes(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+) -> AppResult<Vec<ProcessSummary>> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.list_processes().await
 }
 
 async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {

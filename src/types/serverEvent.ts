@@ -11,6 +11,15 @@ export interface ServerMetrics {
   networkTxBytesPerSec: number;
 }
 
+/** Mirrors the Rust `ProcessSummary` struct. */
+export interface ProcessSummary {
+  pid: number;
+  user: string;
+  cpuPercent: number;
+  ramBytes: number;
+  command: string;
+}
+
 /**
  * Mirrors the Rust `ServerEvent` enum's JSON shape (serde `tag = "type"`,
  * dot-notation variant names). Only `metrics.update` (Etap J) is ever

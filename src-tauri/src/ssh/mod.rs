@@ -5,6 +5,7 @@
 //! and its keyring secret into the `SshCredentials` this module needs.
 
 pub mod client;
+mod monitor;
 mod sftp;
 mod transport;
 
