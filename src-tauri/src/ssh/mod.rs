@@ -8,7 +8,10 @@ pub mod client;
 mod docker;
 mod monitor;
 mod sftp;
-mod systemd;
+// `pub(crate)` (not just `mod`) so `runtime::systemd` (Applications) can
+// reuse `validate_unit_name` for its own unit-file writes, not only the
+// `systemctl` calls this module's own methods already validate.
+pub(crate) mod systemd;
 mod transport;
 
 pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};

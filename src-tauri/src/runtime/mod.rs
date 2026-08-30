@@ -8,6 +8,7 @@
 //! interface Phase 2 (LocalProcessRuntime) onward builds against.
 
 pub mod local_process;
+pub mod systemd;
 
 use std::sync::Arc;
 
