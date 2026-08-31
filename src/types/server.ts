@@ -12,6 +12,11 @@ export interface ServerGroup {
   color?: string;
 }
 
+/** Mirrors the Rust `NodeCapabilities` struct - `docker` is the only field detected today (Etap M1). */
+export interface NodeCapabilities {
+  docker: boolean;
+}
+
 export interface ServerSummary {
   id: string;
   name: string;
@@ -25,6 +30,8 @@ export interface ServerSummary {
   agentId?: string;
   agentStatus?: AgentStatus;
   groupId?: string;
+  /** `undefined` means "never probed", not "no capabilities" - see the Rust `Server::node_capabilities` doc comment. */
+  nodeCapabilities?: NodeCapabilities;
   createdAt: string;
   updatedAt: string;
 }

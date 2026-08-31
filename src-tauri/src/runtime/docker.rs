@@ -15,22 +15,38 @@
 //! the Docker network), not something meant to be reachable from outside
 //! the host, so it gets no `-p` flag at all.
 //!
-//! **Deliberately out of scope for this phase, not forgotten**:
-//! - **Volumes / bind mounts** - nothing here mounts `working_directory` or
-//!   anything else into the container. This also shapes `start()`'s own
-//!   behavior below (recreate-avoidance): with no volume, a container's
-//!   writable layer is the *only* place its own state (a world save, a
-//!   database's files, ...) lives.
+//! **Etap M1: `working_directory` is bind-mounted in** (`-v dir:dir` plus
+//! `-w dir`, host path = container path, so a jar/config path that's
+//! already just a bare filename relative to `working_directory` - the same
+//! assumption `runtime::local_process`/`remote_process`/`systemd` already
+//! make by launching with that as their own cwd - resolves identically
+//! inside the container, no path-translation layer needed anywhere else).
+//! This is *why* `start()`'s recreate-avoidance below is safe now instead
+//! of destroying state on every recreate: the container's writable layer is
+//! no longer the only place a world save/database file/config lives, the
+//! bind-mounted host directory is. **Known, deliberate gap**: no `--user`
+//! is set, so a container runs as whatever user its image defaults to
+//! (usually root) - if that user's uid/gid doesn't match the host
+//! directory's owner, writes can fail with a permission error. Solving this
+//! generally means `stat`-ing the host directory before every `docker
+//! create` and passing `--user uid:gid`, which risks breaking images that
+//! deliberately expect to run as a specific baked-in user (several official
+//! images do real setup as root before dropping privileges themselves) -
+//! not attempted here without wider testing across real blueprint images.
 //!
 //! **Unlike `runtime::systemd`/`runtime::remote_process`, `start()` does
 //! NOT unconditionally recreate.** Those runtimes persist only *config*
-//! (a unit file, a shell command) that's always safe to regenerate. A
-//! Docker container's writable layer can hold real application state -
-//! recreating it on every start would destroy that. So `start()` only runs
-//! `docker create` when no container with this application's name exists
-//! yet; picking up an edited image/command requires the container to be
-//! removed first, which isn't exposed by the `ApplicationRuntime` trait
-//! (the same "no `destroy()`" gap noted in the other two SSH runtimes).
+//! (a unit file, a shell command) that's always safe to regenerate. Now that
+//! a Docker container's state lives in the bind mount rather than its
+//! writable layer, recreating the *container* on every start would still be
+//! wasteful (and briefly drop it, mid-health-check, for no reason) even
+//! though it's no longer destructive - `start()` still only runs `docker
+//! create` when no container with this application's name exists yet.
+//! Picking up an edited image/command/restart policy needs an explicit
+//! recreate - `destroy()` below, plus `start()` - exposed as a "Recreate
+//! Container" action
+//! (`services::application_service::recreate_application`), not implicit on
+//! every start.
 
 use std::sync::Arc;
 
@@ -68,6 +84,28 @@ pub struct DockerConfig {
     pub memory_limit_mb: Option<u32>,
     #[serde(default)]
     pub cpu_limit_cores: Option<f32>,
+    /// `--restart <policy>` - defaults to `unless-stopped` when absent (see
+    /// `restart_policy_or_default`), including for every Docker Application
+    /// created before this field existed, via `#[serde(default)]`.
+    #[serde(default)]
+    pub restart_policy: Option<String>,
+}
+
+/// `docker create --restart` only accepts a fixed set of values - validated
+/// here (not left for the daemon to reject) so a typo surfaces as a clear
+/// `AppError::InvalidInput` before ever reaching `execute_command`, matching
+/// how `validate_resource_limits` already validates the other two config
+/// values before they're used to build a command.
+const VALID_RESTART_POLICIES: &[&str] = &["no", "always", "unless-stopped", "on-failure"];
+
+fn restart_policy_or_default(config: &DockerConfig) -> AppResult<&str> {
+    let policy = config.restart_policy.as_deref().unwrap_or("unless-stopped");
+    if !VALID_RESTART_POLICIES.contains(&policy) {
+        return Err(AppError::InvalidInput(format!(
+            "'{policy}' isn't a valid restart policy - expected one of {VALID_RESTART_POLICIES:?}"
+        )));
+    }
+    Ok(policy)
 }
 
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<DockerConfig> {
@@ -154,11 +192,18 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     }
     validate_environment(ctx.environment)?;
     validate_resource_limits(config.memory_limit_mb, config.cpu_limit_cores)?;
+    let restart_policy = restart_policy_or_default(config)?;
+    reject_newlines(&ctx.application.working_directory, "the working directory")?;
     for port in ctx.ports {
         reject_newlines(&port.bind_address, "a port's bind address")?;
     }
 
-    let mut command = format!("docker create --name {} ", shell_quote(name));
+    let working_directory = shell_quote(&ctx.application.working_directory);
+    let mut command = format!(
+        "docker create --name {} --restart {} -v {working_directory}:{working_directory} -w {working_directory} ",
+        shell_quote(name),
+        restart_policy,
+    );
     if let Some(mb) = config.memory_limit_mb {
         command.push_str(&format!("--memory {mb}m "));
     }
@@ -405,6 +450,28 @@ impl ApplicationRuntime for DockerRuntime {
         let connection = connection_arc(ctx)?;
         Ok(Box::new(DockerLogs { connection, name: container_name(ctx.application.id) }))
     }
+
+    /// `docker rm -f` - stops (if running) and removes in one step, same as
+    /// the CLI's own `-f` semantics. A no-op, not an error, when nothing was
+    /// ever created (e.g. "Recreate Container" clicked before the first
+    /// successful start) - `destroy()` guarantees "no container with this
+    /// name exists after this returns Ok", not "a container existed before
+    /// this ran".
+    async fn destroy(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        let connection = connection_ref(ctx)?;
+        let name = container_name(ctx.application.id);
+        validate_container_ref(&name)?;
+        if !container_exists(connection, &name).await? {
+            return Ok(());
+        }
+        let output = connection.execute_command(&format!("docker rm -f {}", shell_quote(&name))).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "docker rm failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't remove the container: {detail}")));
+        }
+        Ok(())
+    }
 }
 
 struct DockerLogs {
@@ -517,7 +584,7 @@ mod tests {
     #[test]
     fn build_create_command_includes_memory_and_cpu_flags_before_the_image_when_set() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5) };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5), restart_policy: None };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
@@ -525,6 +592,44 @@ mod tests {
         assert!(command.contains("--memory 512m"), "{command}");
         assert!(command.contains("--cpus 1.5"), "{command}");
         assert!(command.find("--memory").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_create_command_bind_mounts_and_sets_the_workdir_to_the_working_directory() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(command.contains("-v '/srv/my-app':'/srv/my-app'"), "{command}");
+        assert!(command.contains("-w '/srv/my-app'"), "{command}");
+        assert!(command.find("-v").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_create_command_defaults_restart_policy_to_unless_stopped() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        assert!(command.contains("--restart unless-stopped"), "{command}");
+    }
+
+    #[test]
+    fn build_create_command_honors_an_explicit_restart_policy_and_rejects_an_invalid_one() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()) };
+        let command = build_create_command(&ctx, &always, "vibessh-app-test").unwrap();
+        assert!(command.contains("--restart always"), "{command}");
+
+        let bogus = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("whenever".into()) };
+        assert!(build_create_command(&ctx, &bogus, "vibessh-app-test").is_err());
     }
 
     fn stub_port(protocol: PortProtocol, bind_address: &str, internal_port: u16, external_port: Option<u16>) -> ApplicationPort {
@@ -536,6 +641,7 @@ mod tests {
             bind_address: bind_address.to_string(),
             internal_port,
             external_port,
+            visibility: crate::models::PortVisibility::Public,
             required: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -545,7 +651,7 @@ mod tests {
     #[test]
     fn build_create_command_publishes_only_ports_with_an_external_port_set() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
         let runtime_config = serde_json::json!({});
         let ports = vec![
             stub_port(PortProtocol::Tcp, "0.0.0.0", 25565, Some(25565)),
@@ -565,7 +671,7 @@ mod tests {
     #[test]
     fn build_create_command_publishes_nothing_when_no_ports_are_declared() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
@@ -576,7 +682,7 @@ mod tests {
     #[test]
     fn build_create_command_rejects_a_newline_in_a_ports_bind_address() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
         let runtime_config = serde_json::json!({});
         let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
@@ -587,7 +693,7 @@ mod tests {
     #[test]
     fn build_create_command_omits_limit_flags_when_unset() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
@@ -602,10 +708,10 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None };
+        let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None };
         assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test").is_err());
 
-        let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0) };
+        let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None };
         assert!(build_create_command(&ctx, &negative_cpu, "vibessh-app-test").is_err());
     }
 
@@ -620,5 +726,6 @@ mod tests {
         assert!(matches!(runtime.start(&ctx).await, Err(AppError::Internal(_))));
         assert!(matches!(runtime.status(&ctx).await, Err(AppError::Internal(_))));
         assert!(matches!(runtime.logs(&ctx).await, Err(AppError::Internal(_))));
+        assert!(matches!(runtime.destroy(&ctx).await, Err(AppError::Internal(_))));
     }
 }

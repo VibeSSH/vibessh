@@ -18,6 +18,7 @@ import {
   getApplicationResourceUsage,
   killApplication,
   listBlueprints,
+  recreateApplication,
   restartApplication,
   startApplication,
   stopApplication,
@@ -35,7 +36,7 @@ const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
 type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files";
-type Verb = "start" | "stop" | "restart" | "kill";
+type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
   unknown: "neutral",
@@ -47,7 +48,7 @@ const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | 
 };
 
 /** stop/kill interrupt or force-end something and read as the "careful" action; start/restart don't - same convention Actions.tsx's VERB_IS_DESTRUCTIVE already establishes for services/containers. */
-const VERB_IS_DESTRUCTIVE: Record<Verb, boolean> = { start: false, stop: true, restart: false, kill: true };
+const VERB_IS_DESTRUCTIVE: Record<Verb, boolean> = { start: false, stop: true, restart: false, kill: true, recreate: false };
 
 export function ApplicationDetail() {
   const { t } = useTranslation();
@@ -133,6 +134,7 @@ export function ApplicationDetail() {
         stop: () => stopApplication(id, true),
         restart: () => restartApplication(id),
         kill: () => killApplication(id),
+        recreate: () => recreateApplication(id),
       };
       await call[confirming]();
       toastSuccess(t(`applicationDetail.verbPast.${confirming}`, { name: application?.name ?? "" }));
@@ -195,6 +197,12 @@ export function ApplicationDetail() {
                     {t("applicationDetail.verb.kill")}
                   </Button>
                 </>
+              )}
+              {application.runtimeType === "docker" && (
+                <Button variant="secondary" size="sm" onClick={() => setConfirming("recreate")}>
+                  <Icon name="box" size={14} />
+                  {t("applicationDetail.verb.recreate")}
+                </Button>
               )}
             </div>
           </div>

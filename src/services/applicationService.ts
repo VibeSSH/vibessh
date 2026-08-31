@@ -61,6 +61,11 @@ export function restartApplication(id: string): Promise<ApplicationStatus> {
   return callCommand<ApplicationStatus>("restart_application", { id });
 }
 
+/** "Recreate Container" (Etap M1, Docker applications only) - tears the container down and creates it again from the application's current config, so an edited image/command/resource limit/restart policy actually takes effect. */
+export function recreateApplication(id: string): Promise<ApplicationStatus> {
+  return callCommand<ApplicationStatus>("recreate_application", { id });
+}
+
 export function killApplication(id: string): Promise<ApplicationStatus> {
   return callCommand<ApplicationStatus>("kill_application", { id });
 }
@@ -104,6 +109,18 @@ export function addApplicationPort(id: string, port: PortInput): Promise<Applica
 
 export function updateApplicationPort(id: string, portId: string, port: PortInput): Promise<ApplicationPort> {
   return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
+}
+
+/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error) - see the Rust `firewall` module's own doc comment for why this only ever adds rules, never removes or enables enforcement. */
+export interface FirewallSyncResult {
+  backend: string | null;
+  active: boolean;
+  rulesApplied: number;
+}
+
+/** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically, best-effort, after every `addApplicationPort`/`updateApplicationPort` - this is for a port declared before the feature existed, or retrying after a failed sync. */
+export function syncApplicationNodeFirewall(id: string): Promise<FirewallSyncResult | null> {
+  return callCommand<FirewallSyncResult | null>("sync_application_node_firewall", { id });
 }
 
 export function removeApplicationPort(id: string, portId: string): Promise<void> {

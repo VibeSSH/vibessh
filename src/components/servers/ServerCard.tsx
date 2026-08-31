@@ -1,10 +1,70 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { usePingStore } from "@/stores/pingStore";
+import { getNodeSyncStatus, reconcileAgentNode, type NodeSyncStatus } from "@/services/serverService";
 import type { ManagedServer } from "@/stores/serversStore";
 import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./ServerCard.css";
+
+/**
+ * Etap M3 - only meaningful for an Agent-mode Node (SSH-mode has no
+ * desired/applied revisioning concept yet, see
+ * `services::node_state_service::reconcile_node`'s own doc comment).
+ * Loads the current status on mount and after every reconcile click,
+ * rather than polling - this is a manual "check in on this Node" action,
+ * not a live dashboard.
+ */
+function NodeSyncBadge({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<NodeSyncStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reload() {
+    getNodeSyncStatus(serverId)
+      .then(setStatus)
+      .catch(() => {
+        // No live/persisted state yet (never reconciled this Node, or
+        // running outside a real Tauri webview) - showing nothing is the
+        // honest state, not an error banner on every server card.
+      });
+  }
+
+  useEffect(reload, [serverId]);
+
+  async function handleReconcile(e: React.MouseEvent) {
+    e.stopPropagation();
+    setBusy(true);
+    setError(null);
+    try {
+      const outcome = await reconcileAgentNode(serverId);
+      if (outcome.status === "failed") {
+        setError(outcome.error ?? t("serverCard.reconcileFailed"));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("serverCard.reconcileFailed"));
+    } finally {
+      setBusy(false);
+      reload();
+    }
+  }
+
+  return (
+    <span className="server-card-sync-group">
+      {status && (
+        <span
+          className={`server-card-sync-pill ${status.inSync ? "server-card-sync-pill-ok" : "server-card-sync-pill-stale"}`}
+          title={error ?? undefined}
+        >
+          {status.inSync ? t("serverCard.syncOk") : t("serverCard.syncStale")}
+        </span>
+      )}
+      <IconButton icon="refresh-cw" size="sm" title={t("serverCard.reconcileAria")} onClick={handleReconcile} disabled={busy} />
+    </span>
+  );
+}
 
 interface ServerCardActionButtonProps {
   icon: string;
@@ -89,6 +149,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
             {!isAgent && <ServerCardActionButton icon="folder" title={t("serverCard.browseFilesAria", { name: server.name })} onClick={onOpenFiles} />}
             {!isAgent && <ServerCardActionButton icon="activity" title={t("serverCard.monitorAria", { name: server.name })} onClick={onOpenMonitor} />}
             {!isAgent && <ServerCardActionButton icon="zap" title={t("serverCard.actionsAria", { name: server.name })} onClick={onOpenActions} />}
+            {isAgent && <NodeSyncBadge serverId={server.id} />}
           </div>
 
           {!isAgent && (

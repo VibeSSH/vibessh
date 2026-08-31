@@ -21,6 +21,7 @@ use crate::services::ssh_service::get_or_connect;
 use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
 
 pub fn list_applications(repo: &ApplicationRepository) -> AppResult<Vec<Application>> {
@@ -47,17 +48,69 @@ pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid
     repo.list_ports(application_id)
 }
 
-pub fn add_application_port(repo: &ApplicationRepository, application_id: Uuid, port: &PortInput) -> AppResult<ApplicationPort> {
-    repo.add_port(application_id, port)
+/// Resolves the `bind_address` this port should actually publish on,
+/// straight from the user's chosen `visibility` intent (Etap M4's
+/// "Application Network") - the caller never has to compute a bind address
+/// by hand. `Public`/`VibeNetwork` both bind `0.0.0.0`: what actually
+/// restricts a "Vibe Network only" port to mesh members is the firewall
+/// rule `services::firewall_service::desired_rules` derives from this same
+/// `visibility`, not a different bind address - see that function's own
+/// doc comment.
+fn resolve_bind_address(port: &PortInput) -> String {
+    match port.visibility {
+        crate::models::PortVisibility::Public | crate::models::PortVisibility::VibeNetwork => "0.0.0.0".to_string(),
+        crate::models::PortVisibility::Localhost => "127.0.0.1".to_string(),
+        crate::models::PortVisibility::Custom => port.bind_address.clone(),
+    }
 }
 
-pub fn update_application_port(
+/// Publishing a port (`external_port` set) should open it in the Node's
+/// firewall right away, not only whenever someone next thinks to click
+/// "Sync Firewall" on the Ports tab - `sync_firewall_best_effort` fires
+/// after every successful write. Best-effort deliberately: a sync failure
+/// (host unreachable, no supported firewall detected, a transient SSH
+/// hiccup) must never fail the port CRUD call itself - the port is already
+/// correctly saved either way, and `firewall_service::reconcile_node` is
+/// safe to retry from the Ports tab at any time.
+pub async fn add_application_port(
     repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    network_repo: &NodeNetworkRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    port: &PortInput,
+) -> AppResult<ApplicationPort> {
+    let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    let created = repo.add_port(application_id, &port)?;
+    sync_firewall_best_effort(repo, server_repo, network_repo, sessions, application_id).await;
+    Ok(created)
+}
+
+pub async fn update_application_port(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    network_repo: &NodeNetworkRepository,
+    sessions: &SshSessionManager,
     application_id: Uuid,
     port_id: Uuid,
     port: &PortInput,
 ) -> AppResult<ApplicationPort> {
-    repo.update_port(application_id, port_id, port)
+    let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    let updated = repo.update_port(application_id, port_id, &port)?;
+    sync_firewall_best_effort(repo, server_repo, network_repo, sessions, application_id).await;
+    Ok(updated)
+}
+
+async fn sync_firewall_best_effort(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    network_repo: &NodeNetworkRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+) {
+    if let Err(err) = crate::services::firewall_service::sync_application_node_firewall(repo, server_repo, network_repo, sessions, application_id).await {
+        log::warn!("firewall sync after a port change failed (application {application_id}): {err}");
+    }
 }
 
 pub fn remove_application_port(repo: &ApplicationRepository, application_id: Uuid, port_id: Uuid) -> AppResult<()> {
@@ -267,6 +320,33 @@ pub async fn restart_application(
     refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
 }
 
+/// "Recreate Container" (Etap M1) - `destroy()` then `start()`, so an edited
+/// image/command/resource-limit/restart-policy actually takes effect. Only
+/// meaningful for `RuntimeType::Docker`: the other three runtimes already
+/// regenerate their config on every `start()` (see each `ApplicationRuntime`
+/// impl's own doc comment), so there's nothing a separate recreate step
+/// would do beyond what starting already does - rejected outright rather
+/// than silently doing nothing, same "don't pretend two runtimes have
+/// identical capabilities" stance `set_application_resource_limits` already
+/// takes. Safe to call while stopped or running - `destroy()` is a no-op if
+/// nothing was ever created, and removes (stopping first) if it was.
+pub async fn recreate_application(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+) -> AppResult<ApplicationStatus> {
+    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("recreating is only meaningful for Docker applications".into()));
+    }
+    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+    runtime.destroy(&ctx).await?;
+    runtime.start(&ctx).await?;
+    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+}
+
 pub async fn kill_application(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
@@ -447,11 +527,12 @@ mod tests {
     /// isolation. `ServerRepository`/`SshSessionManager` are unused by a
     /// Local application's own lifecycle but still required by every
     /// function's signature, matching production's own shape.
-    fn temp_setup() -> (ApplicationRepository, ServerRepository, SshSessionManager, Arc<LocalProcessManager>, BlueprintRegistry) {
+    fn temp_setup() -> (ApplicationRepository, ServerRepository, NodeNetworkRepository, SshSessionManager, Arc<LocalProcessManager>, BlueprintRegistry) {
         let path = std::env::temp_dir().join(format!("vibessh-app-service-test-{}.sqlite3", Uuid::new_v4()));
         let app_repo = ApplicationRepository::open(&path).unwrap();
         let server_repo = ServerRepository::open(&path).unwrap();
-        (app_repo, server_repo, SshSessionManager::new(), Arc::new(LocalProcessManager::new()), BlueprintRegistry::with_builtins())
+        let network_repo = NodeNetworkRepository::open(&path).unwrap();
+        (app_repo, server_repo, network_repo, SshSessionManager::new(), Arc::new(LocalProcessManager::new()), BlueprintRegistry::with_builtins())
     }
 
     fn sleep_command_input() -> CreateApplicationFromBlueprintInput {
@@ -474,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn full_lifecycle_create_start_status_stop_delete() {
-        let (app_repo, server_repo, sessions, local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, registry) = temp_setup();
 
         let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
         assert_eq!(detail.application.status, ApplicationStatus::Unknown);
@@ -508,7 +589,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_rejects_an_unknown_blueprint() {
-        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.blueprint_id = "does-not-exist".to_string();
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -516,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_rejects_a_runtime_type_the_blueprint_doesnt_support() {
-        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.runtime_type = RuntimeType::Docker;
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -524,7 +605,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_rejects_a_blank_name() {
-        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         input.name = "   ".to_string();
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -532,7 +613,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_creates_a_missing_local_working_directory() {
-        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
         let mut input = sleep_command_input();
         let fresh_dir = std::env::temp_dir().join(format!("vibessh-app-service-workdir-{}", Uuid::new_v4()));
         assert!(!fresh_dir.exists());
@@ -547,7 +628,7 @@ mod tests {
 
     #[tokio::test]
     async fn port_crud_add_update_remove_round_trips_through_the_service_layer() {
-        let (app_repo, server_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, network_repo, sessions, _local_process_manager, registry) = temp_setup();
         let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
         let application_id = detail.application.id;
 
@@ -559,19 +640,20 @@ mod tests {
             bind_address: "0.0.0.0".to_string(),
             internal_port: 25565,
             external_port: None,
+            visibility: crate::models::PortVisibility::Public,
             required: false,
         };
-        let added = add_application_port(&app_repo, application_id, &input).unwrap();
+        let added = add_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, &input).await.unwrap();
         assert_eq!(added.internal_port, 25565);
         assert_eq!(list_application_ports(&app_repo, application_id).unwrap().len(), 1);
 
         // Adding the exact same internal_port/bind_address/protocol again
         // is a real collision, not a silent duplicate - the service layer
         // must surface the repository's own collision error, not swallow it.
-        assert!(add_application_port(&app_repo, application_id, &input).is_err());
+        assert!(add_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, &input).await.is_err());
 
         let updated_input = crate::models::PortInput { internal_port: 25566, ..input };
-        let updated = update_application_port(&app_repo, application_id, added.id, &updated_input).unwrap();
+        let updated = update_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, added.id, &updated_input).await.unwrap();
         assert_eq!(updated.internal_port, 25566);
 
         remove_application_port(&app_repo, application_id, added.id).unwrap();
@@ -602,9 +684,18 @@ mod tests {
             .unwrap()
     }
 
+    #[tokio::test]
+    async fn recreate_application_rejects_a_non_docker_runtime_type() {
+        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, _registry) = temp_setup();
+        let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
+
+        let err = recreate_application(&app_repo, &server_repo, &sessions, &local_process_manager, local.application.id).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+    }
+
     #[test]
     fn set_application_resource_limits_rejects_a_runtime_type_that_cant_enforce_them() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
         let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
 
         let result = set_application_resource_limits(&app_repo, local.application.id, SetResourceLimitsInput { memory_limit_mb: Some(512), cpu_limit_cores: None });
@@ -613,7 +704,7 @@ mod tests {
 
     #[test]
     fn set_application_resource_limits_patches_and_clears_the_docker_runtime_config() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
         let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "image": "alpine:latest", "command": [] }));
 
         let updated = set_application_resource_limits(
@@ -636,7 +727,7 @@ mod tests {
 
     #[test]
     fn set_application_resource_limits_rejects_a_zero_memory_limit() {
-        let (app_repo, _server_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
         let systemd = create_raw(&app_repo, RuntimeType::Systemd, serde_json::json!({ "command": "/usr/bin/java", "args": [] }));
 
         let result = set_application_resource_limits(&app_repo, systemd.application.id, SetResourceLimitsInput { memory_limit_mb: Some(0), cpu_limit_cores: None });

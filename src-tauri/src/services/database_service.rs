@@ -531,6 +531,7 @@ mod tests {
                     bind_address: "0.0.0.0".to_string(),
                     internal_port: 80,
                     external_port,
+                    visibility: crate::models::PortVisibility::Public,
                     required: false,
                 },
             )

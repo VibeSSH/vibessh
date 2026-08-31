@@ -98,7 +98,14 @@ pub fn spawn_pairing_session<F, E>(
         }
     });
 
-    let run_handle = tauri::async_runtime::spawn(agent_client::run(config, events_tx, state_tx));
+    // This connection only ever needs to show live pairing progress in the
+    // "Add Server" modal, never to send anything to the agent - the sender
+    // half is simply never used, so `command_rx` just sits empty for this
+    // connection's whole (short) lifetime. The real, command-capable
+    // connection is `state::AgentSessionManager`'s (Etap M3), started
+    // separately once pairing actually succeeds.
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let run_handle = tauri::async_runtime::spawn(agent_client::run(config, events_tx, state_tx, command_rx));
     session.replace(run_handle);
 }
 

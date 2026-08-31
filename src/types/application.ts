@@ -11,6 +11,9 @@ export interface EnvironmentVariable {
 
 export type PortProtocol = "tcp" | "udp";
 
+/** Mirrors the Rust `PortVisibility` enum (Etap M4's "Application Network") - the user-facing intent behind a port. `bindAddress` is still what `runtime::docker` actually publishes on; the service layer computes it from this on every save, so the UI only ever needs to show/collect *this*, never a raw bind address, except for `"custom"`. */
+export type PortVisibility = "public" | "vibeNetwork" | "localhost" | "custom";
+
 export interface ApplicationPort {
   id: string;
   applicationId: string;
@@ -19,18 +22,20 @@ export interface ApplicationPort {
   bindAddress: string;
   internalPort: number;
   externalPort?: number;
+  visibility: PortVisibility;
   required: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-/** What add/update submit - `required` always omitted from the UI (defaults to false server-side): a port declared through this tab is always user-removable, "required" is a blueprint-authored concept this UI doesn't expose a way to set. */
+/** What add/update submit - `required` always omitted from the UI (defaults to false server-side): a port declared through this tab is always user-removable, "required" is a blueprint-authored concept this UI doesn't expose a way to set. `bindAddress` only actually matters when `visibility` is `"custom"` - still required on the wire (the service layer overwrites it otherwise), so it's always sent as at least an empty string. */
 export interface PortInput {
   name: string;
   protocol: PortProtocol;
   bindAddress: string;
   internalPort: number;
   externalPort?: number;
+  visibility: PortVisibility;
 }
 
 /** Mirrors the Rust `HealthCheckType` enum - what `getApplicationHealth` probes beyond "is the process still running" (that check always happens first, regardless of this setting). */

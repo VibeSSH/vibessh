@@ -26,6 +26,7 @@
     "servers": "Servers",
     "applications": "Applications",
     "databaseHosts": "Database Hosts",
+    "vibeNetwork": "Vibe Network",
     "terminal": "Terminal",
     "files": "Files",
     "monitor": "Monitor",
@@ -107,7 +108,11 @@
     "browseFilesAria": "Browse files on {{name}}",
     "monitorAria": "Monitor {{name}}",
     "actionsAria": "Quick actions for {{name}}",
-    "terminalAria": "Open a terminal to {{name}}"
+    "terminalAria": "Open a terminal to {{name}}",
+    "syncOk": "Synced",
+    "syncStale": "Out of sync",
+    "reconcileAria": "Reconcile",
+    "reconcileFailed": "Reconcile failed."
   },
   "deleteDialog": {
     "title": "Remove server",
@@ -154,7 +159,7 @@
     "subtitle": "Processes, systemd units, and containers VibeSSH manages for you.",
     "create": "Create application",
     "emptyTitle": "No applications yet",
-    "emptyDescription": "Create one from a blueprint - run a command locally, or manage a process, systemd unit, or container on a remote server.",
+    "emptyDescription": "Create one from an Egg - run a command locally, or manage a process, systemd unit, or container on a remote server.",
     "actionError": "Couldn't complete that action.",
     "removedToast": "Removed {{name}}",
     "couldntRemove": "Couldn't remove the application.",
@@ -203,19 +208,22 @@
       "start": "Start",
       "stop": "Stop",
       "restart": "Restart",
-      "kill": "Kill"
+      "kill": "Kill",
+      "recreate": "Recreate Container"
     },
     "verbPast": {
       "start": "Started {{name}}",
       "stop": "Stopped {{name}}",
       "restart": "Restarted {{name}}",
-      "kill": "Force-killed {{name}}"
+      "kill": "Force-killed {{name}}",
+      "recreate": "Recreated the container for {{name}}"
     },
     "confirmBody": {
       "start": "Start <1>{{name}}</1>?",
       "stop": "Stop <1>{{name}}</1>? It will shut down gracefully.",
       "restart": "Restart <1>{{name}}</1>?",
-      "kill": "Force-kill <1>{{name}}</1>? This ends it immediately, without a graceful shutdown - any unsaved state it was holding is lost."
+      "kill": "Force-kill <1>{{name}}</1>? This ends it immediately, without a graceful shutdown - any unsaved state it was holding is lost.",
+      "recreate": "Recreate the container for <1>{{name}}</1>? Any change to its image, command, resource limits, or restart policy since it was last created takes effect. Its files (working directory) are untouched - only the container itself is removed and created again."
     }
   },
   "portsTab": {
@@ -240,7 +248,15 @@
     "externalPort": "External port",
     "externalPortPlaceholder": "Optional",
     "invalidForm": "Enter a name and a valid port number (1-65535).",
-    "saveError": "Couldn't save the port."
+    "saveError": "Couldn't save the port.",
+    "syncFirewall": "Sync Firewall",
+    "firewallSyncNote": "Publishing a port opens it on the Node's firewall automatically - use this to retry, or to sync a port declared before this existed.",
+    "firewallSyncLocal": "This application runs locally - there's no Node firewall to sync.",
+    "firewallSyncNoBackend": "No supported firewall was detected on this Node.",
+    "firewallSyncSummary": "{{backend}} - {{status}}, {{count}} rule(s) applied.",
+    "firewallActive": "enforcing",
+    "firewallInactive": "installed but not enabled",
+    "firewallSyncError": "Couldn't sync the firewall."
   },
   "healthCheck": {
     "title": "Health check",
@@ -430,7 +446,7 @@
   "createApplicationWizard": {
     "title": "Create application",
     "step1Title": "Location & basics",
-    "step2Title": "Blueprint & runtime",
+    "step2Title": "Egg & runtime",
     "step3Title": "Configuration",
     "step4Title": "Environment variables",
     "step5Title": "Review",
@@ -443,7 +459,7 @@
     "workingDirectoryPlaceholderLocal": "C:\\Users\\you\\apps\\my-app",
     "workingDirectoryPlaceholderRemote": "/srv/my-app",
     "workingDirectoryNote": "Where the application's files live, and where it runs from.",
-    "blueprint": "Blueprint",
+    "blueprint": "Egg",
     "runtimeType": "Runtime",
     "runtimeTypePlaceholder": "Choose a runtime",
     "runtimeTypeOption": {
@@ -452,7 +468,8 @@
       "systemd": "systemd service",
       "docker": "Docker container"
     },
-    "noRuntimeForLocation": "This blueprint doesn't support any runtime for the chosen location.",
+    "noRuntimeForLocation": "This Egg doesn't support any runtime for the chosen location.",
+    "dockerNotDetected": "Docker wasn't detected on this Node - creating this application may fail until Docker is installed there.",
     "detectingJava": "Looking for installed Java runtimes...",
     "chooseJava": "Choose a Java installation",
     "javaOption": "Java {{major}}",
@@ -471,7 +488,7 @@
     "environmentReviewLabel": "Environment variables",
     "environmentReviewNone": "None",
     "next": "Next",
-    "loadError": "Couldn't load blueprints.",
+    "loadError": "Couldn't load Eggs.",
     "createError": "Couldn't create the application."
   },
   "agentPairing": {
@@ -800,5 +817,84 @@
     "languageDescription": "Changes the app's interface language.",
     "languageEnglish": "English",
     "languagePolish": "Polski"
+  },
+  "vibeNetwork": {
+    "title": "Vibe Network",
+    "subtitle": "A private WireGuard mesh linking your Nodes, with mesh-only ports and stable service names.",
+    "advancedToggle": "Advanced",
+    "syncButton": "Sync Vibe Network",
+    "syncing": "Syncing...",
+    "addNode": "Add node",
+    "networkHealthy": "Healthy",
+    "networkDegraded": "Degraded",
+    "memberCount": "{{count}} node(s) joined",
+    "loadError": "Couldn't load the Vibe Network.",
+    "syncError": "Couldn't sync the Vibe Network.",
+    "syncResultsTitle": "Last sync result",
+    "syncOk": "OK",
+    "syncOutOfSync": "Out of sync",
+    "tabNodes": "Nodes",
+    "tabEndpoints": "Endpoints",
+    "tabDns": "Private DNS",
+    "emptyTitle": "No nodes joined yet",
+    "emptyDescription": "Add a node to start building your private mesh.",
+    "online": "Online",
+    "offline": "Offline",
+    "dnsName": "DNS name",
+    "peerStatus": "Peer status",
+    "noPeersYet": "No peers yet",
+    "peersHealthy": "{{healthy}}/{{total}} healthy",
+    "publicKey": "Public key",
+    "interface": "Interface",
+    "neverHandshaked": "Never handshaked",
+    "handshakeAgo": "{{seconds}}s ago",
+    "transfer": "↓{{rx}} ↑{{tx}}",
+    "leaveButton": "Leave network",
+    "leaveTitle": "Leave Vibe Network",
+    "leaveBody": "Remove \"{{name}}\" from the Vibe Network? Its WireGuard interface, firewall-scoped rules, and DNS entries on this node will be torn down.",
+    "leaveConfirm": "Leave network",
+    "leaveError": "Couldn't remove the node from the Vibe Network.",
+    "leftToast": "{{name}} left the Vibe Network.",
+    "addNodeTitle": "Add node",
+    "noJoinableServers": "Every SSH-mode server is already a member, or you have none yet.",
+    "chooseServer": "Server",
+    "addNodeHelp": "VibeSSH generates the WireGuard keys, allocates a private IP, and configures every peer automatically - nothing to enter by hand.",
+    "joining": "Joining...",
+    "joinButton": "Join Vibe Network",
+    "joinedToast": "Node joined the Vibe Network.",
+    "joinError": "Couldn't join the Vibe Network.",
+    "addEndpoint": "Add endpoint",
+    "noApplicationsOnNode": "This node has no applications yet - add one before declaring an endpoint.",
+    "chooseApplication": "Application",
+    "hostname": "Hostname",
+    "dnsDescription": "Private aliases resolved over the Vibe Network. Every node gets one automatically; add one per service so it keeps its name if the service ever migrates.",
+    "dnsSyncButton": "Sync DNS",
+    "addAlias": "Add alias",
+    "dnsEmptyTitle": "No service aliases yet",
+    "dnsEmptyDescription": "Add one so a service keeps a stable name across the mesh.",
+    "verified": "Verified",
+    "verifyFailed": "Mismatch",
+    "verifyAria": "Verify {{name}}",
+    "editAlias": "Edit alias",
+    "dnsInvalidForm": "Enter a hostname and choose an application.",
+    "dnsSaveError": "Couldn't save the alias.",
+    "dnsDeleteError": "Couldn't remove the alias.",
+    "dnsSyncOk": "Synced DNS to all {{count}} node(s).",
+    "dnsSyncPartial": "DNS sync failed on {{failed}}/{{total}} node(s)."
+  },
+  "applicationNetwork": {
+    "access": "Network access",
+    "visibility": {
+      "public": "Public",
+      "vibeNetwork": "Vibe Network only",
+      "localhost": "Localhost only",
+      "custom": "Custom address"
+    },
+    "visibilityHelp": {
+      "public": "Reachable from the internet - opened on the node's firewall.",
+      "vibeNetwork": "Reachable only from other nodes on the Vibe Network - firewall-scoped to the mesh.",
+      "localhost": "Reachable only from the node itself - never published externally.",
+      "custom": "Bind to a specific address you provide."
+    }
   }
 }

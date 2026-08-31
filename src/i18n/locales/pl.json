@@ -26,6 +26,7 @@
     "servers": "Serwery",
     "applications": "Aplikacje",
     "databaseHosts": "Hosty baz danych",
+    "vibeNetwork": "Vibe Network",
     "terminal": "Terminal",
     "files": "Pliki",
     "monitor": "Monitor",
@@ -107,7 +108,11 @@
     "browseFilesAria": "Przeglądaj pliki na {{name}}",
     "monitorAria": "Monitoruj {{name}}",
     "actionsAria": "Szybkie akcje dla {{name}}",
-    "terminalAria": "Otwórz terminal do {{name}}"
+    "terminalAria": "Otwórz terminal do {{name}}",
+    "syncOk": "Zsynchronizowany",
+    "syncStale": "Niezsynchronizowany",
+    "reconcileAria": "Zsynchronizuj (Reconcile)",
+    "reconcileFailed": "Synchronizacja nie powiodła się."
   },
   "deleteDialog": {
     "title": "Usuń serwer",
@@ -154,7 +159,7 @@
     "subtitle": "Procesy, usługi systemd i kontenery, którymi zarządza VibeSSH.",
     "create": "Utwórz aplikację",
     "emptyTitle": "Brak aplikacji",
-    "emptyDescription": "Utwórz aplikację na podstawie blueprintu - uruchom komendę lokalnie, albo zarządzaj procesem, usługą systemd lub kontenerem na zdalnym serwerze.",
+    "emptyDescription": "Utwórz aplikację na podstawie Egga - uruchom komendę lokalnie, albo zarządzaj procesem, usługą systemd lub kontenerem na zdalnym serwerze.",
     "actionError": "Nie udało się wykonać tej akcji.",
     "removedToast": "Usunięto {{name}}",
     "couldntRemove": "Nie udało się usunąć aplikacji.",
@@ -203,19 +208,22 @@
       "start": "Uruchom",
       "stop": "Zatrzymaj",
       "restart": "Uruchom ponownie",
-      "kill": "Wymuś zakończenie"
+      "kill": "Wymuś zakończenie",
+      "recreate": "Odtwórz kontener"
     },
     "verbPast": {
       "start": "Uruchomiono {{name}}",
       "stop": "Zatrzymano {{name}}",
       "restart": "Uruchomiono ponownie {{name}}",
-      "kill": "Wymuszono zakończenie {{name}}"
+      "kill": "Wymuszono zakończenie {{name}}",
+      "recreate": "Odtworzono kontener dla {{name}}"
     },
     "confirmBody": {
       "start": "Uruchomić <1>{{name}}</1>?",
       "stop": "Zatrzymać <1>{{name}}</1>? Zostanie zamknięta w sposób kontrolowany.",
       "restart": "Uruchomić ponownie <1>{{name}}</1>?",
-      "kill": "Wymusić zakończenie <1>{{name}}</1>? Kończy działanie natychmiast, bez kontrolowanego zamknięcia - niezapisany stan zostanie utracony."
+      "kill": "Wymusić zakończenie <1>{{name}}</1>? Kończy działanie natychmiast, bez kontrolowanego zamknięcia - niezapisany stan zostanie utracony.",
+      "recreate": "Odtworzyć kontener dla <1>{{name}}</1>? Zacznie obowiązywać każda zmiana obrazu, komendy, limitów zasobów lub polityki restartu wprowadzona od ostatniego utworzenia kontenera. Pliki aplikacji (katalog roboczy) pozostają nietknięte - usuwany i tworzony na nowo jest tylko sam kontener."
     }
   },
   "portsTab": {
@@ -240,7 +248,15 @@
     "externalPort": "Port zewnętrzny",
     "externalPortPlaceholder": "Opcjonalnie",
     "invalidForm": "Podaj nazwę i prawidłowy numer portu (1-65535).",
-    "saveError": "Nie udało się zapisać portu."
+    "saveError": "Nie udało się zapisać portu.",
+    "syncFirewall": "Zsynchronizuj firewall",
+    "firewallSyncNote": "Opublikowanie portu automatycznie otwiera go w firewallu Node'a - użyj tego, by ponowić próbę albo zsynchronizować port zadeklarowany zanim ta funkcja istniała.",
+    "firewallSyncLocal": "Ta aplikacja działa lokalnie - nie ma firewalla Node'a do zsynchronizowania.",
+    "firewallSyncNoBackend": "Nie wykryto obsługiwanego firewalla na tym Node.",
+    "firewallSyncSummary": "{{backend}} - {{status}}, zastosowano {{count}} reguł(y).",
+    "firewallActive": "egzekwuje reguły",
+    "firewallInactive": "zainstalowany, ale nieaktywny",
+    "firewallSyncError": "Nie udało się zsynchronizować firewalla."
   },
   "healthCheck": {
     "title": "Health check",
@@ -430,7 +446,7 @@
   "createApplicationWizard": {
     "title": "Utwórz aplikację",
     "step1Title": "Lokalizacja i podstawy",
-    "step2Title": "Blueprint i runtime",
+    "step2Title": "Egg i runtime",
     "step3Title": "Konfiguracja",
     "step4Title": "Zmienne środowiskowe",
     "step5Title": "Podsumowanie",
@@ -443,7 +459,7 @@
     "workingDirectoryPlaceholderLocal": "C:\\Users\\ty\\aplikacje\\moja-app",
     "workingDirectoryPlaceholderRemote": "/srv/moja-app",
     "workingDirectoryNote": "Gdzie znajdują się pliki aplikacji i skąd jest uruchamiana.",
-    "blueprint": "Blueprint",
+    "blueprint": "Egg",
     "runtimeType": "Runtime",
     "runtimeTypePlaceholder": "Wybierz runtime",
     "runtimeTypeOption": {
@@ -452,7 +468,8 @@
       "systemd": "Usługa systemd",
       "docker": "Kontener Docker"
     },
-    "noRuntimeForLocation": "Ten blueprint nie obsługuje żadnego runtime'u dla wybranej lokalizacji.",
+    "noRuntimeForLocation": "Ten Egg nie obsługuje żadnego runtime'u dla wybranej lokalizacji.",
+    "dockerNotDetected": "Nie wykryto Dockera na tym Node - utworzenie tej aplikacji może się nie powieść, dopóki Docker nie zostanie tam zainstalowany.",
     "detectingJava": "Szukam zainstalowanych wersji Javy...",
     "chooseJava": "Wybierz instalację Javy",
     "javaOption": "Java {{major}}",
@@ -471,7 +488,7 @@
     "environmentReviewLabel": "Zmienne środowiskowe",
     "environmentReviewNone": "Brak",
     "next": "Dalej",
-    "loadError": "Nie udało się wczytać blueprintów.",
+    "loadError": "Nie udało się wczytać Eggów.",
     "createError": "Nie udało się utworzyć aplikacji."
   },
   "agentPairing": {
@@ -800,5 +817,84 @@
     "languageDescription": "Zmienia język interfejsu aplikacji.",
     "languageEnglish": "English",
     "languagePolish": "Polski"
+  },
+  "vibeNetwork": {
+    "title": "Vibe Network",
+    "subtitle": "Prywatna sieć mesh WireGuard łącząca Twoje Node'y - z portami dostępnymi tylko w sieci mesh i stabilnymi nazwami usług.",
+    "advancedToggle": "Zaawansowane",
+    "syncButton": "Synchronizuj Vibe Network",
+    "syncing": "Synchronizowanie...",
+    "addNode": "Dodaj node",
+    "networkHealthy": "Sprawna",
+    "networkDegraded": "Zdegradowana",
+    "memberCount": "{{count}} dołączonych Node'ów",
+    "loadError": "Nie udało się wczytać Vibe Network.",
+    "syncError": "Nie udało się zsynchronizować Vibe Network.",
+    "syncResultsTitle": "Wynik ostatniej synchronizacji",
+    "syncOk": "OK",
+    "syncOutOfSync": "OUT OF SYNC",
+    "tabNodes": "Node'y",
+    "tabEndpoints": "Endpoints",
+    "tabDns": "Private DNS",
+    "emptyTitle": "Brak dołączonych Node'ów",
+    "emptyDescription": "Dodaj node, aby zacząć budować prywatną sieć mesh.",
+    "online": "Online",
+    "offline": "Offline",
+    "dnsName": "Nazwa DNS",
+    "peerStatus": "Status peerów",
+    "noPeersYet": "Brak peerów",
+    "peersHealthy": "{{healthy}}/{{total}} sprawnych",
+    "publicKey": "Klucz publiczny",
+    "interface": "Interfejs",
+    "neverHandshaked": "Nigdy nie nawiązano handshake",
+    "handshakeAgo": "{{seconds}}s temu",
+    "transfer": "↓{{rx}} ↑{{tx}}",
+    "leaveButton": "Opuść sieć",
+    "leaveTitle": "Opuść Vibe Network",
+    "leaveBody": "Usunąć „{{name}}\" z Vibe Network? Interfejs WireGuard, reguły firewalla ograniczone do sieci mesh oraz wpisy DNS na tym node'zie zostaną zdemontowane.",
+    "leaveConfirm": "Opuść sieć",
+    "leaveError": "Nie udało się usunąć node'a z Vibe Network.",
+    "leftToast": "{{name}} opuścił Vibe Network.",
+    "addNodeTitle": "Dodaj node",
+    "noJoinableServers": "Każdy serwer w trybie SSH jest już członkiem sieci, albo nie masz jeszcze żadnego.",
+    "chooseServer": "Serwer",
+    "addNodeHelp": "VibeSSH generuje klucze WireGuard, przydziela prywatny adres IP i konfiguruje wszystkich peerów automatycznie - niczego nie trzeba wpisywać ręcznie.",
+    "joining": "Dołączanie...",
+    "joinButton": "Dołącz do Vibe Network",
+    "joinedToast": "Node dołączył do Vibe Network.",
+    "joinError": "Nie udało się dołączyć do Vibe Network.",
+    "addEndpoint": "Dodaj endpoint",
+    "noApplicationsOnNode": "Ten node nie ma jeszcze żadnych aplikacji - dodaj jedną, zanim zadeklarujesz endpoint.",
+    "chooseApplication": "Aplikacja",
+    "hostname": "Nazwa hosta",
+    "dnsDescription": "Prywatne aliasy rozwiązywane w Vibe Network. Każdy node dostaje jeden automatycznie; dodaj kolejny dla każdej usługi, aby zachowała nazwę nawet po migracji.",
+    "dnsSyncButton": "Synchronizuj DNS",
+    "addAlias": "Dodaj alias",
+    "dnsEmptyTitle": "Brak aliasów usług",
+    "dnsEmptyDescription": "Dodaj alias, aby usługa zachowała stabilną nazwę w całej sieci mesh.",
+    "verified": "Zweryfikowany",
+    "verifyFailed": "Niezgodność",
+    "verifyAria": "Zweryfikuj {{name}}",
+    "editAlias": "Edytuj alias",
+    "dnsInvalidForm": "Podaj nazwę hosta i wybierz aplikację.",
+    "dnsSaveError": "Nie udało się zapisać aliasu.",
+    "dnsDeleteError": "Nie udało się usunąć aliasu.",
+    "dnsSyncOk": "Zsynchronizowano DNS na wszystkich {{count}} node'ach.",
+    "dnsSyncPartial": "Synchronizacja DNS nie powiodła się na {{failed}}/{{total}} node'ach."
+  },
+  "applicationNetwork": {
+    "access": "Dostęp sieciowy",
+    "visibility": {
+      "public": "Publiczny",
+      "vibeNetwork": "Tylko Vibe Network",
+      "localhost": "Tylko localhost",
+      "custom": "Własny adres"
+    },
+    "visibilityHelp": {
+      "public": "Dostępny z internetu - otwierany w firewallu node'a.",
+      "vibeNetwork": "Dostępny tylko z innych Node'ów w Vibe Network - reguła firewalla ograniczona do sieci mesh.",
+      "localhost": "Dostępny tylko z poziomu samego node'a - nigdy nie publikowany na zewnątrz.",
+      "custom": "Powiąż z konkretnym adresem, który podasz."
+    }
   }
 }

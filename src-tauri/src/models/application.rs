@@ -195,6 +195,28 @@ pub enum PortProtocol {
     Udp,
 }
 
+/// The user-facing *intent* behind a port (Etap M4's "Application Network"
+/// - the user configures this, never a bind address/CIDR/firewall rule by
+/// hand). `bind_address` is still the column `runtime::docker` actually
+/// reads to publish the port - `services::application_service` computes it
+/// from this on every save (Public/VibeNetwork both bind `0.0.0.0`, since
+/// what actually restricts a "Vibe Network only" port to mesh members is
+/// the firewall rule `services::firewall_service` derives from this same
+/// field, not a different bind address - see that module's own doc
+/// comment), except `Custom`, where the user's own typed address wins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PortVisibility {
+    /// Reachable from the public internet.
+    Public,
+    /// Reachable only from other Nodes on the Vibe Network.
+    VibeNetwork,
+    /// Reachable only from this same host.
+    Localhost,
+    /// A specific bind address the user typed themselves.
+    Custom,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplicationPort {
@@ -205,6 +227,8 @@ pub struct ApplicationPort {
     pub bind_address: String,
     pub internal_port: u16,
     pub external_port: Option<u16>,
+    #[serde(default = "default_visibility")]
+    pub visibility: PortVisibility,
     /// Blueprint-declared as required - the UI lets it be edited, not
     /// removed (docs/APPLICATIONS_ARCHITECTURE.md's Ports tab spec).
     pub required: bool,
@@ -212,14 +236,25 @@ pub struct ApplicationPort {
     pub updated_at: DateTime<Utc>,
 }
 
+fn default_visibility() -> PortVisibility {
+    PortVisibility::Public
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortInput {
     pub name: String,
     pub protocol: PortProtocol,
+    /// Only actually used when `visibility` is `Custom` - otherwise
+    /// `services::application_service::add_application_port`/
+    /// `update_application_port` overwrite it with the address the chosen
+    /// visibility implies. Still required on the wire so a `Custom` port
+    /// has somewhere to carry the user's address.
     pub bind_address: String,
     pub internal_port: u16,
     pub external_port: Option<u16>,
+    #[serde(default = "default_visibility")]
+    pub visibility: PortVisibility,
     #[serde(default)]
     pub required: bool,
 }

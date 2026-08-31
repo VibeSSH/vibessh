@@ -3,7 +3,11 @@ mod application_files_service;
 mod application_service;
 mod cloud_service;
 mod database_service;
+mod dns_service;
+mod firewall_service;
 mod java_service;
+mod network_service;
+mod node_state_service;
 mod papermc_service;
 mod ping_service;
 mod server_service;
@@ -22,9 +26,19 @@ pub use application_files_service::{
 pub use application_service::{
     add_application_port, application_health_check, application_logs, application_resource_usage, create_application,
     delete_application, get_application, kill_application, list_application_ports, list_applications, list_blueprints,
-    refresh_application_status, remove_application_port, restart_application, set_application_health_check,
+    recreate_application, refresh_application_status, remove_application_port, restart_application, set_application_health_check,
     set_application_resource_limits, start_application, stop_application, update_application_port,
 };
+pub use dns_service::{
+    create_alias as create_dns_alias, delete_alias as delete_dns_alias, list_records as list_dns_records, resolve_dns_view,
+    sync_dns, update_alias as update_dns_alias, verify_alias as verify_dns_alias, DnsSyncResult,
+};
+pub use firewall_service::{sync_application_node_firewall, FirewallSyncResult};
+pub use network_service::{
+    join_node, leave_node, list_members as list_network_members, list_node_endpoints, mesh_status, reconcile_mesh, sync_vibe_network,
+    MeshReconcileResult, NodeEndpoint, NodeMeshStatus, PeerHandshake, VibeNetworkSyncResult,
+};
+pub use node_state_service::{reconcile_node, sync_status as node_sync_status};
 pub use database_service::{
     create_application_database, create_database_host, delete_application_database, delete_database_host,
     list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
@@ -67,7 +81,7 @@ pub use cloud_service::{
     unassign_role as cloud_unassign_role, update_role as cloud_update_role,
 };
 pub use ping_service::ping_server;
-pub use server_service::{create_server, delete_server, get_server, list_servers, update_server, upsert_agent_server};
+pub use server_service::{create_server, delete_server, get_server, list_servers, probe_node_capabilities, update_server, upsert_agent_server};
 pub use ssh_service::{
     container_logs as server_container_logs, create_directory as create_remote_directory,
     disable_service as disable_server_service,

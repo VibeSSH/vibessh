@@ -149,6 +149,35 @@ pub(crate) fn bool_input(inputs: &HashMap<String, serde_json::Value>, blueprint:
     }
 }
 
+/// The Docker image a Java-based Egg's rendered `DockerConfig` runs -
+/// Eclipse Temurin's own official, widely-used JRE builds (Adoptium), tagged
+/// `<major>-jre-alpine` (e.g. `21-jre-alpine`). Used by
+/// `PaperBlueprint`/`VelocityBlueprint`/`GenericJavaBlueprint`'s own
+/// `render_runtime_config`, all three of which went Docker-only in Etap M1
+/// (see each one's own doc comment) - a small, shared source of truth for
+/// "which image a Java version maps to" rather than three copies of the
+/// same string formatting.
+pub(crate) fn temurin_image(java_version: &str) -> String {
+    format!("eclipse-temurin:{}-jre-alpine", java_version.trim())
+}
+
+/// Builds the Docker-shape `runtime_config` (`{"image": ..., "command":
+/// [...]}`, what `runtime::docker::DockerConfig` deserializes from) for a
+/// Java application: `java`, then JVM args, then `-jar <jar>`, then program
+/// args - the same argument ordering the pre-Etap-M1 process-shape config
+/// used, just as the container's own `command` override instead of a
+/// process's `command`+`args` pair (`DockerConfig.command` overrides the
+/// image's `ENTRYPOINT`/`CMD` entirely, so this must be the *whole*
+/// invocation, not just program arguments).
+pub(crate) fn render_java_docker_config(java_version: &str, jvm_args: Vec<String>, jar: String, program_args: Vec<String>) -> serde_json::Value {
+    let mut command = vec!["java".to_string()];
+    command.extend(jvm_args);
+    command.push("-jar".to_string());
+    command.push(jar);
+    command.extend(program_args);
+    serde_json::json!({ "image": temurin_image(java_version), "command": command })
+}
+
 pub(crate) fn text_list_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<Vec<String>> {
     let field = find_field(blueprint, key)?;
     let value = inputs.get(key).or(field.default_value.as_ref());

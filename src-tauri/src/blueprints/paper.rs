@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
 use crate::services::latest_paper_build;
 
-use super::{bool_input, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+use super::{bool_input, render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
 
 /// Not a user-facing wizard field - `provision()` writes the real,
 /// downloaded jar's filename here (only known once the download actually
@@ -33,7 +33,13 @@ impl PaperBlueprint {
                 description: "A high-performance Minecraft server - the server jar is downloaded and kept up to date automatically.".to_string(),
                 schema_version: 1,
                 blueprint_version: 1,
-                supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
+                // Docker-only since Etap M1 (mandatory Docker isolation) -
+                // see `runtime::docker`'s own module doc comment for what
+                // that gets this Egg (a real bind-mounted, persistent
+                // `working_directory`) and `blueprints::mod`'s
+                // `render_java_docker_config` for how "Java version" below
+                // maps to a real image instead of a host-installed JDK path.
+                supported_runtime_types: vec![RuntimeType::Docker],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
@@ -53,12 +59,12 @@ impl PaperBlueprint {
                         help_text: None,
                     },
                     BlueprintField {
-                        key: "javaBinary".to_string(),
+                        key: "javaVersion".to_string(),
                         label: "Java version".to_string(),
-                        field_type: BlueprintFieldType::JavaVersion,
+                        field_type: BlueprintFieldType::Text,
                         required: false,
-                        default_value: Some(serde_json::Value::String("java".to_string())),
-                        help_text: Some("Detected Java installations - pick one, or enter a path yourself.".to_string()),
+                        default_value: Some(serde_json::Value::String("21".to_string())),
+                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jvmArgs".to_string(),
@@ -123,16 +129,11 @@ impl BlueprintHandler for PaperBlueprint {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| AppError::Internal("Paper's jar filename wasn't set by provision() before rendering".into()))?;
 
-        let java_binary = text_input(inputs, &self.definition, "javaBinary")?;
+        let java_version = text_input(inputs, &self.definition, "javaVersion")?;
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        let mut args = jvm_args;
-        args.push("-jar".to_string());
-        args.push(jar_filename.to_string());
-        args.extend(program_args);
-
-        Ok(serde_json::json!({ "command": java_binary, "args": args }))
+        Ok(render_java_docker_config(&java_version, jvm_args, jar_filename.to_string(), program_args))
     }
 
     async fn provision(
@@ -257,13 +258,16 @@ mod tests {
     }
 
     #[test]
-    fn render_runtime_config_builds_command_and_args_with_the_downloaded_jar() {
+    fn render_runtime_config_builds_a_docker_image_and_command_with_the_downloaded_jar() {
         let blueprint = PaperBlueprint::new();
         let inputs = accepted_inputs(Some("paper-1.21.11-132.jar"));
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "command": "java", "args": ["-jar", "paper-1.21.11-132.jar", "nogui"] }));
+        assert_eq!(
+            config,
+            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "paper-1.21.11-132.jar", "nogui"] })
+        );
     }
 
     #[test]
@@ -275,7 +279,18 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "command": "java", "args": ["-Xmx4G", "-jar", "paper-1.21.11-132.jar"] }));
+        assert_eq!(config["command"], serde_json::json!(["java", "-Xmx4G", "-jar", "paper-1.21.11-132.jar"]));
+    }
+
+    #[test]
+    fn render_runtime_config_uses_the_chosen_java_version_as_the_image_tag() {
+        let blueprint = PaperBlueprint::new();
+        let mut inputs = accepted_inputs(Some("paper-1.21.11-132.jar"));
+        inputs.insert("javaVersion".to_string(), serde_json::json!("17"));
+
+        let config = blueprint.render_runtime_config(&inputs).unwrap();
+
+        assert_eq!(config["image"], serde_json::json!("eclipse-temurin:17-jre-alpine"));
     }
 
     #[tokio::test]

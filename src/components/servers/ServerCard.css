@@ -224,6 +224,31 @@
   }
 }
 
+/* Etap M3 - Agent-mode Nodes only, sits alongside the other action icons in
+   the card's own action row. */
+.server-card-sync-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.server-card-sync-pill {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.server-card-sync-pill-ok {
+  color: var(--t-status-connected);
+  background: color-mix(in srgb, var(--t-status-connected) 16%, transparent);
+}
+.server-card-sync-pill-stale {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
 .servers-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

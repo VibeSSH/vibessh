@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
 use crate::services::latest_velocity_build;
 
-use super::{text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
 
 /// Not a user-facing wizard field - see `paper::JAR_FILENAME_KEY`'s own
 /// doc comment for the full reasoning (identical here).
@@ -28,7 +28,9 @@ impl VelocityBlueprint {
                 description: "A Minecraft proxy - the jar is downloaded and kept up to date automatically.".to_string(),
                 schema_version: 1,
                 blueprint_version: 1,
-                supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
+                // Docker-only since Etap M1 - see `PaperBlueprint`'s own doc
+                // comment for the full reasoning (identical here).
+                supported_runtime_types: vec![RuntimeType::Docker],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
@@ -40,12 +42,12 @@ impl VelocityBlueprint {
                         help_text: Some("The matching Velocity jar is downloaded automatically.".to_string()),
                     },
                     BlueprintField {
-                        key: "javaBinary".to_string(),
+                        key: "javaVersion".to_string(),
                         label: "Java version".to_string(),
-                        field_type: BlueprintFieldType::JavaVersion,
+                        field_type: BlueprintFieldType::Text,
                         required: false,
-                        default_value: Some(serde_json::Value::String("java".to_string())),
-                        help_text: Some("Detected Java installations - pick one, or enter a path yourself.".to_string()),
+                        default_value: Some(serde_json::Value::String("21".to_string())),
+                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jvmArgs".to_string(),
@@ -94,16 +96,11 @@ impl BlueprintHandler for VelocityBlueprint {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| AppError::Internal("Velocity's jar filename wasn't set by provision() before rendering".into()))?;
 
-        let java_binary = text_input(inputs, &self.definition, "javaBinary")?;
+        let java_version = text_input(inputs, &self.definition, "javaVersion")?;
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        let mut args = jvm_args;
-        args.push("-jar".to_string());
-        args.push(jar_filename.to_string());
-        args.extend(program_args);
-
-        Ok(serde_json::json!({ "command": java_binary, "args": args }))
+        Ok(render_java_docker_config(&java_version, jvm_args, jar_filename.to_string(), program_args))
     }
 
     async fn provision(
@@ -193,13 +190,13 @@ mod tests {
     }
 
     #[test]
-    fn render_runtime_config_builds_command_and_args_with_the_downloaded_jar() {
+    fn render_runtime_config_builds_a_docker_image_and_command_with_the_downloaded_jar() {
         let blueprint = VelocityBlueprint::new();
         let inputs = inputs_with_jar(Some("velocity-3.4.0-566.jar"));
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "command": "java", "args": ["-jar", "velocity-3.4.0-566.jar"] }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "velocity-3.4.0-566.jar"] }));
     }
 
     #[test]
@@ -211,7 +208,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "command": "java", "args": ["-Xmx1G", "-jar", "velocity-3.4.0-566.jar", "--example"] }));
+        assert_eq!(config["command"], serde_json::json!(["java", "-Xmx1G", "-jar", "velocity-3.4.0-566.jar", "--example"]));
     }
 
     #[tokio::test]

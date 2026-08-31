@@ -167,6 +167,81 @@ pub fn migrations() -> Migrations<'static> {
             );
             CREATE INDEX application_databases_application_id_idx ON application_databases (application_id);",
         ),
+        // Migration 5 (Etap M1): persisted Node capability detection.
+        // `node_capabilities_json` mirrors `NodeCapabilities` (currently just
+        // `{"docker": bool}`) - NULL means "never probed", not "no
+        // capabilities", so a Node added before this migration (or an
+        // SSH-mode Node nobody has probed yet) reads back as unknown rather
+        // than a false "Docker not available". A JSON blob rather than a
+        // real `docker BOOLEAN` column deliberately mirrors how
+        // `application_runtime_config.config_json` already stores a
+        // per-row-varying capability set - this shape is expected to grow
+        // (a `firewall` flag once Etap M2 needs it) without another
+        // migration.
+        M::up("ALTER TABLE servers ADD COLUMN node_capabilities_json TEXT;"),
+        // Migration 6 (Etap M3): desired/applied state revisioning.
+        // `desired_revision`/`applied_revision` are compared as plain
+        // integers to answer "is this Node in sync" - see
+        // `services::node_state_service`'s own doc comment for the full
+        // reconcile flow. Deliberately two tables, not one: a Node's
+        // *desired* state is authored by Desktop the instant something
+        // changes (today: only a manual "Reconcile" click bumps it, since
+        // Etap M3 has no real desired-state payload yet - see
+        // `vibessh_protocol::NodeDesiredState`'s own doc comment), while its
+        // *applied* state is only ever written back from a real ack the
+        // Agent sent - keeping them separate means "what we asked for" and
+        // "what's actually confirmed running" can never accidentally be
+        // conflated into one write.
+        M::up(
+            "CREATE TABLE node_desired_state (
+                server_id           TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                desired_revision    INTEGER NOT NULL DEFAULT 0,
+                desired_state_json  TEXT NOT NULL,
+                updated_at          TEXT NOT NULL
+            );
+            CREATE TABLE node_applied_state (
+                server_id             TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                applied_revision      INTEGER NOT NULL DEFAULT 0,
+                applied_at            TEXT,
+                last_reconcile_status TEXT,
+                last_error            TEXT
+            );",
+        ),
+        // Migration 7 (Etap M4): Vibe Network (WireGuard mesh) membership.
+        // Desktop is the sole IPAM authority - `wireguard_ip` is allocated
+        // sequentially in a fixed CIDR (see `network::wireguard`'s own doc
+        // comment) and UNIQUE enforces that at the database level, not just
+        // in application logic. Only the Node's own PUBLIC key is stored
+        // here - the private key never leaves the Node itself, see
+        // `services::network_service`'s own doc comment for the full
+        // reasoning.
+        M::up(
+            "CREATE TABLE node_network_members (
+                server_id            TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                wireguard_ip         TEXT NOT NULL UNIQUE,
+                wireguard_public_key TEXT NOT NULL,
+                joined_at            TEXT NOT NULL
+            );",
+        ),
+        // Migration 8 (Etap M4): the user-facing "Application Network"
+        // intent behind a port - see `models::PortVisibility`'s own doc
+        // comment. Existing ports default to `'public'`, matching their
+        // actual behavior today (unconditional `-p` publishing).
+        M::up("ALTER TABLE application_ports ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';"),
+        // Migration 9 (Etap M4): Private DNS. `application_id` is UNIQUE -
+        // one alias per service. The IP a Node renders for `hostname` is
+        // resolved at render time via `applications.server_id ->
+        // node_network_members.wireguard_ip`, never baked into this row -
+        // see `services::dns_service`'s own doc comment for why that's
+        // what makes a service's DNS name survive moving to another Node.
+        M::up(
+            "CREATE TABLE dns_records (
+                id              TEXT PRIMARY KEY,
+                application_id  TEXT NOT NULL UNIQUE REFERENCES applications(id) ON DELETE CASCADE,
+                hostname        TEXT NOT NULL UNIQUE,
+                created_at      TEXT NOT NULL
+            );",
+        ),
     ])
 }
 
@@ -286,6 +361,159 @@ mod tests {
             (),
         );
         assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn migration_5_adds_a_nullable_node_capabilities_column() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let capabilities: Option<String> =
+            conn.query_row("SELECT node_capabilities_json FROM servers WHERE id = 's1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(capabilities, None);
+
+        conn.execute("UPDATE servers SET node_capabilities_json = '{\"docker\":true}' WHERE id = 's1'", ()).unwrap();
+        let capabilities: Option<String> =
+            conn.query_row("SELECT node_capabilities_json FROM servers WHERE id = 's1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(capabilities, Some("{\"docker\":true}".to_string()));
+    }
+
+    #[test]
+    fn migration_6_creates_the_node_state_tables_scoped_to_one_row_per_server() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('node_desired_state', 'node_applied_state')",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 2);
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'agent', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO node_desired_state (server_id, desired_revision, desired_state_json, updated_at) VALUES ('s1', 1, '{}', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute("INSERT INTO node_applied_state (server_id, applied_revision) VALUES ('s1', 0)", ()).unwrap();
+
+        // One row per server_id, not a growing history - a second insert
+        // for the same server must collide on the primary key, the same
+        // "upsert, never append" shape the repository relies on.
+        let duplicate = conn.execute(
+            "INSERT INTO node_desired_state (server_id, desired_revision, desired_state_json, updated_at) VALUES ('s1', 2, '{}', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate.is_err());
+
+        // Deleting the Server cascades - no orphaned state left behind.
+        conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap();
+        let remaining: i64 = conn.query_row("SELECT count(*) FROM node_desired_state", (), |row| row.get(0)).unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn migration_7_creates_node_network_members_with_a_unique_ip_constraint() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Node A', 'a.example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z'),
+                    ('s2', 'Node B', 'b.example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s1', '10.77.0.1', 'pubkeyA', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // The same IP for a second Node must be rejected - IPAM uniqueness
+        // is enforced by the schema, not just application logic.
+        let duplicate_ip = conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s2', '10.77.0.1', 'pubkeyB', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate_ip.is_err());
+
+        conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s2', '10.77.0.2', 'pubkeyB', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // Deleting the Server cascades - no orphaned membership left behind.
+        conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap();
+        let remaining: i64 = conn.query_row("SELECT count(*) FROM node_network_members", (), |row| row.get(0)).unwrap();
+        assert_eq!(remaining, 1);
+    }
+
+    #[test]
+    fn migration_8_defaults_existing_ports_to_public_visibility() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_ports (id, application_id, name, protocol, bind_address, internal_port, created_at, updated_at)
+             VALUES ('p1', 'a1', 'game', 'tcp', '0.0.0.0', 25565, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let visibility: String = conn.query_row("SELECT visibility FROM application_ports WHERE id = 'p1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(visibility, "public");
+    }
+
+    #[test]
+    fn migration_9_creates_dns_records_with_unique_hostname_and_one_alias_per_application() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO dns_records (id, application_id, hostname, created_at) VALUES ('d1', 'a1', 'db01.vibe', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // A second alias for the same application must be rejected - one
+        // alias per service.
+        let duplicate_app = conn.execute(
+            "INSERT INTO dns_records (id, application_id, hostname, created_at) VALUES ('d2', 'a1', 'db01-alt.vibe', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate_app.is_err());
     }
 
     #[test]

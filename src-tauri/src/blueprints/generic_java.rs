@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::errors::AppResult;
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, RuntimeType};
 
-use super::{text_input, text_list_input, validate_inputs, BlueprintHandler};
+use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler};
 
 /// Runs a `.jar` file with a JVM - the base every Java-based server
 /// (Minecraft and friends) builds on; Paper/Velocity (Phase 8/9) will be
@@ -22,16 +22,18 @@ impl GenericJavaBlueprint {
                 description: "Runs a .jar file with a JVM.".to_string(),
                 schema_version: 1,
                 blueprint_version: 1,
-                supported_runtime_types: vec![RuntimeType::LocalProcess, RuntimeType::RemoteProcess, RuntimeType::Systemd],
+                // Docker-only since Etap M1 - see `PaperBlueprint`'s own doc
+                // comment for the full reasoning (identical here).
+                supported_runtime_types: vec![RuntimeType::Docker],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
-                        key: "javaBinary".to_string(),
+                        key: "javaVersion".to_string(),
                         label: "Java version".to_string(),
-                        field_type: BlueprintFieldType::JavaVersion,
+                        field_type: BlueprintFieldType::Text,
                         required: false,
-                        default_value: Some(serde_json::Value::String("java".to_string())),
-                        help_text: Some("Detected Java installations - pick one, or enter a path yourself.".to_string()),
+                        default_value: Some(serde_json::Value::String("21".to_string())),
+                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jarPath".to_string(),
@@ -79,17 +81,12 @@ impl BlueprintHandler for GenericJavaBlueprint {
 
     fn render_runtime_config(&self, inputs: &HashMap<String, serde_json::Value>) -> AppResult<serde_json::Value> {
         validate_inputs(&self.definition, inputs)?;
-        let java_binary = text_input(inputs, &self.definition, "javaBinary")?;
+        let java_version = text_input(inputs, &self.definition, "javaVersion")?;
         let jar_path = text_input(inputs, &self.definition, "jarPath")?;
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        let mut args = jvm_args;
-        args.push("-jar".to_string());
-        args.push(jar_path);
-        args.extend(program_args);
-
-        Ok(serde_json::json!({ "command": java_binary, "args": args }))
+        Ok(render_java_docker_config(&java_version, jvm_args, jar_path, program_args))
     }
 }
 
@@ -109,31 +106,31 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "command": "java", "args": ["-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"] })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"] })
         );
     }
 
     #[test]
-    fn java_binary_defaults_to_plain_java_when_omitted() {
+    fn java_version_defaults_to_21_when_omitted() {
         let blueprint = GenericJavaBlueprint::new();
         let mut inputs = HashMap::new();
         inputs.insert("jarPath".to_string(), serde_json::json!("server.jar"));
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "command": "java", "args": ["-jar", "server.jar"] }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "server.jar"] }));
     }
 
     #[test]
-    fn a_custom_java_binary_overrides_the_default() {
+    fn a_custom_java_version_overrides_the_default_image_tag() {
         let blueprint = GenericJavaBlueprint::new();
         let mut inputs = HashMap::new();
-        inputs.insert("javaBinary".to_string(), serde_json::json!("/opt/jdk21/bin/java"));
+        inputs.insert("javaVersion".to_string(), serde_json::json!("17"));
         inputs.insert("jarPath".to_string(), serde_json::json!("server.jar"));
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config["command"], serde_json::json!("/opt/jdk21/bin/java"));
+        assert_eq!(config["image"], serde_json::json!("eclipse-temurin:17-jre-alpine"));
     }
 
     #[test]

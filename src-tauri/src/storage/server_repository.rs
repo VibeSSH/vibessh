@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{AgentStatus, AuthenticationType, ConnectionMode, Server, ServerInput};
+use crate::models::{AgentStatus, AuthenticationType, ConnectionMode, NodeCapabilities, Server, ServerInput};
 use crate::storage::migrations::migrations;
 
 pub struct ServerRepository {
@@ -125,6 +125,7 @@ impl ServerRepository {
             agent_id: None,
             agent_status: None,
             group_id: input.group_id,
+            node_capabilities: None,
             created_at: now,
             updated_at: now,
         };
@@ -145,23 +146,33 @@ impl ServerRepository {
     /// only gets read back after the process (and every live connection
     /// with it) is long gone, so `Connected` would be a stale lie by the
     /// time anything reads it again.
-    pub fn upsert_agent(&self, name: &str, host: &str, agent_id: Uuid) -> AppResult<Server> {
+    ///
+    /// `capabilities` is whatever the handshake that triggered this call
+    /// detected (Etap M1) - the one moment a fresh reading genuinely exists
+    /// for an Agent-mode Node today, since there's no persistent Agent
+    /// connection outside the pairing flow yet (see `agent_client`'s own doc
+    /// comment). `None` leaves a previously-recorded value alone rather than
+    /// erasing it - a re-pairing call that didn't carry a fresh capability
+    /// reading shouldn't make a known-good one disappear.
+    pub fn upsert_agent(&self, name: &str, host: &str, agent_id: Uuid, capabilities: Option<NodeCapabilities>) -> AppResult<Server> {
         if let Some(existing) = self.get_by_agent_id(agent_id)? {
             let updated = Server {
                 name: name.to_string(),
                 host: host.to_string(),
                 agent_status: Some(AgentStatus::Disconnected),
+                node_capabilities: capabilities.or(existing.node_capabilities),
                 updated_at: Utc::now(),
                 ..existing
             };
             let conn = self.lock();
             conn.execute(
-                "UPDATE servers SET name = ?2, host = ?3, agent_status = ?4, updated_at = ?5 WHERE id = ?1",
+                "UPDATE servers SET name = ?2, host = ?3, agent_status = ?4, node_capabilities_json = ?5, updated_at = ?6 WHERE id = ?1",
                 params![
                     updated.id.to_string(),
                     updated.name,
                     updated.host,
                     agent_status_to_str(AgentStatus::Disconnected),
+                    updated.node_capabilities.map(|c| serde_json::to_string(&c).expect("NodeCapabilities always serializes")),
                     updated.updated_at.to_rfc3339(),
                 ],
             )
@@ -186,11 +197,29 @@ impl ServerRepository {
             agent_id: Some(agent_id),
             agent_status: Some(AgentStatus::Disconnected),
             group_id: None,
+            node_capabilities: capabilities,
             created_at: now,
             updated_at: now,
         };
         self.insert(&server)?;
         Ok(server)
+    }
+
+    /// Records the result of a real capability probe (Etap M1) - an SSH-mode
+    /// `command -v docker` check today, run on demand (see
+    /// `services::probe_node_capabilities`), not on a schedule. Doesn't
+    /// touch `updated_at`/anything else on the row - a narrow, frequent
+    /// write distinct from `update`'s full-record replace semantics.
+    pub fn set_node_capabilities(&self, id: Uuid, capabilities: NodeCapabilities) -> AppResult<()> {
+        let json = serde_json::to_string(&capabilities).expect("NodeCapabilities always serializes");
+        let affected = self
+            .lock()
+            .execute("UPDATE servers SET node_capabilities_json = ?2 WHERE id = ?1", params![id.to_string(), json])
+            .map_err(|err| AppError::Storage(format!("failed to record node capabilities: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("server {id}")));
+        }
+        Ok(())
     }
 
     fn get_by_agent_id(&self, agent_id: Uuid) -> AppResult<Option<Server>> {
@@ -206,8 +235,8 @@ impl ServerRepository {
             "INSERT INTO servers (
                 id, name, host, ssh_port, username, authentication_type,
                 private_key_path, connection_mode, agent_id, agent_status,
-                group_id, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                group_id, node_capabilities_json, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 server.id.to_string(),
                 server.name,
@@ -220,6 +249,7 @@ impl ServerRepository {
                 server.agent_id.map(|id| id.to_string()),
                 server.agent_status.map(agent_status_to_str),
                 server.group_id.map(|id| id.to_string()),
+                server.node_capabilities.map(|c| serde_json::to_string(&c).expect("NodeCapabilities always serializes")),
                 server.created_at.to_rfc3339(),
                 server.updated_at.to_rfc3339(),
             ],
@@ -249,6 +279,9 @@ impl ServerRepository {
             connection_mode: existing.connection_mode,
             agent_id: existing.agent_id,
             agent_status: existing.agent_status,
+            // Same reasoning - a probe result, not something a manual edit
+            // form has any opinion on.
+            node_capabilities: existing.node_capabilities,
         };
 
         let conn = self.lock();
@@ -332,7 +365,7 @@ impl ServerRepository {
 }
 
 const SELECT_COLUMNS: &str = "SELECT id, name, host, ssh_port, username, authentication_type, \
-     private_key_path, connection_mode, agent_id, agent_status, group_id, created_at, updated_at";
+     private_key_path, connection_mode, agent_id, agent_status, group_id, node_capabilities_json, created_at, updated_at";
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
     Ok(Server {
@@ -347,8 +380,11 @@ fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
         agent_id: row.get::<_, Option<String>>(8)?.map(parse_uuid),
         agent_status: row.get::<_, Option<String>>(9)?.as_deref().map(agent_status_from_str),
         group_id: row.get::<_, Option<String>>(10)?.map(parse_uuid),
-        created_at: parse_timestamp(row.get::<_, String>(11)?),
-        updated_at: parse_timestamp(row.get::<_, String>(12)?),
+        node_capabilities: row
+            .get::<_, Option<String>>(11)?
+            .map(|json| serde_json::from_str(&json).expect("stored NodeCapabilities column is always well-formed")),
+        created_at: parse_timestamp(row.get::<_, String>(12)?),
+        updated_at: parse_timestamp(row.get::<_, String>(13)?),
     })
 }
 
@@ -554,10 +590,11 @@ mod tests {
         let agent_id = Uuid::new_v4();
         {
             let repo = ServerRepository::open(&path).unwrap();
-            let server = repo.upsert_agent("Prod Agent", "203.0.113.20", agent_id).unwrap();
+            let server = repo.upsert_agent("Prod Agent", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true })).unwrap();
             assert_eq!(server.connection_mode, ConnectionMode::Agent);
             assert_eq!(server.agent_id, Some(agent_id));
             assert_eq!(server.agent_status, Some(AgentStatus::Disconnected));
+            assert_eq!(server.node_capabilities, Some(NodeCapabilities { docker: true }));
         }
 
         // Reopening simulates the next app launch - the row must still be
@@ -569,20 +606,47 @@ mod tests {
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].name, "Prod Agent");
         assert_eq!(servers[0].agent_id, Some(agent_id));
+        assert_eq!(servers[0].node_capabilities, Some(NodeCapabilities { docker: true }), "a capability reading must survive a reopen, same as every other field");
     }
 
     #[test]
     fn upsert_agent_on_an_already_known_agent_id_updates_instead_of_duplicating() {
         let repo = temp_repository();
         let agent_id = Uuid::new_v4();
-        let first = repo.upsert_agent("Old Name", "203.0.113.20", agent_id).unwrap();
+        let first = repo.upsert_agent("Old Name", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true })).unwrap();
 
-        let second = repo.upsert_agent("New Name", "203.0.113.21", agent_id).unwrap();
+        let second = repo.upsert_agent("New Name", "203.0.113.21", agent_id, None).unwrap();
         assert_eq!(second.id, first.id, "re-pairing the same agent should update its row, not create a new one");
         assert_eq!(second.name, "New Name");
         assert_eq!(second.host, "203.0.113.21");
+        assert_eq!(second.node_capabilities, Some(NodeCapabilities { docker: true }), "a missing fresh reading must not erase a previously known-good one");
 
         assert_eq!(repo.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn set_node_capabilities_persists_and_survives_a_reopen() {
+        let path = std::env::temp_dir().join(format!("vibessh-capabilities-test-{}.sqlite3", Uuid::new_v4()));
+        let id = {
+            let repo = ServerRepository::open(&path).unwrap();
+            let created = repo.create(&test_input("Docker Box")).unwrap();
+            assert_eq!(created.node_capabilities, None, "a freshly created server is unprobed, not known-incapable");
+
+            repo.set_node_capabilities(created.id, NodeCapabilities { docker: true }).unwrap();
+            let loaded = repo.get(created.id).unwrap().unwrap();
+            assert_eq!(loaded.node_capabilities, Some(NodeCapabilities { docker: true }));
+            created.id
+        };
+
+        let repo = ServerRepository::open(&path).unwrap();
+        assert_eq!(repo.get(id).unwrap().unwrap().node_capabilities, Some(NodeCapabilities { docker: true }));
+    }
+
+    #[test]
+    fn set_node_capabilities_on_a_missing_server_is_not_found() {
+        let repo = temp_repository();
+        let err = repo.set_node_capabilities(Uuid::new_v4(), NodeCapabilities { docker: true }).unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[test]

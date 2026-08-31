@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
-    PortInput, PortProtocol, RuntimeType, UpdateApplicationInput,
+    PortInput, PortProtocol, PortVisibility, RuntimeType, UpdateApplicationInput,
 };
 use crate::storage::migrations::migrations;
 
@@ -321,7 +321,7 @@ impl ApplicationRepository {
         let affected = conn
             .execute(
                 "UPDATE application_ports SET name = ?3, protocol = ?4, bind_address = ?5, internal_port = ?6,
-                 external_port = ?7, updated_at = ?8 WHERE id = ?1 AND application_id = ?2",
+                 external_port = ?7, visibility = ?8, updated_at = ?9 WHERE id = ?1 AND application_id = ?2",
                 params![
                     port_id.to_string(),
                     application_id.to_string(),
@@ -330,6 +330,7 @@ impl ApplicationRepository {
                     port.bind_address,
                     port.internal_port,
                     port.external_port,
+                    visibility_to_str(port.visibility),
                     Utc::now().to_rfc3339(),
                 ],
             )
@@ -420,8 +421,8 @@ fn insert_port(conn: &Connection, application_id: Uuid, port: &PortInput) -> App
     let now = Utc::now();
     conn.execute(
         "INSERT INTO application_ports (
-            id, application_id, name, protocol, bind_address, internal_port, external_port, required, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            id, application_id, name, protocol, bind_address, internal_port, external_port, visibility, required, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
         params![
             id.to_string(),
             application_id.to_string(),
@@ -430,6 +431,7 @@ fn insert_port(conn: &Connection, application_id: Uuid, port: &PortInput) -> App
             port.bind_address,
             port.internal_port,
             port.external_port,
+            visibility_to_str(port.visibility),
             port.required,
             now.to_rfc3339(),
         ],
@@ -482,7 +484,7 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
 }
 
 const PORT_COLUMNS: &str = "SELECT id, application_id, name, protocol, bind_address, internal_port, \
-     external_port, required, created_at, updated_at";
+     external_port, visibility, required, created_at, updated_at";
 
 fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
     Ok(ApplicationPort {
@@ -493,10 +495,29 @@ fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
         bind_address: row.get(4)?,
         internal_port: row.get(5)?,
         external_port: row.get(6)?,
-        required: row.get(7)?,
-        created_at: parse_timestamp(row.get::<_, String>(8)?),
-        updated_at: parse_timestamp(row.get::<_, String>(9)?),
+        visibility: visibility_from_str(&row.get::<_, String>(7)?),
+        required: row.get(8)?,
+        created_at: parse_timestamp(row.get::<_, String>(9)?),
+        updated_at: parse_timestamp(row.get::<_, String>(10)?),
     })
+}
+
+fn visibility_to_str(value: PortVisibility) -> &'static str {
+    match value {
+        PortVisibility::Public => "public",
+        PortVisibility::VibeNetwork => "vibe_network",
+        PortVisibility::Localhost => "localhost",
+        PortVisibility::Custom => "custom",
+    }
+}
+
+fn visibility_from_str(value: &str) -> PortVisibility {
+    match value {
+        "vibe_network" => PortVisibility::VibeNetwork,
+        "localhost" => PortVisibility::Localhost,
+        "custom" => PortVisibility::Custom,
+        _ => PortVisibility::Public,
+    }
 }
 
 fn parse_uuid(value: String) -> Uuid {
@@ -605,6 +626,7 @@ mod tests {
                 bind_address: "0.0.0.0".to_string(),
                 internal_port: 25565,
                 external_port: None,
+                visibility: crate::models::PortVisibility::Public,
                 required: true,
             }],
             runtime_config: serde_json::json!({ "jar": "server.jar" }),
@@ -667,6 +689,7 @@ mod tests {
             bind_address: "0.0.0.0".to_string(),
             internal_port: 25565,
             external_port: None,
+            visibility: crate::models::PortVisibility::Public,
             required: false,
         };
         let err = repo.add_port(detail.application.id, &collision).unwrap_err();
@@ -697,6 +720,7 @@ mod tests {
                     bind_address: "0.0.0.0".to_string(),
                     internal_port: 25566,
                     external_port: None,
+                    visibility: crate::models::PortVisibility::Public,
                     required: false,
                 },
             )

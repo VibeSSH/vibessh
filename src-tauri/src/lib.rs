@@ -6,18 +6,40 @@ mod blueprints;
 pub mod cloud_client;
 mod commands;
 mod errors;
+// `pub` for the same reason as `runtime`/`ssh` above - a real-server
+// integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
+// directly against a live, real ufw installation.
+pub mod firewall;
 // `pub` for the same reason as `agent_client`/`ssh` above - a real-server
 // integration test (`tests/application_files_sftp.rs`) drives
 // `SftpApplicationFileProvider` directly against a live SSH host.
 pub mod files;
-mod models;
-mod runtime;
-mod services;
+// `pub` for the same reason as `agent_client`/`files`/`ssh` below - the
+// `tests/docker_runtime.rs` real-server test needs to build a real
+// `Application`/`ApplicationPort` to drive `runtime::docker` with.
+pub mod models;
+// `pub` for the same reason as `firewall`/`runtime` above - a real-server
+// integration test (`tests/vibe_network.rs`) drives
+// `network::wireguard` directly against a real WireGuard installation.
+pub mod network;
+// `pub` for the same reason as `agent_client`/`files`/`ssh` above - a
+// real-server integration test (`tests/docker_runtime.rs`) drives
+// `runtime::docker::DockerRuntime` directly against a live Docker daemon.
+pub mod runtime;
+// `pub` for the same reason as `runtime`/`network` above - a real-server
+// integration test (`tests/vibe_network.rs`) drives the service-layer
+// orchestration (`join_node`, `sync_dns`, ...) directly, not just the
+// mechanism underneath it.
+pub mod services;
 // `pub` for the same reason as `agent_client` above - `tests/ssh_client.rs`
 // drives `ssh::connect` directly against a local mock SSH server.
 pub mod ssh;
-mod state;
-mod storage;
+// `pub` for the same reason as `services` above - `tests/vibe_network.rs`
+// needs a real `SshSessionManager`.
+pub mod state;
+// `pub` for the same reason as `services`/`state` above - `tests/vibe_network.rs`
+// opens real repositories directly against a temp SQLite file.
+pub mod storage;
 mod transport;
 
 use blueprints::BlueprintRegistry;
@@ -47,6 +69,7 @@ pub fn run() {
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(state::AgentSessionManager::new())
         .manage(state::FileTransferManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
@@ -72,6 +95,14 @@ pub fn run() {
             // Same physical file again - Application Databases (Phase 11)
             // foreign keys into both `applications` and `servers`.
             app.manage(storage::database_repository::DatabaseRepository::open(&db_path)?);
+            // Same physical file again - Etap M3's desired/applied state
+            // revisioning foreign-keys into `servers`.
+            app.manage(storage::node_state_repository::NodeStateRepository::open(&db_path)?);
+            // Same physical file again - Etap M4's Vibe Network membership
+            // (IPAM) and Private DNS records both foreign-key into
+            // `servers`/`applications`.
+            app.manage(storage::node_network_repository::NodeNetworkRepository::open(&db_path)?);
+            app.manage(storage::dns_repository::DnsRepository::open(&db_path)?);
 
             let config_dir = app.path().app_config_dir()?;
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
@@ -105,6 +136,7 @@ pub fn run() {
             commands::application_commands::add_application_port,
             commands::application_commands::update_application_port,
             commands::application_commands::remove_application_port,
+            commands::application_commands::sync_application_node_firewall,
             commands::application_commands::get_application,
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,
@@ -112,6 +144,7 @@ pub fn run() {
             commands::application_commands::start_application,
             commands::application_commands::stop_application,
             commands::application_commands::restart_application,
+            commands::application_commands::recreate_application,
             commands::application_commands::kill_application,
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,
@@ -152,6 +185,24 @@ pub fn run() {
             commands::server_commands::get_server,
             commands::server_commands::list_servers,
             commands::server_commands::upsert_agent_server,
+            commands::server_commands::probe_server_capabilities,
+            commands::agent_session_commands::start_agent_session,
+            commands::agent_session_commands::get_node_sync_status,
+            commands::agent_session_commands::reconcile_agent_node,
+            commands::network_commands::list_network_members,
+            commands::network_commands::join_vibe_network,
+            commands::network_commands::leave_vibe_network,
+            commands::network_commands::reconcile_vibe_mesh,
+            commands::network_commands::get_vibe_network_status,
+            commands::network_commands::list_node_endpoints,
+            commands::network_commands::list_dns_records,
+            commands::network_commands::create_dns_alias,
+            commands::network_commands::update_dns_alias,
+            commands::network_commands::delete_dns_alias,
+            commands::network_commands::sync_vibe_dns,
+            commands::network_commands::verify_dns_alias,
+            commands::network_commands::resolve_dns_view,
+            commands::network_commands::sync_vibe_network,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
             commands::ssh_commands::ping_server,

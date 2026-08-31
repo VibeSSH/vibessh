@@ -1,0 +1,79 @@
+/** Mirrors the Rust `NodeNetworkMember` DTO (Etap M4). */
+export interface NodeNetworkMember {
+  serverId: string;
+  wireguardIp: string;
+  wireguardPublicKey: string;
+  joinedAt: string;
+}
+
+/** Mirrors the Rust `PeerHandshake` DTO - one resolved peer entry from a Node's own real `wg show` output. */
+export interface PeerHandshake {
+  serverId: string;
+  latestHandshakeUnix: number;
+  rxBytes: number;
+  txBytes: number;
+}
+
+/** Mirrors the Rust `NodeMeshStatus` DTO. */
+export interface NodeMeshStatus {
+  serverId: string;
+  reachable: boolean;
+  peers: PeerHandshake[];
+}
+
+/** Mirrors the Rust `MeshReconcileResult` DTO. */
+export interface MeshReconcileResult {
+  serverId: string;
+  ok: boolean;
+  error: string | null;
+}
+
+/** Mirrors the Rust `NodeEndpoint` DTO - the "Endpoints" view, a Node-scoped read over existing Application ports. */
+export interface NodeEndpoint {
+  applicationId: string;
+  applicationName: string;
+  id: string;
+  name: string;
+  protocol: "tcp" | "udp";
+  bindAddress: string;
+  internalPort: number;
+  externalPort?: number;
+  visibility: PortVisibility;
+  required: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PortVisibility = "public" | "vibeNetwork" | "localhost" | "custom";
+
+/** Mirrors the Rust `DnsRecord` DTO. */
+export interface DnsRecord {
+  id: string;
+  applicationId: string;
+  hostname: string;
+  createdAt: string;
+}
+
+/** Mirrors the Rust `DnsView` DTO's JSON shape (serde `tag = "type"` on `kind`). */
+export interface DnsView {
+  hostname: string;
+  ip: string;
+  kind: { type: "node" } | { type: "service"; applicationId: string };
+  serverId: string;
+}
+
+/** Mirrors the Rust `DnsSyncResult` DTO. */
+export interface DnsSyncResult {
+  serverId: string;
+  ok: boolean;
+  error: string | null;
+}
+
+/** Mirrors the Rust `VibeNetworkSyncResult` DTO - the combined "Synchronize Vibe Network" action's per-Node outcome. */
+export interface VibeNetworkSyncResult {
+  serverId: string;
+  ok: boolean;
+  meshError: string | null;
+  firewallError: string | null;
+  dnsError: string | null;
+}

@@ -14,6 +14,7 @@ use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
 
 #[tauri::command]
@@ -47,18 +48,46 @@ pub fn list_application_ports(repo: State<ApplicationRepository>, id: Uuid) -> A
 }
 
 #[tauri::command]
-pub fn add_application_port(repo: State<ApplicationRepository>, id: Uuid, port: PortInput) -> AppResult<ApplicationPort> {
-    services::add_application_port(&repo, id, &port)
+pub async fn add_application_port(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    network_repo: State<'_, NodeNetworkRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+    port: PortInput,
+) -> AppResult<ApplicationPort> {
+    services::add_application_port(&repo, &server_repo, &network_repo, &sessions, id, &port).await
 }
 
 #[tauri::command]
-pub fn update_application_port(
-    repo: State<ApplicationRepository>,
+pub async fn update_application_port(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    network_repo: State<'_, NodeNetworkRepository>,
+    sessions: State<'_, SshSessionManager>,
     id: Uuid,
     port_id: Uuid,
     port: PortInput,
 ) -> AppResult<ApplicationPort> {
-    services::update_application_port(&repo, id, port_id, &port)
+    services::update_application_port(&repo, &server_repo, &network_repo, &sessions, id, port_id, &port).await
+}
+
+/// "Sync Firewall" (Etap M2, Ports tab) - manually re-applies the current
+/// desired rule set (this Application's Node's own SSH port plus every
+/// published port across every Application on it), on top of the automatic
+/// best-effort sync `add_application_port`/`update_application_port`
+/// already trigger. Useful for a port declared before this feature
+/// existed, or after a sync that failed the first time (host unreachable,
+/// etc.) - always safe to re-run, additive and idempotent.
+#[tauri::command]
+pub async fn sync_application_node_firewall(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    network_repo: State<'_, NodeNetworkRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+) -> AppResult<Option<services::FirewallSyncResult>> {
+    services::sync_application_node_firewall(&repo, &server_repo, &network_repo, &sessions, id).await
 }
 
 #[tauri::command]
@@ -114,6 +143,20 @@ pub async fn restart_application(
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
     services::restart_application(&repo, &server_repo, &sessions, &local_process_manager, id).await
+}
+
+/// "Recreate Container" (Etap M1, Docker only) - tears the container down
+/// and creates it again from the Application's current config, so an edited
+/// image/command/resource limit/restart policy actually takes effect.
+#[tauri::command]
+pub async fn recreate_application(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+) -> AppResult<ApplicationStatus> {
+    services::recreate_application(&repo, &server_repo, &sessions, &local_process_manager, id).await
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AuthenticationType, ConnectionMode, ServerConnectionStatus } from "@/types/server";
+import type { AuthenticationType, ConnectionMode, NodeCapabilities, ServerConnectionStatus } from "@/types/server";
 import type { AgentCapabilities } from "@/types/pairing";
 
 /**
@@ -20,6 +20,8 @@ export interface ManagedServer {
   agentVersion?: string;
   /** Only known for connectionMode "agent" - set from the handshake's Etap I capabilities. */
   capabilities?: AgentCapabilities;
+  /** Persisted, on-demand-probed capabilities (Etap M1) - the SSH-mode equivalent of `capabilities` above (which only ever exists live, for an agent-mode server, for the duration of one connection). Prefer `capabilities.docker` when present (fresher, agent-mode); fall back to this for SSH-mode servers. */
+  nodeCapabilities?: NodeCapabilities;
   sshPort?: number;
   username?: string;
   authenticationType?: AuthenticationType;

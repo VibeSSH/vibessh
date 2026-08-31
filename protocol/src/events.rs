@@ -82,4 +82,17 @@ pub enum ServerEvent {
         code: ProtocolErrorCode,
         message: String,
     },
+
+    /// The Agent's reply to one `DesktopCommand::ApplyDesiredState` (Etap
+    /// M3) - carries the same `revision` back so Desktop can tell which
+    /// push this acknowledges (and ignore a stale ack that arrives after a
+    /// newer push superseded it). `ok: false` with `error` set means the
+    /// Agent tried and failed to apply it, not a protocol-level failure -
+    /// that still uses `Error` above.
+    #[serde(rename = "state.applied")]
+    StateApplied {
+        revision: u64,
+        ok: bool,
+        error: Option<String>,
+    },
 }

@@ -7,8 +7,15 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
-import { addApplicationPort, listApplicationPorts, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
-import type { ApplicationPort, PortInput, PortProtocol } from "@/types/application";
+import {
+  addApplicationPort,
+  listApplicationPorts,
+  removeApplicationPort,
+  syncApplicationNodeFirewall,
+  updateApplicationPort,
+  type FirewallSyncResult,
+} from "@/services/applicationService";
+import type { ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 
@@ -29,6 +36,24 @@ export function PortsTab({ applicationId }: PortsTabProps) {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingPort(null));
+
+  const [firewallSyncing, setFirewallSyncing] = useState(false);
+  // `undefined` = never synced this session yet; `null` = synced, but this
+  // is a Local application (no Node to sync a firewall against).
+  const [firewallResult, setFirewallResult] = useState<FirewallSyncResult | null | undefined>(undefined);
+  const [firewallError, setFirewallError] = useState<string | null>(null);
+
+  async function handleSyncFirewall() {
+    setFirewallSyncing(true);
+    setFirewallError(null);
+    try {
+      setFirewallResult(await syncApplicationNodeFirewall(applicationId));
+    } catch (err) {
+      setFirewallError(err instanceof Error ? err.message : t("portsTab.firewallSyncError"));
+    } finally {
+      setFirewallSyncing(false);
+    }
+  }
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -74,6 +99,25 @@ export function PortsTab({ applicationId }: PortsTabProps) {
         </Button>
       </div>
 
+      <div className="application-detail-header-row">
+        <p className="form-note">
+          {firewallResult === undefined && t("portsTab.firewallSyncNote")}
+          {firewallResult === null && t("portsTab.firewallSyncLocal")}
+          {firewallResult && firewallResult.backend === null && t("portsTab.firewallSyncNoBackend")}
+          {firewallResult && firewallResult.backend !== null &&
+            t("portsTab.firewallSyncSummary", {
+              backend: firewallResult.backend,
+              status: firewallResult.active ? t("portsTab.firewallActive") : t("portsTab.firewallInactive"),
+              count: firewallResult.rulesApplied,
+            })}
+          {firewallError && <span className="form-note-danger"> {firewallError}</span>}
+        </p>
+        <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
+          <Icon name="lock" size={14} />
+          {firewallSyncing ? t("common.saving") : t("portsTab.syncFirewall")}
+        </Button>
+      </div>
+
       {loading ? (
         <SkeletonRows />
       ) : ports.length === 0 ? (
@@ -91,6 +135,7 @@ export function PortsTab({ applicationId }: PortsTabProps) {
                   {port.externalPort ? ` → ${port.externalPort}` : ""}
                 </span>
               </div>
+              <Badge tone="neutral">{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
               {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
               <IconButton
                 icon="edit"
@@ -170,7 +215,8 @@ function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFor
 
   const [name, setName] = useState(editingPort?.name ?? "");
   const [protocol, setProtocol] = useState<PortProtocol>(editingPort?.protocol ?? "tcp");
-  const [bindAddress, setBindAddress] = useState(editingPort?.bindAddress ?? "0.0.0.0");
+  const [visibility, setVisibility] = useState<PortVisibility>(editingPort?.visibility ?? "public");
+  const [customAddress, setCustomAddress] = useState(editingPort?.visibility === "custom" ? editingPort.bindAddress : "");
   const [internalPort, setInternalPort] = useState(editingPort ? String(editingPort.internalPort) : "");
   const [externalPort, setExternalPort] = useState(editingPort?.externalPort ? String(editingPort.externalPort) : "");
   const [busy, setBusy] = useState(false);
@@ -188,9 +234,10 @@ function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFor
     const input: PortInput = {
       name: name.trim(),
       protocol,
-      bindAddress: bindAddress.trim() || "0.0.0.0",
+      bindAddress: visibility === "custom" ? customAddress.trim() || "0.0.0.0" : "0.0.0.0",
       internalPort: internal,
       externalPort: external,
+      visibility,
     };
 
     setBusy(true);
@@ -232,10 +279,22 @@ function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFor
                 </select>
               </label>
               <label className="form-field form-field-grow">
-                <span className="form-label">{t("portsTab.bindAddress")}</span>
-                <input className="form-input" value={bindAddress} onChange={(e) => setBindAddress(e.target.value)} placeholder="0.0.0.0" />
+                <span className="form-label">{t("applicationNetwork.access")}</span>
+                <select className="form-input" value={visibility} onChange={(e) => setVisibility(e.target.value as PortVisibility)}>
+                  <option value="public">{t("applicationNetwork.visibility.public")}</option>
+                  <option value="vibeNetwork">{t("applicationNetwork.visibility.vibeNetwork")}</option>
+                  <option value="localhost">{t("applicationNetwork.visibility.localhost")}</option>
+                  <option value="custom">{t("applicationNetwork.visibility.custom")}</option>
+                </select>
               </label>
             </div>
+            <p className="form-note">{t(`applicationNetwork.visibilityHelp.${visibility}`)}</p>
+            {visibility === "custom" && (
+              <label className="form-field">
+                <span className="form-label">{t("portsTab.bindAddress")}</span>
+                <input className="form-input" value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} placeholder="0.0.0.0" />
+              </label>
+            )}
             <div className="form-row">
               <label className="form-field">
                 <span className="form-label">{t("portsTab.internalPort")}</span>

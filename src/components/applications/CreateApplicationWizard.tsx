@@ -5,7 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { createApplication, detectJavaInstallations, listPaperVersions, listVelocityVersions } from "@/services/applicationService";
-import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
+import { listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
 import type { Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
 import { listBlueprints } from "@/services/applicationService";
@@ -64,6 +64,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const servers = useServersStore((s) => s.servers);
   const setServers = useServersStore((s) => s.setServers);
+  const upsertServer = useServersStore((s) => s.upsertServer);
 
   const [serverId, setServerId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -95,6 +96,40 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     () => (selectedBlueprint ? runtimeTypesForLocation(selectedBlueprint, isLocal) : []),
     [selectedBlueprint, isLocal],
   );
+  const selectedServer = useMemo(() => servers.find((s) => s.id === serverId) ?? null, [servers, serverId]);
+
+  // Docker capability is only ever known for an SSH-mode server after a
+  // real probe has run (Etap M1) - agent-mode servers instead carry a live
+  // `capabilities` reading from their own handshake, which needs no probe.
+  // Fires once per selected SSH-mode server whose capabilities aren't known
+  // yet - not on every render, and never for Local (nothing to probe).
+  useEffect(() => {
+    if (!selectedServer || selectedServer.connectionMode !== "ssh" || selectedServer.nodeCapabilities) return;
+    let cancelled = false;
+    probeServerCapabilities(selectedServer.id)
+      .then((nodeCapabilities) => {
+        if (!cancelled) upsertServer({ ...selectedServer, nodeCapabilities });
+      })
+      .catch(() => {
+        // Best-effort - an unreachable server just stays "unknown" here,
+        // same as it already is everywhere else in the app; the wizard
+        // still lets the user try (DockerRuntime::validate gives the real,
+        // authoritative answer at creation time either way).
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedServer?.id, selectedServer?.connectionMode, selectedServer?.nodeCapabilities]);
+
+  // `false` (not `undefined`) is a real, known-negative answer - a probe or
+  // a live handshake actually said "no Docker here." `undefined` (still
+  // probing, or an SSH server never successfully probed) deliberately
+  // shows nothing, since that's not something to warn about yet.
+  const dockerCapabilityWarning =
+    runtimeType === "docker" &&
+    selectedServer &&
+    (selectedServer.connectionMode === "agent" ? selectedServer.capabilities?.docker === false : selectedServer.nodeCapabilities?.docker === false);
 
   // Auto-pick the runtime type once it's the only option (always true for
   // Local today, since every built-in blueprint offers exactly one Local
@@ -250,6 +285,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 {selectedBlueprint && availableRuntimeTypes.length === 0 && (
                   <p className="form-note form-note-danger">{t("createApplicationWizard.noRuntimeForLocation")}</p>
                 )}
+                {dockerCapabilityWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
               </>
             )}
 

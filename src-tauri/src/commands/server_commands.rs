@@ -2,8 +2,9 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::errors::AppResult;
-use crate::models::{Server, ServerInput};
+use crate::models::{NodeCapabilities, Server, ServerInput};
 use crate::services;
+use crate::state::SshSessionManager;
 use crate::storage::server_repository::ServerRepository;
 
 #[tauri::command]
@@ -32,6 +33,24 @@ pub fn list_servers(repo: State<ServerRepository>) -> AppResult<Vec<Server>> {
 }
 
 #[tauri::command]
-pub fn upsert_agent_server(repo: State<ServerRepository>, name: String, host: String, agent_id: Uuid) -> AppResult<Server> {
-    services::upsert_agent_server(&repo, &name, &host, agent_id)
+pub fn upsert_agent_server(
+    repo: State<ServerRepository>,
+    name: String,
+    host: String,
+    agent_id: Uuid,
+    docker_capable: Option<bool>,
+) -> AppResult<Server> {
+    services::upsert_agent_server(&repo, &name, &host, agent_id, docker_capable)
+}
+
+/// SSH-mode only (see `services::probe_node_capabilities`'s own doc
+/// comment) - the Create Application wizard calls this per SSH-mode server
+/// as its Node picker loads, Etap M1.
+#[tauri::command]
+pub async fn probe_server_capabilities(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+) -> AppResult<NodeCapabilities> {
+    services::probe_node_capabilities(&repo, &sessions, id).await
 }

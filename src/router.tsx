@@ -13,6 +13,7 @@ import { Settings } from "@/pages/Settings";
 import { TeamDetail } from "@/pages/TeamDetail";
 import { Teams } from "@/pages/Teams";
 import { TerminalPage } from "@/pages/Terminal";
+import { VibeNetwork } from "@/pages/VibeNetwork";
 
 export function AppRouter() {
   return (
@@ -23,6 +24,7 @@ export function AppRouter() {
         <Route path="/applications" element={<Applications />} />
         <Route path="/applications/:id" element={<ApplicationDetail />} />
         <Route path="/database-hosts" element={<DatabaseHosts />} />
+        <Route path="/vibe-network" element={<VibeNetwork />} />
         <Route
           path="/terminal"
           element={<ModulePicker titleKey="modulePicker.terminalTitle" subtitleKey="modulePicker.terminalSubtitle" icon="terminal" routePrefix="/terminal" />}

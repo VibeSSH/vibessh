@@ -11,7 +11,7 @@ import {
   onAgentPairingState,
   startAgentPairing,
 } from "@/services/pairingService";
-import { upsertAgentServer } from "@/services/serverService";
+import { startAgentSession, upsertAgentServer } from "@/services/serverService";
 import type { AgentConnectionState } from "@/types/pairing";
 import type { ServerMetrics } from "@/types/serverEvent";
 import { CapabilityBadges } from "./CapabilityBadges";
@@ -65,7 +65,16 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
         // component's own upsertServer call below, gone the moment the app
         // closed (see README's own "still only show for the current
         // session" note on Etap H).
-        const persisted = await upsertAgentServer(name, host, state.agentId);
+        const persisted = await upsertAgentServer(name, host, state.agentId, state.capabilities.docker);
+        // Hands the connection off to a persistent, app-session-long one
+        // (Etap M3) - this is the one moment host/port/a fresh credential
+        // are all in hand at once, see AgentSessionManager's own doc
+        // comment. Best-effort: a failure here just means this Node stays
+        // reachable only through this modal's own connection, exactly like
+        // before Etap M3 existed - not worth surfacing as a pairing error.
+        if (state.issuedCredential) {
+          startAgentSession(persisted.id, host, Number(port), state.issuedCredential).catch(() => {});
+        }
         upsertServer({
           id: persisted.id,
           name: persisted.name,

@@ -121,6 +121,20 @@ pub trait ApplicationRuntime: Send + Sync {
     /// swallow input.
     async fn console(&self, ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>>;
     async fn logs(&self, ctx: &RuntimeContext<'_>) -> AppResult<Box<dyn LogProvider>>;
+
+    /// Tears down whatever `start()` created, *without* touching the
+    /// Application's own config - only `runtime::docker::DockerRuntime`
+    /// overrides this (stop + `docker rm` an existing container). The
+    /// default no-op is correct, not a stub, for the other three runtimes:
+    /// `start()` on Local/Remote process and systemd already regenerates
+    /// their config every time (see each module's own doc comment on why
+    /// that's safe there but not for Docker), so there's nothing a separate
+    /// "destroy" step would need to clean up first. Etap M1's "Recreate
+    /// Container" action is `destroy()` then `start()` -
+    /// `services::application_service::recreate_application`.
+    async fn destroy(&self, _ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
