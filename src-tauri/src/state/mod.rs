@@ -1,6 +1,7 @@
 mod agent_sessions;
 pub mod cloud_session;
 mod file_transfers;
+mod migration_locks;
 mod pairing_session;
 mod ssh_sessions;
 mod terminal_sessions;
@@ -8,6 +9,7 @@ mod terminal_sessions;
 pub use agent_sessions::AgentSessionManager;
 pub use cloud_session::CloudState;
 pub use file_transfers::FileTransferManager;
+pub use migration_locks::MigrationLockManager;
 pub use pairing_session::PairingSession;
 pub use ssh_sessions::SshSessionManager;
 pub use terminal_sessions::TerminalSessionManager;

@@ -140,3 +140,15 @@ export function setApplicationHealthCheck(id: string, input: SetHealthCheckInput
 export function setApplicationResourceLimits(id: string, input: SetResourceLimitsInput): Promise<ApplicationDetail> {
   return callCommand<ApplicationDetail>("set_application_resource_limits", { id, input });
 }
+
+/** Mirrors the Rust `MigrationResult` DTO. */
+export interface MigrationResult {
+  application: ApplicationDetail;
+  filesCopied: number;
+  dnsRepointed: boolean;
+}
+
+/** "Migrate to another Node" - provisions an identical Docker application on `targetServerId`, copies its working directory over, cuts its DNS alias (if it has one) to the new instance, then retires the old one. A single blocking call - see the Rust `services::migration_service`'s own doc comment for the full step order. Docker-only; rejected server-side for any other runtime type. */
+export function migrateApplication(id: string, targetServerId: string): Promise<MigrationResult> {
+  return callCommand<MigrationResult>("migrate_application", { id, targetServerId });
+}

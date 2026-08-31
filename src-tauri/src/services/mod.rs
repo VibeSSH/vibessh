@@ -6,6 +6,7 @@ mod database_service;
 mod dns_service;
 mod firewall_service;
 mod java_service;
+mod migration_service;
 mod network_service;
 mod node_state_service;
 mod papermc_service;
@@ -45,6 +46,7 @@ pub use database_service::{
     reveal_application_database_password, set_database_host_phpmyadmin,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
+pub use migration_service::{migrate_application, MigrationResult};
 pub use papermc_service::PapermcBuild;
 
 /// Thin, project-fixed wrappers over `papermc_service`'s own

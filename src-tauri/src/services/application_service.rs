@@ -188,7 +188,7 @@ pub async fn create_application(
     repo.create(&create_input)
 }
 
-async fn ensure_working_directory_exists(
+pub(super) async fn ensure_working_directory_exists(
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
     server_id: Option<Uuid>,

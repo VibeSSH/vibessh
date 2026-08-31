@@ -71,6 +71,7 @@ pub fn run() {
         .manage(TerminalSessionManager::new())
         .manage(state::AgentSessionManager::new())
         .manage(state::FileTransferManager::new())
+        .manage(state::MigrationLockManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
         // construct itself with, not just a borrow scoped to one command -
@@ -153,6 +154,7 @@ pub fn run() {
             commands::application_commands::set_application_health_check,
             commands::application_commands::set_application_resource_limits,
             commands::application_commands::detect_java_installations,
+            commands::migration_commands::migrate_application,
             commands::database_commands::list_database_hosts,
             commands::database_commands::create_database_host,
             commands::database_commands::delete_database_host,

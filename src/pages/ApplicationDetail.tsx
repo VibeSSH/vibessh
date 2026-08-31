@@ -18,6 +18,7 @@ import {
   getApplicationResourceUsage,
   killApplication,
   listBlueprints,
+  migrateApplication,
   recreateApplication,
   restartApplication,
   startApplication,
@@ -70,6 +71,12 @@ export function ApplicationDetail() {
   const [logs, setLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
+
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [migrateTargetServerId, setMigrateTargetServerId] = useState("");
+  const [migrateBusy, setMigrateBusy] = useState(false);
+  const [migrateError, setMigrateError] = useState<string | null>(null);
+  const migrateBackdrop = useBackdropClose(() => !migrateBusy && setMigrateOpen(false));
 
   const reload = useCallback(() => {
     if (!id) return;
@@ -147,6 +154,22 @@ export function ApplicationDetail() {
     }
   }
 
+  async function handleMigrate() {
+    if (!id || !migrateTargetServerId) return;
+    setMigrateBusy(true);
+    setMigrateError(null);
+    try {
+      const result = await migrateApplication(id, migrateTargetServerId);
+      toastSuccess(t("applicationDetail.migrateSuccessToast", { name: result.application.name }));
+      setMigrateOpen(false);
+      navigate(`/applications/${result.application.id}`);
+    } catch (err) {
+      setMigrateError(err instanceof Error ? err.message : t("applicationDetail.migrateError"));
+    } finally {
+      setMigrateBusy(false);
+    }
+  }
+
   if (!id) {
     return <Navigate to="/applications" replace />;
   }
@@ -155,6 +178,12 @@ export function ApplicationDetail() {
   const canStopOrRestart = application ? ["running", "starting"].includes(application.status) : false;
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
   const features = blueprint?.features ?? [];
+  const migrationTargets = servers.filter((s) => s.id !== application?.serverId);
+  const migrateTargetWarning =
+    migrateTargetServerId &&
+    (servers.find((s) => s.id === migrateTargetServerId)?.connectionMode === "agent"
+      ? servers.find((s) => s.id === migrateTargetServerId)?.capabilities?.docker === false
+      : servers.find((s) => s.id === migrateTargetServerId)?.nodeCapabilities?.docker === false);
 
   return (
     <div className="page">
@@ -202,6 +231,20 @@ export function ApplicationDetail() {
                 <Button variant="secondary" size="sm" onClick={() => setConfirming("recreate")}>
                   <Icon name="box" size={14} />
                   {t("applicationDetail.verb.recreate")}
+                </Button>
+              )}
+              {application.runtimeType === "docker" && migrationTargets.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setMigrateError(null);
+                    setMigrateTargetServerId(migrationTargets[0]?.id ?? "");
+                    setMigrateOpen(true);
+                  }}
+                >
+                  <Icon name="move" size={14} />
+                  {t("applicationDetail.migrateButton")}
                 </Button>
               )}
             </div>
@@ -344,6 +387,40 @@ export function ApplicationDetail() {
                 </Button>
                 <Button variant={VERB_IS_DESTRUCTIVE[confirming] ? "danger" : "primary"} onClick={handleConfirmAction} disabled={actionBusy}>
                   {t(`applicationDetail.verb.${confirming}`)}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {migrateOpen && (
+        <div className="modal-backdrop" {...migrateBackdrop}>
+          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">{t("applicationDetail.migrateTitle")}</h2>
+              <IconButton icon="x" size="sm" onClick={() => setMigrateOpen(false)} title={t("common.close")} />
+            </div>
+            <div className="modal-body">
+              <p className="dialog-body-text">{t("applicationDetail.migrateBody", { name: application?.name ?? "" })}</p>
+              <label className="form-field">
+                <span className="form-label">{t("applicationDetail.migrateTargetLabel")}</span>
+                <select className="form-input" value={migrateTargetServerId} onChange={(e) => setMigrateTargetServerId(e.target.value)} disabled={migrateBusy}>
+                  {migrationTargets.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {migrateTargetWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
+              {migrateError && <p className="form-note form-note-danger form-note-spaced">{migrateError}</p>}
+              <div className="form-actions">
+                <Button variant="secondary" onClick={() => setMigrateOpen(false)} disabled={migrateBusy}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="danger" onClick={handleMigrate} disabled={migrateBusy || !migrateTargetServerId}>
+                  {migrateBusy ? t("applicationDetail.migrating") : t("applicationDetail.migrateConfirm")}
                 </Button>
               </div>
             </div>

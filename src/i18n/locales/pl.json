@@ -224,7 +224,15 @@
       "restart": "Uruchomić ponownie <1>{{name}}</1>?",
       "kill": "Wymusić zakończenie <1>{{name}}</1>? Kończy działanie natychmiast, bez kontrolowanego zamknięcia - niezapisany stan zostanie utracony.",
       "recreate": "Odtworzyć kontener dla <1>{{name}}</1>? Zacznie obowiązywać każda zmiana obrazu, komendy, limitów zasobów lub polityki restartu wprowadzona od ostatniego utworzenia kontenera. Pliki aplikacji (katalog roboczy) pozostają nietknięte - usuwany i tworzony na nowo jest tylko sam kontener."
-    }
+    },
+    "migrateButton": "Migruj do innego Node'a",
+    "migrateTitle": "Migruj do innego Node'a",
+    "migrateBody": "Przenieś \"{{name}}\" na inny Node: VibeSSH zatrzyma aplikację, utworzy identyczną kopię na docelowym Node'zie, skopiuje jej pliki, przełączy alias DNS (jeśli go ma), a następnie usunie oryginał z VibeSSH. Na czas kopiowania aplikacja będzie niedostępna. Tak jak przy każdym usunięciu aplikacji, zatrzymany kontener i jego pliki zostają na oryginalnym Node'zie, nie są kasowane - usuń je ręcznie, gdy potwierdzisz, że przeniesienie się udało.",
+    "migrateTargetLabel": "Docelowy Node",
+    "migrateConfirm": "Migruj",
+    "migrating": "Migrowanie...",
+    "migrateSuccessToast": "Zmigrowano na nowy Node jako {{name}}.",
+    "migrateError": "Nie udało się zmigrować aplikacji."
   },
   "portsTab": {
     "description": "Zadeklarowane porty tej aplikacji - to dokumentacja zamierzenia, nie żywa gwarancja (VibeSSH nie sprawdza jeszcze, czy port jest faktycznie wolny na hoście).",

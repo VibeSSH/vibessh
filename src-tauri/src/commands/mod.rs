@@ -9,6 +9,7 @@ pub mod application_file_commands;
 pub mod cloud_commands;
 pub mod database_commands;
 pub mod file_commands;
+pub mod migration_commands;
 pub mod monitor_commands;
 pub mod network_commands;
 pub mod pairing_commands;

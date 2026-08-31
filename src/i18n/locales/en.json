@@ -224,7 +224,15 @@
       "restart": "Restart <1>{{name}}</1>?",
       "kill": "Force-kill <1>{{name}}</1>? This ends it immediately, without a graceful shutdown - any unsaved state it was holding is lost.",
       "recreate": "Recreate the container for <1>{{name}}</1>? Any change to its image, command, resource limits, or restart policy since it was last created takes effect. Its files (working directory) are untouched - only the container itself is removed and created again."
-    }
+    },
+    "migrateButton": "Migrate to another Node",
+    "migrateTitle": "Migrate to another Node",
+    "migrateBody": "Move \"{{name}}\" to a different Node: VibeSSH stops it, provisions an identical copy on the target, copies its files over, repoints its DNS alias if it has one, then removes the original from VibeSSH. This takes it offline for the duration of the copy. Like any application delete, the stopped container and its files are left behind on the original Node, not wiped - remove them by hand once you've confirmed the move worked.",
+    "migrateTargetLabel": "Target Node",
+    "migrateConfirm": "Migrate",
+    "migrating": "Migrating...",
+    "migrateSuccessToast": "Migrated to the new Node as {{name}}.",
+    "migrateError": "Couldn't migrate the application."
   },
   "portsTab": {
     "description": "Declared ports for this application - documentation of intent, not a live guarantee (VibeSSH doesn't check whether the port is actually free on the host yet).",

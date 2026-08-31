@@ -93,6 +93,39 @@ impl DnsRepository {
             .map_err(|err| AppError::Storage(format!("failed to read the DNS record back: {err}")))
     }
 
+    /// Service migration's DNS cutover step: repoints whichever alias
+    /// belongs to `old_application_id` (if any) at `new_application_id` -
+    /// the hostname itself never changes, only which Application it now
+    /// resolves through (see this module's own doc comment: the IP is
+    /// always resolved fresh at render time via `applications.server_id`,
+    /// never stored here). `Ok(None)` - not an error - when the migrated
+    /// Application had no alias to begin with.
+    pub fn repoint_application(&self, old_application_id: Uuid, new_application_id: Uuid) -> AppResult<Option<DnsRecord>> {
+        let conn = self.lock();
+        let affected = conn
+            .execute(
+                "UPDATE dns_records SET application_id = ?2 WHERE application_id = ?1",
+                params![old_application_id.to_string(), new_application_id.to_string()],
+            )
+            .map_err(|err| {
+                if is_unique_violation(&err) {
+                    AppError::InvalidInput(format!("application {new_application_id} already has a DNS alias"))
+                } else {
+                    AppError::Storage(format!("failed to repoint the DNS record: {err}"))
+                }
+            })?;
+        if affected == 0 {
+            return Ok(None);
+        }
+        conn.query_row(
+            "SELECT id, application_id, hostname, created_at FROM dns_records WHERE application_id = ?1",
+            params![new_application_id.to_string()],
+            row_to_record,
+        )
+        .optional()
+        .map_err(|err| AppError::Storage(format!("failed to read the repointed DNS record back: {err}")))
+    }
+
     pub fn delete(&self, id: Uuid) -> AppResult<()> {
         let affected = self
             .lock()
@@ -194,5 +227,26 @@ mod tests {
     fn delete_of_an_unknown_id_is_not_found() {
         let (repo, _app_repo) = temp_repository();
         assert!(matches!(repo.delete(Uuid::new_v4()).unwrap_err(), AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn repoint_application_moves_the_alias_to_the_new_application_id() {
+        let (repo, app_repo) = temp_repository();
+        let old_app = create_test_application(&app_repo, "old");
+        let new_app = create_test_application(&app_repo, "new");
+        repo.create(old_app, "db01.vibe").unwrap();
+
+        let repointed = repo.repoint_application(old_app, new_app).unwrap().unwrap();
+        assert_eq!(repointed.application_id, new_app);
+        assert_eq!(repointed.hostname, "db01.vibe");
+        assert_eq!(repo.list().unwrap().len(), 1, "the alias moves, it doesn't duplicate");
+    }
+
+    #[test]
+    fn repoint_application_is_a_no_op_when_the_old_application_had_no_alias() {
+        let (repo, app_repo) = temp_repository();
+        let old_app = create_test_application(&app_repo, "old");
+        let new_app = create_test_application(&app_repo, "new");
+        assert!(repo.repoint_application(old_app, new_app).unwrap().is_none());
     }
 }
