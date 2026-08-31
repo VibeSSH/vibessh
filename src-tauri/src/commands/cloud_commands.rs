@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use crate::errors::AppResult;
 use crate::models::{
-    CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile,
+    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo,
+    CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 use crate::services;
 use crate::state::cloud_session::CloudState;
@@ -140,4 +141,60 @@ pub async fn cloud_create_server(
 #[tauri::command]
 pub async fn cloud_delete_server(state: State<'_, CloudState>, team_id: Uuid, server_id: Uuid) -> AppResult<()> {
     services::cloud_delete_server(&state, team_id, server_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_my_permissions(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<String>> {
+    services::cloud_my_permissions(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_remove_member(state: State<'_, CloudState>, team_id: Uuid, user_id: Uuid) -> AppResult<()> {
+    services::cloud_remove_member(&state, team_id, user_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_delete_team(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<()> {
+    services::cloud_delete_team(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_invitations(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
+    services::cloud_list_invitations(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_create_invitation(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    email: String,
+    role_id: Option<Uuid>,
+    expires_in_days: Option<i64>,
+) -> AppResult<CloudCreatedInvitation> {
+    services::cloud_create_invitation(&state, team_id, &email, role_id, expires_in_days).await
+}
+
+#[tauri::command]
+pub async fn cloud_revoke_invitation(state: State<'_, CloudState>, team_id: Uuid, invitation_id: Uuid) -> AppResult<()> {
+    services::cloud_revoke_invitation(&state, team_id, invitation_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_accept_invitation(state: State<'_, CloudState>, token: String) -> AppResult<CloudTeam> {
+    services::cloud_accept_invitation(&state, &token).await
+}
+
+#[tauri::command]
+pub async fn cloud_decline_invitation(state: State<'_, CloudState>, token: String) -> AppResult<()> {
+    services::cloud_decline_invitation(&state, &token).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_audit_events(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> AppResult<Vec<CloudAuditEvent>> {
+    services::cloud_list_audit_events(&state, team_id, limit, offset).await
 }

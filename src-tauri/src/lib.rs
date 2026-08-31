@@ -2,19 +2,51 @@
 // can drive it directly - everything else here only needs in-crate tests
 // (pairing_commands' own test lives inside that module, see its file for why).
 pub mod agent_client;
+mod blueprints;
 pub mod cloud_client;
 mod commands;
 mod errors;
-mod models;
-mod services;
+// `pub` for the same reason as `runtime`/`ssh` above - a real-server
+// integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
+// directly against a live, real ufw installation.
+pub mod firewall;
+// `pub` for the same reason as `agent_client`/`ssh` above - a real-server
+// integration test (`tests/application_files_sftp.rs`) drives
+// `SftpApplicationFileProvider` directly against a live SSH host.
+pub mod files;
+// `pub` for the same reason as `agent_client`/`files`/`ssh` below - the
+// `tests/docker_runtime.rs` real-server test needs to build a real
+// `Application`/`ApplicationPort` to drive `runtime::docker` with.
+pub mod models;
+// `pub` for the same reason as `firewall`/`runtime` above - a real-server
+// integration test (`tests/vibe_network.rs`) drives
+// `network::wireguard` directly against a real WireGuard installation.
+pub mod network;
+// `pub` for the same reason as `agent_client`/`files`/`ssh` above - a
+// real-server integration test (`tests/docker_runtime.rs`) drives
+// `runtime::docker::DockerRuntime` directly against a live Docker daemon.
+pub mod runtime;
+// `pub` for the same reason as `runtime`/`network` above - a real-server
+// integration test (`tests/vibe_network.rs`) drives the service-layer
+// orchestration (`join_node`, `sync_dns`, ...) directly, not just the
+// mechanism underneath it.
+pub mod services;
 // `pub` for the same reason as `agent_client` above - `tests/ssh_client.rs`
 // drives `ssh::connect` directly against a local mock SSH server.
 pub mod ssh;
-mod state;
-mod storage;
+// `pub` for the same reason as `services` above - `tests/vibe_network.rs`
+// needs a real `SshSessionManager`.
+pub mod state;
+// `pub` for the same reason as `services`/`state` above - `tests/vibe_network.rs`
+// opens real repositories directly against a temp SQLite file.
+pub mod storage;
 mod transport;
 
+use blueprints::BlueprintRegistry;
+use runtime::local_process::LocalProcessManager;
 use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
+use std::sync::Arc;
+use storage::application_repository::ApplicationRepository;
 use storage::server_repository::ServerRepository;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -32,16 +64,46 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(state::AgentSessionManager::new())
+        .manage(state::FileTransferManager::new())
+        .manage(state::MigrationLockManager::new())
+        // Arc-wrapped (unlike the two managers above) because
+        // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
+        // construct itself with, not just a borrow scoped to one command -
+        // see runtime::local_process's own doc comment.
+        .manage(Arc::new(LocalProcessManager::new()))
+        // Read-only after construction (no interior mutability needed) -
+        // see blueprints::mod's own doc comment for why this is the whole
+        // persistence story for built-in blueprints in this phase.
+        .manage(BlueprintRegistry::with_builtins())
         .setup(|app| {
             // Needs the resolved app data dir, which only exists once the
             // app is running - can't be built alongside the other .manage()
             // calls above.
             let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
             app.manage(ServerRepository::open(&db_path)?);
+            // Same physical file as ServerRepository above (Applications'
+            // server_id is a real foreign key into servers, which only
+            // means something within one SQLite file) - see
+            // ApplicationRepository::open's own doc comment for why this
+            // is a second independent Connection rather than a shared one.
+            app.manage(ApplicationRepository::open(&db_path)?);
+            // Same physical file again - Application Databases (Phase 11)
+            // foreign keys into both `applications` and `servers`.
+            app.manage(storage::database_repository::DatabaseRepository::open(&db_path)?);
+            // Same physical file again - Etap M3's desired/applied state
+            // revisioning foreign-keys into `servers`.
+            app.manage(storage::node_state_repository::NodeStateRepository::open(&db_path)?);
+            // Same physical file again - Etap M4's Vibe Network membership
+            // (IPAM) and Private DNS records both foreign-key into
+            // `servers`/`applications`.
+            app.manage(storage::node_network_repository::NodeNetworkRepository::open(&db_path)?);
+            app.manage(storage::dns_repository::DnsRepository::open(&db_path)?);
 
             let config_dir = app.path().app_config_dir()?;
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
@@ -68,11 +130,81 @@ pub fn run() {
             commands::pairing_commands::pairing_code_ttl_seconds,
             commands::pairing_commands::start_agent_pairing,
             commands::pairing_commands::cancel_agent_pairing,
+            commands::application_commands::list_applications,
+            commands::application_commands::list_paper_versions,
+            commands::application_commands::list_velocity_versions,
+            commands::application_commands::list_application_ports,
+            commands::application_commands::add_application_port,
+            commands::application_commands::update_application_port,
+            commands::application_commands::remove_application_port,
+            commands::application_commands::sync_application_node_firewall,
+            commands::application_commands::get_application,
+            commands::application_commands::list_blueprints,
+            commands::application_commands::create_application,
+            commands::application_commands::delete_application,
+            commands::application_commands::start_application,
+            commands::application_commands::stop_application,
+            commands::application_commands::restart_application,
+            commands::application_commands::recreate_application,
+            commands::application_commands::kill_application,
+            commands::application_commands::refresh_application_status,
+            commands::application_commands::get_application_resource_usage,
+            commands::application_commands::get_application_logs,
+            commands::application_commands::get_application_health,
+            commands::application_commands::set_application_health_check,
+            commands::application_commands::set_application_resource_limits,
+            commands::application_commands::detect_java_installations,
+            commands::migration_commands::migrate_application,
+            commands::database_commands::list_database_hosts,
+            commands::database_commands::create_database_host,
+            commands::database_commands::delete_database_host,
+            commands::database_commands::set_database_host_phpmyadmin,
+            commands::database_commands::list_application_databases,
+            commands::database_commands::create_application_database,
+            commands::database_commands::delete_application_database,
+            commands::database_commands::reveal_application_database_password,
+            commands::database_commands::reset_application_database_password,
+            commands::application_file_commands::list_application_files,
+            commands::application_file_commands::get_application_file_metadata,
+            commands::application_file_commands::read_application_file,
+            commands::application_file_commands::write_application_file,
+            commands::application_file_commands::save_application_file,
+            commands::application_file_commands::create_application_directory,
+            commands::application_file_commands::delete_application_file,
+            commands::application_file_commands::rename_application_file,
+            commands::application_file_commands::copy_application_file,
+            commands::application_file_commands::set_application_file_permissions,
+            commands::application_file_commands::download_application_file,
+            commands::application_file_commands::upload_application_file,
+            commands::application_file_commands::cancel_application_file_transfer,
+            commands::application_file_commands::extract_application_archive,
+            commands::application_file_commands::list_application_file_history,
+            commands::application_file_commands::restore_application_file_history,
+            commands::database_commands::get_phpmyadmin_url,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
             commands::server_commands::delete_server,
             commands::server_commands::get_server,
             commands::server_commands::list_servers,
+            commands::server_commands::upsert_agent_server,
+            commands::server_commands::probe_server_capabilities,
+            commands::agent_session_commands::start_agent_session,
+            commands::agent_session_commands::get_node_sync_status,
+            commands::agent_session_commands::reconcile_agent_node,
+            commands::network_commands::list_network_members,
+            commands::network_commands::join_vibe_network,
+            commands::network_commands::leave_vibe_network,
+            commands::network_commands::reconcile_vibe_mesh,
+            commands::network_commands::get_vibe_network_status,
+            commands::network_commands::list_node_endpoints,
+            commands::network_commands::list_dns_records,
+            commands::network_commands::create_dns_alias,
+            commands::network_commands::update_dns_alias,
+            commands::network_commands::delete_dns_alias,
+            commands::network_commands::sync_vibe_dns,
+            commands::network_commands::verify_dns_alias,
+            commands::network_commands::resolve_dns_view,
+            commands::network_commands::sync_vibe_network,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
             commands::ssh_commands::ping_server,
@@ -121,6 +253,15 @@ pub fn run() {
             commands::cloud_commands::cloud_list_servers,
             commands::cloud_commands::cloud_create_server,
             commands::cloud_commands::cloud_delete_server,
+            commands::cloud_commands::cloud_my_permissions,
+            commands::cloud_commands::cloud_remove_member,
+            commands::cloud_commands::cloud_delete_team,
+            commands::cloud_commands::cloud_list_invitations,
+            commands::cloud_commands::cloud_create_invitation,
+            commands::cloud_commands::cloud_revoke_invitation,
+            commands::cloud_commands::cloud_accept_invitation,
+            commands::cloud_commands::cloud_decline_invitation,
+            commands::cloud_commands::cloud_list_audit_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running VibeSSH");

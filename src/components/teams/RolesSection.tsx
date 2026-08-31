@@ -33,7 +33,7 @@ function permissionLabel(t: (key: string, opts?: Record<string, unknown>) => str
   return t(`roles.permissionLabels.${permission}`, { defaultValue: permission });
 }
 
-export function RolesSection({ teamId }: { teamId: string }) {
+export function RolesSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
   const { t } = useTranslation();
   const [roles, setRoles] = useState<CloudRoleWithPermissions[]>([]);
   const [allPermissions, setAllPermissions] = useState<string[]>([]);
@@ -129,7 +129,7 @@ export function RolesSection({ teamId }: { teamId: string }) {
                   ))}
                 </div>
               </div>
-              {!role.isSystem && (
+              {!role.isSystem && canManage && (
                 <div className="roles-list-actions">
                   <button
                     className="server-list-action"
@@ -154,7 +154,7 @@ export function RolesSection({ teamId }: { teamId: string }) {
         </ul>
       )}
 
-      {form ? (
+      {!canManage ? null : form ? (
         <form className="roles-form" onSubmit={handleSubmit}>
           <label className="form-field">
             <span className="form-label">{t("roles.name")}</span>

@@ -63,6 +63,20 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   bell: "bell",
   user: "user-round",
   users: "users",
+  box: "box",
+  // `eye`/`eye-off` were already used by Rail's host-reveal tooltip (and
+  // are already in the bundled subset - see generate-lucide-subset.mjs) but
+  // never actually mapped here, so that toggle has been silently rendering
+  // nothing this whole time - fixed here rather than repeating the same
+  // no-op icon in the Databases tab's own password-reveal toggle, which
+  // reuses this exact pattern.
+  eye: "eye",
+  "eye-off": "eye-off",
+  database: "database",
+  move: "move",
+  archive: "archive",
+  history: "clock",
+  lock: "lock",
 };
 
 interface IconProps {

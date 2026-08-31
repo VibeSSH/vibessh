@@ -222,7 +222,7 @@ fn ok_status(id: u32) -> Status {
 
 async fn spawn_mock_server(fs: InMemoryFs) -> u16 {
     let config = Arc::new(russh::server::Config {
-        keys: vec![PrivateKey::random(&mut rand::rng(), Algorithm::Ed25519).unwrap()],
+        keys: vec![PrivateKey::random(&mut rand010::rng(), Algorithm::Ed25519).unwrap()],
         preferred: Preferred::default(),
         ..Default::default()
     });

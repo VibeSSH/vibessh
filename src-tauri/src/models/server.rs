@@ -31,6 +31,21 @@ pub enum AgentStatus {
     Incompatible,
 }
 
+/// What's actually known about a Node's capabilities - `docker` is the only
+/// field Etap M1 detects (an SSH-mode probe running `command -v docker`, or
+/// the Agent's own handshake-time detection); more fields (e.g. `firewall`
+/// for Etap M2) are expected to join this later without a new migration,
+/// since it's stored as one JSON blob (`servers.node_capabilities_json`),
+/// not a column per capability. `Default` (all `false`) is never persisted
+/// on its own - `Server::node_capabilities` stays `None` until a real probe
+/// has actually run, see that field's own doc comment for why the
+/// distinction matters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeCapabilities {
+    pub docker: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Server {
@@ -53,6 +68,12 @@ pub struct Server {
     pub agent_id: Option<Uuid>,
     pub agent_status: Option<AgentStatus>,
     pub group_id: Option<Uuid>,
+    /// `None` means "never probed" - genuinely unknown, not "no
+    /// capabilities" - so a freshly added Node (or one from before Etap M1)
+    /// doesn't read back as Docker-incapable until something has actually
+    /// checked. See `services::probe_node_capabilities`/`upsert_agent`'s own
+    /// doc comments for the two ways this gets set.
+    pub node_capabilities: Option<NodeCapabilities>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

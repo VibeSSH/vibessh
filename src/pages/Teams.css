@@ -5,3 +5,17 @@
 .teams-create-row .form-input {
   flex: 1;
 }
+
+.team-detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teams-accept-row {
+  display: flex;
+  gap: 8px;
+}
+.teams-accept-row .form-input {
+  flex: 1;
+}

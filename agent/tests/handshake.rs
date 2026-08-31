@@ -18,7 +18,7 @@ use vibe_agent::info::AgentInfo;
 use vibe_agent::pairing::PairingRegistry;
 use vibe_agent::transport::{self, SharedState};
 use vibessh_protocol::{
-    HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
+    DesktopCommand, HandshakeRequest, HandshakeResponse, NodeDesiredState, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
 
 /// The agent's certificate is self-signed (Etap K - no CA for an arbitrary
@@ -238,6 +238,40 @@ async fn metrics_update_follows_a_successful_handshake_with_sane_values() {
             assert!((0.0..=100.0 * num_cpus()).contains(&metrics.cpu_usage_percent));
         }
         other => panic!("expected MetricsUpdate, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn apply_desired_state_is_acked_with_the_same_revision_over_a_real_connection() {
+    // Etap M3: proves the Desktop->Agent direction actually round-trips
+    // over the real router (`agent::transport::connection::handle`), not
+    // just that the two DTOs serialize (see `protocol::commands`'s own
+    // unit test for that) - this is the one thing a pure-JSON test can't
+    // cover.
+    let agent = spawn_test_agent(Duration::from_secs(30), Duration::from_secs(30)).await;
+    register_code_via_http(&agent.control_url, "VIBE-TEST-CODE").await;
+
+    let mut ws = connect_insecure(&agent.ws_url).await;
+    let request = HandshakeRequest {
+        protocol_version: PROTOCOL_VERSION,
+        client_name: "vibessh-desktop-test".into(),
+        client_version: "0.0.0".into(),
+        auth_token: Some("VIBE-TEST-CODE".into()),
+    };
+    ws.send(Message::Text(serde_json::to_string(&request).unwrap())).await.unwrap();
+    let _: HandshakeResponse = next_json(&mut ws).await;
+
+    let command = DesktopCommand::ApplyDesiredState { revision: 42, state: NodeDesiredState::default() };
+    ws.send(Message::Text(serde_json::to_string(&command).unwrap())).await.unwrap();
+
+    let event: ServerEvent = next_json(&mut ws).await;
+    match event {
+        ServerEvent::StateApplied { revision, ok, error } => {
+            assert_eq!(revision, 42);
+            assert!(ok);
+            assert_eq!(error, None);
+        }
+        other => panic!("expected StateApplied, got {other:?}"),
     }
 }
 

@@ -5,10 +5,17 @@
 //! and its keyring secret into the `SshCredentials` this module needs.
 
 pub mod client;
-mod docker;
+// `pub(crate)` (not just `mod`) so `runtime::docker` (Applications) can
+// reuse `validate_container_ref` for its own `docker create`/`inspect`/
+// `stats` calls, not only the calls this module's own methods already
+// validate.
+pub(crate) mod docker;
 mod monitor;
 mod sftp;
-mod systemd;
+// `pub(crate)` (not just `mod`) so `runtime::systemd` (Applications) can
+// reuse `validate_unit_name` for its own unit-file writes, not only the
+// `systemctl` calls this module's own methods already validate.
+pub(crate) mod systemd;
 mod transport;
 
 pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};

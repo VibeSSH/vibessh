@@ -4,7 +4,12 @@
 //! `server_repository` (Etap 2) is the SQLite-backed store for server
 //! records themselves; it never touches secrets, see `credentials`.
 
+pub mod application_repository;
 pub mod cloud_config;
 pub mod credentials;
+pub mod database_repository;
+pub mod dns_repository;
 pub mod migrations;
+pub mod node_network_repository;
+pub mod node_state_repository;
 pub mod server_repository;

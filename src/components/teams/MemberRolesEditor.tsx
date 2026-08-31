@@ -11,10 +11,11 @@ interface MemberRolesEditorProps {
   userId: string;
   memberName: string;
   isOwner: boolean;
+  canManage: boolean;
 }
 
 /** A member's role assignment is edited from a small popover on their own row - not a separate page, since this is a quick toggle action, not something with enough of its own state to deserve navigation. */
-export function MemberRolesEditor({ teamId, userId, memberName, isOwner }: MemberRolesEditorProps) {
+export function MemberRolesEditor({ teamId, userId, memberName, isOwner, canManage }: MemberRolesEditorProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [allRoles, setAllRoles] = useState<CloudRole[]>([]);
@@ -31,6 +32,8 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner }: Membe
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
+
+  if (!canManage) return null;
 
   function load() {
     setLoading(true);

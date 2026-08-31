@@ -47,6 +47,14 @@ impl SshSession {
         self.run_systemctl("disable --now", service_name).await
     }
 
+    /// `--signal=SIGKILL` bypasses the unit's own stop procedure and
+    /// `TimeoutStopSec` - the systemd equivalent of `kill -9`, for when
+    /// `stop_service`'s normal graceful stop isn't what's wanted
+    /// (Applications' "Kill" action - see `runtime::systemd`).
+    pub async fn kill_service(&self, service_name: &str) -> AppResult<()> {
+        self.run_systemctl("kill --signal=SIGKILL", service_name).await
+    }
+
     async fn run_systemctl(&self, action: &str, service_name: &str) -> AppResult<()> {
         validate_unit_name(service_name)?;
         let verb = action.split_whitespace().next().unwrap_or(action);
@@ -66,7 +74,7 @@ impl SshSession {
 /// could smuggle in a second command (`;`, backticks, `$(...)`, quotes,
 /// whitespace are all rejected). Scoped to `.service` units specifically,
 /// matching what this module lists and restarts.
-fn validate_unit_name(name: &str) -> AppResult<()> {
+pub(crate) fn validate_unit_name(name: &str) -> AppResult<()> {
     let chars_ok = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '-' | '_' | '.' | '@'));
     if !chars_ok || !name.ends_with(".service") {
         return Err(AppError::InvalidInput(format!("'{name}' isn't a valid systemd service unit name")));

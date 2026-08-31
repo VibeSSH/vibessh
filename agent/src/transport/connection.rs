@@ -2,7 +2,7 @@ use axum::extract::ws::{Message, WebSocket};
 use tokio::time::{interval, timeout, Duration, MissedTickBehavior};
 
 use vibessh_protocol::{
-    HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
+    DesktopCommand, HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
 
 use crate::metrics::MetricsCollector;
@@ -47,9 +47,29 @@ pub async fn handle(mut socket: WebSocket, state: SharedState) {
                         log::info!("agent: client closed the connection");
                         return;
                     }
+                    Some(Ok(Message::Text(text))) => {
+                        // A malformed/unrecognized frame is logged and
+                        // ignored, not a reason to drop the connection -
+                        // this is the same "don't let one bad message end
+                        // an otherwise-healthy session" stance the
+                        // handshake's own timeout/version-mismatch paths
+                        // take by returning a rejection instead of just
+                        // silently hanging up.
+                        match serde_json::from_str::<DesktopCommand>(&text) {
+                            Ok(command) => {
+                                if !handle_command(&mut socket, command).await {
+                                    log::info!("agent: client disconnected (command result send failed)");
+                                    return;
+                                }
+                            }
+                            Err(err) => log::warn!("agent: ignoring an unrecognized message from Desktop: {err}"),
+                        }
+                    }
                     Some(Ok(_)) => {
-                        // No client->agent messages are defined yet beyond the
-                        // handshake (Etap D scope) - ignore anything else.
+                        // Every real Desktop->Agent message is text/JSON
+                        // (DesktopCommand) - any other frame kind (binary,
+                        // ping/pong is handled by axum itself) has nothing
+                        // defined for it yet.
                     }
                     Some(Err(err)) => {
                         log::warn!("agent: websocket error: {err}");
@@ -185,6 +205,24 @@ async fn send_handshake_rejection(
         capabilities: Default::default(),
     };
     send_json(socket, &response).await
+}
+
+/// Applies one `DesktopCommand` and reports the result back - Etap M3's
+/// `ApplyDesiredState` carries an empty `NodeDesiredState`, so there is
+/// nothing yet that could actually fail to apply; this always acks `ok:
+/// true`. The real apply step (writing firewall rules / WireGuard config /
+/// DNS fragments to disk and reconciling the host to match) is later,
+/// deferred work that replaces the `Ok(true)` below - the Agent stays a
+/// "dumb applier" per the control-plane design (Desktop is the only place
+/// that decides whether a Node is in or out of sync), it never second-
+/// guesses or re-derives what it was asked to apply.
+async fn handle_command(socket: &mut WebSocket, command: DesktopCommand) -> bool {
+    let result = match command {
+        DesktopCommand::ApplyDesiredState { revision, .. } => {
+            ServerEvent::StateApplied { revision, ok: true, error: None }
+        }
+    };
+    send_event(socket, &result).await
 }
 
 async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> bool {

@@ -1,14 +1,19 @@
 //! Desktop-side half of the Agent Mode transport (Etap D transport, Etap E
-//! pairing, Etap K TLS). Owns the WebSocket connection to one `vibe-agent`:
-//! handshake, reconnect with backoff, and a read timeout that treats a
-//! silent connection (no heartbeat, no events) as dead.
-//! `AgentClientConfig::auth_token` is either a pairing code (first
-//! connection) or a previously issued credential (every one after);
+//! pairing, Etap K TLS, Etap M3 the send path). Owns the WebSocket
+//! connection to one `vibe-agent`: handshake, reconnect with backoff, a
+//! read timeout that treats a silent connection (no heartbeat, no events)
+//! as dead, and (Etap M3) a `command_rx` this task drains and forwards to
+//! the agent on every (re)connection - queued commands sent while
+//! disconnected are simply sent once the next connection succeeds, since
+//! the same receiver is reused across reconnect attempts rather than
+//! recreated. `AgentClientConfig::auth_token` is either a pairing code
+//! (first connection) or a previously issued credential (every one after);
 //! callers are responsible for persisting a freshly `issued_credential`
 //! (OS keyring, never plaintext) so the next connection can use it instead
-//! of the one-time code. Not wired into `ServerConnection` yet — that's
-//! Etap H, once there's a server record to attach a running client to. For
-//! now it's a self-contained, independently testable client.
+//! of the one-time code. Wired into a real, app-session-long connection by
+//! `state::AgentSessionManager` (Etap M3) - see that module's own doc
+//! comment for why "for the life of the pairing modal" (the only thing
+//! that used this before) wasn't enough to build revisioning against.
 //!
 //! Connections are `wss://` against the agent's self-signed certificate
 //! (Etap K - there's no CA for an arbitrary self-hosted VPS agent), with
@@ -36,7 +41,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async_tls_with_config, Connector, MaybeTlsStream, WebSocketStream};
 use uuid::Uuid;
 
-use vibessh_protocol::{AgentCapabilities, HandshakeRequest, HandshakeResponse, ServerEvent, PROTOCOL_VERSION};
+use vibessh_protocol::{AgentCapabilities, DesktopCommand, HandshakeRequest, HandshakeResponse, ServerEvent, PROTOCOL_VERSION};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
@@ -78,19 +83,23 @@ pub enum AgentConnectionState {
 
 /// Runs until `events_tx`'s receiver is dropped: connects, hands off
 /// `ServerEvent`s (heartbeats are swallowed here, callers only see events
-/// worth reacting to), and on any failure reconnects with exponential
-/// backoff that resets after each successful handshake.
+/// worth reacting to), forwards anything sent on `command_rx` to the agent
+/// (Etap M3 - `command_rx` is reused across reconnects, so a command queued
+/// while disconnected just goes out once the next connection succeeds), and
+/// on any failure reconnects with exponential backoff that resets after
+/// each successful handshake.
 pub async fn run(
     config: AgentClientConfig,
     events_tx: mpsc::Sender<ServerEvent>,
     state_tx: watch::Sender<AgentConnectionState>,
+    mut command_rx: mpsc::Receiver<DesktopCommand>,
 ) {
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
         let _ = state_tx.send(AgentConnectionState::Connecting);
 
-        match connect_and_stream(&config, &events_tx, &state_tx, &mut backoff).await {
+        match connect_and_stream(&config, &events_tx, &state_tx, &mut command_rx, &mut backoff).await {
             Ok(()) => return, // caller dropped the receiver - stop for good
             Err(reason) => {
                 log::warn!("agent_client: {reason}; retrying in {backoff:?}");
@@ -108,6 +117,7 @@ async fn connect_and_stream(
     config: &AgentClientConfig,
     events_tx: &mpsc::Sender<ServerEvent>,
     state_tx: &watch::Sender<AgentConnectionState>,
+    command_rx: &mut mpsc::Receiver<DesktopCommand>,
     backoff: &mut Duration,
 ) -> Result<(), String> {
     // Only consulted for wss:// URLs - a plain ws:// URL (used by this
@@ -148,19 +158,46 @@ async fn connect_and_stream(
         capabilities: response.capabilities,
     });
 
+    // Etap M3: once `command_rx`'s sender is dropped, `recv()` resolves to
+    // `None` immediately on every poll - without this guard, `select!`
+    // would pick that branch (or hang inside it) on essentially every loop
+    // iteration and starve the read side. A caller with nothing to send
+    // (e.g. the pairing flow's own short-lived connection) drops its sender
+    // the moment it stops needing it - that must silently disable this
+    // branch for the rest of the connection's life, not end it (only
+    // `events_tx` being closed means "stop the connection," see below).
+    let mut command_channel_open = true;
+
     loop {
-        let event: ServerEvent = match timeout(READ_TIMEOUT, read_json(&mut ws)).await {
-            Ok(Ok(event)) => event,
-            Ok(Err(reason)) => return Err(reason),
-            Err(_) => return Err("no message received within the read timeout".to_string()),
-        };
+        tokio::select! {
+            incoming = timeout(READ_TIMEOUT, read_json::<ServerEvent>(&mut ws)) => {
+                let event = match incoming {
+                    Ok(Ok(event)) => event,
+                    Ok(Err(reason)) => return Err(reason),
+                    Err(_) => return Err("no message received within the read timeout".to_string()),
+                };
 
-        if matches!(event, ServerEvent::Heartbeat) {
-            continue;
-        }
+                if matches!(event, ServerEvent::Heartbeat) {
+                    continue;
+                }
 
-        if events_tx.send(event).await.is_err() {
-            return Ok(());
+                if events_tx.send(event).await.is_err() {
+                    return Ok(());
+                }
+            }
+            // `command_rx` outlives any single connection attempt (owned by
+            // the caller, passed in by `&mut`), so a command sent while
+            // disconnected or mid-reconnect just waits in the channel and
+            // goes out the moment this arm is next reached on a fresh
+            // connection - no separate "flush queued commands" step needed.
+            command = command_rx.recv(), if command_channel_open => {
+                let Some(command) = command else {
+                    command_channel_open = false;
+                    continue;
+                };
+                let payload = serde_json::to_string(&command).expect("DesktopCommand always serializes");
+                ws.send(Message::Text(payload)).await.map_err(|err| format!("failed to send a command to the agent: {err}"))?;
+            }
         }
     }
 }

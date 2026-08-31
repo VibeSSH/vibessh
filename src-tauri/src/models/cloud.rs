@@ -82,3 +82,43 @@ pub struct CloudServer {
     pub username: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudInvitation {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub email: String,
+    pub role_id: Option<Uuid>,
+    pub status: String,
+    pub invited_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudCreatedInvitation {
+    #[serde(flatten)]
+    pub invitation: CloudInvitation,
+    /// The raw, unhashed token - present only in this one response, the
+    /// same "shown once" rule the backend itself documents (see
+    /// backend/src/models.rs's CreatedInvitation). Delivering it to the
+    /// invitee (copy/paste, chat, email) is left to whoever is inviting.
+    pub token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAuditEvent {
+    pub id: Uuid,
+    pub action: String,
+    pub target_type: String,
+    pub target_id: Option<Uuid>,
+    pub result: String,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub actor_id: Option<Uuid>,
+    pub actor_email: Option<String>,
+    pub actor_display_name: Option<String>,
+}

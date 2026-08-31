@@ -1,5 +1,8 @@
 import { callCommand } from "./tauri";
 import type {
+  CloudAuditEvent,
+  CloudCreatedInvitation,
+  CloudInvitation,
   CloudRole,
   CloudRoleWithPermissions,
   CloudServer,
@@ -109,4 +112,45 @@ export function cloudCreateServer(
 
 export function cloudDeleteServer(teamId: string, serverId: string): Promise<void> {
   return callCommand<void>("cloud_delete_server", { teamId, serverId });
+}
+
+export function cloudMyPermissions(teamId: string): Promise<string[]> {
+  return callCommand<string[]>("cloud_my_permissions", { teamId });
+}
+
+export function cloudRemoveMember(teamId: string, userId: string): Promise<void> {
+  return callCommand<void>("cloud_remove_member", { teamId, userId });
+}
+
+export function cloudDeleteTeam(teamId: string): Promise<void> {
+  return callCommand<void>("cloud_delete_team", { teamId });
+}
+
+export function cloudListInvitations(teamId: string): Promise<CloudInvitation[]> {
+  return callCommand<CloudInvitation[]>("cloud_list_invitations", { teamId });
+}
+
+export function cloudCreateInvitation(
+  teamId: string,
+  email: string,
+  roleId: string | null,
+  expiresInDays: number | null,
+): Promise<CloudCreatedInvitation> {
+  return callCommand<CloudCreatedInvitation>("cloud_create_invitation", { teamId, email, roleId, expiresInDays });
+}
+
+export function cloudRevokeInvitation(teamId: string, invitationId: string): Promise<void> {
+  return callCommand<void>("cloud_revoke_invitation", { teamId, invitationId });
+}
+
+export function cloudAcceptInvitation(token: string): Promise<CloudTeam> {
+  return callCommand<CloudTeam>("cloud_accept_invitation", { token });
+}
+
+export function cloudDeclineInvitation(token: string): Promise<void> {
+  return callCommand<void>("cloud_decline_invitation", { token });
+}
+
+export function cloudListAuditEvents(teamId: string, limit: number, offset: number): Promise<CloudAuditEvent[]> {
+  return callCommand<CloudAuditEvent[]>("cloud_list_audit_events", { teamId, limit, offset });
 }

@@ -1,0 +1,110 @@
+.vibe-network-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.vibe-network-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.vibe-network-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.vibe-network-sync-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.vibe-network-sync-result-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.vibe-network-node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+.vibe-network-node-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.vibe-network-node-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.vibe-network-node-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
+}
+
+.vibe-network-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.vibe-network-fact-value {
+  color: var(--text-primary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-network-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.vibe-network-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.vibe-network-node-picker {
+  max-width: 260px;
+}
+
+.vibe-network-hostname-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.vibe-network-hostname-row .form-input {
+  flex: 1;
+}

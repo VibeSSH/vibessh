@@ -6,7 +6,9 @@
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{AuthenticationType, Server, ServerInput};
+use crate::models::{AuthenticationType, NodeCapabilities, Server, ServerInput};
+use crate::services::ssh_service::get_or_connect;
+use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
 
@@ -43,6 +45,42 @@ pub fn get_server(repo: &ServerRepository, id: Uuid) -> AppResult<Server> {
 
 pub fn list_servers(repo: &ServerRepository) -> AppResult<Vec<Server>> {
     repo.list()
+}
+
+pub fn upsert_agent_server(
+    repo: &ServerRepository,
+    name: &str,
+    host: &str,
+    agent_id: Uuid,
+    docker_capable: Option<bool>,
+) -> AppResult<Server> {
+    if name.trim().is_empty() {
+        return Err(AppError::InvalidInput("server name cannot be empty".into()));
+    }
+    if host.trim().is_empty() {
+        return Err(AppError::InvalidInput("host cannot be empty".into()));
+    }
+    repo.upsert_agent(name, host, agent_id, docker_capable.map(|docker| NodeCapabilities { docker }))
+}
+
+/// A real SSH-exec probe (`command -v docker`), not a guess from the
+/// image/OS name - the same "actually check, don't assume" stance
+/// `runtime::docker::DockerRuntime::validate` already takes when a Docker
+/// Application is created. SSH-mode only: an Agent-mode Node's capabilities
+/// come from its own handshake instead (see `upsert_agent_server` above) -
+/// there's no persistent Agent connection this could reuse outside the
+/// pairing flow yet. Run on demand (the Create Application wizard's Node
+/// picker calls this per SSH-mode server as it loads, Etap M1) rather than
+/// on a schedule - Docker isn't something that gets installed or removed
+/// from a host often enough to justify a background poller. Persists the
+/// result before returning it, so a probe that ran once survives an app
+/// restart even if nothing else asks again for a while.
+pub async fn probe_node_capabilities(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<NodeCapabilities> {
+    let connection = get_or_connect(repo, sessions, server_id).await?;
+    let output = connection.execute_command("command -v docker >/dev/null 2>&1 && echo yes || echo no").await?;
+    let capabilities = NodeCapabilities { docker: output.stdout.trim() == "yes" };
+    repo.set_node_capabilities(server_id, capabilities)?;
+    Ok(capabilities)
 }
 
 fn persist_secrets(id: Uuid, input: &ServerInput) -> AppResult<()> {
@@ -184,6 +222,22 @@ mod tests {
         );
 
         let _ = credentials::delete_secret(server.id, SecretKind::SshPassword);
+    }
+
+    #[test]
+    fn upsert_agent_server_rejects_an_empty_name() {
+        let repo = temp_repo();
+        let err = upsert_agent_server(&repo, "  ", "203.0.113.20", Uuid::new_v4(), None).unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn upsert_agent_server_persists_a_real_row() {
+        let repo = temp_repo();
+        let agent_id = Uuid::new_v4();
+        let server = upsert_agent_server(&repo, "Prod Agent", "203.0.113.20", agent_id, Some(true)).unwrap();
+        assert_eq!(get_server(&repo, server.id).unwrap().agent_id, Some(agent_id));
+        assert_eq!(get_server(&repo, server.id).unwrap().node_capabilities, Some(NodeCapabilities { docker: true }));
     }
 
     #[test]

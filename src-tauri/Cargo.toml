@@ -18,6 +18,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-log = "2"
 # Native open/save file dialogs for Files module upload/download.
 tauri-plugin-dialog = "2"
+# Opens a phpMyAdmin URL in the user's system browser (Databases tab) -
+# only the `open` command is granted (capabilities/default.json), not the
+# plugin's own `execute` (arbitrary process spawn), which this app has no
+# use for.
+tauri-plugin-shell = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -26,9 +31,25 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
 vibessh-protocol = { path = "../protocol" }
+# Generated database names/usernames/passwords for Application Databases
+# (services::database_service) - same workspace version `protocol`'s own
+# generate_pairing_code already uses, not a new choice.
+rand = { workspace = true }
+# Archive extraction for Application Files (zip only for the first pass -
+# by far the most common case for a plugin/world/backup upload). `enclosed_name()`
+# is the crate's own Zip Slip guard, used as the first of two path-escape
+# checks in files::archive - the second is the same sandbox/canonicalize
+# jail every other file operation already goes through.
+zip = "2"
 # WebSocket client for AgentTransport. Runs on Tauri's own tokio runtime
 # (`tauri::async_runtime::spawn`) rather than starting a second one.
-tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net"] }
+# "process" (LocalProcessRuntime, Applications Phase 2) is new here -
+# everything else was already enabled for the agent transport/SSH/terminal.
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net", "process"] }
+# Cross-platform CPU/RAM-per-PID sampling for LocalProcessRuntime's
+# resource_usage() - same crate and version the `agent` crate already uses
+# for the identical purpose (see agent/src/metrics.rs), not a new pattern.
+sysinfo = "0.39"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 # Agent connections are wss:// with a self-signed cert (Etap K - no CA for
@@ -59,11 +80,28 @@ russh-sftp = "2"
 # native-tls is already a dependency here for agent_client's WSS connections.
 reqwest = { version = "0.12", features = ["json"] }
 
+# Windows-only piece of LocalProcessRuntime's graceful stop (Applications
+# Phase 2). On Unix, sysinfo's own Process::kill_with(Signal::Term) already
+# sends a real SIGTERM, so no extra dependency is needed there. Windows has
+# no SIGTERM equivalent - sysinfo's kill_with() on Windows just shells out to
+# `taskkill /F` for any signal, which is a force-kill, not a graceful one -
+# so GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT) is the closest real "please
+# shut down" signal a child console process can receive. It only works if
+# the child was spawned with CREATE_NEW_PROCESS_GROUP (see
+# runtime::local_process) so the event targets the child's own process group
+# instead of also hitting VibeSSH.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+
 [dev-dependencies]
 # Only needed by tests/agent_client.rs's mock server; the real client code
 # doesn't bind sockets itself.
 tokio = { version = "1", features = ["net"] }
 # tests/ssh_client.rs's mock SSH server needs a host key - russh's own
-# `PrivateKey::random` wants a rand 0.10-shaped RNG, unrelated to (and
-# coexisting fine alongside) the workspace's rand 0.8 used elsewhere.
-rand = "0.10"
+# `PrivateKey::random` wants a rand 0.10-shaped RNG. Renamed via `package =`
+# (rather than plain `rand = "0.10"`) because the workspace's rand 0.8 is
+# now also a real `[dependencies]` entry above (services::database_service's
+# generated names/passwords) - two same-named `rand` crates at different
+# versions in one test build is a hard "multiple candidates" compile error,
+# not just a style choice.
+rand010 = { package = "rand", version = "0.10" }

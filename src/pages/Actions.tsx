@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { ContainerLogsPanel } from "@/components/servers/ContainerLogsPanel";
 import {
   disableServerService,
@@ -67,6 +68,7 @@ export function ActionsPage() {
   const [confirming, setConfirming] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const confirmBackdrop = useBackdropClose(() => !actionBusy && setConfirming(null));
 
   const loadServices = useCallback(() => {
     if (!serverId) return;
@@ -276,7 +278,7 @@ export function ActionsPage() {
       )}
 
       {confirming && (
-        <div className="modal-backdrop" onClick={() => !actionBusy && setConfirming(null)}>
+        <div className="modal-backdrop" {...confirmBackdrop}>
           <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">

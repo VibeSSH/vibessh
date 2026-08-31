@@ -39,6 +39,209 @@ pub fn migrations() -> Migrations<'static> {
                 fingerprint  TEXT NOT NULL
             );",
         ),
+        // Migration 2: Applications (see docs/APPLICATIONS_ARCHITECTURE.md).
+        // `server_id` is nullable (NULL = a Local application, running on
+        // this device rather than a VibeSSH-managed remote server) and
+        // ON DELETE RESTRICT rather than CASCADE or SET NULL - a server
+        // with applications attached must not become deletable out from
+        // under them by accident (see ServerRepository::delete's own
+        // foreign-key-violation handling). `blueprint_id`/`blueprint_version`
+        // are plain columns, not yet a foreign key to a `blueprints` table -
+        // that table doesn't exist until the Blueprint schema phase; these
+        // stay a soft reference until then; every read that renders a
+        // blueprint name of a still-unknown id falls back to showing the
+        // raw id rather than erroring.
+        //
+        // Ports and environment variables are real tables, not JSON blobs
+        // on `applications` - both need real per-row CRUD and (ports)
+        // collision queries (`WHERE application_id != ? AND internal_port =
+        // ? AND bind_address = ?`), which a JSON column can't do without
+        // parsing client-side first. `application_runtime_config` and
+        // `application_metadata` stay JSON deliberately - their field set
+        // genuinely varies per runtime_type/blueprint, so there's no fixed
+        // column set to design against.
+        M::up(
+            "CREATE TABLE applications (
+                id                   TEXT PRIMARY KEY,
+                server_id            TEXT REFERENCES servers(id) ON DELETE RESTRICT,
+                name                 TEXT NOT NULL,
+                description          TEXT,
+                blueprint_id         TEXT NOT NULL,
+                blueprint_version    INTEGER NOT NULL,
+                runtime_type         TEXT NOT NULL,
+                working_directory    TEXT NOT NULL,
+                status               TEXT NOT NULL DEFAULT 'unknown',
+                last_status_check_at TEXT,
+                created_at           TEXT NOT NULL,
+                updated_at           TEXT NOT NULL
+            );
+            CREATE INDEX applications_server_id_idx ON applications (server_id);
+
+            CREATE TABLE application_environment (
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                key            TEXT NOT NULL,
+                value          TEXT NOT NULL,
+                PRIMARY KEY (application_id, key)
+            );
+
+            CREATE TABLE application_ports (
+                id             TEXT PRIMARY KEY,
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                name           TEXT NOT NULL,
+                protocol       TEXT NOT NULL,
+                bind_address   TEXT NOT NULL,
+                internal_port  INTEGER NOT NULL,
+                external_port  INTEGER,
+                required       INTEGER NOT NULL DEFAULT 0,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL
+            );
+            CREATE INDEX application_ports_application_id_idx ON application_ports (application_id);
+
+            CREATE TABLE application_runtime_config (
+                application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                config_json    TEXT NOT NULL
+            );
+
+            CREATE TABLE application_metadata (
+                application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                metadata_json  TEXT NOT NULL
+            );",
+        ),
+        // Migration 3: health check configuration, straight on `applications`
+        // rather than a new table - it's 1-3 scalar fields per application,
+        // not a real per-row CRUD/collision concern the way ports are.
+        // `health_check_type` defaults to `'process'` (the only kind every
+        // existing row can honestly claim - a plain "is the process still
+        // running" check, same as before this migration existed at all).
+        // `health_check_port_id` references `application_ports` -
+        // `ON DELETE SET NULL` so removing the port a health check pointed
+        // at doesn't fail, it just leaves the check unable to run (treated
+        // as Unknown, not an error) until reconfigured.
+        M::up(
+            "ALTER TABLE applications ADD COLUMN health_check_type TEXT NOT NULL DEFAULT 'process';
+            ALTER TABLE applications ADD COLUMN health_check_port_id TEXT REFERENCES application_ports(id) ON DELETE SET NULL;
+            ALTER TABLE applications ADD COLUMN health_check_http_path TEXT;",
+        ),
+        // Migration 4: Application Databases - Phase 11 *foundation only*
+        // (docs/APPLICATIONS_ARCHITECTURE.md Section 12 / Section 10 phase
+        // list). Schema + types land here; the actual provisioning
+        // (`mysql`/`mariadb` CLI execution over SSH), the phpMyAdmin
+        // Blueprint, and the Databases tab UI are deliberately not built
+        // yet - these tables exist so that later work has real, tested
+        // storage rather than designing it from scratch. `server_id`
+        // nullable (a shared/external DB host that isn't itself a VibeSSH
+        // Server stays representable) and ON DELETE RESTRICT (same
+        // reasoning `applications.server_id` already uses - a Server with a
+        // database host attached must not become deletable out from under
+        // it by accident). `admin_password`/the generated per-database
+        // user's password both live in the OS keyring
+        // (storage::credentials, SecretKind::DatabaseHostAdmin /
+        // SecretKind::ApplicationDatabaseUser), keyed by each row's own id -
+        // never a column here, same rule every other secret in this
+        // codebase follows.
+        M::up(
+            "CREATE TABLE database_hosts (
+                id                         TEXT PRIMARY KEY,
+                server_id                  TEXT REFERENCES servers(id) ON DELETE RESTRICT,
+                name                       TEXT NOT NULL,
+                engine                     TEXT NOT NULL,
+                host                       TEXT NOT NULL,
+                port                       INTEGER NOT NULL DEFAULT 3306,
+                admin_username             TEXT NOT NULL,
+                phpmyadmin_application_id  TEXT REFERENCES applications(id) ON DELETE SET NULL,
+                created_at                 TEXT NOT NULL,
+                updated_at                 TEXT NOT NULL
+            );
+            CREATE INDEX database_hosts_server_id_idx ON database_hosts (server_id);
+
+            CREATE TABLE application_databases (
+                id                TEXT PRIMARY KEY,
+                application_id    TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                database_host_id  TEXT NOT NULL REFERENCES database_hosts(id) ON DELETE RESTRICT,
+                database_name     TEXT NOT NULL,
+                username          TEXT NOT NULL,
+                connections_from  TEXT NOT NULL DEFAULT '%',
+                created_at        TEXT NOT NULL,
+                UNIQUE(database_host_id, database_name)
+            );
+            CREATE INDEX application_databases_application_id_idx ON application_databases (application_id);",
+        ),
+        // Migration 5 (Etap M1): persisted Node capability detection.
+        // `node_capabilities_json` mirrors `NodeCapabilities` (currently just
+        // `{"docker": bool}`) - NULL means "never probed", not "no
+        // capabilities", so a Node added before this migration (or an
+        // SSH-mode Node nobody has probed yet) reads back as unknown rather
+        // than a false "Docker not available". A JSON blob rather than a
+        // real `docker BOOLEAN` column deliberately mirrors how
+        // `application_runtime_config.config_json` already stores a
+        // per-row-varying capability set - this shape is expected to grow
+        // (a `firewall` flag once Etap M2 needs it) without another
+        // migration.
+        M::up("ALTER TABLE servers ADD COLUMN node_capabilities_json TEXT;"),
+        // Migration 6 (Etap M3): desired/applied state revisioning.
+        // `desired_revision`/`applied_revision` are compared as plain
+        // integers to answer "is this Node in sync" - see
+        // `services::node_state_service`'s own doc comment for the full
+        // reconcile flow. Deliberately two tables, not one: a Node's
+        // *desired* state is authored by Desktop the instant something
+        // changes (today: only a manual "Reconcile" click bumps it, since
+        // Etap M3 has no real desired-state payload yet - see
+        // `vibessh_protocol::NodeDesiredState`'s own doc comment), while its
+        // *applied* state is only ever written back from a real ack the
+        // Agent sent - keeping them separate means "what we asked for" and
+        // "what's actually confirmed running" can never accidentally be
+        // conflated into one write.
+        M::up(
+            "CREATE TABLE node_desired_state (
+                server_id           TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                desired_revision    INTEGER NOT NULL DEFAULT 0,
+                desired_state_json  TEXT NOT NULL,
+                updated_at          TEXT NOT NULL
+            );
+            CREATE TABLE node_applied_state (
+                server_id             TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                applied_revision      INTEGER NOT NULL DEFAULT 0,
+                applied_at            TEXT,
+                last_reconcile_status TEXT,
+                last_error            TEXT
+            );",
+        ),
+        // Migration 7 (Etap M4): Vibe Network (WireGuard mesh) membership.
+        // Desktop is the sole IPAM authority - `wireguard_ip` is allocated
+        // sequentially in a fixed CIDR (see `network::wireguard`'s own doc
+        // comment) and UNIQUE enforces that at the database level, not just
+        // in application logic. Only the Node's own PUBLIC key is stored
+        // here - the private key never leaves the Node itself, see
+        // `services::network_service`'s own doc comment for the full
+        // reasoning.
+        M::up(
+            "CREATE TABLE node_network_members (
+                server_id            TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+                wireguard_ip         TEXT NOT NULL UNIQUE,
+                wireguard_public_key TEXT NOT NULL,
+                joined_at            TEXT NOT NULL
+            );",
+        ),
+        // Migration 8 (Etap M4): the user-facing "Application Network"
+        // intent behind a port - see `models::PortVisibility`'s own doc
+        // comment. Existing ports default to `'public'`, matching their
+        // actual behavior today (unconditional `-p` publishing).
+        M::up("ALTER TABLE application_ports ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';"),
+        // Migration 9 (Etap M4): Private DNS. `application_id` is UNIQUE -
+        // one alias per service. The IP a Node renders for `hostname` is
+        // resolved at render time via `applications.server_id ->
+        // node_network_members.wireguard_ip`, never baked into this row -
+        // see `services::dns_service`'s own doc comment for why that's
+        // what makes a service's DNS name survive moving to another Node.
+        M::up(
+            "CREATE TABLE dns_records (
+                id              TEXT PRIMARY KEY,
+                application_id  TEXT NOT NULL UNIQUE REFERENCES applications(id) ON DELETE CASCADE,
+                hostname        TEXT NOT NULL UNIQUE,
+                created_at      TEXT NOT NULL
+            );",
+        ),
     ])
 }
 
@@ -74,5 +277,309 @@ mod tests {
         // the first) must not try to re-run migration 1 and hit "table
         // already exists".
         migrations().to_latest(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn migration_2_creates_every_applications_table() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN (
+                    'applications', 'application_environment', 'application_ports',
+                    'application_runtime_config', 'application_metadata'
+                )",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 5);
+    }
+
+    #[test]
+    fn migration_3_adds_health_check_columns_defaulting_to_process() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let (health_check_type, port_id, http_path): (String, Option<String>, Option<String>) = conn
+            .query_row("SELECT health_check_type, health_check_port_id, health_check_http_path FROM applications WHERE id = 'a1'", (), |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(health_check_type, "process");
+        assert_eq!(port_id, None);
+        assert_eq!(http_path, None);
+    }
+
+    #[test]
+    fn migration_4_creates_the_database_tables_with_a_working_uniqueness_constraint() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('database_hosts', 'application_databases')",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 2);
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO database_hosts (id, name, engine, host, port, admin_username, created_at, updated_at)
+             VALUES ('h1', 'Main DB host', 'mysql', '127.0.0.1', 3306, 'root', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d1', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user', '%', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // Same database_host_id + database_name again must be rejected - the
+        // UNIQUE constraint is what `database_repository` relies on instead
+        // of doing its own pre-check race.
+        let duplicate = conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d2', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user_2', '%', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn migration_5_adds_a_nullable_node_capabilities_column() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let capabilities: Option<String> =
+            conn.query_row("SELECT node_capabilities_json FROM servers WHERE id = 's1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(capabilities, None);
+
+        conn.execute("UPDATE servers SET node_capabilities_json = '{\"docker\":true}' WHERE id = 's1'", ()).unwrap();
+        let capabilities: Option<String> =
+            conn.query_row("SELECT node_capabilities_json FROM servers WHERE id = 's1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(capabilities, Some("{\"docker\":true}".to_string()));
+    }
+
+    #[test]
+    fn migration_6_creates_the_node_state_tables_scoped_to_one_row_per_server() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('node_desired_state', 'node_applied_state')",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 2);
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'agent', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO node_desired_state (server_id, desired_revision, desired_state_json, updated_at) VALUES ('s1', 1, '{}', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute("INSERT INTO node_applied_state (server_id, applied_revision) VALUES ('s1', 0)", ()).unwrap();
+
+        // One row per server_id, not a growing history - a second insert
+        // for the same server must collide on the primary key, the same
+        // "upsert, never append" shape the repository relies on.
+        let duplicate = conn.execute(
+            "INSERT INTO node_desired_state (server_id, desired_revision, desired_state_json, updated_at) VALUES ('s1', 2, '{}', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate.is_err());
+
+        // Deleting the Server cascades - no orphaned state left behind.
+        conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap();
+        let remaining: i64 = conn.query_row("SELECT count(*) FROM node_desired_state", (), |row| row.get(0)).unwrap();
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn migration_7_creates_node_network_members_with_a_unique_ip_constraint() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Node A', 'a.example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z'),
+                    ('s2', 'Node B', 'b.example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s1', '10.77.0.1', 'pubkeyA', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // The same IP for a second Node must be rejected - IPAM uniqueness
+        // is enforced by the schema, not just application logic.
+        let duplicate_ip = conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s2', '10.77.0.1', 'pubkeyB', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate_ip.is_err());
+
+        conn.execute(
+            "INSERT INTO node_network_members (server_id, wireguard_ip, wireguard_public_key, joined_at) VALUES ('s2', '10.77.0.2', 'pubkeyB', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // Deleting the Server cascades - no orphaned membership left behind.
+        conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap();
+        let remaining: i64 = conn.query_row("SELECT count(*) FROM node_network_members", (), |row| row.get(0)).unwrap();
+        assert_eq!(remaining, 1);
+    }
+
+    #[test]
+    fn migration_8_defaults_existing_ports_to_public_visibility() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_ports (id, application_id, name, protocol, bind_address, internal_port, created_at, updated_at)
+             VALUES ('p1', 'a1', 'game', 'tcp', '0.0.0.0', 25565, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let visibility: String = conn.query_row("SELECT visibility FROM application_ports WHERE id = 'p1'", (), |row| row.get(0)).unwrap();
+        assert_eq!(visibility, "public");
+    }
+
+    #[test]
+    fn migration_9_creates_dns_records_with_unique_hostname_and_one_alias_per_application() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO dns_records (id, application_id, hostname, created_at) VALUES ('d1', 'a1', 'db01.vibe', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        // A second alias for the same application must be rejected - one
+        // alias per service.
+        let duplicate_app = conn.execute(
+            "INSERT INTO dns_records (id, application_id, hostname, created_at) VALUES ('d2', 'a1', 'db01-alt.vibe', '2024-01-01T00:00:00Z')",
+            (),
+        );
+        assert!(duplicate_app.is_err());
+    }
+
+    #[test]
+    fn a_database_host_with_a_provisioned_database_cannot_be_deleted() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'localProcess', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO database_hosts (id, name, engine, host, port, admin_username, created_at, updated_at)
+             VALUES ('h1', 'Main DB host', 'mysql', '127.0.0.1', 3306, 'root', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO application_databases (id, application_id, database_host_id, database_name, username, connections_from, created_at)
+             VALUES ('d1', 'a1', 'h1', 'vibessh_app1', 'vibessh_app1_user', '%', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let err = conn.execute("DELETE FROM database_hosts WHERE id = 'h1'", ()).unwrap_err();
+        let rusqlite::Error::SqliteFailure(sqlite_err, message) = &err else {
+            panic!("expected a SqliteFailure, got {err:?}");
+        };
+        assert_eq!(sqlite_err.code, rusqlite::ErrorCode::ConstraintViolation);
+        assert!(message.as_deref().unwrap_or_default().contains("FOREIGN KEY"), "unexpected message: {message:?}");
+    }
+
+    #[test]
+    fn a_server_with_an_application_attached_cannot_be_deleted() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+             VALUES ('s1', 'Test', 'example.com', 22, 'root', 'password', 'ssh', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO applications (id, server_id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 's1', 'App', 'generic', 1, 'systemd', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+
+        let err = conn.execute("DELETE FROM servers WHERE id = 's1'", ()).unwrap_err();
+        // Not `extended_code == SQLITE_CONSTRAINT_FOREIGNKEY` - SQLite's
+        // *immediate* RESTRICT check (as opposed to a deferred one, raised
+        // at COMMIT) reports as SQLITE_CONSTRAINT_TRIGGER (1811) instead,
+        // despite the message correctly saying "FOREIGN KEY constraint
+        // failed". Caught by this exact test, not assumed - see
+        // ServerRepository::delete and is_foreign_key_violation, which
+        // check message text for the same reason.
+        let rusqlite::Error::SqliteFailure(sqlite_err, message) = &err else {
+            panic!("expected a SqliteFailure, got {err:?}");
+        };
+        assert_eq!(sqlite_err.code, rusqlite::ErrorCode::ConstraintViolation);
+        assert!(message.as_deref().unwrap_or_default().contains("FOREIGN KEY"), "unexpected message: {message:?}");
     }
 }

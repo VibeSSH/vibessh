@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import "./AddServerModal.css";
 import "./forms.css";
 
@@ -61,8 +62,10 @@ export function CreateEntryModal({ mode, onClose, onCreate }: CreateEntryModalPr
     }
   }
 
+  const backdrop = useBackdropClose(onClose);
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{mode === "folder" ? t("filesPage.newFolderTitle") : t("filesPage.newFileTitle")}</h2>

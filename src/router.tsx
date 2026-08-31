@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Dashboard } from "@/pages/Dashboard";
 import { ActionsPage } from "@/pages/Actions";
+import { Applications } from "@/pages/Applications";
+import { ApplicationDetail } from "@/pages/ApplicationDetail";
+import { DatabaseHosts } from "@/pages/DatabaseHosts";
 import { FilesPage } from "@/pages/Files";
 import { ModulePicker } from "@/pages/ModulePicker";
 import { MonitorPage } from "@/pages/Monitor";
@@ -10,6 +13,7 @@ import { Settings } from "@/pages/Settings";
 import { TeamDetail } from "@/pages/TeamDetail";
 import { Teams } from "@/pages/Teams";
 import { TerminalPage } from "@/pages/Terminal";
+import { VibeNetwork } from "@/pages/VibeNetwork";
 
 export function AppRouter() {
   return (
@@ -17,6 +21,10 @@ export function AppRouter() {
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/servers" element={<Servers />} />
+        <Route path="/applications" element={<Applications />} />
+        <Route path="/applications/:id" element={<ApplicationDetail />} />
+        <Route path="/database-hosts" element={<DatabaseHosts />} />
+        <Route path="/vibe-network" element={<VibeNetwork />} />
         <Route
           path="/terminal"
           element={<ModulePicker titleKey="modulePicker.terminalTitle" subtitleKey="modulePicker.terminalSubtitle" icon="terminal" routePrefix="/terminal" />}

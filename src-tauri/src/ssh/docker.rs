@@ -69,6 +69,14 @@ impl SshSession {
         Ok(output.stdout)
     }
 
+    /// `docker kill` sends SIGKILL immediately, bypassing the container's
+    /// own stop timeout - the Docker equivalent of `kill -9`, for when
+    /// `stop_container`'s normal graceful stop isn't what's wanted
+    /// (Applications' "Kill" action - see `runtime::docker`).
+    pub async fn kill_container(&self, container: &str) -> AppResult<()> {
+        self.run_docker("kill", container).await
+    }
+
     async fn run_docker(&self, action: &str, container: &str) -> AppResult<()> {
         validate_container_ref(container)?;
         let output = self.execute_command(&format!("docker {action} {container}")).await?;
@@ -107,7 +115,7 @@ fn parse_docker_ps_output(stdout: &str) -> Vec<ContainerSummary> {
 /// second command. A generous but finite length cap guards against a
 /// pathological input that's technically all-valid-characters but absurdly
 /// long.
-fn validate_container_ref(name: &str) -> AppResult<()> {
+pub(crate) fn validate_container_ref(name: &str) -> AppResult<()> {
     let starts_ok = name.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
     let chars_ok = name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
     if !starts_ok || !chars_ok || name.len() > 128 {
