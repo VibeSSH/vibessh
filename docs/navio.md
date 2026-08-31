@@ -3,6 +3,7 @@
 - APPLICATION - kontener docker (póki co zrobiłbym tylko kontenery bez innych opcji) działający na danym NODE 
 
 ## Co bym dodał:
+- Plugin gradle do przesyłu zbuildowanego .jar do danej lokalizacji `node_name`.`app_name`.`/container/path/to/file` wraz ze skryptem restartującym aplikacje. Powinien być generalny, nie tylko do papera czy rozwiązań mc. Nie mam pojecią jak mógłby póki co wyglądać taki przesył, może korzystałoby to z .exe/bin i tam wykonywało komende, ale to też ma swoje ograniczenia (takie podawanie argumentów do exe). 
 
 ## Co trzeba dodać:
 ### Setup page 
@@ -15,6 +16,19 @@ Setup page: sekcja, która wyświetla się podczas instalacji serwera (Node'a):
 
 
 # Główne założenia/feature'y
+
+## Ease of use, one click installation
+- Instalacja na desktopie wymaga wpisania jednej komendy do powershell'a lub po prostu użycia szybkiego instalatora. Może nawet udałoby się zrobić wersje portable lub instalacje za pomocą NPX.
+- Instalacja na serwerze wymaga połączenia poprzez aplikacje, która zainstaluje vibe-agent i przeprowadzi nas przez setup.
+
+## Czym się to różni od ptero?
+- Brak centralizacji.
+- **Brak konieczności hostowania panelu**.
+- Używamy kontenerów docker (w przyszłości także innych rozwiązań) zamiast EGG'ów, które są dużym ograniczeniem.
+- UI jest odpalane z localhosta i łączymy się poprzez SSH i dedykowanego użytkownika. Nie ma potrzeby hostowania całej strony i robienia SSL i innych rzeczy, które utrudniają zarządzanie serwerami.
+- Nasze wykorzystanie połączenia p2p bez konieczności korzystania z proxy takiego jak Cloudflare umożliwia przesyłanie dużych plików i wykorzystania całego łącza.
+- Dzięki **Vibe DNS** i **Vibe Firewall** tworzymy całą sieć która współgra jak w rozwiązaniach cloud, ale w mniejszej skali (co w tym przypadku jest dużo lepsze).
+- Pterodactyl skupia się bardziej na zarządzaniu pojedynczymi serwerami. VibeSSH skupia się na zarządzaniu całą siecią lub pojedynczym serwerem.
 
 ## Node
 - **WAŻNE!** nazwa każdego node musi przestrzegać 'RFC 1123 DNS' `^(?=.{1,63}$)[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
