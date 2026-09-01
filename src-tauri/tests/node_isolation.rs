@@ -26,8 +26,17 @@ use vibessh_lib::firewall::FirewallRule;
 use vibessh_lib::models::PortProtocol;
 use vibessh_lib::ssh::{connect, SshAuth, SshCredentials, SshSession};
 
-const TEST_HOST: &str = "94.130.201.103";
-const TEST_USER: &str = "root";
+/// The disposable test VPS.
+///
+/// **Not** the host `docker_runtime.rs` and the other older integration tests
+/// point at. Their doc comments call that one "the real, dedicated VibeSSH
+/// test server"; it stopped being that and now runs a Pterodactyl panel, live
+/// game containers and the cloud backend. This file targeted it for exactly
+/// that reason - the constant was copied - and the tests were run against
+/// production once before the mistake was caught. Nothing was damaged, and
+/// the point stands: do not infer the test host from those files.
+const TEST_HOST: &str = "57.128.203.210";
+const TEST_USER: &str = "ubuntu";
 const TEST_KEY_PATH: &str = r"C:\Users\kompu\.ssh\vibessh_dedi_ed25519";
 
 async fn session() -> Arc<SshSession> {
@@ -40,9 +49,19 @@ async fn session() -> Arc<SshSession> {
     Arc::new(connect(&credentials, None).await.expect("couldn't reach the test host - check the key and the network").session)
 }
 
+/// Runs `command` on the Node as root.
+///
+/// The whole string goes through one `sudo -n sh -c`, deliberately. An
+/// earlier version prefixed `sudo -n` onto the command text, which only
+/// elevated the *first* command in a chain - so `docker network create a &&
+/// docker network create b` silently created one network and failed the
+/// other. The downstream failure looked exactly like a DNS bug in the
+/// feature under test, and cost two wrong conclusions before the mechanism
+/// was checked by hand. Elevate the shell, not the prefix.
 async fn run(session: &SshSession, command: &str) -> String {
-    let output = session.execute_command(command).await.expect("the command should run");
-    format!("{}{}", output.stdout, output.stderr)
+    let script = format!("sudo -n sh -c {}", vibessh_lib::ssh::command::quote(command));
+    let out = session.execute_command(&script).await.expect("command should run");
+    format!("{}{}", out.stdout, out.stderr)
 }
 
 /// Two containers on their own networks cannot reach each other; connected,
@@ -83,23 +102,39 @@ async fn an_application_reaches_another_only_while_they_are_connected() {
         .await;
         run(&session, &format!("docker run -d --name {name_a} --network {net_a} alpine:latest sleep 600 >/dev/null")).await;
 
-        // 1. Default deny. The name must not even resolve.
-        let isolated = run(&session, &format!("docker exec {name_a} sh -c 'nc -w 2 itest-b 9000 || echo UNREACHABLE'")).await;
-        assert!(isolated.contains("UNREACHABLE"), "A reached B with no connection granted: {isolated}");
+        // Wait for B's listener rather than racing it. An earlier version of
+        // this test did not, and its failure looked exactly like a DNS bug -
+        // which cost a wrong conclusion before the mechanism was checked
+        // directly.
+        for _ in 0..10 {
+            if run(&session, &format!("docker exec {name_b} sh -c 'nc -z 127.0.0.1 9000 && echo up || echo down'")).await.contains("up") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+
+        // 1. Default deny. `getent` rather than `nc`, and rather than
+        //    `nslookup`: nslookup appends the host's search domain and
+        //    ignores `ndots:0`, so on a host with one (OpenStack, most
+        //    clouds) it reports NXDOMAIN for a name that resolves perfectly.
+        let isolated = run(&session, &format!("docker exec {name_a} sh -c 'getent hosts itest-b >/dev/null 2>&1 && echo RESOLVED || echo UNREACHABLE'")).await;
+        assert!(isolated.contains("UNREACHABLE"), "A resolved B with no connection granted: {isolated}");
 
         // 2. Connected - the shape `runtime::docker::reconcile_networks`
         //    produces: one private network holding exactly these two.
         run(&session, &format!("docker network create --internal {link}")).await;
         run(&session, &format!("docker network connect --alias itest-b {link} {name_b}")).await;
         run(&session, &format!("docker network connect {link} {name_a}")).await;
-        let connected = run(&session, &format!("docker exec {name_a} sh -c 'nc -w 3 itest-b 9000 || echo UNREACHABLE'")).await;
-        assert!(connected.contains("pong"), "a granted connection did not carry traffic: {connected}");
+        let resolves = run(&session, &format!("docker exec {name_a} sh -c 'getent hosts itest-b >/dev/null 2>&1 && echo RESOLVED || echo UNREACHABLE'")).await;
+        assert!(resolves.contains("RESOLVED"), "the alias did not resolve after the connection was granted: {resolves}");
+        let connected = run(&session, &format!("docker exec {name_a} sh -c 'nc -w 3 itest-b 9000 || echo NOTRAFFIC'")).await;
+        assert!(connected.contains("pong"), "a granted connection resolved but carried no traffic: {connected}");
 
         // 3. Revoked. This is the direction that closes an exposure, so it is
         //    the one worth proving rather than assuming.
         run(&session, &format!("docker network disconnect {link} {name_a}")).await;
-        let revoked = run(&session, &format!("docker exec {name_a} sh -c 'nc -w 2 itest-b 9000 || echo UNREACHABLE'")).await;
-        assert!(revoked.contains("UNREACHABLE"), "A could still reach B after the connection was revoked: {revoked}");
+        let revoked = run(&session, &format!("docker exec {name_a} sh -c 'getent hosts itest-b >/dev/null 2>&1 && echo RESOLVED || echo UNREACHABLE'")).await;
+        assert!(revoked.contains("UNREACHABLE"), "A could still resolve B after the connection was revoked: {revoked}");
     }
     .await;
 
@@ -148,5 +183,70 @@ async fn a_docker_user_rule_reaches_the_kernel_and_can_be_revoked() {
     let after = run(&session, "iptables -S DOCKER-USER").await;
     assert!(!after.contains("59117"), "the rule survived revocation ({removed} removed): {after}");
 
+    outcome
+}
+
+/// Everything a destroyed Application leaves on a Node - or rather, does not.
+///
+/// S-007 was that `delete_application` deleted a database row and nothing
+/// else. The service layer now orders a real teardown, and unit tests cover
+/// *that it is ordered* (`outcome_states`). What they cannot see is whether
+/// the commands it orders actually remove anything on a live Node, which is
+/// the half that was broken.
+///
+/// So this builds the full set of artefacts a running Docker Application
+/// leaves - container, its own network, a connection network, a console FIFO
+/// in the runtime directory - and then runs the teardown pieces the service
+/// calls, checking each one is gone by asking the Node rather than by
+/// trusting the exit code.
+#[tokio::test]
+#[ignore]
+async fn a_torn_down_application_leaves_nothing_on_the_node() {
+    let session = session().await;
+    let id = Uuid::new_v4();
+    let container = format!("vibessh-itest-{}", id.simple());
+    let own_net = format!("vibessh-net-itest-{}", &id.simple().to_string()[..12]);
+    let link_net = format!("vibessh-link-itest-{}", &id.simple().to_string()[..12]);
+    let fifo = format!("/run/vibessh/console/itest-{}.stdin", id.simple());
+
+    let cleanup = format!(
+        "docker rm -f {container} >/dev/null 2>&1; docker network rm {own_net} {link_net} >/dev/null 2>&1; rm -f {fifo}; true"
+    );
+    run(&session, &cleanup).await;
+
+    let outcome = async {
+        // Build the artefacts.
+        run(&session, &format!("docker network create {own_net} && docker network create --internal {link_net}")).await;
+        run(&session, &format!("docker run -d --name {container} --network {own_net} alpine:latest sleep 600 >/dev/null")).await;
+        run(&session, &format!("docker network connect {link_net} {container}")).await;
+        run(&session, &format!("install -d -m 700 /run/vibessh/console && mkfifo -m 600 {fifo}")).await;
+
+        let before = run(&session, &format!("docker ps -a --filter name={container} --format '{{{{.Names}}}}'; ls {fifo}")).await;
+        assert!(before.contains(&container), "setup did not create the container: {before}");
+        assert!(before.contains("itest-"), "setup did not create the fifo: {before}");
+
+        // The teardown, in the order `delete_application` performs it.
+        run(&session, &format!("docker rm -f {container}")).await;
+        run(&session, &format!("docker network rm {link_net} {own_net}")).await;
+        run(&session, &format!("rm -f {fifo}")).await;
+
+        // Ask the Node, do not trust the exit codes.
+        let containers = run(&session, &format!("docker ps -a --filter name={container} --format '{{{{.Names}}}}'")).await;
+        assert!(containers.trim().is_empty(), "the container survived the teardown: {containers}");
+
+        let networks = run(&session, &format!("docker network ls --format '{{{{.Name}}}}' | grep -E '{own_net}|{link_net}' || true")).await;
+        assert!(networks.trim().is_empty(), "a network survived the teardown: {networks}");
+
+        let leftover = run(&session, &format!("ls {fifo} 2>&1 || true")).await;
+        assert!(leftover.contains("No such file"), "the console fifo survived the teardown: {leftover}");
+
+        // And nothing of ours ended up in the world-readable place the
+        // pre-fix versions used.
+        let tmp = run(&session, "ls /tmp/vibessh-stage-* 2>&1 || true").await;
+        assert!(tmp.contains("No such file"), "something is staging into /tmp again: {tmp}");
+    }
+    .await;
+
+    run(&session, &cleanup).await;
     outcome
 }

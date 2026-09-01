@@ -178,6 +178,29 @@ what the daemon claims.
 Both pass. So do the four pre-existing live-node tests (`docker_runtime`,
 `firewall_ufw`, `application_files_sftp`).
 
+**The destructive tests, on the disposable VPS.** `tests/firewall_lockout.rs`
+covers the operation that can end with nobody able to reach the machine:
+`UfwProvider::enable` is refused when no rule covers the live SSH port (and
+ufw stays inactive), and succeeds when it is covered - checked by opening a
+**fresh** connection afterwards, since a rule that only spares established
+ones would pass a weaker test. Both arm a `systemd-run` timer that disables
+ufw a few minutes later, so a genuine lockout self-heals rather than needing
+the provider's console. `tests/node_isolation.rs` gained a teardown test:
+container, both networks and the console FIFO are gone afterwards, asked of
+the Node rather than inferred from exit codes.
+
+**Two wrong conclusions during the pass, both mine, both from the harness.**
+The connection test failed on the second host and I called it a bug in
+S-018's aliasing. It was not: `docker network connect --alias` resolves
+immediately, which a direct check showed. The first wrong probe was
+`nslookup`, which appends the host's search domain and ignores `ndots:0`, so
+it reports NXDOMAIN for names that resolve. The second was `run()` prefixing
+`sudo -n` onto the command text, which elevates only the first command in a
+chain - so `docker network create a && docker network create b` made one
+network and silently failed the other, and the *cleanup* was broken the same
+way, leaving containers behind that the file's own doc comment promised it
+never would. Both are fixed and commented at the call site.
+
 **Created by the pass, still open:**
 - A one-time sweep of what the pre-fix versions left on a Node: world-readable
   `/tmp/vibessh-stage-*` files and orphaned `vibessh-app-*` containers. Every
