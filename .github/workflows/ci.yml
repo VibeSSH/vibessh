@@ -104,5 +104,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
+
+      # One advisory is ignored, and this is the whole justification for it.
+      #
+      # RUSTSEC-2023-0071 (Marvin Attack, 5.9 medium) is against the `rsa`
+      # crate, which cargo-audit itself reports as "No fixed upgrade is
+      # available!" - the constant-time fix has never shipped. It arrives
+      # here transitively down two independent paths this repository does not
+      # control: `russh` -> rsa 0.10.0-rc, and `sqlx-mysql` -> rsa 0.9. There
+      # is nothing to upgrade to and nothing to pin.
+      #
+      # The alternatives were leaving this job red forever - which is how a
+      # gate gets deleted rather than fixed, the same reasoning the npm audit
+      # level above records - or dropping MySQL support and SSH RSA keys,
+      # which is not proportionate to a medium-severity timing sidechannel
+      # against a code path neither library uses for private-key decryption.
+      # See docs/threat-model.md for the exposure and for what would remove
+      # this line.
+      #
+      # It is a deliberately narrow ignore: one advisory id, not a severity
+      # threshold. Anything else, at any severity, still fails this job.
       - name: cargo audit
-        run: cargo audit
+        run: cargo audit --ignore RUSTSEC-2023-0071

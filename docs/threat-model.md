@@ -86,6 +86,21 @@ breaks the model.
   verifies a checksum fetched from the same host as the binary, which
   protects against corruption and not against a compromised release host.
   Needs a real signing pipeline.
+- **RUSTSEC-2023-0071 in `rsa`, with no fix available.** The Marvin Attack
+  is a timing sidechannel that can recover a private key from an oracle that
+  performs PKCS#1 v1.5 *decryption*. VibeSSH pulls `rsa` transitively twice:
+  through `russh`, which uses it to sign and verify SSH authentication, and
+  through `sqlx-mysql`, which uses it to *encrypt* a password with the
+  server's public key when a MySQL connection is not already TLS. Neither is
+  the decrypting side, which is where the oracle would have to be - so the
+  practical exposure looks low, but "looks low" is a judgement, not a
+  measurement, and it is recorded here rather than dismissed.
+
+  The crate has no patched release. CI ignores this one advisory id
+  explicitly (`.github/workflows/ci.yml`) rather than lowering the whole
+  gate. **What removes the line:** a fixed `rsa` release, or `russh` and
+  `sqlx` moving off it. Worth re-checking whenever either is upgraded.
+
 - **Handshake replay** (`security-review.md` finding 4). The bearer
   credential is sent as-is with no challenge-response. Now protected in
   transit by a pinned certificate, so the residual risk is a compromised
