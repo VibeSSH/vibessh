@@ -225,9 +225,28 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > then checked by weakening the fix back to a deferred transaction to confirm
 > it fails. A concurrency test that has not been seen to fail is decoration.
 >
+> **C.3, the slice worth having.** The item asked for every service method
+> against eleven outcome states. Most of that matrix cannot be written
+> honestly without mocks for SSH, Docker and MySQL that this codebase does
+> not have, and a mock's verdict is a statement about the mock. What is
+> written instead is the family the audit actually found bugs in - **partial
+> failure** - against `delete_application`, which is the sharpest case since
+> it used to delete a row and nothing else while reporting success (S-007):
+> NOT FOUND, SUCCESS, CONNECTION LOST/PARTIAL FAILURE against an unreachable
+> Node, RESTART (deleting twice), CONCURRENT (a double-clicked confirm), and
+> the delete options being honoured. The unreachable Node is `127.0.0.1` on
+> a dead port, so it is refused instantly rather than costing a timeout.
+>
+> One test is deliberately narrower than it first looked. A migration onto an
+> unreachable Node is refused *before* any target row is written, so it never
+> reaches `roll_back_target` - the rollback added in F.4 is still unexecuted,
+> and its test says so in its own doc comment rather than letting a green
+> result read as coverage.
+>
 > **Still open:** the rest of C.2 (archive/symlink/Unicode cases beyond what
-> `archive.rs` and each builder already cover), C.3 (the full scenario
-> matrix) and C.5 (Docker lifecycle). The C.6 cases that need a live host -
+> `archive.rs` and each builder already cover), the rest of C.3 (every
+> outcome state that needs a live Node) and C.5 (Docker lifecycle). The C.6
+> cases that need a live host -
 > concurrent DNS sync, concurrent firewall reconcile, concurrent SFTP writes
 > - are deliberately not faked with a mock that would only prove the mock;
 > they belong in the integration pass this whole branch still needs.

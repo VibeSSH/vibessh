@@ -2430,4 +2430,256 @@ mod tests {
             .unwrap();
         assert_eq!(crate::storage::credentials::load_environment_secret(id, "DB_PASSWORD").unwrap(), None);
     }
+    /// FIX_PLAN C.3, the slice of it that is worth having.
+    ///
+    /// The plan asked for every service method against eleven outcome states.
+    /// Most of that matrix cannot be written honestly without mocks for SSH,
+    /// Docker and MySQL that this codebase does not have, and a mock's
+    /// verdict is a statement about the mock. What *can* be checked, and is
+    /// where the audit actually found bugs, is the family of outcomes around
+    /// **partial failure**: an operation that half-succeeded and has to say
+    /// so. `delete_application` is the sharpest example - it used to delete a
+    /// row and nothing else while reporting success (S-007) - so the matrix
+    /// is written against it, plus the migration rollback added in F.4 that
+    /// had never actually been run.
+    ///
+    /// The unreachable Node is `127.0.0.1` on a port nothing listens to.
+    /// That fails with a connection refusal immediately, rather than the
+    /// multi-second timeout a routable-but-dead address would cost every run.
+    mod outcome_states {
+        use super::*;
+
+        fn unreachable_node(server_repo: &ServerRepository, name: &str) -> Uuid {
+            server_repo
+                .create(&crate::models::ServerInput {
+                    name: name.into(),
+                    // Nothing listens here, so `connect` is refused at once.
+                    host: "127.0.0.1".into(),
+                    ssh_port: 1,
+                    username: "root".into(),
+                    authentication_type: crate::models::AuthenticationType::Password,
+                    private_key_path: None,
+                    group_id: None,
+                    password: Some("x".into()),
+                    key_passphrase: None,
+                })
+                .unwrap()
+                .id
+        }
+
+        fn docker_application(app_repo: &ApplicationRepository, server_id: Option<Uuid>, name: &str) -> Uuid {
+            app_repo
+                .create(&CreateApplicationInput {
+                    server_id,
+                    name: name.to_string(),
+                    description: None,
+                    blueprint_id: "generic-docker".to_string(),
+                    blueprint_version: 1,
+                    runtime_type: if server_id.is_some() { RuntimeType::Docker } else { RuntimeType::LocalProcess },
+                    working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
+                    environment: vec![],
+                    ports: vec![],
+                    runtime_config: serde_json::json!({ "command": "sh", "args": [] }),
+                    metadata: serde_json::json!({}),
+                })
+                .unwrap()
+                .application
+                .id
+        }
+
+        /// NOT FOUND. An id that never existed is a `NotFound`, not a report
+        /// full of warnings about an Application nobody asked about.
+        #[tokio::test]
+        async fn deleting_something_that_does_not_exist_is_not_found() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let err = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture,
+                Uuid::new_v4(),
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(err, AppError::NotFound(_)), "{err:?}");
+        }
+
+        /// SUCCESS. A Local Application has no Node, so every Node-side step
+        /// is vacuously complete - and the report has to say *complete*
+        /// rather than leaving a caller unable to tell "nothing to do" from
+        /// "did not try".
+        #[tokio::test]
+        async fn deleting_a_local_application_reports_a_clean_teardown() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let id = docker_application(&app_repo, None, "Local App");
+
+            let report = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            )
+            .await
+            .unwrap();
+
+            assert!(report.warnings.is_empty(), "unexpected warnings: {:?}", report.warnings);
+            assert!(report.firewall_synced && report.dns_synced, "{report:?}");
+            assert!(app_repo.get(id).unwrap().is_none(), "the row should be gone");
+        }
+
+        /// CONNECTION LOST, which is the same thing as PARTIAL FAILURE here.
+        ///
+        /// The row still goes - leaving it would strand the Application in
+        /// the UI with no way to retry - but every step that could not run
+        /// has to appear in `warnings`, and none of the booleans may claim
+        /// something happened. This is exactly the report S-007 did not
+        /// produce.
+        #[tokio::test]
+        async fn deleting_against_an_unreachable_node_reports_every_step_it_could_not_do() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let server_id = unreachable_node(&server_repo, "Dead Node");
+            let id = docker_application(&app_repo, Some(server_id), "Stranded App");
+
+            let report = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            )
+            .await
+            .unwrap();
+
+            assert!(app_repo.get(id).unwrap().is_none(), "the row must still be removed");
+            assert!(!report.container_removed, "claimed to have removed a container on an unreachable node");
+            assert!(!report.warnings.is_empty(), "an unreachable node must produce warnings");
+            // The warnings are shown to a human, so they have to name the
+            // thing that failed rather than being an opaque count.
+            assert!(
+                report.warnings.iter().any(|warning| warning.contains("runtime") || warning.contains("Node") || warning.contains("node")),
+                "no warning mentions what could not be reached: {:?}",
+                report.warnings
+            );
+        }
+
+        /// RESTART / retry. Deleting twice is what an operator does when the
+        /// first attempt reported warnings. The second must be a clean
+        /// `NotFound`, never a panic and never a second partial teardown.
+        #[tokio::test]
+        async fn deleting_twice_is_not_found_the_second_time() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let id = docker_application(&app_repo, None, "Twice");
+
+            delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            )
+            .await
+            .unwrap();
+            let second = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            )
+            .await;
+            assert!(matches!(second, Err(AppError::NotFound(_))), "{second:?}");
+        }
+
+        /// The delete options are a promise about data. `drop_databases:
+        /// false` exists so an operator can keep a database that outlives the
+        /// Application, and a teardown that dropped it anyway would be
+        /// unrecoverable.
+        #[tokio::test]
+        async fn a_teardown_that_was_told_to_keep_databases_reports_none_dropped() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let id = docker_application(&app_repo, None, "Keeps Its Data");
+
+            let report = delete_application(
+                &app_repo,
+                &server_repo,
+                &db_repo,
+                &network_repo,
+                &firewall_rule_repo,
+                &dns_repo,
+                &sessions,
+                &local_process_manager,
+                &log_capture,
+                ".vibe",
+                id,
+                ApplicationDeleteOptions { drop_databases: false, remove_files: false },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(report.databases_dropped, 0);
+            assert!(!report.working_directory_removed, "files were not asked for and must not be reported as removed");
+        }
+
+        /// CONCURRENT. Two deletes of one Application - a double-clicked
+        /// confirm button. Exactly one may report a teardown; the other has
+        /// to be a `NotFound`, not a second run of the Node-side steps.
+        #[tokio::test]
+        async fn two_concurrent_deletes_tear_down_once() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, _rc, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let id = docker_application(&app_repo, None, "Double Clicked");
+
+            let first = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            );
+            let second = delete_for_test(
+                &app_repo, &server_repo, &db_repo, &network_repo, &firewall_rule_repo, &dns_repo, &sessions, &local_process_manager, &log_capture, id,
+            );
+            let (first, second) = tokio::join!(first, second);
+
+            let succeeded = [first.is_ok(), second.is_ok()].iter().filter(|ok| **ok).count();
+            assert_eq!(succeeded, 1, "both deletes reported a teardown for one application");
+            assert!(app_repo.get(id).unwrap().is_none());
+        }
+
+        /// A migration onto an unreachable Node fails, and leaves the
+        /// Applications list exactly as it found it.
+        ///
+        /// **What this does not cover, stated rather than implied.** The
+        /// rollback added in F.4 (`roll_back_target`) runs when provisioning
+        /// fails *after* the target row exists. Reaching that needs the
+        /// target Node to answer far enough for
+        /// `ensure_working_directory_exists` to succeed and then fail later,
+        /// which needs a real SSH server - so this test exercises the
+        /// earlier path, where the migration is refused before any row is
+        /// written. It is still the property an operator cares about (a
+        /// failed migration must not leave a phantom Application), but the
+        /// compensating delete itself is unverified and belongs in the
+        /// integration pass. Naming it here so nobody reads a green test as
+        /// coverage it is not.
+        #[tokio::test]
+        async fn a_migration_onto_an_unreachable_node_leaves_no_application_behind() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, registry_repo, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let source_node = unreachable_node(&server_repo, "Source");
+            let target_node = unreachable_node(&server_repo, "Target");
+            let id = docker_application(&app_repo, Some(source_node), "Migrant");
+            let before = app_repo.list().unwrap().len();
+
+            let locks = crate::state::MigrationLockManager::default();
+            let result = crate::services::migration_service::migrate_application(
+                &app_repo,
+                &server_repo,
+                &network_repo,
+                &dns_repo,
+                &db_repo,
+                ".vibe",
+                &firewall_rule_repo,
+                &registry_repo,
+                &log_capture,
+                &sessions,
+                &locks,
+                &local_process_manager,
+                id,
+                target_node,
+            )
+            .await;
+
+            assert!(result.is_err(), "a migration onto an unreachable node must not report success");
+            assert_eq!(
+                app_repo.list().unwrap().len(),
+                before,
+                "the half-provisioned target application was left behind: {:?}",
+                app_repo.list().unwrap().iter().map(|a| a.name.clone()).collect::<Vec<_>>()
+            );
+        }
+    }
+
 }
