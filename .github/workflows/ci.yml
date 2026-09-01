@@ -1,0 +1,95 @@
+# The repository had no CI at all until this file. Every check here is one
+# that was already meant to hold and had silently stopped holding: the
+# workspace test suite did not compile, 77 backend tests failed on any
+# machine without Postgres, and `npm audit` reported a high-severity
+# advisory - none of which anything would have caught before a release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref - CI feedback on
+  # a commit that has already been replaced is just queue time.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri's own Linux build dependencies. Needed even for `cargo test`,
+      # because the `vibessh` crate links against webkit2gtk.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      # Warnings are denied rather than merely reported. The audit found 72
+      # standing warnings, including a `MutexGuard` held across four await
+      # points; a warning nobody is required to look at is not a signal.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # `--workspace` specifically: the break that hid for months was in an
+      # integration test target, which a bare `cargo test` in one crate would
+      # not have compiled.
+      - name: Test
+        run: cargo test --workspace
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # tsconfig already has `strict`, `noUnusedLocals` and
+      # `noUnusedParameters` on and the codebase already passes - this is
+      # what keeps it that way.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # `--audit-level=high` rather than failing on everything: this is meant
+      # to block a release on something exploitable, not to turn every
+      # transitive advisory into a red build nobody can act on.
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        run: cargo audit

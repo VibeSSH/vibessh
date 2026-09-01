@@ -566,6 +566,11 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
     async fn set_permissions(&self, path: &str, mode: u32) -> AppResult<()> {
         let resolved = self.resolve(path)?;
         let mode_octal = format!("{mode:o}");
+        // `mode` is a u32 straight off the wire, so a caller could send
+        // something that renders as more than four octal digits. The helper
+        // script rejects it too, but failing here gives a message naming the
+        // mode rather than a bare non-zero exit.
+        crate::ssh::command::validate_octal_mode(&mode_octal, "the permission mode")?;
         self.run_helper("chmod", &[&resolved, &mode_octal]).await.map(|_| ())
     }
 

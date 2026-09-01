@@ -56,6 +56,10 @@ pub(crate) fn username(application_id: Uuid) -> String {
 /// is a file/process identity boundary only, never meant for interactive or
 /// SSH login).
 pub(crate) async fn ensure_provisioned(connection: &SshSession, username: &str) -> AppResult<()> {
+    // `username` is derived from a Uuid by `username()` above, so this can
+    // only fail if that derivation changes - which is exactly when it
+    // should fail, before the value reaches `useradd`.
+    crate::ssh::command::validate_linux_username(username, "the Application's account name")?;
     let script = format!(
         "getent group {group} >/dev/null 2>&1 || sudo groupadd --system {group}; \
          id -u {user} >/dev/null 2>&1 || sudo useradd --system --no-create-home --shell /usr/sbin/nologin --gid {group} {user}",

@@ -38,6 +38,7 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{DnsRecord, DnsView, DnsViewKind};
 use crate::services::ssh_service::get_or_connect;
+use crate::ssh::command;
 use crate::state::SshSessionManager;
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
@@ -152,11 +153,22 @@ pub fn resolve_dns_view(
 /// could inject extra `/etc/hosts` lines or shell statements - rejected
 /// outright, same stance `network::wireguard::reject_unsafe` already takes
 /// for the same reason.
+/// The `/etc/hosts` fragment is written through a *quoted* heredoc, so
+/// nothing here is shell-expanded today - but a value still must not be
+/// able to introduce a new line into a line-oriented config file, or
+/// terminate the heredoc early by containing its delimiter.
+///
+/// `reject_shell_metacharacters` on top of that is defense in depth. It
+/// costs nothing for values that are supposed to be hostnames and IPs, and
+/// it keeps this safe if the heredoc ever loses its quotes the way
+/// `network::wireguard`'s had - which is exactly the bug that turned a
+/// peer's public key into remote code execution across the whole mesh.
 fn reject_unsafe(value: &str) -> AppResult<()> {
-    if value.contains('\n') || value.contains('\r') || value.contains("VIBESSH_DNS_EOF") {
+    if value.contains("VIBESSH_DNS_EOF") {
         return Err(AppError::InvalidInput("that value contains characters that aren't allowed in a DNS alias".into()));
     }
-    Ok(())
+    command::reject_newlines(value, "a DNS alias")?;
+    command::reject_shell_metacharacters(value, "a DNS alias")
 }
 
 /// Pure rendering, separated from the actual SSH push - same split every

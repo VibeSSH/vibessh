@@ -22,6 +22,13 @@ use crate::storage::server_repository::ServerRepository;
 /// DNS alias (if any) to the new instance, then retires the old one. See
 /// `services::migration_service`'s own doc comment for the full step order.
 #[tauri::command]
+// Fourteen managed dependencies, because migrating an Application touches
+// almost every subsystem at once: both Nodes, the applications/servers/DNS/
+// database/firewall/registry repositories, the session and lock managers,
+// and the log store. Tauri has no way to inject these other than as
+// parameters. Narrowing this is FIX_PLAN Phase E (E.7), not something to
+// paper over by bundling unrelated dependencies into a context struct.
+#[allow(clippy::too_many_arguments)]
 pub async fn migrate_application(
     app_repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,

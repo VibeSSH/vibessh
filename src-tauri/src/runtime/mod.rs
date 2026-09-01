@@ -16,7 +16,7 @@ pub mod systemd;
 use std::sync::Arc;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Application, ApplicationPort, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
+use crate::models::{Application, ApplicationPort, ApplicationStatus, EnvironmentVariable, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Everything a runtime call needs, resolved once per command rather than
@@ -184,7 +184,10 @@ pub fn validate_resource_limits(memory_limit_mb: Option<u32>, cpu_limit_cores: O
         }
     }
     if let Some(cores) = cpu_limit_cores {
-        if !(cores > 0.0) {
+        // `!(cores > 0.0)` would also be correct - it rejects NaN, which a
+        // bare `cores <= 0.0` does not - but it reads as a typo. This says
+        // the same thing outright.
+        if !cores.is_finite() || cores <= 0.0 {
             return Err(AppError::InvalidInput("the CPU limit must be greater than 0".into()));
         }
     }
@@ -203,6 +206,9 @@ pub fn runtime_type_display_name(runtime_type: RuntimeType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the tests build a full `Application`; the module itself never
+    // names this type.
+    use crate::models::HealthCheckType;
     use crate::errors::AppError;
 
     /// Proves the trait is object-safe (`Box<dyn ApplicationRuntime>`

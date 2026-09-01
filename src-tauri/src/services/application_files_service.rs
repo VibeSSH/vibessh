@@ -41,6 +41,11 @@ pub const MAX_EDITABLE_FILE_SIZE: u64 = 1024 * 1024;
 
 /// Settled permission-string catalog (see this module's own doc comment
 /// for why nothing enforces these yet).
+// Nothing enforces these yet, by design (see the module doc comment) - the
+// catalog is settled ahead of the permission system that will read it, so
+// that system does not get to invent a second set of names. Kept compiling
+// rather than commented out precisely so it cannot silently drift.
+#[allow(dead_code)]
 pub mod permissions {
     pub const VIEW: &str = "applications.files.view";
     pub const DOWNLOAD: &str = "applications.files.download";

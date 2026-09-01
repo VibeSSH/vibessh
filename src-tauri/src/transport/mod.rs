@@ -12,6 +12,12 @@ use crate::errors::AppResult;
 /// `if connection_mode == ...` outside of the one place that picks which
 /// transport to construct.
 #[async_trait::async_trait]
+// AUDIT A-001: every method here is unreachable - `SshSession` is used
+// concretely at every call site, and the second implementation this trait
+// was shaped for (`AgentTransport`) does not exist. Whether to delete it or
+// make it the real seam is a Phase E decision; silencing the warning here
+// records that it is known, without letting CI force the answer.
+#[allow(dead_code)]
 pub trait ServerConnection: Send + Sync {
     async fn execute_command(&self, command: &str) -> AppResult<CommandOutput>;
     async fn get_metrics(&self) -> AppResult<ServerMetrics>;

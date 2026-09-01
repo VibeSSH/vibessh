@@ -187,7 +187,7 @@ impl SshSession {
     /// diffs the two to get a real rate instead of a single-point-in-time
     /// number that doesn't mean anything for CPU%/network throughput.
     pub(super) fn swap_metrics_sample(&self, new_sample: MetricsSample) -> Option<MetricsSample> {
-        std::mem::replace(&mut self.metrics_sample.lock().expect("metrics sample mutex poisoned"), Some(new_sample))
+        self.metrics_sample.lock().expect("metrics sample mutex poisoned").replace(new_sample)
     }
 
     /// Lazily negotiates the SFTP subsystem on first use and reuses it for

@@ -87,7 +87,7 @@ use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
-use crate::ssh::command::quote as shell_quote;
+use crate::ssh::command::{quote as shell_quote, reject_newlines};
 
 use super::{
     health_check, validate_resource_limits, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider,
@@ -198,16 +198,6 @@ fn remote_path(working_directory: &str, file_name: &str) -> String {
     format!("{}/{}", working_directory.trim_end_matches('/'), file_name)
 }
 
-/// A raw newline in an image ref, command argument, or environment value
-/// could inject an extra shell statement into the generated `docker
-/// create` command - rejected outright, same stance the other two SSH
-/// runtimes take.
-fn reject_newlines(value: &str, field: &str) -> AppResult<()> {
-    if value.contains('\n') || value.contains('\r') {
-        return Err(AppError::InvalidInput(format!("{field} can't contain a newline")));
-    }
-    Ok(())
-}
 
 
 /// POSIX environment variable name rule - also guards against a key

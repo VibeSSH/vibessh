@@ -247,7 +247,7 @@ mod tests {
     fn parses_a_realistic_proc_stat_line() {
         let (idle, total) = parse_cpu_line("cpu  3357 12 4313 1362393 55 0 7 0 0 0\n").unwrap();
         assert_eq!(idle, 1362393 + 55);
-        assert_eq!(total, 3357 + 12 + 4313 + 1362393 + 55 + 0 + 7 + 0);
+        assert_eq!(total, ((3357 + 12 + 4313 + 1362393 + 55) + 7));
     }
 
     #[test]

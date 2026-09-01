@@ -1,0 +1,12 @@
+# Tauri injects every managed dependency as a function parameter, so a
+# command that touches six repositories has six parameters and no way to
+# have fewer - and the service function behind it mirrors that signature.
+# Clippy's default of 7 is calibrated for ordinary functions, not for
+# dependency-injection-by-parameter, and at that setting the lint fired on
+# eight functions that were all shaped correctly for the framework.
+#
+# 10 is still a real bar: anything wider than this needs an explicit
+# `#[allow]` at the definition, which is how `delete_application` and
+# `migrate_application` are marked. Narrowing those genuinely-wide
+# signatures is tracked as FIX_PLAN Phase E (E.7), not silenced here.
+too-many-arguments-threshold = 10

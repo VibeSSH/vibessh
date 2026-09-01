@@ -2123,6 +2123,12 @@ mod tests {
     /// never plaintext on a normal read, resolved back only for an actual
     /// runtime, "leave blank to keep" on edit, and cleaned up both when
     /// removed and when the Application itself is deleted.
+    // The guard's whole job is to serialize real OS-keyring access across
+    // tests, so it must be held for the duration of the awaits it is
+    // guarding. Safe here because `#[tokio::test]` runs this future on a
+    // current-thread runtime - a `std::sync::MutexGuard` is not `Send`, so
+    // the compiler would reject it on a multi-threaded one.
+    #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn secret_environment_variables_never_leak_plaintext_and_round_trip_through_the_keyring() {
         let _guard = crate::storage::credentials::KEYRING_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
