@@ -3,6 +3,14 @@
 //! common::register_user rather than sharing fixtures, so tests never
 //! interfere with each other even run in parallel against the same
 //! persistent dev database.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -11,6 +19,7 @@ use serde_json::json;
 use common::{delete, get_with_bearer, post, post_with_bearer, register_user, test_router};
 
 #[tokio::test]
+#[ignore]
 async fn creating_a_team_makes_the_creator_its_owner_and_only_member() {
     let (_, access_token) = register_user().await;
 
@@ -27,6 +36,7 @@ async fn creating_a_team_makes_the_creator_its_owner_and_only_member() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn list_teams_only_returns_teams_the_caller_is_a_member_of() {
     let (_, access_token) = register_user().await;
     let (status, _) = post_with_bearer(test_router().await, "/teams", &access_token, json!({ "name": "My Team" })).await;
@@ -44,6 +54,7 @@ async fn list_teams_only_returns_teams_the_caller_is_a_member_of() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_member_gets_not_found_not_forbidden_for_a_real_team() {
     // Deliberately 404, not 403 - a non-member shouldn't be able to tell a
     // real team they're excluded from apart from one that doesn't exist.
@@ -57,6 +68,7 @@ async fn a_non_member_gets_not_found_not_forbidden_for_a_real_team() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_add_an_existing_user_by_email_and_they_appear_as_a_non_owner_member() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Growing Team" })).await;
@@ -80,6 +92,7 @@ async fn owner_can_add_an_existing_user_by_email_and_they_appear_as_a_non_owner_
 }
 
 #[tokio::test]
+#[ignore]
 async fn adding_a_member_who_is_already_on_the_team_is_a_conflict() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -95,6 +108,7 @@ async fn adding_a_member_who_is_already_on_the_team_is_a_conflict() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn adding_a_member_with_no_matching_account_is_not_found() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -111,6 +125,7 @@ async fn adding_a_member_with_no_matching_account_is_not_found() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_add_other_members() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -131,6 +146,7 @@ async fn a_non_owner_member_cannot_add_other_members() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_remove_a_non_owner_member() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -155,6 +171,7 @@ async fn owner_can_remove_a_non_owner_member() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_owner_cannot_be_removed_as_a_member() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -166,6 +183,7 @@ async fn the_owner_cannot_be_removed_as_a_member() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_remove_anyone() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -180,6 +198,7 @@ async fn a_non_owner_member_cannot_remove_anyone() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_delete_the_team_and_it_becomes_unreachable_afterward() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Doomed Team" })).await;
@@ -193,6 +212,7 @@ async fn owner_can_delete_the_team_and_it_becomes_unreachable_afterward() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_delete_the_team() {
     let (_, owner_token) = register_user().await;
     let (_, team) = post_with_bearer(test_router().await, "/teams", &owner_token, json!({ "name": "Team" })).await;
@@ -206,6 +226,7 @@ async fn a_non_owner_member_cannot_delete_the_team() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn creating_a_team_without_authentication_is_unauthorized() {
     let (status, _) = post(test_router().await, "/teams", json!({ "name": "No Auth Team" })).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);

@@ -1,4 +1,12 @@
 //! Real integration tests for Invitations, against a real Postgres.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -13,6 +21,7 @@ async fn create_team(owner_token: &str, name: &str) -> serde_json::Value {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_invite_an_email_and_the_raw_token_is_only_ever_returned_once() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -38,6 +47,7 @@ async fn owner_can_invite_an_email_and_the_raw_token_is_only_ever_returned_once(
 }
 
 #[tokio::test]
+#[ignore]
 async fn inviting_an_email_that_already_belongs_to_a_member_is_a_conflict() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -52,6 +62,7 @@ async fn inviting_an_email_that_already_belongs_to_a_member_is_a_conflict() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_second_pending_invitation_to_the_same_email_is_a_conflict() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -66,6 +77,7 @@ async fn a_second_pending_invitation_to_the_same_email_is_a_conflict() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_send_invitations() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -85,6 +97,7 @@ async fn a_non_owner_member_cannot_send_invitations() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_invited_user_can_accept_and_becomes_a_real_member() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -108,6 +121,7 @@ async fn the_invited_user_can_accept_and_becomes_a_real_member() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn accepting_an_invitation_with_a_role_assigns_that_role() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -140,6 +154,7 @@ async fn accepting_an_invitation_with_a_role_assigns_that_role() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_different_logged_in_user_cannot_accept_someone_elses_invitation() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -157,6 +172,7 @@ async fn a_different_logged_in_user_cannot_accept_someone_elses_invitation() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn an_unknown_token_is_not_found() {
     let (_, token) = register_user().await;
     let (status, _) = post_with_bearer(test_router().await, "/invitations/not-a-real-token/accept", &token, json!({})).await;
@@ -164,6 +180,7 @@ async fn an_unknown_token_is_not_found() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_invitee_can_decline_instead_of_accepting() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -186,6 +203,7 @@ async fn the_invitee_can_decline_instead_of_accepting() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_revoke_a_pending_invitation_and_it_can_no_longer_be_accepted() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -205,6 +223,7 @@ async fn owner_can_revoke_a_pending_invitation_and_it_can_no_longer_be_accepted(
 }
 
 #[tokio::test]
+#[ignore]
 async fn revoking_an_already_accepted_invitation_is_a_conflict() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;

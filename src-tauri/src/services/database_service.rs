@@ -24,6 +24,9 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::ssh::SshSession;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::credentials::{self, SecretKind};
@@ -527,23 +530,6 @@ fn build_mysql_command(host: &DatabaseHost, admin_password: &str, sql: &str) -> 
     )
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, matching how it's already duplicated across several modules in
-/// this codebase.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 fn slugify(input: &str) -> String {
     input.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()

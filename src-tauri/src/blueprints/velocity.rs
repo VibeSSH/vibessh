@@ -5,6 +5,9 @@ use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldT
 use crate::services::latest_velocity_build;
 
 use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 /// Not a user-facing wizard field - see `paper::JAR_FILENAME_KEY`'s own
 /// doc comment for the full reasoning (identical here).
@@ -159,23 +162,6 @@ async fn download_file(context: &ProvisionContext<'_>, url: &str, filename: &str
     }
 }
 
-/// POSIX single-quote shell escaping - duplicated across
-/// `runtime::remote_process`, `runtime::docker`,
-/// `services::application_service`, and `blueprints::paper`; see
-/// `runtime::remote_process`'s copy for the full reasoning.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 #[cfg(test)]
 mod tests {

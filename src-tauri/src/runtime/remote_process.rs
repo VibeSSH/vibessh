@@ -50,6 +50,9 @@ use crate::models::ApplicationStatus;
 use crate::ssh::SshSession;
 
 use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 /// What `runtime_config` deserializes into for `RuntimeType::RemoteProcess`.
 /// `cpu_limit_cores` is set through the same `ResourceLimitsCard`/
@@ -107,23 +110,6 @@ fn reject_newlines(value: &str, field: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// POSIX single-quote shell escaping: wraps in `'...'` and replaces every
-/// embedded `'` with `'\''` (close the quote, an escaped literal quote,
-/// reopen the quote) - the standard, unambiguous way to pass an arbitrary
-/// string as one shell word regardless of its contents.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// POSIX environment variable name rule - also guards against a key
 /// containing `=` or whitespace, which would break the `KEY=value` token
@@ -172,8 +158,17 @@ fn build_start_script(ctx: &RuntimeContext<'_>, config: &RemoteProcessConfig) ->
     }
 
     let mut script = format!(
+        // `-m 600` rather than whatever the account's umask happens to
+        // produce: this fifo is the running process's stdin, so read access
+        // lets another local account steal console input meant for it, and
+        // write access would let them inject their own. Less exposed than
+        // `runtime::docker`'s fifo used to be (that one was explicitly
+        // `chmod 666`; this has always been created by the admin without
+        // sudo), but there is no reason for anyone but the owner to have
+        // either permission.
         "cd {working_directory} || exit 1\n\
-         mkfifo {fifo} 2>/dev/null\n\
+         mkfifo -m 600 {fifo} 2>/dev/null\n\
+         chmod 600 {fifo}\n\
          exec 3<>{fifo}\n\
          {env_prefix}nohup {command_line} <&3 3<&- >{log} 2>&1 &\n\
          echo $! > {pid_file}\n\

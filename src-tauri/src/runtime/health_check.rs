@@ -14,6 +14,9 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationLocation, ApplicationStatus};
 
 use super::{HealthCheckSpec, HealthStatus, RuntimeContext};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -122,23 +125,6 @@ fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a crate::ssh::
     ctx.connection.as_deref().ok_or_else(|| AppError::Internal("a remote health check requires a connection".into()))
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, same as it's already duplicated across several modules in this
-/// codebase.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// The real Minecraft Server List Ping protocol (post-1.7, VarInt-framed) -
 /// see https://minecraft.wiki/w/Java_Edition_protocol/Server_List_Ping for

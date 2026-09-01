@@ -1,5 +1,13 @@
 //! Real integration tests for team-scoped server metadata, against a real
 //! Postgres.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -14,6 +22,7 @@ async fn create_team(owner_token: &str, name: &str) -> serde_json::Value {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_add_a_server_and_it_appears_in_the_teams_list() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -40,6 +49,7 @@ async fn owner_can_add_a_server_and_it_appears_in_the_teams_list() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn defaults_to_port_22_when_not_specified() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -51,6 +61,7 @@ async fn defaults_to_port_22_when_not_specified() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_add_a_server() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -70,6 +81,7 @@ async fn a_non_owner_member_cannot_add_a_server() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_member_cannot_list_servers() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -81,6 +93,7 @@ async fn a_non_member_cannot_list_servers() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_remove_a_server() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -98,6 +111,7 @@ async fn owner_can_remove_a_server() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn an_empty_host_is_rejected() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;

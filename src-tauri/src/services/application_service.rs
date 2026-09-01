@@ -19,6 +19,9 @@ use crate::models::{
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{self, ApplicationRuntime, HealthCheckSpec, HealthStatus, ResourceUsage, RuntimeContext};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
+// The one shared implementation - this module used to carry its own
+// byte-identical copy, one of six across the codebase.
+use crate::ssh::command::quote as shell_quote;
 use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
@@ -217,6 +220,7 @@ pub async fn create_application(
     if working_directory.is_empty() {
         return Err(AppError::InvalidInput("a working directory is required".into()));
     }
+    validate_remote_working_directory(input.server_id, working_directory)?;
 
     let handler = registry
         .get(&input.blueprint_id)
@@ -299,6 +303,28 @@ pub async fn create_application(
 /// in-memory list (still holding the real values it was given) rather than
 /// re-reading from the repository, which would only see the redacted rows
 /// it just wrote.
+/// An Application on a Node gets a directory that VibeSSH itself will act
+/// on with root privileges - most consequentially
+/// `runtime::docker::ensure_working_directory_owned_by_dedicated_user`,
+/// which runs `sudo chown -R <the Application's own unprivileged account>`
+/// over it on every start. Naming a shared system directory there doesn't
+/// produce an error, it produces a broken host: `chown -R` on `/`, `/etc`
+/// or `/usr` hands the whole filesystem to an account with no login shell,
+/// and there is no undo. Validating the path at the one place it enters the
+/// system is the only place this can be caught cheaply.
+///
+/// **Only for Applications on a Node.** A local Application runs on the
+/// operator's own machine through `LocalProcessManager` - no SSH, no
+/// `sudo`, no chown, and its `working_directory` is a native path
+/// (`C:\Users\...` on Windows) that a POSIX-shaped check would reject for
+/// no benefit.
+fn validate_remote_working_directory(server_id: Option<Uuid>, working_directory: &str) -> AppResult<()> {
+    if server_id.is_none() {
+        return Ok(());
+    }
+    crate::ssh::command::validate_application_directory(working_directory)
+}
+
 pub(crate) fn store_secret_environment_values(application_id: Uuid, environment: &[EnvironmentVariable]) -> AppResult<()> {
     for env in environment {
         if env.is_secret {
@@ -426,6 +452,13 @@ pub(super) async fn ensure_working_directory_exists(
         // channel" right at the very first step of creating an Application,
         // on a session that had simply gone idle since it was last used.
         Some(server_id) => retry_on_connection_failure(sessions, Some(server_id), || async {
+            // Re-validated here, not only in `create_application`: this is
+            // the function that actually runs `mkdir -p`/`chown` against a
+            // real host, and `migration_service` calls it directly with a
+            // directory it carried over from another Node rather than one a
+            // caller just typed. The check has to sit where the privileged
+            // command is, not only where the happy path enters.
+            validate_remote_working_directory(Some(server_id), working_directory)?;
             let connection = get_or_connect(server_repo, sessions, server_id).await?;
             let output = connection.execute_command(&format!("mkdir -p {}", shell_quote(working_directory))).await?;
             if output.exit_code == 0 {
@@ -468,24 +501,6 @@ pub(super) async fn ensure_working_directory_exists(
     }
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared across the `services`/`runtime` module boundary, same as it's
-/// already duplicated between `runtime::remote_process` and
-/// `runtime::docker`.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 pub async fn delete_application(repo: &ApplicationRepository, log_capture: &LogCaptureStore, id: Uuid) -> AppResult<()> {
     // Best-effort, and before the row itself goes away - `ON DELETE CASCADE`
@@ -1301,6 +1316,51 @@ mod tests {
         let mut input = sleep_command_input();
         input.name = "   ".to_string();
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
+    }
+
+    /// An Application on a Node has `sudo chown -R <its own account>` run
+    /// over its `working_directory` on every start
+    /// (`runtime::docker::ensure_working_directory_owned_by_dedicated_user`).
+    /// Naming a shared system directory there doesn't fail, it hands the
+    /// host's filesystem to an unprivileged account with no way back - so
+    /// these have to be refused before anything touches the Node at all,
+    /// which is also why this test needs no live connection to pass.
+    #[tokio::test]
+    async fn create_refuses_a_system_directory_for_an_application_on_a_node() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
+        let server = server_repo
+            .create(&crate::models::ServerInput {
+                name: "Node".to_string(),
+                host: "203.0.113.10".to_string(),
+                ssh_port: 22,
+                username: "root".to_string(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("unused - validation rejects before connecting".to_string()),
+                key_passphrase: None,
+            })
+            .unwrap();
+        for hostile in ["/", "/etc", "/home", "/usr", "/var", "/root", "/srv", "srv/app", "/srv/../etc"] {
+            let mut input = sleep_command_input();
+            input.server_id = Some(server.id);
+            input.runtime_type = RuntimeType::RemoteProcess;
+            input.working_directory = hostile.to_string();
+            let result = create_application(&app_repo, &registry, &server_repo, &sessions, input).await;
+            assert!(result.is_err(), "should have refused {hostile:?}");
+        }
+    }
+
+    /// The mirror of the test above: the same check must not reject a
+    /// *local* Application, whose `working_directory` is a native path on
+    /// the operator's own machine (`C:\Users\...` on Windows) and which
+    /// never goes near `sudo` or a remote host.
+    #[tokio::test]
+    async fn create_still_accepts_a_native_local_working_directory() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
+        let input = sleep_command_input();
+        assert!(input.server_id.is_none());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_ok());
     }
 
     #[tokio::test]

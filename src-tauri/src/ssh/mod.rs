@@ -5,6 +5,12 @@
 //! and its keyring secret into the `SshCredentials` this module needs.
 
 pub mod client;
+// The single place untrusted values become pieces of a remote command -
+// `pub(crate)` because every module that builds a command string (services,
+// runtime, files, network, firewall) must reach it, and none of them should
+// keep a private copy. See its own doc comment for why the copies it
+// replaced were a security problem, not just duplication.
+pub(crate) mod command;
 // `pub(crate)` (not just `mod`) so `runtime::docker` (Applications) can
 // reuse `validate_container_ref` for its own `docker create`/`inspect`/
 // `stats` calls, not only the calls this module's own methods already

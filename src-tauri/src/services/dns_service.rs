@@ -39,6 +39,9 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{DnsRecord, DnsView, DnsViewKind};
 use crate::services::ssh_service::get_or_connect;
 use crate::state::SshSessionManager;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::dns_repository::DnsRepository;
 use crate::storage::node_network_repository::NodeNetworkRepository;
@@ -260,19 +263,6 @@ pub async fn verify_alias(
     Ok(output.exit_code == 0 && output.stdout.split_whitespace().next() == Some(expected_ip))
 }
 
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// What every alias-mutating Tauri command actually returns - the mutated
 /// alias itself (`None` for a delete, nothing left to describe) plus the

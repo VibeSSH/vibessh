@@ -24,6 +24,9 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::ssh::SshSession;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 /// Every dedicated per-Application account's shared group - also what
 /// `files::sudo_user`'s installed sudoers rule scopes its `RunAs` list to
@@ -85,23 +88,6 @@ pub(crate) async fn user_id(connection: &SshSession, username: &str) -> AppResul
     Ok(format!("{uid}:{gid}"))
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, matching how it's already duplicated across several modules in
-/// this codebase.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 #[cfg(test)]
 mod tests {

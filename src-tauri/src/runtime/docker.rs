@@ -85,6 +85,9 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Application, ApplicationStatus, EnvironmentVariable, PortProtocol};
 use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 use super::{
     health_check, validate_resource_limits, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider,
@@ -185,6 +188,12 @@ fn fifo_file_name(application_id: Uuid) -> String {
     format!(".vibessh-app-{application_id}.stdin")
 }
 
+/// Where an Application's console fifo actually lives - see
+/// `build_attach_script` for why this is not inside `working_directory`.
+fn console_fifo_path(application_id: Uuid) -> String {
+    format!("{}/{application_id}.stdin", crate::node_paths::CONSOLE_DIR)
+}
+
 fn remote_path(working_directory: &str, file_name: &str) -> String {
     format!("{}/{}", working_directory.trim_end_matches('/'), file_name)
 }
@@ -200,23 +209,6 @@ fn reject_newlines(value: &str, field: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, matching how `ssh::docker`/`ssh::systemd` don't share code
-/// despite a similar shape either.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// POSIX environment variable name rule - also guards against a key
 /// containing `=`, which `docker create -e` would otherwise misparse.
@@ -448,34 +440,48 @@ async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, con
 /// `build_create_command`/`create_container` already establish in this
 /// module.
 ///
-/// `mkfifo` and its permissive `chmod` both run under `sudo`, and the
-/// connecting admin's own following `exec 3<>` deliberately doesn't: a
-/// `run_as_dedicated_user` Application's `working_directory` is owned by
-/// its own dedicated account, not the admin
-/// (`ensure_working_directory_owned_by_dedicated_user`), so the admin has
-/// no permission to *create* a new file there directly - only `sudo` can.
-/// `chmod 666` is what then lets the unprivileged admin's own `exec 3<>`
-/// open that root-created fifo for reading and writing right after,
-/// something merely owning the fifo wouldn't otherwise grant a different
-/// user.
+/// **The FIFO deliberately does not live in `working_directory`.** It used
+/// to, created under `sudo` and then `chmod 666`'d so the connecting
+/// admin's own `exec 3<>` could open a root-created fifo inside a directory
+/// owned by the Application's dedicated account. Mode 666 on a path inside
+/// the bind-mounted application directory means *every* local account on
+/// the Node - including every other Application's dedicated account, and
+/// the Application's own process from inside its container - could write to
+/// it, and this fifo **is** the container's stdin. For a game server that
+/// is arbitrary console commands (`op`, `stop`); for any other image it is
+/// arbitrary input to PID 1. That defeats the isolation the dedicated-account
+/// model exists to provide.
+///
+/// Moving it to `node_paths::CONSOLE_DIR` - a 0700 directory owned by the
+/// connecting admin - removes the need for both the `sudo` and the
+/// permissive mode: the admin creates and opens a fifo it already owns, in
+/// a directory nothing else can enter, and `docker attach` (which does run
+/// under `sudo`) reads it through an already-open file descriptor rather
+/// than by path.
 ///
 /// Self-heals a fifo path that isn't actually a fifo: `mkfifo` refuses to
-/// create one where *anything* else already exists, silently (the whole
-/// point of this script's own `2>/dev/null`) - normally a harmless no-op
-/// since a real fifo from a previous start is exactly what's expected to
-/// already be there, but a regular file left at that exact path (e.g. by
-/// an older, now-fixed version of `DockerConsole::write` that wrote
-/// straight to it instead of through this fifo) would permanently wedge
-/// every future console attach with no error to explain why - `test -p`
-/// checks the existing path is genuinely a fifo before trusting it, and
-/// clears anything else out of the way first.
+/// create one where *anything* else already exists, silently - normally a
+/// harmless no-op since a real fifo from a previous start is exactly what's
+/// expected to be there, but a regular file left at that exact path would
+/// permanently wedge every future console attach with no error to explain
+/// why. `test -p` checks the existing path is genuinely a fifo before
+/// trusting it, and clears anything else out of the way first.
+///
+/// Also removes the old world-writable fifo from `working_directory` if a
+/// previous version of VibeSSH left one there - otherwise upgrading would
+/// fix new Applications while quietly leaving the vulnerable fifo in place
+/// for every Application that had already been started once.
 fn build_attach_script(ctx: &RuntimeContext<'_>, name: &str) -> AppResult<String> {
     validate_container_ref(name)?;
-    let fifo = shell_quote(&remote_path(&ctx.application.working_directory, &fifo_file_name(ctx.application.id)));
+    let fifo = shell_quote(&console_fifo_path(ctx.application.id));
+    let legacy_fifo = shell_quote(&remote_path(&ctx.application.working_directory, &fifo_file_name(ctx.application.id)));
+    let ensure_dirs = crate::node_paths::ensure_runtime_dirs_command();
     Ok(format!(
-        "if [ -e {fifo} ] && [ ! -p {fifo} ]; then sudo rm -f {fifo}; fi\n\
-         sudo mkfifo {fifo} 2>/dev/null\n\
-         sudo chmod 666 {fifo}\n\
+        "{ensure_dirs}\n\
+         sudo rm -f {legacy_fifo}\n\
+         if [ -e {fifo} ] && [ ! -p {fifo} ]; then rm -f {fifo}; fi\n\
+         [ -p {fifo} ] || mkfifo -m 600 {fifo}\n\
+         chmod 600 {fifo}\n\
          exec 3<>{fifo}\n\
          nohup sudo docker attach --sig-proxy=false {name} <&3 3<&- >/dev/null 2>&1 &\n\
          disown\n"
@@ -740,7 +746,7 @@ impl ApplicationRuntime for DockerRuntime {
             return Ok(None);
         }
         let connection = connection_arc(ctx)?;
-        let fifo_path = remote_path(&ctx.application.working_directory, &fifo_file_name(ctx.application.id));
+        let fifo_path = console_fifo_path(ctx.application.id);
         Ok(Some(Box::new(DockerConsole { connection, fifo_path })))
     }
 
@@ -796,7 +802,10 @@ impl ApplicationConsole for DockerConsole {
         // already does.
         let output = self
             .connection
-            .execute_command(&format!("printf '%s\\n' {} | sudo tee -a {} >/dev/null", shell_quote(input), shell_quote(&self.fifo_path)))
+            // No `sudo`: the fifo now lives in a directory owned by the
+            // connecting admin (see `build_attach_script`), so writing to
+            // it needs no privilege at all.
+            .execute_command(&format!("printf '%s\\n' {} | tee -a {} >/dev/null", shell_quote(input), shell_quote(&self.fifo_path)))
             .await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
@@ -1021,16 +1030,46 @@ mod tests {
 
         let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
         assert!(script.contains("[ ! -p "), "{script}");
-        assert!(script.contains("sudo mkfifo "), "{script}");
-        assert!(script.contains("sudo chmod 666 "), "{script}");
-        assert!(script.contains("'/srv/my-app/.vibessh-app-"), "{script}");
+        assert!(script.contains("mkfifo -m 600 "), "{script}");
+        assert!(script.contains(&format!("'{}/", crate::node_paths::CONSOLE_DIR)), "{script}");
         assert!(script.contains(".stdin'"), "{script}");
         assert!(script.contains("docker attach --sig-proxy=false vibessh-app-test "), "{script}");
         assert!(script.contains("<&3 3<&-"), "{script}");
-        // `exec 3<>` (the admin's own, unprivileged open) must come after
-        // both `sudo` steps - it depends on the fifo already existing and
-        // already being permissive.
-        assert!(script.find("chmod 666").unwrap() < script.find("exec 3<>").unwrap(), "{script}");
+        // `exec 3<>` depends on the fifo already existing.
+        assert!(script.find("mkfifo").unwrap() < script.find("exec 3<>").unwrap(), "{script}");
+    }
+
+    /// The regression test for the finding this move exists for: the fifo
+    /// is the container's stdin, so anything that can write to it can issue
+    /// console commands to somebody else's Application.
+    #[test]
+    fn build_attach_script_never_makes_the_console_fifo_world_writable() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
+        assert!(!script.contains("666"), "{script}");
+        assert!(script.contains("chmod 600 "), "{script}");
+    }
+
+    /// The fifo must not sit inside `working_directory`, which is
+    /// bind-mounted into the container - a fifo there is reachable by the
+    /// very process whose stdin it controls, and by anything else that can
+    /// read that directory.
+    #[test]
+    fn build_attach_script_keeps_the_fifo_out_of_the_bind_mounted_directory() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let fifo = console_fifo_path(application.id);
+        assert!(!fifo.starts_with(&application.working_directory), "{fifo}");
+
+        // ...and an Application started by an older build must have its
+        // old, world-writable fifo removed rather than left behind.
+        let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
+        assert!(script.contains(&format!("sudo rm -f '/srv/my-app/.vibessh-app-{}.stdin'", application.id)), "{script}");
     }
 
     #[test]

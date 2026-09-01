@@ -25,7 +25,9 @@ use vibessh_lib::models::{AuthenticationType, ServerInput};
 use vibessh_lib::services;
 use vibessh_lib::state::SshSessionManager;
 use vibessh_lib::storage::application_repository::ApplicationRepository;
+use vibessh_lib::storage::dns_config::DEFAULT_SUFFIX;
 use vibessh_lib::storage::dns_repository::DnsRepository;
+use vibessh_lib::storage::firewall_rule_repository::FirewallRuleRepository;
 use vibessh_lib::storage::node_network_repository::NodeNetworkRepository;
 use vibessh_lib::storage::server_repository::ServerRepository;
 
@@ -54,6 +56,7 @@ struct TestRepos {
     network_repo: NodeNetworkRepository,
     app_repo: ApplicationRepository,
     dns_repo: DnsRepository,
+    firewall_rule_repo: FirewallRuleRepository,
     sessions: SshSessionManager,
 }
 
@@ -64,6 +67,7 @@ fn temp_repos() -> TestRepos {
         network_repo: NodeNetworkRepository::open(&path).unwrap(),
         app_repo: ApplicationRepository::open(&path).unwrap(),
         dns_repo: DnsRepository::open(&path).unwrap(),
+        firewall_rule_repo: FirewallRuleRepository::open(&path).unwrap(),
         sessions: SshSessionManager::new(),
     }
 }
@@ -112,7 +116,7 @@ async fn two_real_nodes_join_the_mesh_reach_each_other_and_resolve_dns() {
 }
 
 async fn run_test(repos: TestRepos, node_a_id: uuid::Uuid, node_b_id: uuid::Uuid) {
-    let TestRepos { server_repo, network_repo, app_repo, dns_repo, sessions } = &repos;
+    let TestRepos { server_repo, network_repo, app_repo, dns_repo, firewall_rule_repo, sessions } = &repos;
 
     // Both Nodes join - each join reconciles the whole mesh, so after the
     // second join both sides know about each other.
@@ -175,10 +179,10 @@ async fn run_test(repos: TestRepos, node_a_id: uuid::Uuid, node_b_id: uuid::Uuid
             metadata: serde_json::json!({}),
         })
         .unwrap();
-    let alias = services::create_dns_alias(dns_repo, app.application.id, "vibe-network-test-svc").unwrap();
+    let alias = services::create_dns_alias(DEFAULT_SUFFIX, dns_repo, app.application.id, "vibe-network-test-svc").unwrap();
     assert_eq!(alias.hostname, "vibe-network-test-svc.vibe");
 
-    let dns_results = services::sync_dns(network_repo, server_repo, app_repo, dns_repo, sessions).await.unwrap();
+    let dns_results = services::sync_dns(DEFAULT_SUFFIX, network_repo, server_repo, app_repo, dns_repo, sessions).await.unwrap();
     assert_eq!(dns_results.len(), 2);
     assert!(dns_results.iter().all(|r| r.ok), "{dns_results:?}");
 
@@ -186,6 +190,7 @@ async fn run_test(repos: TestRepos, node_a_id: uuid::Uuid, node_b_id: uuid::Uuid
     assert!(resolved, "vibe-network-test-svc.vibe should resolve to Node B's mesh IP ({}) on a real member", member_b.wireguard_ip);
 
     // Firewall: the mesh port must be allowed on both real hosts.
-    let firewall_a = services::sync_application_node_firewall(app_repo, server_repo, network_repo, sessions, app.application.id).await;
+    let firewall_a =
+        services::sync_application_node_firewall(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, app.application.id).await;
     assert!(firewall_a.is_ok(), "{firewall_a:?}");
 }

@@ -22,6 +22,11 @@ pub mod files;
 // `tests/docker_runtime.rs` real-server test needs to build a real
 // `Application`/`ApplicationPort` to drive `runtime::docker` with.
 pub mod models;
+// Where VibeSSH may put working files on a managed Node. Shared by
+// `network::wireguard` and `runtime::docker`, both of which used to reach
+// for a predictable `/tmp` path instead - see the module's own doc
+// comment for the two vulnerabilities that caused.
+mod node_paths;
 // `pub` for the same reason as `firewall`/`runtime` above - a real-server
 // integration test (`tests/vibe_network.rs`) drives
 // `network::wireguard` directly against a real WireGuard installation.

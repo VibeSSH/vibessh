@@ -1,4 +1,12 @@
 //! Real integration tests for the Audit Log, against a real Postgres.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -13,6 +21,7 @@ async fn create_team(owner_token: &str, name: &str) -> serde_json::Value {
 }
 
 #[tokio::test]
+#[ignore]
 async fn creating_a_team_is_recorded_in_its_own_audit_log() {
     let (owner_email, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Audited Team").await;
@@ -29,6 +38,7 @@ async fn creating_a_team_is_recorded_in_its_own_audit_log() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn member_role_and_role_assignment_actions_are_all_recorded_in_order() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -65,6 +75,7 @@ async fn member_role_and_role_assignment_actions_are_all_recorded_in_order() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_member_without_audit_view_cannot_read_the_audit_log() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -78,6 +89,7 @@ async fn a_member_without_audit_view_cannot_read_the_audit_log() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn granting_audit_view_lets_a_non_owner_member_read_the_log() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -110,6 +122,7 @@ async fn granting_audit_view_lets_a_non_owner_member_read_the_log() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_member_cannot_read_the_audit_log() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -121,6 +134,7 @@ async fn a_non_member_cannot_read_the_audit_log() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_limit_query_parameter_caps_how_many_events_come_back() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -138,6 +152,7 @@ async fn the_limit_query_parameter_caps_how_many_events_come_back() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn removing_a_member_and_unassigning_a_role_are_both_recorded() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
