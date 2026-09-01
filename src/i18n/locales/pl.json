@@ -890,7 +890,11 @@
     "deleteTitle": "Usuń",
     "deleteBody": "Usunąć „{{name}}”? Tej operacji nie można cofnąć.",
     "deleteBodyMulti": "Usunąć {{count}} zaznaczonych pozycji? Tej operacji nie można cofnąć.",
-    "deleteError": "Nie udało się usunąć."
+    "deleteError": "Nie udało się usunąć.",
+    "filterPlaceholder": "Filtruj po nazwie",
+    "noMatchesTitle": "Brak dopasowań",
+    "noMatchesDescription": "Żaden plik ani folder tutaj nie pasuje do tego filtra.",
+    "showingFirst": "Pokazano pierwsze {{shown}} z {{total}} - zawęź filtr, aby zobaczyć resztę."
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",

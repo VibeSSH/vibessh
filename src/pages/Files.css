@@ -69,3 +69,23 @@
 .files-entry-selected {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* The filter that makes the rendered-row cap usable - without a way to
+   narrow the list, capping it would simply hide entries. Grows to fill the
+   selection bar so it is obviously a search box rather than a stray field. */
+.files-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.files-filter-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

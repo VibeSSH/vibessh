@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -35,6 +35,11 @@ import "./Servers.css";
 import "./Files.css";
 
 /** The real filesystem root, not the SFTP login user's home directory - every OpenSSH server understands an absolute path here the same way, so this is what a plain SFTP client would show first (var/lib/root/... siblings visible immediately, not just reachable by navigating up from wherever the account happens to land). */
+/// Matches the cap the Actions page already uses. Large enough that an
+/// ordinary directory is never truncated, small enough that a pathological
+/// one stays responsive.
+const MAX_ROWS_SHOWN = 200;
+
 const ROOT_PATH = "/";
 
 /** Mirrors the backend's own path-joining rule (see ssh/sftp.rs's `list_directory`, whose `entry.path()` is root-relative the same way) - joining directly under "/" needs the slash itself as the only separator, everywhere else it's "dir/name" like normal. */
@@ -63,6 +68,7 @@ export function FilesPage() {
   const [uploading, setUploading] = useState(false);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
+  const [filter, setFilter] = useState("");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [renameTarget, setRenameTarget] = useState<RemoteFileEntry | null>(null);
   const [moveTargets, setMoveTargets] = useState<RemoteFileEntry[] | null>(null);
@@ -103,6 +109,21 @@ export function FilesPage() {
   }
 
   const segments = path === ROOT_PATH ? [] : path.split("/").filter(Boolean);
+
+  // A remote directory can hold tens of thousands of entries - a Minecraft
+  // world's region folder routinely does - and rendering a row for each one
+  // locks the window up for seconds. Capping the rendered rows fixes that,
+  // but on its own it would make entry 5000 unreachable, so the cap comes
+  // with a filter. Together they are more useful than virtualisation would
+  // be here: finding a known filename by typing part of it beats scrolling
+  // to it.
+  const matchingEntries = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return entries;
+    return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
+  }, [entries, filter]);
+  const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
+  const truncated = matchingEntries.length > visibleEntries.length;
 
   if (openFile) {
     return (
@@ -297,10 +318,21 @@ export function FilesPage() {
                 onChange={(checked) => setSelectedPaths(checked ? new Set(entries.map((en) => en.path)) : new Set())}
                 label={t("filesPage.selectAll")}
               />
+              <input
+                className="files-filter-input"
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={t("filesPage.filterPlaceholder")}
+                aria-label={t("filesPage.filterPlaceholder")}
+              />
               {selectedPaths.size > 0 && <span className="files-selection-count">{t("filesPage.selectedCount", { count: selectedPaths.size })}</span>}
             </div>
+            {visibleEntries.length === 0 ? (
+              <EmptyState icon="search" title={t("filesPage.noMatchesTitle")} description={t("filesPage.noMatchesDescription")} />
+            ) : (
             <ul className="server-list">
-              {entries.map((entry) => (
+              {visibleEntries.map((entry) => (
                 <li
                   key={entry.path}
                   className={`server-list-item ${selectedPaths.has(entry.path) ? "files-entry-selected" : ""}`}
@@ -332,6 +364,12 @@ export function FilesPage() {
                 </li>
               ))}
             </ul>
+            )}
+            {truncated && (
+              <p className="form-note">
+                {t("filesPage.showingFirst", { shown: visibleEntries.length, total: matchingEntries.length })}
+              </p>
+            )}
           </>
         )}
       </Card>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
@@ -41,6 +41,9 @@ import "@/components/servers/forms.css";
 import "@/pages/Files.css";
 import "./ApplicationFiles.css";
 
+/// Matches the Node Files page and the Actions page.
+const MAX_ROWS_SHOWN = 200;
+
 const ROOT_PATH = ".";
 
 function joinPath(dir: string, name: string): string {
@@ -71,6 +74,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const isRunning = application.status === "running";
 
   const [path, setPath] = useState(ROOT_PATH);
+  const [filter, setFilter] = useState("");
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +89,17 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [jarWarning, setJarWarning] = useState<{ fileName: string; localSrc: string; targetPath: string } | null>(null);
   const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingEntry(null));
   const contextMenu = useContextMenu();
+
+  // Same reasoning as the Node Files page: a directory can hold tens of
+  // thousands of entries and rendering a row each locks the window up, but
+  // a bare cap would make distant entries unreachable. Cap plus filter.
+  const matchingEntries = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return entries;
+    return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
+  }, [entries, filter]);
+  const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
+  const truncated = matchingEntries.length > visibleEntries.length;
 
   const addTransfer = useFileTransferStore((s) => s.addTransfer);
   const updateProgress = useFileTransferStore((s) => s.updateProgress);
@@ -324,8 +339,22 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         ) : entries.length === 0 ? (
           <EmptyState icon="folder" title={t("applicationFilesTab.emptyTitle")} description={t("applicationFilesTab.emptyDescription")} />
         ) : (
+          <>
+          <div className="files-selection-bar">
+            <input
+              className="files-filter-input"
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t("filesPage.filterPlaceholder")}
+              aria-label={t("filesPage.filterPlaceholder")}
+            />
+          </div>
+          {visibleEntries.length === 0 ? (
+            <EmptyState icon="search" title={t("filesPage.noMatchesTitle")} description={t("filesPage.noMatchesDescription")} />
+          ) : (
           <ul className="server-list">
-            {entries.map((entry) => (
+            {visibleEntries.map((entry) => (
               <li key={entry.path} className="server-list-item" onContextMenu={(e) => contextMenu.open(e, buildMenuItems(entry))}>
                 <div className="server-list-icon">
                   <Icon name={entry.isDir ? "folder" : "file"} size={16} />
@@ -355,6 +384,11 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               </li>
             ))}
           </ul>
+          )}
+          {truncated && (
+            <p className="form-note">{t("filesPage.showingFirst", { shown: visibleEntries.length, total: matchingEntries.length })}</p>
+          )}
+          </>
         )}
       </Card>
 

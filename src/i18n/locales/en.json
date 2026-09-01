@@ -890,7 +890,11 @@
     "deleteTitle": "Delete",
     "deleteBody": "Delete \"{{name}}\"? This can't be undone.",
     "deleteBodyMulti": "Delete {{count}} selected items? This can't be undone.",
-    "deleteError": "Couldn't delete."
+    "deleteError": "Couldn't delete.",
+    "filterPlaceholder": "Filter by name",
+    "noMatchesTitle": "Nothing matches",
+    "noMatchesDescription": "No file or folder here matches that filter.",
+    "showingFirst": "Showing the first {{shown}} of {{total}} - narrow the filter to see the rest."
   },
   "fileEditor": {
     "backAria": "Back to file list",

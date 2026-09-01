@@ -188,6 +188,17 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE D — Performance
 
+> **Status: D.1, D.2, D.3, D.5, D.6 done** (commits `3738078`, and this one).
+> D.4 deliberately skipped - with no credential stored for a registry,
+> `find_by_registry` returns `None` from a local DB read and nothing reaches
+> the Node at all, so the cost only exists for private-registry users and
+> caching it would mean new session state for a modest gain.
+>
+> **Still open:** the vite 5 -> 7 upgrade (F-004, also what would let CI's
+> `npm audit` go back to `--audit-level=high`), and building backup archives
+> on the Node rather than streaming them through the desktop (the remaining
+> half of S-015).
+
 | # | Item | Finding |
 |---|---|---|
 | D.1 | Gate all polling on `document.visibilityState`; pause when the window is hidden | P-001 |
