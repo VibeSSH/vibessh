@@ -165,6 +165,30 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ---
 
+## The integration pass
+
+Run against real hosts after the branch landed - see `AUDIT_REPORT.md` §15b
+for the full result. `tests/node_isolation.rs` is the permanent artefact: two
+`#[ignore]`d tests that check S-018 and S-001 against a live Docker daemon and
+a real iptables chain, by attempting the connection rather than by reading
+what the daemon claims.
+
+    cargo test --test node_isolation -- --ignored --test-threads=1
+
+Both pass. So do the four pre-existing live-node tests (`docker_runtime`,
+`firewall_ufw`, `application_files_sftp`).
+
+**Created by the pass, still open:**
+- A one-time sweep of what the pre-fix versions left on a Node: world-readable
+  `/tmp/vibessh-stage-*` files and orphaned `vibessh-app-*` containers. Every
+  fix here is forward-only; an existing install stays exposed until someone
+  cleans it by hand, and for the `/tmp` files the code cannot do it at all.
+- Orphan-container detection in the UI (already C.5's "orphan detection").
+- `ufw enable`, the MariaDB `bind-address` rewrite and a full teardown remain
+  unexercised - each is destructive on a live node and needs a disposable one.
+
+---
+
 ## PHASE C — Tests
 
 > **Status: C.1 and C.8 done.**

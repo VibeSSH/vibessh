@@ -732,6 +732,49 @@ Recorded so a later pass does not re-litigate it:
 
 ---
 
+## 15b. The integration pass
+
+Everything below was run against real hosts after the remediation landed -
+the pass this report kept naming as the outstanding risk. Two nodes: the
+operator's live `vps` (read-only probes plus a cleanup they approved) and the
+dedicated test host `Skytop` (the mutating tests, which clean up after
+themselves).
+
+**Verified on a live node, end to end:**
+
+| Claim | How it was checked |
+|---|---|
+| **S-018** — an Application reaches another only when connected | From *inside* a container, not from `docker inspect`. Isolated: the peer's name does not resolve. Connected: traffic arrives. Disconnected: unreachable again. |
+| **S-001** — a `DOCKER-USER` rule reaches the kernel | Applied, read back through `iptables -S DOCKER-USER`, revoked, read back gone. It removed **only its own** rule and left the operator's four unmarked rules untouched - the ownership marker is the whole basis for revocation, and it holds. |
+| **S-003** — the WireGuard key is not world-readable in `/tmp` | `/etc/wireguard/vibessh-privatekey` is `0600 root:root`; nothing in `/tmp`. |
+| **S-004** — the console FIFO is not reachable by other Applications | `/run/vibessh/console/*.stdin` are `0600 ubuntu:ubuntu`, outside every bind mount. |
+| **S-005** — path traversal through a symlink | An existing `#[ignore]`d test proves a symlink pointing outside the sandbox is refused on the real server. |
+| Passwordless `sudo` | The standing assumption `docs/threat-model.md` records is true on both nodes. |
+| The ufw lockout guard's input | `SSH_CONNECTION` field 4 reads `22`, and ufw allows 22 - so `live_ssh_port()` would resolve correctly. The *guard itself* is still unexecuted; enabling ufw on a live host was not run. |
+
+**What the pass found that no test could.** Every fix in this branch is
+forward-only, and nothing heals what the vulnerable versions left behind:
+
+- **Twelve world-readable staged files in `/tmp`** (mode 644, from before
+  S-005's fix), which the code *cannot* clean up - `/tmp` is sticky, so the
+  admin's SFTP cannot unlink another account's file, which is why the finding
+  existed. Removed by hand, with the operator's agreement.
+- **Two orphaned containers** with no application row and
+  `--restart unless-stopped` - S-007's exact symptom, from before the
+  teardown fix. They would have come back at the next daemon restart. Removed.
+
+Neither is reachable from the desktop today. A one-time sweep at Node
+provisioning, and orphan detection surfaced in the UI (C.5 already asks for
+the second), are the outstanding work this created.
+
+**Still not exercised:** `ufw enable` on a live host (the lockout guard), the
+MariaDB `bind-address` rewrite (it restarts a running database), and the full
+`delete_application` teardown against a real Application. All three are
+destructive on a production node and were deliberately left for a disposable
+one.
+
+---
+
 ## 16. Corrections to this report
 
 Four findings were wrong and have been corrected in place. The first three share one cause; the fourth has a different one, and is the more embarrassing of the two.
