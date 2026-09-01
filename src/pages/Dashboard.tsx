@@ -367,7 +367,10 @@ export function Dashboard() {
           </div>
 
           <Card>
-            <div className="dashboard-ops-row" onClick={() => navigate("/vibe-network")}>
+            {/* Buttons, not clickable divs: these three were reachable with a
+                mouse and with nothing else - no tab stop, no Enter, and
+                nothing announcing that a row was a control at all. */}
+            <button type="button" className="dashboard-ops-row" onClick={() => navigate("/vibe-network")}>
               <span className="dashboard-ops-label">
                 <Icon name="wifi" size={14} />
                 {t("vibeNetwork.title")}
@@ -375,15 +378,20 @@ export function Dashboard() {
               <Badge tone={networkMembers.length === 0 ? "neutral" : networkHealthy ? "success" : "danger"}>
                 {networkMembers.length === 0 ? t("dashboard.statNetworkValueNone") : networkHealthy ? t("vibeNetwork.networkHealthy") : t("vibeNetwork.networkDegraded")}
               </Badge>
-            </div>
+            </button>
 
-            <div className="dashboard-ops-row" onClick={() => setAlertsExpanded((v) => !v)}>
+            <button
+              type="button"
+              className="dashboard-ops-row"
+              onClick={() => setAlertsExpanded((v) => !v)}
+              aria-expanded={alertsExpanded}
+            >
               <span className="dashboard-ops-label">
                 <Icon name="alert-triangle" size={14} />
                 {t("dashboard.sectionAlerts")}
               </span>
               <Badge tone={alerts.length > 0 ? "danger" : "success"}>{alerts.length}</Badge>
-            </div>
+            </button>
             {alertsExpanded &&
               (alerts.length === 0 ? (
                 <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">
@@ -407,13 +415,13 @@ export function Dashboard() {
                 </ul>
               ))}
 
-            <div className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)}>
+            <button type="button" className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)} aria-expanded={tasksExpanded}>
               <span className="dashboard-ops-label">
                 <Icon name="list-checks" size={14} />
                 {t("dashboard.sectionTasks")}
               </span>
               <Badge tone={outOfSyncAgentIds.length > 0 ? "warning" : "success"}>{outOfSyncAgentIds.length}</Badge>
-            </div>
+            </button>
             {tasksExpanded &&
               (outOfSyncAgentIds.length === 0 ? (
                 <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">

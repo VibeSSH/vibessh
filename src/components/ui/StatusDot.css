@@ -1,0 +1,84 @@
+/* Status as a shape, not only a hue.
+   Each state is distinguishable with the colour channel removed entirely:
+   online is a solid disc, connecting is a disc inside a ring, offline is an
+   empty ring, unknown is a ring with a small centre. Someone who cannot tell
+   this app's green from its amber can still tell these four apart. */
+.status-dot-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.status-dot[data-status="online"] {
+  background: var(--t-status-connected);
+}
+
+/* The outward pulse ServerCard and NodeMiniCard each used to draw with their
+   own extra element. Folded in here so the four call sites are one component
+   and the animation cannot drift between them. Decorative only - the shape
+   and the word carry the meaning. */
+.status-dot[data-status="online"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--t-status-connected);
+  animation: status-dot-ping 2s ease-out infinite;
+}
+
+@keyframes status-dot-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* Anything that says "stop moving things" means this too. */
+@media (prefers-reduced-motion: reduce) {
+  .status-dot[data-status="online"]::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* Disc plus ring - reads as "in between", which is what connecting is. */
+.status-dot[data-status="connecting"] {
+  background: var(--t-status-connecting);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--t-status-connecting) 40%, transparent);
+}
+
+/* Hollow. Nothing there, which is the point. */
+.status-dot[data-status="offline"] {
+  background: transparent;
+  border: 2px solid var(--t-text-dim);
+}
+
+/* Hollow with a centre: present, but not something we know about. Uses a
+   radial fill rather than a nested element so the dot stays one node. */
+.status-dot[data-status="unknown"] {
+  background: radial-gradient(circle, var(--t-text-dim) 0 1.5px, transparent 1.6px);
+  border: 1px solid var(--t-text-dim);
+}
+
+.status-dot-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

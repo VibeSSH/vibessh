@@ -43,7 +43,7 @@
   border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
 }
 .toast-error > svg {
-  color: var(--danger);
+  color: var(--danger-text);
   flex-shrink: 0;
 }
 

@@ -18,9 +18,15 @@
   --border: #1e2d42;
   --border-hover: #2d3f5c;
 
-  --text-primary: #c5d4e8;
-  --text-secondary: #7a8fa6;
-  --text-tertiary: #4a6080;
+  /* Three steps of emphasis, all of which clear WCAG AA (4.5:1) against
+     every surface in this file - the lightest, `--surface-2`, is the one
+     that decides. They used to be 9.9 / 4.5 / 2.3, so the third step was
+     unreadable for anyone with reduced contrast sensitivity and the second
+     one missed on cards. Keeping three visible steps *and* a 4.5 floor is
+     what pushed all three up rather than only the bottom one. */
+  --text-primary: #dbe6f5;
+  --text-secondary: #a8bacf;
+  --text-tertiary: #8296ab;
 
   --accent: #57c7d8;
   --accent-hover: #5fe2f7;
@@ -29,6 +35,11 @@
   --success: #22c55e;
   --danger: #ef4444;
   --danger-hover: #f87171;
+  /* `--danger` as *text* lands at 3.7:1 on a card - below AA, on precisely
+     the sentences a user most needs to read (every error note in the app).
+     Fills, dots and borders keep `--danger`, where the ratio that matters is
+     3:1 for a non-text indicator and it passes. */
+  --danger-text: #f26666;
   --warning: #f59e0b;
 
   /* Matches Voltius's own --r-sm/--r-md/--r-lg (0.625rem/0.875rem/1.125rem
@@ -117,6 +128,13 @@
   --t-bg-card-avatar: #5fe2f746;
   --t-border: var(--border);
   --t-border-hover: var(--border-hover);
+  /* Form controls only. `--t-border` sits at about 1.1:1 against the
+     surfaces either side of it, which is fine for a decorative divider and
+     not fine for the line that is the *only* thing telling a user where a
+     text field begins (WCAG 1.4.11 wants 3:1 for that). Raised here rather
+     than raising `--t-border` globally, which would put a hard outline
+     around every card in the app to fix a problem cards do not have. */
+  --t-border-control: #4f77ae;
   --t-text-dim: #7fa7b8;
   --t-text-secondary: var(--text-secondary);
   --t-text-muted: var(--text-tertiary);

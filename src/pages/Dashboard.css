@@ -182,14 +182,22 @@
    rows in one Card instead of three separate large tiles. Alerts/Tasks
    expand in place on click rather than jumping to a dedicated tab, since
    they're cross-cutting (not scoped to one Node) and usually empty. */
+/* A `<button>` since it became keyboard-reachable, so it has to unset the
+   defaults a button brings with it and keep looking like the row it was. */
 .dashboard-ops-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
   padding: 8px 4px;
   margin: 0 -4px;
+  border: none;
   border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease;
 }
@@ -198,6 +206,11 @@
 }
 .dashboard-ops-row + .dashboard-ops-row {
   border-top: 1px solid var(--border);
+}
+/* `width: 100%` plus the negative margin would otherwise push the row past
+   the card's padding on the right. */
+.dashboard-ops-row {
+  width: calc(100% + 8px);
 }
 
 .dashboard-ops-label {
@@ -262,5 +275,5 @@
   color: var(--success);
 }
 .dashboard-footer-bar-online-problem {
-  color: var(--danger);
+  color: var(--danger-text);
 }

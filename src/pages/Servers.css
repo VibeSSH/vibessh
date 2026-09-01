@@ -72,17 +72,6 @@
   flex-shrink: 0;
 }
 
-/* A plain status dot for a `.server-list-item` row that isn't a full
-   `ServerCard`/`Rail` entry (e.g. `ModulePicker`'s server-pick list) -
-   same 8px dot, no ping animation, since a dense list row doesn't have the
-   room a card does. */
-.server-list-status-dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-}
-
 .servers-filter-row {
   display: flex;
   align-items: center;

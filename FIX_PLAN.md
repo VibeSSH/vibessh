@@ -279,9 +279,28 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > best-effort - each of those genuinely must not fail the operation - but
 > none of them is silent any more.
 >
+> **F.6 done, in three parts.**
+> *Contrast.* The text ramp was 9.9 / 4.5 / 2.3 against the lightest
+> surface, so the third step failed AA outright and the second missed on
+> cards. All three moved up (10.9 / 7.0 / 4.5) rather than only the bottom
+> one, because three visible steps *and* a 4.5 floor is the actual
+> requirement. `--danger` as text sat at 3.7 on precisely the sentences a
+> user most needs to read, so error copy gets its own `--danger-text`;
+> fills and dots keep `--danger`, where 3:1 is the bar and it passes. Form
+> control borders were at 1.1:1 - the line that is the only thing marking
+> where a text field begins - and now use a 3:1 `--t-border-control`,
+> raised there rather than globally so cards do not sprout hard outlines.
+> *Colour alone.* Four hand-rolled status dots became one `StatusDot`:
+> different in shape as well as hue, always named for assistive tech, and
+> showing the status word wherever the layout has room. `offline` and
+> `unknown` were the same colour, so the dot could not distinguish them for
+> anyone.
+> *Keyboard.* The three Dashboard ops rows were clickable `div`s - mouse
+> only, no tab stop, nothing announcing them as controls. Now buttons, with
+> `aria-expanded` on the two that toggle.
+>
 > **Still open:** F.5 (the visual pass at 1920-800, which needs the packaged
-> app against a live Node), F.6 (contrast, and status conveyed by colour
-> alone).
+> app against a live Node).
 
 | # | Item | Finding |
 |---|---|---|
@@ -290,7 +309,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 | F.3 | "Configuration pending" state after env/image/limits/port changes, with a Recreate banner explaining the restart | U-003 |
 | F.4 | ~~Replace every "success on partial failure" path with an accurate outcome state~~ **Done** | U-005 |
 | F.5 | Run the visual pass at 1920/1600/1440/1366/1280/1024/900/800; re-validate `docs/UI_AUDIT.md` against current code | U-006 |
-| F.6 | Keyboard navigation and tab-order review; contrast check; ensure no status is conveyed by colour alone | §9 |
+| F.6 | ~~Keyboard navigation and tab-order review; contrast check; ensure no status is conveyed by colour alone~~ **Done** | §9 |
 
 ---
 

@@ -45,7 +45,7 @@
 
 .file-editor-tab-error {
   font-size: 12px;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .file-editor-tab-body {

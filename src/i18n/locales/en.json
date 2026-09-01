@@ -57,10 +57,6 @@
     "notificationsClear": "Clear",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "statusOnline": "Online",
-    "statusOffline": "Offline",
-    "statusConnecting": "Connecting",
-    "statusUnknown": "Unknown",
     "hostHidden": "Host hidden",
     "revealHostAria": "Show host address",
     "hideHostAria": "Hide host address"
@@ -1290,5 +1286,11 @@
     "addPlaceholder": "Pick an application",
     "connect": "Connect",
     "disconnectAria": "Disconnect {{name}}"
+  },
+  "serverStatus": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Connecting",
+    "unknown": "Unknown"
   }
 }

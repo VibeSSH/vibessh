@@ -95,40 +95,6 @@
   min-width: 0;
 }
 
-.node-mini-card-status-dot-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.node-mini-card-status-dot {
-  position: relative;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-}
-.node-mini-card-status-ping {
-  position: absolute;
-  inset: 2px;
-  border-radius: 999px;
-  animation: node-mini-card-ping 2s ease-out infinite;
-}
-@keyframes node-mini-card-ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  75%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
-
 .node-mini-card-bars {
   display: flex;
   flex-direction: column;
@@ -213,7 +179,7 @@
   background: color-mix(in srgb, var(--success) 14%, transparent);
 }
 .node-mini-card-sync-pill-stale {
-  color: var(--danger);
+  color: var(--danger-text);
   background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 

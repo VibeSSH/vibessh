@@ -75,7 +75,7 @@
 }
 .terminal-tab-close:hover {
   background: var(--surface-3);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .terminal-tab-add {
