@@ -548,14 +548,18 @@ There are **20+** modal/dialog components. Across the entire frontend there is e
 **U-002 — Icon-only buttons lack accessible names | MEDIUM | P1**
 `IconButton` is used widely for destructive and primary actions, but only 13 files contain any `aria-label`. Screen-reader users get "button" with no name.
 
-**U-003 — Config changes silently do not apply to a running container | HIGH | P1**
-`set_application_environment`, `set_application_image`, `set_application_resource_limits`, and the port add/update/remove commands all write to the DB and return success. But `DockerRuntime::start` only calls `create_container` **when the container does not already exist**, and `restart` calls `docker restart` on the existing container. So:
+**U-003 — ~~Config changes silently do not apply to a running container~~ WITHDRAWN**
 
-> The user edits an environment variable, sees a success toast, clicks Restart, watches the app restart — and the variable is unchanged.
+> **Correction (verified while starting Phase F).** This finding was wrong, and wrong in a way that mattered — it claimed the Environment tab, Ports tab, Resource Limits card and Docker Image card were "effectively non-functional for any already-running Application".
+>
+> They are not. Every one of those five surfaces already re-probes the Application's status after saving and calls `recreate_application` when it is running: `ApplicationConfigCard:101`, `DockerImageCard:36`, `EnvironmentTab:57` (via its own `recreateIfRunningDocker`), `PortsTab` (same helper), `ResourceLimitsCard:62`. `ResourceLimitsCard` even renders a note saying so (`applicationConfig.recreateAutoNote` when running, `recreateStoppedNote` when not), and a stopped Application is deliberately left stopped rather than being started as a side effect of a config edit.
+>
+> The finding came from reading `DockerRuntime::start`'s recreate-avoidance and inferring the UI consequence without checking the callers. See §16 for what that pattern cost across this report.
 
-`recreate_application` exists and does the right thing (destroy → start), but it is a separate manual action and nothing in these code paths tells the user it is required. This makes the Environment tab, Ports tab, Resource Limits card and Docker Image card **effectively non-functional for any already-running Application** — the brief's "fake UI / actions not connected" category.
-**Fix:** mark the Application "configuration pending" after any of these writes, show a persistent banner offering Recreate, and explain that recreation restarts the container.
-**Test required:** changing env on a running Docker app then restarting must either apply the change or surface the pending state.
+What is left is narrower and worth keeping: the recreate is best-effort, so a save that succeeds followed by a recreate that fails leaves the Application running its old configuration with only a transient error to say so. `recreateIfRunningDocker` is also duplicated across the five call sites.
+**Severity:** LOW | **Priority:** P3
+**Fix:** one shared helper, and a persistent "saved, but not yet applied" marker when the recreate half fails.
+
 
 **U-004 — Backend error strings shown raw, in English, with no recovery guidance | HIGH | P1**
 See S-019. The user sees `connection error: docker create failed`, `invalid input: containing directory doesn't exist`, `storage error: database is locked`. No "what happened / why / what you can do" structure, no technical-details disclosure, no i18n — in an app that is otherwise fully translated.
@@ -705,3 +709,24 @@ Recorded so a later pass does not re-litigate it:
 - Backend `JWT_SECRET` minimum-length enforcement at startup — present and correct.
 - DNS `/etc/hosts` heredoc — correctly **quoted** (unlike WireGuard's).
 - i18n parity, TypeScript strictness, polling stale-guards, listener balance — all clean.
+
+---
+
+## 16. Corrections to this report
+
+Three findings were wrong and have been corrected in place. They are collected here because they share one cause, and that cause is worth knowing when reading the rest.
+
+| ID | Claimed | Actually |
+|---|---|---|
+| **U-003** | The Environment/Ports/Resource Limits/Docker Image surfaces were "effectively non-functional for any already-running Application" | All five already re-probe status after saving and call `recreate_application` when running. One even renders a note saying so. **Withdrawn.** |
+| **S-016** | "Restore extracts over a running Application" | `restore_backup` refreshes the status and refuses for `Running`/`Starting`/`Stopping` before touching anything. **Downgraded** to the narrower, real point: extraction is not atomic. |
+| **S-015** | Backups cost "roughly 3×" the data size, because the archive is read back "for sizing/S3 upload" | Sizing uses `provider.metadata`; the extra full read only happens when an S3 destination is configured. The finding stood, the **multiplier was overstated**. |
+
+**The common cause: inferring a caller's behaviour from the callee.** Each of these came from reading one function correctly — `DockerRuntime::start`'s recreate-avoidance, `extract_zip`'s signature, `create_backup`'s use of `read_file` — and then reasoning about what the rest of the system must therefore do, without opening the call sites to check. In each case the surrounding code already handled it.
+
+Two things follow for anyone using this report:
+
+1. **A finding's severity is only as good as its call-site check.** The findings that were verified end-to-end (S-001's UFW bypass, S-002's unquoted heredoc, S-005's `/tmp` staging, S-007's delete path) all held up under implementation. The ones that were inferred are the three above.
+2. **The direction of the error was consistently the same** — overstating. Nothing in this report turned out to be *worse* than described. That is the safer direction for an audit to be wrong in, but it still costs whoever acts on it, which is why these are corrected rather than quietly dropped.
+
+The findings not yet worked through in `FIX_PLAN.md` have not had this treatment, and should be re-checked against their call sites before anyone budgets work against them.
