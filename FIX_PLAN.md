@@ -155,6 +155,24 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE C — Tests
 
+> **Status: C.1 and C.8 done.**
+> C.8: `.github/workflows/ci.yml` runs clippy (`-D warnings`), the workspace
+> test suite, typecheck, frontend tests, build, `npm audit` and `cargo
+> audit`. All 93 standing clippy warnings were cleared first - a gate that is
+> red on day one gets disabled rather than fixed.
+> C.1: vitest + testing-library + jsdom, with 31 tests covering the
+> `callCommand` error boundary, both Zustand stores, and the delete
+> confirmation dialog. Component tests run against the real English
+> catalog, so assertions read as what the user actually sees.
+>
+> Writing those tests immediately found a real bug: the delete dialog's copy
+> still said deletion "won't stop a still-running process/unit/container",
+> which stopped being true when Phase A made delete a real teardown. Copy
+> corrected in both locales.
+>
+> **Still open:** C.2-C.7 (the security/scenario/property suites, and
+> concurrency tests).
+
 | # | Item |
 |---|---|
 | C.1 | Add a frontend test framework (vitest + testing-library) and `test` / `lint` / `typecheck` scripts to `package.json` |

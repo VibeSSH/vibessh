@@ -552,7 +552,7 @@
   },
   "deleteApplicationDialog": {
     "title": "Delete application",
-    "body": "Delete <1>{{name}}</1>? This removes it from VibeSSH - it won't stop a still-running process/unit/container on its own; stop it first if it's running. This can't be undone."
+    "body": "Delete <1>{{name}}</1>? This also removes its container, its databases, its firewall rules and its Node account. Files in its working directory are kept. This can't be undone."
   },
   "dockerImage": {
     "title": "Docker Image",

@@ -552,7 +552,7 @@
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
-    "body": "Usunąć <1>{{name}}</1>? To usuwa ją z VibeSSH - nie zatrzymuje samodzielnie wciąż działającego procesu/usługi/kontenera; jeśli działa, zatrzymaj ją najpierw. Tej operacji nie można cofnąć."
+    "body": "Usunąć <1>{{name}}</1>? Usuwa to również jej kontener, bazy danych, reguły firewalla i konto na Node. Pliki w katalogu roboczym zostają. Tej operacji nie można cofnąć."
   },
   "dockerImage": {
     "title": "Obraz Dockera",
