@@ -147,6 +147,10 @@ pub async fn create_backup(
     let entries = provider.list_directory(".").await?;
     let paths: Vec<String> = entries.iter().filter(|e| !e.name.starts_with(".vibessh-")).map(|e| e.name.clone()).collect();
 
+    // Not checked: an existing directory is the common case and reports an
+    // error on some providers, and if it genuinely could not be created the
+    // `create_zip` immediately below fails with a message that names the
+    // real problem.
     let _ = provider.create_directory(BACKUPS_DIR).await;
 
     let now = Utc::now();
@@ -203,11 +207,19 @@ pub async fn delete_backup(
     // a delete the user can never complete because e.g. the Node is
     // temporarily unreachable.
     if let Ok((_, provider)) = resolve_provider(app_repo, server_repo, sessions, application_id).await {
-        let _ = provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await;
+        if let Err(err) = provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await {
+            // Best-effort, but never silent: the UI stops listing this
+            // backup, and an operator who deleted it to reclaim disk - or
+            // because of what it contains - is entitled to know the file is
+            // still on the Node.
+            log::warn!("the '{file_name}' backup row was deleted but the file is still on the node: {err}");
+        }
     }
     if let Some(key) = s3_key {
         if let Some(client) = s3_client(backup_destination).await {
-            let _ = client.delete_object(&key).await;
+            if let Err(err) = client.delete_object(&key).await {
+                log::warn!("the '{file_name}' backup row was deleted but the object is still in the bucket: {err}");
+            }
         }
     }
     Ok(())
@@ -259,8 +271,12 @@ pub async fn restore_backup(
                     .await
                     .map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
                 // Best-effort: heals the local copy too, so the *next*
-                // restore (or a future prune) doesn't need S3 again.
-                let _ = provider.write_file(&local_path, &bytes).await;
+                // restore (or a future prune) doesn't need S3 again. The
+                // restore itself proceeds from `scratch` either way, so this
+                // failing costs a slower next restore, not this one.
+                if let Err(err) = provider.write_file(&local_path, &bytes).await {
+                    log::warn!("restored from the remote copy, but couldn't re-create the local one: {err}");
+                }
                 Ok(())
             }
             _ => Err(local_err),
@@ -335,9 +351,16 @@ async fn prune_old_backups(
     let client = s3_client(backup_destination).await;
     for old in to_prune {
         backup_repo.delete(old.id)?;
-        let _ = provider.delete(&format!("{BACKUPS_DIR}/{}", old.file_name)).await;
+        // Retention is a promise about disk, not about rows. A prune that
+        // drops the row and leaves the file means "keep at most N bytes"
+        // quietly stops being true while the UI shows it working.
+        if let Err(err) = provider.delete(&format!("{BACKUPS_DIR}/{}", old.file_name)).await {
+            log::warn!("retention removed the '{}' backup but its file is still on the node: {err}", old.file_name);
+        }
         if let (Some(key), Some(client)) = (&old.s3_key, &client) {
-            let _ = client.delete_object(key).await;
+            if let Err(err) = client.delete_object(key).await {
+                log::warn!("retention removed the '{}' backup but its object is still in the bucket: {err}", old.file_name);
+            }
         }
     }
     Ok(())
@@ -367,7 +390,12 @@ pub async fn run_due_backups(
         }
         if create_backup(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, BackupKind::Scheduled).await.is_ok() {
             created += 1;
-            let _ = prune_old_backups(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, &schedule).await;
+            if let Err(err) = prune_old_backups(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, &schedule).await {
+                // Nobody is watching this sweep, so it must not fail the
+                // run - but a retention rule that has silently stopped
+                // running is exactly how a Node fills its disk overnight.
+                log::warn!("couldn't apply the retention rules for application {application_id}: {err}");
+            }
         }
     }
     Ok(created)

@@ -720,7 +720,15 @@ async fn ensure_working_directory_owned_by_dedicated_user(connection: &SshSessio
     if dedicated_user::ensure_provisioned(connection, &username).await.is_err() {
         return;
     }
-    let _ = connection.execute_command(&format!("sudo chown -R {} {}", shell_quote(&username), shell_quote(&ctx.application.working_directory))).await;
+    if let Err(err) = connection
+        .execute_command(&format!("sudo chown -R {} {}", shell_quote(&username), shell_quote(&ctx.application.working_directory)))
+        .await
+    {
+        // Not fatal to the start - the container runs either way - but the
+        // Files tab will then fail on every write with a permission error
+        // that names the file rather than the cause.
+        log::warn!("couldn't hand '{}' to its dedicated account: {err}", ctx.application.working_directory);
+    }
 }
 
 /// `.State.Status` alone can't distinguish a clean stop from a crash - both

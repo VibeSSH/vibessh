@@ -413,7 +413,9 @@
     "migrateConfirm": "Migruj",
     "migrating": "Migrowanie...",
     "migrateSuccessToast": "Zmigrowano na nowy Node jako {{name}}.",
-    "migrateError": "Nie udało się zmigrować aplikacji."
+    "migrateError": "Nie udało się zmigrować aplikacji.",
+    "migrateWarningsToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wszystko się dokończyło: {{warning}}",
+    "migrateNotStartedToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wystartowała na nowym węźle."
   },
   "portsTab": {
     "description": "Kontroluj, z których portów sieciowych korzysta ta aplikacja i kto może się do nich łączyć.",

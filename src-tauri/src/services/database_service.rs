@@ -187,7 +187,19 @@ pub async fn create_application_database(
                 cleanup_sql.push_str(&format!("DROP USER IF EXISTS '{username}'@'{grant_host}'; "));
             }
             cleanup_sql.push_str(&format!("DROP DATABASE IF EXISTS `{database_name}`;"));
-            let _ = run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &cleanup_sql, &[]).await;
+            if let Err(cleanup_err) = run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &cleanup_sql, &[]).await {
+                // The undo failed, so a real database and a real user with a
+                // real password now exist on the host that nothing in
+                // VibeSSH records - it will never appear in the UI and never
+                // be dropped by any later teardown. Only the operator can
+                // clear that, and only if they are told.
+                log::error!("couldn't clean up the orphaned '{database_name}' database after a failed save: {cleanup_err}");
+                return Err(AppError::Internal(format!(
+                    "{err}. A '{database_name}' database and its user were also left behind on '{host_name}' and couldn't be removed \
+                     automatically ({cleanup_err}) - drop them by hand before retrying",
+                    host_name = host.host
+                )));
+            }
             return Err(err);
         }
     };
@@ -494,8 +506,22 @@ async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseH
     // in plaintext, and a command string is visible in `ps` to every local
     // account on the Node while it runs.
     let sql_file = format!(".vibessh-grant-{}.sql", Uuid::new_v4());
-    if write_private_file(connection, &sql_file, grant_sql.as_bytes()).await.is_ok() {
-        let _ = connection.execute_command(&format!("sudo mysql < {file}; rm -f {file}", file = shell_quote(&sql_file))).await;
+    match write_private_file(connection, &sql_file, grant_sql.as_bytes()).await {
+        // Every later `mysql` call authenticates as this user, so when the
+        // grant does not land, the failure surfaces as "access denied" on
+        // whatever the operator was actually doing. This is the only place
+        // that knows why.
+        Err(err) => log::warn!("couldn't stage the admin grant for the newly installed database server: {err}"),
+        Ok(()) => {
+            let applied = connection.execute_command(&format!("sudo mysql < {file}; rm -f {file}", file = shell_quote(&sql_file))).await;
+            match applied {
+                Ok(output) if output.exit_code != 0 => {
+                    log::warn!("the admin grant on the newly installed database server failed: {}", output.stderr.trim())
+                }
+                Err(err) => log::warn!("couldn't apply the admin grant on the newly installed database server: {err}"),
+                Ok(_) => {}
+            }
+        }
     }
     ensure_mysql_reachable_from_containers(connection, host.port).await;
 }

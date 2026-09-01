@@ -32,7 +32,7 @@ import {
   stopApplication,
 } from "@/services/applicationService";
 import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { ApplicationDetail as ApplicationDetailData, ApplicationStatus, Blueprint, ResourceUsage } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
@@ -172,7 +172,16 @@ export function ApplicationDetail() {
     setMigrateError(null);
     try {
       const result = await migrateApplication(id, migrateTargetServerId);
-      toastSuccess(t("applicationDetail.migrateSuccessToast", { name: result.application.name }));
+      // A migration that copied the data but left the old container running,
+      // or left the DNS name pointing at it, is not a plain success - and it
+      // is the operator, not VibeSSH, who has to finish it.
+      if (result.warnings.length > 0) {
+        toastError(t("applicationDetail.migrateWarningsToast", { name: result.application.name, warning: result.warnings[0] }));
+      } else if (!result.started) {
+        toastError(t("applicationDetail.migrateNotStartedToast", { name: result.application.name }));
+      } else {
+        toastSuccess(t("applicationDetail.migrateSuccessToast", { name: result.application.name }));
+      }
       setMigrateOpen(false);
       navigate(`/applications/${result.application.id}`);
     } catch (err) {

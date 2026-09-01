@@ -80,8 +80,16 @@ pub(crate) async fn resolve_provider(
             // error from the helper itself (e.g. "unknown user") right
             // after this if provisioning genuinely didn't work.
             let username = crate::dedicated_user::username(detail.application.id);
-            let _ = crate::dedicated_user::ensure_provisioned(connection, &username).await;
-            let _ = files::sudo_user::ensure_helper_installed(connection).await;
+            // Both best-effort: the file operation that follows fails on
+            // its own with a message about the file the user actually asked
+            // for. But when it does, this is the reason, and without these
+            // lines that reason exists nowhere.
+            if let Err(err) = crate::dedicated_user::ensure_provisioned(connection, &username).await {
+                log::warn!("couldn't provision the dedicated account for application {application_id}, file access may fail: {err}");
+            }
+            if let Err(err) = files::sudo_user::ensure_helper_installed(connection).await {
+                log::warn!("couldn't install the file helper for application {application_id}, file access may fail: {err}");
+            }
         }
     }
     let provider = files::provider_for(&detail.application, &detail.runtime_config, connection)?;

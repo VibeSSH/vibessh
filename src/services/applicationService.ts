@@ -241,11 +241,18 @@ export function removeRegistryCredential(id: string): Promise<void> {
   return callCommand<void>("remove_registry_credential", { id });
 }
 
-/** Mirrors the Rust `MigrationResult` DTO. */
+/** Mirrors the Rust `MigrationResult` DTO. `warnings` being non-empty means
+ * the migration itself succeeded - the new application exists with the old
+ * one's data - but a step after the point of no return didn't: the DNS name
+ * may still resolve to the old instance, the old container may still be
+ * running and holding its port, or a node's firewall may be out of date.
+ * `started` false means the application was migrated but isn't running. */
 export interface MigrationResult {
   application: ApplicationDetail;
   filesCopied: number;
   dnsRepointed: boolean;
+  started: boolean;
+  warnings: string[];
 }
 
 /** "Migrate to another Node" - provisions an identical Docker application on `targetServerId`, copies its working directory over, cuts its DNS alias (if it has one) to the new instance, then retires the old one. A single blocking call - see the Rust `services::migration_service`'s own doc comment for the full step order. Docker-only; rejected server-side for any other runtime type. */

@@ -47,6 +47,24 @@ pub struct MigrationResult {
     pub application: ApplicationDetail,
     pub files_copied: u64,
     pub dns_repointed: bool,
+    /// Whether the migrated Application is actually running on the target.
+    ///
+    /// The start used to be fire-and-forget, so a migration that produced a
+    /// correctly configured but *stopped* Application on an unreachable Node
+    /// reported plain success (U-005). It is still not a reason to unwind
+    /// the migration - the data is copied and the row is right - but the
+    /// operator has to be told, because "migrated" reads as "running".
+    pub started: bool,
+    /// Every step after the point of no return that did not complete:
+    /// the DNS sync, the start, retiring the source, and the firewall
+    /// reconcile on each Node. Empty means the migration finished clean.
+    ///
+    /// These are warnings rather than errors on purpose - by the time any of
+    /// them can fail, the target Application exists with the source's data
+    /// and the migration has succeeded in the sense that matters. Returning
+    /// an error would tell the operator to retry something that must not be
+    /// retried.
+    pub warnings: Vec<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -164,10 +182,7 @@ async fn migrate_application_inner(
     // real error to retry, not a half-finished migration to clean up by hand.
     let files_copied = match provision_target(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, &source, &created.application, target_server_id).await {
         Ok(files_copied) => files_copied,
-        Err(err) => {
-            let _ = app_repo.delete(target_application_id);
-            return Err(err);
-        }
+        Err(err) => return Err(roll_back_target(app_repo, target_application_id, err)),
     };
     // Only written once the target row is otherwise fully provisioned - on
     // any earlier failure above, the target row (and so its keyring
@@ -175,15 +190,21 @@ async fn migrate_application_inner(
     // failure here, the same rollback still applies rather than leaving a
     // target Application missing its secrets.
     if let Err(err) = application_service::store_secret_environment_values(target_application_id, &create_input.environment) {
-        let _ = app_repo.delete(target_application_id);
-        return Err(err);
+        return Err(roll_back_target(app_repo, target_application_id, err));
     }
 
     // Step 5: cut the DNS alias over, if this service has one - the
     // hostname never changes, only which Application it resolves through.
+    let mut warnings: Vec<String> = Vec::new();
     let dns_repointed = dns_repo.repoint_application(source_application_id, target_application_id)?.is_some();
     if dns_repointed {
-        let _ = dns_service::sync_dns(dns_suffix, network_repo, server_repo, app_repo, dns_repo, sessions).await;
+        // A failed sync means the stored record points at the new instance
+        // while `/etc/hosts` on every Node still resolves the old one - the
+        // hostname keeps working, at the wrong address, which is worse than
+        // it not working at all and so must not pass silently.
+        if let Err(err) = dns_service::sync_dns(dns_suffix, network_repo, server_repo, app_repo, dns_repo, sessions).await {
+            warnings.push(format!("the DNS name still resolves to the old instance until the next sync: {err}"));
+        }
     }
 
     // Step 6: bring the new instance up, then retire the old one. Both are
@@ -192,7 +213,13 @@ async fn migrate_application_inner(
     // succeeded; a start failure or a firewall sync hiccup is now the same
     // kind of already-surfaced, retryable problem as it would be for any
     // other Application, not a reason to unwind everything above.
-    let _ = application_service::start_application(app_repo, server_repo, sessions, registry_repo, local_process_manager, target_application_id).await;
+    let started = match application_service::start_application(app_repo, server_repo, sessions, registry_repo, local_process_manager, target_application_id).await {
+        Ok(_) => true,
+        Err(err) => {
+            warnings.push(format!("the migrated application didn't start on the target node: {err}"));
+            false
+        }
+    };
     // Carry captured log history over to the new id before the source row
     // (and, if this were skipped, its own orphaned capture file) is retired
     // - see `LogCaptureStore::rename`'s own doc comment.
@@ -218,16 +245,43 @@ async fn migrate_application_inner(
         application_service::ApplicationDeleteOptions::default(),
     )
     .await?;
-    for warning in &teardown.warnings {
-        log::warn!("retiring the migrated source application {source_application_id}: {warning}");
+    for warning in teardown.warnings {
+        // Was log-only. Retiring the source is where an orphaned container
+        // holding the old published port comes from, and the operator is the
+        // only one who can act on that - a log line they never open is not
+        // telling them.
+        warnings.push(format!("the old instance wasn't fully retired: {warning}"));
     }
     if let Some(source_server_id) = source.application.server_id {
-        let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, source_server_id).await;
+        if let Err(err) = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, source_server_id).await {
+            warnings.push(format!("the old node's firewall still allows this application's ports: {err}"));
+        }
     }
-    let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target_server_id).await;
+    if let Err(err) = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target_server_id).await {
+        warnings.push(format!("the new node's firewall wasn't updated for this application's ports: {err}"));
+    }
 
     let final_detail = application_service::get_application(app_repo, target_application_id)?;
-    Ok(MigrationResult { application: final_detail, files_copied, dns_repointed })
+    Ok(MigrationResult { application: final_detail, files_copied, dns_repointed, started, warnings })
+}
+
+/// Undoes the target row created at the start of a migration that then
+/// failed before the point of no return, and folds a failed undo into the
+/// error the caller is about to see.
+///
+/// The delete used to be discarded. When it failed, the operator got the
+/// original error and a broken, empty duplicate Application in their list
+/// with no indication where it came from - and the natural next move, retry
+/// the migration, then hit a name collision instead.
+fn roll_back_target(app_repo: &ApplicationRepository, target_application_id: Uuid, err: AppError) -> AppError {
+    let Err(undo) = app_repo.delete(target_application_id) else {
+        return err;
+    };
+    log::error!("couldn't roll back the half-provisioned target application {target_application_id}: {undo}");
+    AppError::Internal(format!(
+        "{err}. An empty '{target_application_id}' application was also left behind on the target node and couldn't be removed \
+         automatically ({undo}) - delete it before retrying"
+    ))
 }
 
 /// Ports, health check, and the file copy for a freshly created target
