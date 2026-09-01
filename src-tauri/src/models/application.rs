@@ -185,7 +185,16 @@ pub struct SetResourceLimitsInput {
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentVariable {
     pub key: String,
+    /// For a secret row (`is_secret == true`), this is never the real
+    /// value outside `services::application_service`'s own keyring
+    /// resolution - see that module's `resolve_environment_secrets`/
+    /// `store_secret_environment_values`. A plain read (`ApplicationRepository::get`,
+    /// what every Tauri command returns to the frontend) always has this
+    /// empty for a secret row; only a runtime about to actually start the
+    /// Application ever sees the real value.
     pub value: String,
+    #[serde(default)]
+    pub is_secret: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

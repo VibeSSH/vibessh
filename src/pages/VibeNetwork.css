@@ -1,17 +1,8 @@
 .vibe-network-header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-3);
-}
-
-.vibe-network-advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
 }
 
 .vibe-network-status-row {

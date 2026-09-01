@@ -24,15 +24,41 @@
 //! This is *why* `start()`'s recreate-avoidance below is safe now instead
 //! of destroying state on every recreate: the container's writable layer is
 //! no longer the only place a world save/database file/config lives, the
-//! bind-mounted host directory is. **Known, deliberate gap**: no `--user`
-//! is set, so a container runs as whatever user its image defaults to
-//! (usually root) - if that user's uid/gid doesn't match the host
-//! directory's owner, writes can fail with a permission error. Solving this
-//! generally means `stat`-ing the host directory before every `docker
-//! create` and passing `--user uid:gid`, which risks breaking images that
-//! deliberately expect to run as a specific baked-in user (several official
-//! images do real setup as root before dropping privileges themselves) -
-//! not attempted here without wider testing across real blueprint images.
+//! bind-mounted host directory is. **`--user`** (`DockerConfig::run_as_dedicated_user`)
+//! runs the container as its own dedicated, per-Application Linux account
+//! (`crate::dedicated_user`) instead of the image's default (usually root)
+//! whenever a blueprint opts in (currently every Java-family one, via
+//! `blueprints::render_java_docker_config`) - so a file the process creates
+//! through the bind mount comes out owned by an identity that belongs to
+//! *this* Application alone, not root, and not the connecting SSH admin
+//! either (an Application's dedicated account is a genuinely narrower
+//! identity than that - see `crate::dedicated_user`'s own doc comment for
+//! why that distinction matters). Deliberately not forced for
+//! `GenericDockerBlueprint`'s own arbitrary, user-picked image - see that
+//! field's own doc comment. Application Files for such an Application
+//! also switches providers accordingly - see `files::sudo_user`.
+//!
+//! **Shared network** (`NETWORK_NAME`/`network_alias`): every container
+//! joins one custom `vibessh-net` bridge network (created on demand,
+//! `ensure_network_exists`) instead of Docker's own default `bridge` -
+//! Docker's default bridge never resolves sibling containers by name, only
+//! by an IP that isn't stable across a recreate, which is exactly what a
+//! Velocity proxy reaching its own Paper backend on the same Node needs to
+//! not break every time either side gets recreated. **Only takes effect
+//! going forward, from each Application's next recreate** - an already-
+//! running container stays on whatever network it was created on; two
+//! Applications on *different* Docker networks can't reach each other at
+//! all, so reaching another Application by name only works once *both*
+//! sides have been recreated at least once after this existed.
+//!
+//! **Interactive console** (`console()`/`DockerConsole`): every container
+//! created here gets `-i` and, on each `start`/`restart`, a background
+//! `docker attach` piped from a host-side named pipe (`attach_console_fifo`)
+//! - the same FIFO-backed design `runtime::remote_process` uses for a bare
+//! process, just pointed at `docker attach` instead of the process itself.
+//! Best-effort: a container that started before this existed, or whose
+//! attach step failed for some reason, just falls back to a read-only
+//! console until its next recreate.
 //!
 //! **Unlike `runtime::systemd`/`runtime::remote_process`, `start()` does
 //! NOT unconditionally recreate.** Those runtimes persist only *config*
@@ -54,8 +80,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::dedicated_user;
 use crate::errors::{AppError, AppResult};
-use crate::models::{ApplicationStatus, EnvironmentVariable, PortProtocol};
+use crate::models::{Application, ApplicationStatus, EnvironmentVariable, PortProtocol};
 use crate::ssh::docker::validate_container_ref;
 use crate::ssh::SshSession;
 
@@ -89,6 +116,28 @@ pub struct DockerConfig {
     /// created before this field existed, via `#[serde(default)]`.
     #[serde(default)]
     pub restart_policy: Option<String>,
+    /// Set only by `blueprints::render_java_docker_config` (Paper/Velocity/
+    /// Generic Java) - runs the container as its own dedicated,
+    /// unprivileged Linux account (`crate::dedicated_user`, one per
+    /// Application) instead of the image's default (root, for
+    /// eclipse-temurin), so a file the process creates through the
+    /// bind-mounted `working_directory` (a generated `server.properties`,
+    /// `velocity.toml`, a plugin's own config) is owned by an identity that
+    /// belongs to *this* Application alone - not root, and not the shared
+    /// connecting SSH admin either, which would otherwise let a bug in this
+    /// codebase (or a compromised Application) reach every other
+    /// Application's files too. Only the boolean itself is decided here, at
+    /// render time - the account's actual `uid:gid` can't be, since
+    /// resolving it means actually creating the account first
+    /// (`dedicated_user::ensure_provisioned`), which needs a live
+    /// connection `create_container` has and rendering doesn't. Deliberately
+    /// `false`/absent for `GenericDockerBlueprint`'s own arbitrary,
+    /// user-picked image: some official images (a database doing root-owned
+    /// setup in their entrypoint before dropping to their own service user,
+    /// say) genuinely need to start as root, so forcing this for an image
+    /// this codebase knows nothing about would be a regression, not a fix.
+    #[serde(default)]
+    pub run_as_dedicated_user: bool,
 }
 
 /// `docker create --restart` only accepts a fixed set of values - validated
@@ -126,6 +175,18 @@ fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a SshSession> 
 
 fn connection_arc(ctx: &RuntimeContext<'_>) -> AppResult<Arc<SshSession>> {
     ctx.connection.clone().ok_or_else(|| AppError::Internal("DockerRuntime requires a connection".into()))
+}
+
+/// Same `.vibessh-app-<uuid>.stdin` naming/location `runtime::remote_process`
+/// uses for its own FIFO - not shared code (this module has no dependency on
+/// that one), just the same convention, safe to reuse verbatim since an
+/// Application only ever has one active `RuntimeType` at a time.
+fn fifo_file_name(application_id: Uuid) -> String {
+    format!(".vibessh-app-{application_id}.stdin")
+}
+
+fn remote_path(working_directory: &str, file_name: &str) -> String {
+    format!("{}/{}", working_directory.trim_end_matches('/'), file_name)
 }
 
 /// A raw newline in an image ref, command argument, or environment value
@@ -174,9 +235,81 @@ fn validate_environment(environment: &[EnvironmentVariable]) -> AppResult<()> {
     Ok(())
 }
 
+/// Every VibeSSH-created container on a Node joins this one shared,
+/// custom bridge network instead of Docker's own unnamed default `bridge` -
+/// a custom network is what actually gets a container's embedded DNS
+/// resolution by name (`--network-alias`, see `network_alias` below); the
+/// default bridge network never resolves sibling containers by name at
+/// all, only by IP, and that IP isn't guaranteed to survive a recreate.
+/// This is what makes "one Application reaches another on the same Node"
+/// (a Velocity proxy's `velocity.toml` pointing at a Paper backend, say)
+/// a stable hostname instead of an IP the user has to go re-type every
+/// time either side gets recreated.
+const NETWORK_NAME: &str = "vibessh-net";
+
+/// Slugified `Application::name` (lowercase, `[a-z0-9-]`, collapsed
+/// repeats, never empty) - the same treatment `services::dns_service::slugify`
+/// gives a Node's own name for the exact same reason (a value safe to use
+/// as a hostname/network alias), duplicated rather than shared across the
+/// `runtime`/`services` module boundary the same way several other small
+/// helpers already are in this codebase. Not guaranteed globally unique
+/// (two Applications named e.g. "Test" and "test!!" both slugify to
+/// `"test"`) - Docker's own behavior for a duplicate alias (round-robin
+/// across every container that registered it) is an availability quirk in
+/// that rare case, not a security issue, and every container's own
+/// `--name` (`container_name`, always unique) still resolves unambiguously
+/// regardless.
+/// Capped at 63 characters (RFC 1123's own limit for a single DNS label) -
+/// otherwise a long Application name produces a `--network-alias` Docker's
+/// embedded DNS itself would reject, same fix `services::dns_service::slugify`
+/// needed for the identical reason. Every char actually pushed here is
+/// single-byte ASCII, so `result.len()` is a safe stand-in for a char count.
+fn network_alias(application: &Application) -> String {
+    let mut result = String::with_capacity(application.name.len().min(63));
+    let mut last_was_dash = false;
+    for ch in application.name.chars().flat_map(char::to_lowercase) {
+        if result.len() >= 63 {
+            break;
+        }
+        if ch.is_ascii_alphanumeric() {
+            result.push(ch);
+            last_was_dash = false;
+        } else if !last_was_dash && !result.is_empty() {
+            result.push('-');
+            last_was_dash = true;
+        }
+    }
+    while result.ends_with('-') {
+        result.pop();
+    }
+    if result.is_empty() {
+        container_name(application.id)
+    } else {
+        result
+    }
+}
+
+/// Idempotent - a plain `docker network create` errors on a network that
+/// already exists, so this probes first via `inspect`, same "cheap check
+/// before touching the mutating command" shape `dedicated_user::ensure_provisioned`
+/// already uses for its own group/user creation.
+async fn ensure_network_exists(connection: &SshSession) -> AppResult<()> {
+    let probe = connection.execute_command(&format!("sudo docker network inspect {NETWORK_NAME} >/dev/null 2>&1")).await?;
+    if probe.exit_code == 0 {
+        return Ok(());
+    }
+    let output = connection.execute_command(&format!("sudo docker network create {NETWORK_NAME}")).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() { "docker network create failed".to_string() } else { detail.to_string() };
+        return Err(AppError::Connection(format!("couldn't create the '{NETWORK_NAME}' network: {detail}")));
+    }
+    Ok(())
+}
+
 async fn container_exists(connection: &SshSession, name: &str) -> AppResult<bool> {
     validate_container_ref(name)?;
-    let output = connection.execute_command(&format!("docker inspect {name} >/dev/null 2>&1")).await?;
+    let output = connection.execute_command(&format!("sudo docker inspect {name} >/dev/null 2>&1")).await?;
     Ok(output.exit_code == 0)
 }
 
@@ -184,7 +317,7 @@ async fn container_exists(connection: &SshSession, name: &str) -> AppResult<bool
 /// actual SSH exec so the resource-limit flag placement can be unit tested
 /// without a live connection - same split `runtime::systemd::render_unit_file`
 /// already uses for the same reason.
-fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<String> {
+fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str, user_flag: Option<&str>) -> AppResult<String> {
     validate_container_ref(name)?;
     reject_newlines(&config.image, "the image")?;
     for arg in &config.command {
@@ -199,11 +332,48 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     }
 
     let working_directory = shell_quote(&ctx.application.working_directory);
+    // `-i` keeps STDIN open even with nothing attached yet - harmless if the
+    // Console tab is never used, and what makes `attach_console_fifo`'s
+    // later `docker attach` able to feed the container's stdin at all (an
+    // application never created with this can't become interactive after
+    // the fact without a recreate, same "baked in at create time" rule
+    // `--user`/`--memory`/etc already follow here).
+    //
+    // `--add-host host.docker.internal:host-gateway` is what Docker Desktop
+    // gives a container for free but plain Linux dockerd (what every real
+    // Node here runs) doesn't - without it, a container that needs to reach
+    // something on its own host (a self-hosted MySQL/MariaDB a phpMyAdmin
+    // Application connects to, say) has no portable name for "the host" to
+    // use, only the bridge network's own gateway IP, which isn't fixed or
+    // guessable. Harmless when nothing inside the container ever resolves
+    // that name.
+    //
+    // `--network {NETWORK_NAME} --network-alias {network_alias(...)}` puts
+    // every container on the same shared, custom network (see
+    // `NETWORK_NAME`'s own doc comment for why that - not Docker's default
+    // `bridge` - is what makes name-based resolution between two
+    // Applications on the same Node possible at all) and gives it a
+    // human-readable name on that network, so one Application (a Velocity
+    // proxy, say) can reach another (its Paper backend) as
+    // `<other Application's name>:<port>` - stable across either side being
+    // recreated, unlike hand-copying a container IP.
     let mut command = format!(
-        "docker create --name {} --restart {} -v {working_directory}:{working_directory} -w {working_directory} ",
+        "sudo docker create -i --name {} --restart {} --add-host host.docker.internal:host-gateway \
+         --network {NETWORK_NAME} --network-alias {} \
+         -v {working_directory}:{working_directory} -w {working_directory} ",
         shell_quote(name),
         restart_policy,
+        shell_quote(&network_alias(ctx.application)),
     );
+    // Only ever set for `run_as_dedicated_user` (see that field's own doc
+    // comment) - runs the process as this Application's own dedicated
+    // Linux account, so a file it creates there is immediately editable by
+    // that same account (via `files::sudo_user`), instead of coming out
+    // owned by root (the image's default) and reachable by no one but a
+    // manual `sudo` session.
+    if let Some(user) = user_flag {
+        command.push_str(&format!("--user {user} "));
+    }
     if let Some(mb) = config.memory_limit_mb {
         command.push_str(&format!("--memory {mb}m "));
     }
@@ -235,7 +405,15 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
 }
 
 async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
-    let command = build_create_command(ctx, config, name)?;
+    ensure_network_exists(connection).await?;
+    let user_flag = if config.run_as_dedicated_user {
+        let username = dedicated_user::username(ctx.application.id);
+        dedicated_user::ensure_provisioned(connection, &username).await?;
+        Some(dedicated_user::user_id(connection, &username).await?)
+    } else {
+        None
+    };
+    let command = build_create_command(ctx, config, name, user_flag.as_deref())?;
     let output = connection.execute_command(&command).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
@@ -243,6 +421,97 @@ async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, con
         return Err(AppError::Connection(format!("couldn't create the container: {detail}")));
     }
     Ok(())
+}
+
+/// Feeds `docker attach`'s stdin from a host-side named pipe, so
+/// `DockerConsole::write` (a plain, one-off SSH exec per keystroke/command)
+/// can reach the container's own stdin without holding an SSH channel open
+/// for the console's whole lifetime - the exact same "background process
+/// holds the pipe open, a later fresh command just writes into it" trick
+/// `runtime::remote_process::build_start_script` already uses for a bare
+/// `nohup`'d process, here pointed at `docker attach` instead of the
+/// application's own binary. `exec 3<>{fifo}` (read-write, not a plain
+/// blocking `<{fifo}`) is what lets the not-yet-connected FIFO be handed to
+/// the backgrounded `docker attach` as its stdin without a chicken-and-egg
+/// deadlock - see that same line in `build_start_script`'s own doc comment.
+/// A fresh attach is needed after *every* `start`/`restart`: `docker
+/// attach`'s stream is tied to one running instance of the container's
+/// entrypoint process, so it exits the moment that instance stops, even
+/// though the container (and this same FIFO) survives to be reused next
+/// start. Best-effort by design (the caller ignores this call's own
+/// error) - a container that starts fine but can't get an attacher still
+/// runs; it just falls back to a read-only console, same as
+/// `RemoteProcessRuntime`'s own "no true interactive TTY" limitation for a
+/// blueprint image this attach step doesn't support for some reason.
+/// Pure script construction, same "separate from the actual SSH exec so it
+/// can be unit tested without a live connection" split
+/// `build_create_command`/`create_container` already establish in this
+/// module.
+///
+/// `mkfifo` and its permissive `chmod` both run under `sudo`, and the
+/// connecting admin's own following `exec 3<>` deliberately doesn't: a
+/// `run_as_dedicated_user` Application's `working_directory` is owned by
+/// its own dedicated account, not the admin
+/// (`ensure_working_directory_owned_by_dedicated_user`), so the admin has
+/// no permission to *create* a new file there directly - only `sudo` can.
+/// `chmod 666` is what then lets the unprivileged admin's own `exec 3<>`
+/// open that root-created fifo for reading and writing right after,
+/// something merely owning the fifo wouldn't otherwise grant a different
+/// user.
+///
+/// Self-heals a fifo path that isn't actually a fifo: `mkfifo` refuses to
+/// create one where *anything* else already exists, silently (the whole
+/// point of this script's own `2>/dev/null`) - normally a harmless no-op
+/// since a real fifo from a previous start is exactly what's expected to
+/// already be there, but a regular file left at that exact path (e.g. by
+/// an older, now-fixed version of `DockerConsole::write` that wrote
+/// straight to it instead of through this fifo) would permanently wedge
+/// every future console attach with no error to explain why - `test -p`
+/// checks the existing path is genuinely a fifo before trusting it, and
+/// clears anything else out of the way first.
+fn build_attach_script(ctx: &RuntimeContext<'_>, name: &str) -> AppResult<String> {
+    validate_container_ref(name)?;
+    let fifo = shell_quote(&remote_path(&ctx.application.working_directory, &fifo_file_name(ctx.application.id)));
+    Ok(format!(
+        "if [ -e {fifo} ] && [ ! -p {fifo} ]; then sudo rm -f {fifo}; fi\n\
+         sudo mkfifo {fifo} 2>/dev/null\n\
+         sudo chmod 666 {fifo}\n\
+         exec 3<>{fifo}\n\
+         nohup sudo docker attach --sig-proxy=false {name} <&3 3<&- >/dev/null 2>&1 &\n\
+         disown\n"
+    ))
+}
+
+async fn attach_console_fifo(connection: &SshSession, ctx: &RuntimeContext<'_>, name: &str) -> AppResult<()> {
+    let script = build_attach_script(ctx, name)?;
+    let output = connection.execute_command(&script).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() { "couldn't attach the console".to_string() } else { detail.to_string() };
+        return Err(AppError::Connection(detail));
+    }
+    Ok(())
+}
+
+/// `--user` (see `DockerConfig::run_as_dedicated_user`'s own doc comment)
+/// only decides who *new* files the container writes from now on belong to
+/// - it does nothing for whatever's already sitting in the bind mount (a
+/// config/jar/world save written by a prior, root-default image, or by this
+/// same blueprint before it started opting into `run_as_dedicated_user`, or
+/// before this Application's dedicated account even existed). Called on
+/// every `start`/`restart`, not just a fresh `docker create`, so a file the
+/// dedicated account still can't write to becomes writable the next time
+/// the user hits Start/Restart - not only after they specifically think to
+/// hit Recreate. Cheap and idempotent (a no-op chown on files that already
+/// have the right owner) - best-effort, same as `attach_console_fifo`: a
+/// failure here doesn't block start/restart, it just leaves whichever
+/// specific files it couldn't reach still unwritable.
+async fn ensure_working_directory_owned_by_dedicated_user(connection: &SshSession, ctx: &RuntimeContext<'_>) {
+    let username = dedicated_user::username(ctx.application.id);
+    if dedicated_user::ensure_provisioned(connection, &username).await.is_err() {
+        return;
+    }
+    let _ = connection.execute_command(&format!("sudo chown -R {} {}", shell_quote(&username), shell_quote(&ctx.application.working_directory))).await;
 }
 
 /// `.State.Status` alone can't distinguish a clean stop from a crash - both
@@ -343,7 +612,7 @@ impl ApplicationRuntime for DockerRuntime {
         }
         validate_environment(ctx.environment)?;
 
-        let output = connection.execute_command("docker version --format '{{.Server.Version}}' 2>&1").await?;
+        let output = connection.execute_command("sudo docker version --format '{{.Server.Version}}' 2>&1").await?;
         if output.exit_code != 0 {
             return Err(AppError::InvalidInput("Docker doesn't seem to be available on this host".into()));
         }
@@ -358,7 +627,18 @@ impl ApplicationRuntime for DockerRuntime {
         if !container_exists(connection, &name).await? {
             create_container(connection, ctx, &config, &name).await?;
         }
-        connection.start_container(&name).await
+        if config.run_as_dedicated_user {
+            ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
+            // Best-effort, same reasoning as everything else on this path -
+            // Application Files just falls back to failing clearly on its
+            // own next call if this doesn't land, it doesn't block start.
+            let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
+        }
+        connection.start_container(&name).await?;
+        // Best-effort, per `attach_console_fifo`'s own doc comment - a
+        // console attach failure must never fail the start itself.
+        let _ = attach_console_fifo(connection, ctx, &name).await;
+        Ok(())
     }
 
     /// `docker stop` is already a graceful stop by construction (SIGTERM,
@@ -380,9 +660,19 @@ impl ApplicationRuntime for DockerRuntime {
     /// been created yet, same as the other two SSH runtimes.
     async fn restart(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
         let connection = connection_ref(ctx)?;
+        let config = parse_config(ctx)?;
         let name = container_name(ctx.application.id);
         if container_exists(connection, &name).await? {
-            connection.restart_container(&name).await
+            if config.run_as_dedicated_user {
+                ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
+                let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
+            }
+            connection.restart_container(&name).await?;
+            // Best-effort, per `attach_console_fifo`'s own doc comment - the
+            // previous attach process died along with the pre-restart
+            // instance, a fresh one is needed for the new one.
+            let _ = attach_console_fifo(connection, ctx, &name).await;
+            Ok(())
         } else {
             self.start(ctx).await
         }
@@ -402,7 +692,7 @@ impl ApplicationRuntime for DockerRuntime {
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
         let output = connection
-            .execute_command(&format!("docker inspect --format '{{{{.State.Status}}}}|{{{{.State.ExitCode}}}}' {name} 2>/dev/null"))
+            .execute_command(&format!("sudo docker inspect --format '{{{{.State.Status}}}}|{{{{.State.ExitCode}}}}' {name} 2>/dev/null"))
             .await?;
         if output.exit_code != 0 {
             // Never created, or removed - Stopped, not an error: the same
@@ -420,14 +710,15 @@ impl ApplicationRuntime for DockerRuntime {
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
 
-        let stats_output =
-            connection.execute_command(&format!("docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null")).await?;
+        let stats_output = connection
+            .execute_command(&format!("sudo docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null"))
+            .await?;
         if stats_output.exit_code != 0 {
             return Ok(empty);
         }
         let (cpu_percent, ram_bytes) = parse_stats_output(&stats_output.stdout);
 
-        let started_output = connection.execute_command(&format!("docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null")).await?;
+        let started_output = connection.execute_command(&format!("sudo docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null")).await?;
         let uptime_seconds = parse_started_at(&started_output.stdout);
 
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds })
@@ -438,12 +729,19 @@ impl ApplicationRuntime for DockerRuntime {
         health_check::default_health_check(ctx, spec, status, Some("the container exited with a non-zero status")).await
     }
 
-    async fn console(&self, _ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {
-        // Containers created here don't get `-i` (see the module doc
-        // comment on scope) - this is the trait's own documented example
-        // of a legitimate `None` ("a Docker container started without
-        // -i" - see `ApplicationConsole`'s doc comment).
-        Ok(None)
+    /// `None` for a container that isn't running (never started, still
+    /// created-but-stopped, or created before this runtime started passing
+    /// `-i`/attaching a console FIFO - the trait's own documented example of
+    /// a legitimate `None`) - the UI shows a clear read-only state rather
+    /// than accepting input `attach_console_fifo` was never actually able to
+    /// wire up.
+    async fn console(&self, ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>> {
+        if self.status(ctx).await? != ApplicationStatus::Running {
+            return Ok(None);
+        }
+        let connection = connection_arc(ctx)?;
+        let fifo_path = remote_path(&ctx.application.working_directory, &fifo_file_name(ctx.application.id));
+        Ok(Some(Box::new(DockerConsole { connection, fifo_path })))
     }
 
     async fn logs(&self, ctx: &RuntimeContext<'_>) -> AppResult<Box<dyn LogProvider>> {
@@ -464,13 +762,58 @@ impl ApplicationRuntime for DockerRuntime {
         if !container_exists(connection, &name).await? {
             return Ok(());
         }
-        let output = connection.execute_command(&format!("docker rm -f {}", shell_quote(&name))).await?;
+        let output = connection.execute_command(&format!("sudo docker rm -f {}", shell_quote(&name))).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "docker rm failed".to_string() } else { detail.to_string() };
             return Err(AppError::Connection(format!("couldn't remove the container: {detail}")));
         }
         Ok(())
+    }
+}
+
+/// Writes into `attach_console_fifo`'s named pipe - a plain one-off SSH exec
+/// per message, same shape as `RemoteConsole::write`, since the actual
+/// long-lived connection to the container's stdin is the background
+/// `docker attach` process that fifo feeds, not this struct.
+struct DockerConsole {
+    connection: Arc<SshSession>,
+    fifo_path: String,
+}
+
+#[async_trait::async_trait]
+impl ApplicationConsole for DockerConsole {
+    async fn write(&self, input: &str) -> AppResult<()> {
+        reject_newlines(input, "console input")?;
+        // `sudo tee`, not a plain `>` redirect: a `run_as_dedicated_user`
+        // Application's whole `working_directory` - this fifo included -
+        // gets `chown -R`'d to that Application's own dedicated account
+        // (`ensure_working_directory_owned_by_dedicated_user`), so the
+        // connecting admin writing here directly would otherwise need the
+        // fifo to be group/other-writable, which `mkfifo`'s own default
+        // mode doesn't guarantee. `sudo` sidesteps the ownership question
+        // entirely, same as every other cross-user write this module
+        // already does.
+        let output = self
+            .connection
+            .execute_command(&format!("printf '%s\\n' {} | sudo tee -a {} >/dev/null", shell_quote(input), shell_quote(&self.fifo_path)))
+            .await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "couldn't write to the application's console".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(detail));
+        }
+        Ok(())
+    }
+
+    fn close(&self) {
+        // The container isn't tied to a console UI's lifecycle - closing the
+        // console must not stop it, same reasoning as
+        // `RemoteConsole`/`LocalProcessRuntime`'s own console.
+    }
+
+    fn supports_input(&self) -> bool {
+        true
     }
 }
 
@@ -493,7 +836,7 @@ impl LogProvider for DockerLogs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Application, ApplicationPort, HealthCheckType, RuntimeType};
+    use crate::models::{ApplicationPort, HealthCheckType, RuntimeType};
 
     fn stub_application(id: Uuid) -> Application {
         Application {
@@ -520,6 +863,47 @@ mod tests {
         let id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
         assert_eq!(container_name(id), "vibessh-app-11111111-2222-3333-4444-555555555555");
         assert!(validate_container_ref(&container_name(id)).is_ok());
+    }
+
+    #[test]
+    fn network_alias_slugifies_the_application_name() {
+        let mut application = stub_application(Uuid::new_v4());
+        application.name = "Paper Survival!!".to_string();
+        assert_eq!(network_alias(&application), "paper-survival");
+    }
+
+    #[test]
+    fn network_alias_falls_back_to_the_container_name_for_an_all_symbol_name() {
+        let id = Uuid::new_v4();
+        let mut application = stub_application(id);
+        application.name = "!!!".to_string();
+        assert_eq!(network_alias(&application), container_name(id));
+    }
+
+    /// A real bug, not a hypothetical: without this cap, an Application
+    /// name longer than 63 characters produced a `--network-alias` Docker's
+    /// own embedded DNS rejects outright - see `network_alias`'s own doc
+    /// comment for why RFC 1123's 63-character DNS label limit is the exact
+    /// bound.
+    #[test]
+    fn network_alias_truncates_to_the_rfc1123_dns_label_limit() {
+        let mut application = stub_application(Uuid::new_v4());
+        application.name = "a".repeat(80);
+        let alias = network_alias(&application);
+        assert_eq!(alias.len(), 63);
+        assert_eq!(alias, "a".repeat(63));
+    }
+
+    #[test]
+    fn build_create_command_joins_the_shared_network_with_an_alias_before_the_image() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(command.contains(&format!("--network {NETWORK_NAME} --network-alias 'my-app'")), "{command}");
+        assert!(command.find("--network").unwrap() < command.find("alpine:latest").unwrap());
     }
 
     #[test]
@@ -577,31 +961,95 @@ mod tests {
 
     #[test]
     fn validate_environment_rejects_a_bad_key_but_accepts_a_good_one() {
-        assert!(validate_environment(&[EnvironmentVariable { key: "PORT".into(), value: "25565".into() }]).is_ok());
-        assert!(validate_environment(&[EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }]).is_err());
+        assert!(validate_environment(&[EnvironmentVariable { key: "PORT".into(), value: "25565".into(), is_secret: false }]).is_ok());
+        assert!(validate_environment(&[EnvironmentVariable { key: "NOT VALID".into(), value: "x".into(), is_secret: false }]).is_err());
     }
 
     #[test]
     fn build_create_command_includes_memory_and_cpu_flags_before_the_image_when_set() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5), restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5), restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("--memory 512m"), "{command}");
         assert!(command.contains("--cpus 1.5"), "{command}");
         assert!(command.find("--memory").unwrap() < command.find("alpine:latest").unwrap());
     }
 
     #[test]
-    fn build_create_command_bind_mounts_and_sets_the_workdir_to_the_working_directory() {
+    fn build_create_command_includes_a_user_flag_before_the_image_when_given_one() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", Some("1000:1000")).unwrap();
+        assert!(command.contains("--user 1000:1000"), "{command}");
+        assert!(command.find("--user").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_create_command_omits_the_user_flag_when_none_is_given() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(!command.contains("--user"), "{command}");
+    }
+
+    #[test]
+    fn build_create_command_always_includes_the_interactive_flag_before_the_image() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(command.contains("docker create -i "), "{command}");
+        assert!(command.find("-i").unwrap() < command.find("alpine:latest").unwrap());
+    }
+
+    #[test]
+    fn build_attach_script_wires_the_fifo_and_the_container_name() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
+        assert!(script.contains("[ ! -p "), "{script}");
+        assert!(script.contains("sudo mkfifo "), "{script}");
+        assert!(script.contains("sudo chmod 666 "), "{script}");
+        assert!(script.contains("'/srv/my-app/.vibessh-app-"), "{script}");
+        assert!(script.contains(".stdin'"), "{script}");
+        assert!(script.contains("docker attach --sig-proxy=false vibessh-app-test "), "{script}");
+        assert!(script.contains("<&3 3<&-"), "{script}");
+        // `exec 3<>` (the admin's own, unprivileged open) must come after
+        // both `sudo` steps - it depends on the fifo already existing and
+        // already being permissive.
+        assert!(script.find("chmod 666").unwrap() < script.find("exec 3<>").unwrap(), "{script}");
+    }
+
+    #[test]
+    fn build_attach_script_rejects_an_invalid_container_name() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        assert!(build_attach_script(&ctx, "not; a valid name").is_err());
+    }
+
+    #[test]
+    fn build_create_command_bind_mounts_and_sets_the_workdir_to_the_working_directory() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("-v '/srv/my-app':'/srv/my-app'"), "{command}");
         assert!(command.contains("-w '/srv/my-app'"), "{command}");
         assert!(command.find("-v").unwrap() < command.find("alpine:latest").unwrap());
@@ -610,11 +1058,11 @@ mod tests {
     #[test]
     fn build_create_command_defaults_restart_policy_to_unless_stopped() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("--restart unless-stopped"), "{command}");
     }
 
@@ -624,12 +1072,12 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()) };
-        let command = build_create_command(&ctx, &always, "vibessh-app-test").unwrap();
+        let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()), run_as_dedicated_user: false };
+        let command = build_create_command(&ctx, &always, "vibessh-app-test", None).unwrap();
         assert!(command.contains("--restart always"), "{command}");
 
-        let bogus = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("whenever".into()) };
-        assert!(build_create_command(&ctx, &bogus, "vibessh-app-test").is_err());
+        let bogus = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("whenever".into()), run_as_dedicated_user: false };
+        assert!(build_create_command(&ctx, &bogus, "vibessh-app-test", None).is_err());
     }
 
     fn stub_port(protocol: PortProtocol, bind_address: &str, internal_port: u16, external_port: Option<u16>) -> ApplicationPort {
@@ -651,7 +1099,7 @@ mod tests {
     #[test]
     fn build_create_command_publishes_only_ports_with_an_external_port_set() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ports = vec![
             stub_port(PortProtocol::Tcp, "0.0.0.0", 25565, Some(25565)),
@@ -660,7 +1108,7 @@ mod tests {
         ];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("-p '0.0.0.0:25565:25565/tcp'"), "{command}");
         assert!(command.contains("-p '0.0.0.0:24454:24454/udp'"), "{command}");
         // The port with no external_port must not be published at all.
@@ -671,33 +1119,33 @@ mod tests {
     #[test]
     fn build_create_command_publishes_nothing_when_no_ports_are_declared() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(!command.contains("-p "));
     }
 
     #[test]
     fn build_create_command_rejects_a_newline_in_a_ports_bind_address() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
 
-        assert!(build_create_command(&ctx, &config, "vibessh-app-test").is_err());
+        assert!(build_create_command(&ctx, &config, "vibessh-app-test", None).is_err());
     }
 
     #[test]
     fn build_create_command_omits_limit_flags_when_unset() {
         let application = stub_application(Uuid::new_v4());
-        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None };
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test").unwrap();
+        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(!command.contains("--memory"));
         assert!(!command.contains("--cpus"));
     }
@@ -708,11 +1156,11 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
-        let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None };
-        assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test").is_err());
+        let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test", None).is_err());
 
-        let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None };
-        assert!(build_create_command(&ctx, &negative_cpu, "vibessh-app-test").is_err());
+        let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None, run_as_dedicated_user: false };
+        assert!(build_create_command(&ctx, &negative_cpu, "vibessh-app-test", None).is_err());
     }
 
     #[tokio::test]

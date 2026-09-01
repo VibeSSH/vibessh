@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::RuntimeType;
+use super::{PortProtocol, RuntimeType};
 
 /// A declarative description of "what kind of application is this" - which
 /// `RuntimeType`s it can run under, which UI features it needs
@@ -40,6 +40,24 @@ pub struct Blueprint {
     /// never a separate, blueprint-specific editor.
     #[serde(default)]
     pub known_files: Vec<KnownFile>,
+    /// Ports this blueprint's service is conventionally reached on (Paper/
+    /// Velocity's `25565`) - created as real, `Public`-visibility
+    /// `ApplicationPort` rows the moment the Application is (`services::
+    /// application_service::create_application`), not left for the user to
+    /// discover and add by hand on the Ports tab before their server is
+    /// actually reachable from outside. The "plug and play" bar this whole
+    /// feature set follows: a Node's firewall reconcile (`services::
+    /// firewall_service::desired_rules`) already derives its rules from
+    /// exactly these `ApplicationPort` rows, so a blueprint that forgets to
+    /// declare its own default port would also silently never get a
+    /// firewall rule for it, on top of never getting Docker's own `-p`
+    /// publish flag (`runtime::docker::build_create_command`). Empty by
+    /// default (`GenericBlueprint`/`GenericDockerBlueprint`/
+    /// `GenericJavaBlueprint` have no single well-known port to assume) -
+    /// still user-editable/removable afterward like any other port, this is
+    /// only ever the *starting* value.
+    #[serde(default)]
+    pub default_ports: Vec<DefaultPort>,
     pub is_builtin: bool,
 }
 
@@ -51,6 +69,18 @@ pub struct KnownFile {
     /// Files path goes through, not a special-cased lookup.
     pub path: String,
     pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultPort {
+    pub name: String,
+    pub protocol: PortProtocol,
+    pub internal_port: u16,
+    /// Published to this same port on the host by default - the ordinary
+    /// case for a single well-known service port. Still just a starting
+    /// value the user can change afterward, same as `internal_port`.
+    pub external_port: u16,
 }
 
 /// UI-facing capabilities this application exposes - not host-level

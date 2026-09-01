@@ -1,5 +1,6 @@
 import { ButtonHTMLAttributes, forwardRef } from "react";
 import { Icon } from "./Icon";
+import { Tooltip } from "./Tooltip";
 import { useRipple } from "@/hooks/useRipple";
 import "./IconButton.css";
 
@@ -23,20 +24,21 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       .filter(Boolean)
       .join(" ");
     return (
-      <button
-        ref={ref}
-        className={classes}
-        title={title}
-        aria-label={title}
-        onPointerDown={(e) => {
-          createRipple(e);
-          onPointerDown?.(e);
-        }}
-        {...rest}
-      >
-        {rippleEls}
-        <Icon name={icon} size={iconSize ?? DEFAULT_ICON_SIZE[size]} />
-      </button>
+      <Tooltip label={title}>
+        <button
+          ref={ref}
+          className={classes}
+          aria-label={title}
+          onPointerDown={(e) => {
+            createRipple(e);
+            onPointerDown?.(e);
+          }}
+          {...rest}
+        >
+          {rippleEls}
+          <Icon name={icon} size={iconSize ?? DEFAULT_ICON_SIZE[size]} />
+        </button>
+      </Tooltip>
     );
   },
 );

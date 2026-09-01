@@ -11,7 +11,9 @@
 //! `sandbox`-based, canonicalization-checked jail every other Files
 //! operation uses - extraction is not a bulk-write bypass of that.
 
-use std::io::Read;
+use std::future::Future;
+use std::io::{Read, Write};
+use std::pin::Pin;
 
 use crate::errors::{AppError, AppResult};
 
@@ -75,6 +77,80 @@ pub async fn extract_zip(provider: &dyn ApplicationFileProvider, archive_bytes: 
         extracted += 1;
     }
     Ok(extracted)
+}
+
+/// Compresses `paths` (each an existing file or directory under the
+/// provider's own root) into a single new zip archive written to
+/// `destination_path`. Each entry in `paths` becomes a top-level entry in
+/// the archive named after its own basename (zipping `"backup/plugins"`
+/// and `"backup/config.yml"` together produces `plugins/...` and
+/// `config.yml` entries, not the full source path) - a directory is walked
+/// recursively.
+///
+/// Collects every entry's bytes into memory *before* touching the
+/// `ZipWriter` (same reasoning as `extract_zip`'s own comment on `ZipFile`
+/// not being `Send`, just the write-side mirror of it: nothing holds a
+/// `zip` crate value across an `.await`), then does the actual archive
+/// assembly as one synchronous block. Fine for the file sizes this UI
+/// already handles (backups/plugin jars, not multi-gigabyte datasets) -
+/// streaming would need a very different shape.
+pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String], destination_path: &str) -> AppResult<()> {
+    let mut entries = Vec::new();
+    for path in paths {
+        let name = path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(path).to_string();
+        collect_for_zip(provider, path, name, &mut entries).await?;
+    }
+
+    let mut buf = Vec::new();
+    {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, is_dir, contents) in &entries {
+            if *is_dir {
+                writer.add_directory(format!("{name}/"), options).map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
+            } else {
+                writer.start_file(name, options).map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
+                writer.write_all(contents).map_err(|err| AppError::Internal(format!("couldn't write '{name}' into the archive: {err}")))?;
+            }
+        }
+        writer.finish().map_err(|err| AppError::Internal(format!("couldn't finalize the archive: {err}")))?;
+    }
+    provider.write_file(destination_path, &buf).await
+}
+
+/// Boxed for the same reason `files::sftp`'s own `delete_resolved`/
+/// `copy_resolved` are - an `async fn` can't call itself directly.
+///
+/// Builds each child's path itself (`path` + `/` + `entry.name`) rather than
+/// reusing the `entry.path` a listing returns - that field is already the
+/// *provider's own fully-resolved, canonical* path (see
+/// `SftpApplicationFileProvider::list_directory`/`resolve`), which is not
+/// generally the same string shape `provider.metadata`/`read_file` expect
+/// back (those resolve their input *again*, relative to the provider's
+/// root - feeding them an already-resolved path double-resolves it, wrong
+/// for any root other than "/"). Staying in "whatever path shape the
+/// original caller passed in" the whole way down avoids that entirely.
+fn collect_for_zip<'a>(
+    provider: &'a dyn ApplicationFileProvider,
+    path: &'a str,
+    name: String,
+    out: &'a mut Vec<(String, bool, Vec<u8>)>,
+) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let stat = provider.metadata(path).await?;
+        if stat.is_dir {
+            out.push((name.clone(), true, Vec::new()));
+            for entry in provider.list_directory(path).await? {
+                let child_path = format!("{}/{}", path.trim_end_matches('/'), entry.name);
+                let child_name = format!("{name}/{}", entry.name);
+                collect_for_zip(provider, &child_path, child_name, out).await?;
+            }
+        } else {
+            let contents = provider.read_file(path).await?;
+            out.push((name, false, contents));
+        }
+        Ok(())
+    })
 }
 
 /// The provider only exposes a single-level `create_directory` - this
@@ -175,5 +251,40 @@ mod tests {
         let root = temp_root();
         let provider = LocalApplicationFileProvider::new(&root);
         assert!(extract_zip(&provider, b"not a zip file at all", ".").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_zip_then_extract_zip_round_trips_a_file_and_a_directory() {
+        let source_root = temp_root();
+        let source = LocalApplicationFileProvider::new(&source_root);
+        source.create_directory("plugins").await.unwrap();
+        source.write_file("plugins/MyPlugin.jar", b"jar-bytes").await.unwrap();
+        source.write_file("readme.txt", b"hello").await.unwrap();
+
+        create_zip(&source, &["plugins".to_string(), "readme.txt".to_string()], "backup.zip").await.unwrap();
+        let archive_bytes = source.read_file("backup.zip").await.unwrap();
+
+        let dest_root = temp_root();
+        let dest = LocalApplicationFileProvider::new(&dest_root);
+        let extracted = extract_zip(&dest, &archive_bytes, ".").await.unwrap();
+
+        assert_eq!(extracted, 2);
+        assert_eq!(dest.read_file("plugins/MyPlugin.jar").await.unwrap(), b"jar-bytes");
+        assert_eq!(dest.read_file("readme.txt").await.unwrap(), b"hello");
+    }
+
+    #[tokio::test]
+    async fn create_zip_names_entries_by_basename_not_the_full_source_path() {
+        let source_root = temp_root();
+        let source = LocalApplicationFileProvider::new(&source_root);
+        source.create_directory("backup").await.unwrap();
+        source.write_file("backup/config.yml", b"key: value").await.unwrap();
+
+        create_zip(&source, &["backup/config.yml".to_string()], "out.zip").await.unwrap();
+        let archive_bytes = source.read_file("out.zip").await.unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes)).unwrap();
+
+        // Not "backup/config.yml" - the entry is rooted at its own basename.
+        assert_eq!(archive.by_index(0).unwrap().name(), "config.yml");
     }
 }

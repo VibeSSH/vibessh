@@ -1,4 +1,5 @@
 mod app_info_service;
+mod application_backup_service;
 mod application_files_service;
 mod application_service;
 mod cloud_service;
@@ -11,30 +12,41 @@ mod network_service;
 mod node_state_service;
 mod papermc_service;
 mod ping_service;
+mod purpur_service;
 mod server_service;
 mod ssh_service;
 
 use crate::errors::AppResult;
 
 pub use app_info_service::get_app_info;
+pub use application_backup_service::{
+    create_backup, delete_backup, get_backup_destination, get_backup_schedule, list_backups, restore_backup, run_due_backups,
+    set_backup_destination, set_backup_schedule, test_backup_destination,
+};
 pub use application_files_service::{
-    copy as copy_application_file, create_directory as create_application_directory, delete as delete_application_file,
+    clear_file_history, copy as copy_application_file, create_directory as create_application_directory, delete as delete_application_file,
     download_file as download_application_file, extract_archive as extract_application_archive, get_metadata as get_application_file_metadata,
     list_directory as list_application_files, list_file_history, read_file_for_editor as read_application_file, rename as rename_application_file,
     restore_file_history, save_file as save_application_file, set_permissions as set_application_file_permissions,
     upload_file as upload_application_file, write_file as write_application_file, FileHistoryVersion,
 };
 pub use application_service::{
-    add_application_port, application_health_check, application_logs, application_resource_usage, create_application,
-    delete_application, get_application, kill_application, list_application_ports, list_applications, list_blueprints,
-    recreate_application, refresh_application_status, remove_application_port, restart_application, set_application_health_check,
-    set_application_resource_limits, start_application, stop_application, update_application_port,
+    add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,
+    create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
+    list_blueprints, list_registry_credentials, recreate_application, refresh_application_status, remove_application_port,
+    remove_registry_credential, restart_application,
+    pull_application_image, set_application_environment, set_application_health_check, set_application_image, set_application_resource_limits,
+    set_registry_credential, start_application,
+    stop_application, update_application_config, update_application_port,
 };
 pub use dns_service::{
-    create_alias as create_dns_alias, delete_alias as delete_dns_alias, list_records as list_dns_records, resolve_dns_view,
-    sync_dns, update_alias as update_dns_alias, verify_alias as verify_dns_alias, DnsSyncResult,
+    create_alias as create_dns_alias, delete_alias as delete_dns_alias, get_dns_suffix, list_records as list_dns_records, resolve_dns_view,
+    set_dns_suffix, sync_dns, update_alias as update_dns_alias, verify_alias as verify_dns_alias, DnsAliasWithSync, DnsSyncResult,
 };
-pub use firewall_service::{sync_application_node_firewall, FirewallSyncResult};
+pub use firewall_service::{
+    add_custom_firewall_rule, desired_rules as preview_node_firewall_rules, enable_node_firewall, node_firewall_overview,
+    reconcile_node as sync_node_firewall, remove_custom_firewall_rule, sync_application_node_firewall, FirewallSyncResult, NodeFirewallOverview,
+};
 pub use network_service::{
     join_node, leave_node, list_members as list_network_members, list_node_endpoints, mesh_status, reconcile_mesh, sync_vibe_network,
     MeshReconcileResult, NodeEndpoint, NodeMeshStatus, PeerHandshake, VibeNetworkSyncResult,
@@ -48,12 +60,13 @@ pub use database_service::{
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use migration_service::{migrate_application, MigrationResult};
 pub use papermc_service::PapermcBuild;
+pub use purpur_service::PurpurBuild;
 
 /// Thin, project-fixed wrappers over `papermc_service`'s own
 /// project-parameterized functions - `blueprints::{PaperBlueprint,
-/// VelocityBlueprint}` and their matching Tauri commands each only ever
-/// need one specific project, so callers don't have to know or repeat the
-/// literal `"paper"`/`"velocity"` id themselves.
+/// VelocityBlueprint, WaterfallBlueprint}` and their matching Tauri commands
+/// each only ever need one specific project, so callers don't have to know
+/// or repeat the literal `"paper"`/`"velocity"`/`"waterfall"` id themselves.
 pub async fn list_paper_versions() -> AppResult<Vec<String>> {
     papermc_service::list_versions("paper").await
 }
@@ -70,6 +83,22 @@ pub async fn latest_velocity_build(version: &str) -> AppResult<PapermcBuild> {
     papermc_service::latest_build("velocity", version).await
 }
 
+pub async fn list_waterfall_versions() -> AppResult<Vec<String>> {
+    papermc_service::list_versions("waterfall").await
+}
+
+pub async fn latest_waterfall_build(version: &str) -> AppResult<PapermcBuild> {
+    papermc_service::latest_build("waterfall", version).await
+}
+
+pub async fn list_purpur_versions() -> AppResult<Vec<String>> {
+    purpur_service::list_versions().await
+}
+
+pub async fn latest_purpur_build(version: &str) -> AppResult<PurpurBuild> {
+    purpur_service::latest_build(version).await
+}
+
 pub use cloud_service::{
     accept_invitation as cloud_accept_invitation, assign_role as cloud_assign_role, create_invitation as cloud_create_invitation,
     create_role as cloud_create_role, create_server as cloud_create_server, create_team as cloud_create_team,
@@ -83,16 +112,20 @@ pub use cloud_service::{
     unassign_role as cloud_unassign_role, update_role as cloud_update_role,
 };
 pub use ping_service::ping_server;
-pub use server_service::{create_server, delete_server, get_server, list_servers, probe_node_capabilities, update_server, upsert_agent_server};
+pub use server_service::{
+    create_server, delete_server, get_server, install_docker, install_ufw, install_wireguard, list_servers, probe_node_capabilities, update_server,
+    upgrade_server_to_agent, upsert_agent_server,
+};
 pub use ssh_service::{
-    container_logs as server_container_logs, create_directory as create_remote_directory,
-    disable_service as disable_server_service,
+    compress_paths as compress_remote_paths, container_logs as server_container_logs, create_directory as create_remote_directory,
+    delete_path as delete_remote_path, disable_service as disable_server_service,
     download_file as download_remote_file, enable_service as enable_server_service,
-    execute_command as execute_ssh_command, get_metrics as get_server_metrics, list_containers as list_server_containers,
+    execute_command as execute_ssh_command, extract_archive as extract_remote_archive, get_metrics as get_server_metrics,
+    list_containers as list_server_containers,
     list_directory as list_remote_directory, list_processes as list_server_processes,
     list_services as list_server_services, open_terminal as open_ssh_terminal, read_file as read_remote_file,
-    remove_container as remove_server_container, restart_container as restart_server_container,
-    restart_service as restart_server_service, start_container as start_server_container,
-    start_service as start_server_service, stop_container as stop_server_container, stop_service as stop_server_service,
+    remove_container as remove_server_container, rename_path as rename_remote_path, restart_container as restart_server_container,
+    restart_service as restart_server_service, set_permissions as set_remote_permissions, start_container as start_server_container,
+    start_port_forward, start_service as start_server_service, stop_container as stop_server_container, stop_service as stop_server_service,
     test_connection as test_ssh_connection, upload_file as upload_remote_file, write_file as write_remote_file,
 };

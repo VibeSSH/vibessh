@@ -9,12 +9,25 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 36px;
-  padding: 0 14px;
+  /* min-height, not height: a fixed height clips a label the moment it
+     can't fit on one line (narrow toolbar, long translation). The label
+     itself is nowrap below so that shouldn't normally happen, but if a
+     parent ever forces a break anyway, the button grows instead of
+     clipping. */
+  min-height: 36px;
+  padding: 8px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  /* Never let a flex parent compress this narrower than its own label -
+     that's what turns one line of text into two inside a fixed-height box.
+     A toolbar that's actually out of room should wrap the whole button
+     onto a new line (see the shared *-actions/*-header-row rules), not
+     squeeze the label it contains. */
+  flex-shrink: 0;
   cursor: pointer;
   transition: filter 150ms ease, box-shadow 150ms ease, background 150ms ease, transform 60ms ease;
 }
@@ -29,10 +42,11 @@
 }
 
 /* Matches IconButton's "sm" height (28px) so a text button and an
-   icon-only button never mismatch height sitting side by side. */
+   icon-only button never mismatch height sitting side by side - a floor,
+   not a cap, for the same reason `.btn`'s own min-height is. */
 .btn-sm {
-  height: 28px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 6px 10px;
   font-size: 12.5px;
   gap: 6px;
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
+use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, DefaultPort, KnownFile, PortProtocol, RuntimeType};
 use crate::services::latest_velocity_build;
 
 use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
@@ -47,7 +47,7 @@ impl VelocityBlueprint {
                         field_type: BlueprintFieldType::Text,
                         required: false,
                         default_value: Some(serde_json::Value::String("21".to_string())),
-                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
+                        help_text: Some("Any Java major version available as an eclipse-temurin image, e.g. 25, 21, 17, or 11 - selects the matching Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jvmArgs".to_string(),
@@ -70,6 +70,12 @@ impl VelocityBlueprint {
                     KnownFile { path: "velocity.toml".to_string(), label: "velocity.toml".to_string() },
                     KnownFile { path: "forwarding.secret".to_string(), label: "forwarding.secret".to_string() },
                 ],
+                default_ports: vec![DefaultPort {
+                    name: "Proxy".to_string(),
+                    protocol: PortProtocol::Tcp,
+                    internal_port: 25565,
+                    external_port: 25565,
+                }],
                 is_builtin: true,
             },
         }
@@ -137,10 +143,12 @@ async fn download_file(context: &ProvisionContext<'_>, url: &str, filename: &str
         }
         // Same reasoning as PaperBlueprint's own download_file: the remote
         // host pulls the jar directly from papermc.io itself via curl,
-        // rather than routing it through the user's own desktop twice.
+        // rather than routing it through the user's own desktop twice -
+        // and `sudo curl`, not a plain `curl`, for the same
+        // dedicated-user-ownership reason that doc comment also explains.
         Some(connection) => {
             let path = format!("{}/{}", context.working_directory.trim_end_matches('/'), filename);
-            let output = connection.execute_command(&format!("curl -fsSL -o {} {}", shell_quote(&path), shell_quote(url))).await?;
+            let output = connection.execute_command(&format!("sudo curl -fsSL -o {} {}", shell_quote(&path), shell_quote(url))).await?;
             if output.exit_code != 0 {
                 let detail = output.stderr.trim();
                 let detail = if detail.is_empty() { "curl failed".to_string() } else { detail.to_string() };
@@ -183,6 +191,16 @@ mod tests {
     }
 
     #[test]
+    fn declares_a_default_published_port_so_a_fresh_proxy_is_reachable_without_manual_setup() {
+        let blueprint = VelocityBlueprint::new();
+        assert_eq!(blueprint.blueprint().default_ports.len(), 1);
+        let port = &blueprint.blueprint().default_ports[0];
+        assert_eq!(port.internal_port, 25565);
+        assert_eq!(port.external_port, 25565);
+        assert_eq!(port.protocol, PortProtocol::Tcp);
+    }
+
+    #[test]
     fn render_runtime_config_rejects_a_missing_jar_filename() {
         let blueprint = VelocityBlueprint::new();
         let inputs = inputs_with_jar(None);
@@ -196,7 +214,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "velocity-3.4.0-566.jar"] }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "velocity-3.4.0-566.jar"], "runAsDedicatedUser": true }));
     }
 
     #[test]

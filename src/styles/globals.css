@@ -74,11 +74,16 @@
   --text-2xl: 26px;
 
   /* Formalizes the z-index ladder that already existed informally
-     (content < terminal search overlay < popover < modal < toast). */
+     (content < terminal search overlay < popover < modal < modal-popover <
+     toast). --z-modal-popover is for a portaled floating element (Tooltip,
+     RowPicker's panel, OverflowMenu) that's very often triggered by
+     something *inside* a modal - --z-popover alone isn't enough there,
+     since it would paint behind the modal's own opaque background. */
   --z-content: 0;
   --z-sticky: 5;
   --z-popover: 50;
   --z-modal: 100;
+  --z-modal-popover: 150;
   --z-toast: 200;
 
   /* Below this content width, the shell steps down (sidebar collapse

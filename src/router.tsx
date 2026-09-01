@@ -6,8 +6,10 @@ import { Applications } from "@/pages/Applications";
 import { ApplicationDetail } from "@/pages/ApplicationDetail";
 import { DatabaseHosts } from "@/pages/DatabaseHosts";
 import { FilesPage } from "@/pages/Files";
+import { FirewallPage } from "@/pages/Firewall";
 import { ModulePicker } from "@/pages/ModulePicker";
 import { MonitorPage } from "@/pages/Monitor";
+import { PortForwardingPage } from "@/pages/PortForwarding";
 import { Servers } from "@/pages/Servers";
 import { Settings } from "@/pages/Settings";
 import { TeamDetail } from "@/pages/TeamDetail";
@@ -45,6 +47,23 @@ export function AppRouter() {
           element={<ModulePicker titleKey="modulePicker.actionsTitle" subtitleKey="modulePicker.actionsSubtitle" icon="zap" routePrefix="/actions" />}
         />
         <Route path="/actions/:serverId" element={<ActionsPage />} />
+        <Route
+          path="/port-forwarding"
+          element={
+            <ModulePicker
+              titleKey="modulePicker.portForwardingTitle"
+              subtitleKey="modulePicker.portForwardingSubtitle"
+              icon="arrow-left-right"
+              routePrefix="/port-forwarding"
+            />
+          }
+        />
+        <Route path="/port-forwarding/:serverId" element={<PortForwardingPage />} />
+        <Route
+          path="/firewall"
+          element={<ModulePicker titleKey="modulePicker.firewallTitle" subtitleKey="modulePicker.firewallSubtitle" icon="lock" routePrefix="/firewall" />}
+        />
+        <Route path="/firewall/:serverId" element={<FirewallPage />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/teams/:teamId" element={<TeamDetail />} />
         <Route path="/settings" element={<Settings />} />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { vibesshEditorTheme } from "@/components/servers/cmTheme";
@@ -124,10 +125,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         <div className="file-editor-tab-actions">
           {error && <span className="file-editor-tab-error">{error}</span>}
           {!tooLarge && (
-            <label className="application-file-editor-backup-toggle">
-              <input type="checkbox" checked={backupBeforeSave} onChange={toggleBackupPreference} />
-              {t("applicationFileEditor.backupBeforeSave")}
-            </label>
+            <Checkbox checked={backupBeforeSave} onChange={toggleBackupPreference} label={t("applicationFileEditor.backupBeforeSave")} />
           )}
           <IconButton icon="history" size="sm" onClick={() => setHistoryOpen(true)} title={t("applicationFileEditor.historyAria")} />
           <IconButton icon="refresh-cw" size="sm" onClick={load} title={t("applicationFileEditor.reloadAria")} disabled={loading} />

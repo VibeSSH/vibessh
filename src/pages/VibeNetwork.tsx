@@ -4,10 +4,15 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { OverflowMenu } from "@/components/ui/OverflowMenu";
+import { RowPicker, serverRowPickerOption, type RowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { Switch } from "@/components/ui/Switch";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useServerPinging } from "@/hooks/useServerPinging";
 import { addApplicationPort, listApplications, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
 import {
   createDnsAlias,
@@ -24,9 +29,11 @@ import {
   updateDnsAlias,
   verifyDnsAlias,
 } from "@/services/networkService";
-import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { usePingStore } from "@/stores/pingStore";
+import { useServersStore, type ManagedServer } from "@/stores/serversStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application, PortInput } from "@/types/application";
+import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import type { DnsRecord, DnsView, NodeEndpoint, NodeMeshStatus, NodeNetworkMember, VibeNetworkSyncResult } from "@/types/network";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -38,19 +45,16 @@ import "./VibeNetwork.css";
 
 type Tab = "nodes" | "endpoints" | "dns";
 
-/** A real handshake within the last 3 minutes reads as "healthy" - roughly
- * 6x WireGuard's own default keepalive/rekey cadence, generous enough that
- * a normal idle tunnel still reads as healthy between keepalives. */
-const HANDSHAKE_HEALTHY_WINDOW_SECONDS = 180;
-
 export function VibeNetwork() {
   const { t } = useTranslation();
   const servers = useServersStore((s) => s.servers);
+  useServerPinging(servers);
 
   const [tab, setTab] = useState<Tab>("nodes");
   const [members, setMembers] = useState<NodeNetworkMember[]>([]);
   const [meshStatus, setMeshStatus] = useState<NodeMeshStatus[]>([]);
   const [dnsView, setDnsView] = useState<DnsView[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,11 +71,12 @@ export function VibeNetwork() {
   const reload = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([listNetworkMembers(), getVibeNetworkStatus(), resolveDnsView()])
-      .then(([m, s, d]) => {
+    Promise.all([listNetworkMembers(), getVibeNetworkStatus(), resolveDnsView(), listApplications()])
+      .then(([m, s, d, apps]) => {
         setMembers(m);
         setMeshStatus(s);
         setDnsView(d);
+        setApplications(apps);
       })
       .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
       .finally(() => setLoading(false));
@@ -85,6 +90,11 @@ export function VibeNetwork() {
     try {
       const results = await syncVibeNetwork();
       setSyncResults(results);
+      for (const result of results) {
+        if (result.ok) continue;
+        const detail = [result.meshError, result.firewallError, result.dnsError].filter(Boolean).join(" · ");
+        toastError(t("vibeNetwork.syncErrorToast", { name: serverName(result.serverId), detail }));
+      }
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
@@ -125,10 +135,7 @@ export function VibeNetwork() {
           <p className="page-subtitle">{t("vibeNetwork.subtitle")}</p>
         </div>
         <div className="vibe-network-header-actions">
-          <label className="vibe-network-advanced-toggle">
-            <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
-            {t("vibeNetwork.advancedToggle")}
-          </label>
+          <Switch checked={advanced} onChange={setAdvanced} label={t("vibeNetwork.advancedToggle")} />
           <Button variant="secondary" onClick={handleSync} disabled={syncing || members.length === 0}>
             <Icon name="refresh-cw" size={16} />
             {syncing ? t("vibeNetwork.syncing") : t("vibeNetwork.syncButton")}
@@ -199,6 +206,7 @@ export function VibeNetwork() {
                     dnsName={dnsView.find((v) => v.kind.type === "node" && v.serverId === member.serverId)?.hostname ?? null}
                     serverName={serverName}
                     advanced={advanced}
+                    applicationCount={applications.filter((a) => a.serverId === member.serverId).length}
                     onLeave={() => {
                       setLeaveError(null);
                       setLeavingMember(member);
@@ -208,7 +216,7 @@ export function VibeNetwork() {
               </div>
             ))}
 
-          {tab === "endpoints" && <EndpointsPanel members={members} serverName={serverName} />}
+          {tab === "endpoints" && <EndpointsPanel members={members} servers={servers} meshStatus={meshStatus} advanced={advanced} />}
 
           {tab === "dns" && <DnsPanel members={members} dnsView={dnsView} onChanged={reload} />}
         </>
@@ -258,15 +266,28 @@ interface NodeCardProps {
   dnsName: string | null;
   serverName: (serverId: string) => string;
   advanced: boolean;
+  applicationCount: number;
   onLeave: () => void;
 }
 
-function NodeCard({ member, name, status, dnsName, serverName, advanced, onLeave }: NodeCardProps) {
+function NodeCard({ member, name, status, dnsName, serverName, advanced, applicationCount, onLeave }: NodeCardProps) {
   const { t } = useTranslation();
   const nowSeconds = Date.now() / 1000;
   const reachable = status?.reachable ?? false;
   const peers = status?.peers ?? [];
-  const healthyPeers = peers.filter((p) => p.latestHandshakeUnix > 0 && nowSeconds - p.latestHandshakeUnix < HANDSHAKE_HEALTHY_WINDOW_SECONDS);
+  const latencyMs = usePingStore((s) => s.latencies[member.serverId]);
+  const lastSyncUnix = peers.length > 0 ? Math.max(...peers.map((p) => p.latestHandshakeUnix)) : 0;
+
+  const [endpointCount, setEndpointCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listNodeEndpoints(member.serverId)
+      .then((eps) => !cancelled && setEndpointCount(eps.length))
+      .catch(() => !cancelled && setEndpointCount(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [member.serverId]);
 
   return (
     <Card>
@@ -276,9 +297,13 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, onLeave
         </div>
         <div className="vibe-network-node-title">
           <p className="server-card-name">{name}</p>
-          <p className="server-card-host">{member.wireguardIp}</p>
+          <HostAddress value={member.wireguardIp} className="server-card-host" />
         </div>
         <Badge tone={reachable ? "success" : "danger"}>{reachable ? t("vibeNetwork.online") : t("vibeNetwork.offline")}</Badge>
+        <OverflowMenu
+          ariaLabel={t("vibeNetwork.nodeMenuAria", { name })}
+          items={[{ label: t("vibeNetwork.leaveButton"), icon: "trash", danger: true, onClick: onLeave }]}
+        />
       </div>
 
       <div className="vibe-network-node-facts">
@@ -289,12 +314,26 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, onLeave
           </div>
         )}
         <div className="vibe-network-fact">
-          <span className="form-label">{t("vibeNetwork.peerStatus")}</span>
-          <span className="vibe-network-fact-value">
-            {peers.length === 0
-              ? t("vibeNetwork.noPeersYet")
-              : t("vibeNetwork.peersHealthy", { healthy: healthyPeers.length, total: peers.length })}
-          </span>
+          <span className="form-label">{t("vibeNetwork.connectionLabel")}</span>
+          <span className="vibe-network-fact-value">{reachable ? t("vibeNetwork.connectionActive") : t("vibeNetwork.connectionInactive")}</span>
+        </div>
+        {typeof latencyMs === "number" && (
+          <div className="vibe-network-fact">
+            <span className="form-label">{t("vibeNetwork.latencyLabel")}</span>
+            <span className="vibe-network-fact-value">{latencyMs} ms</span>
+          </div>
+        )}
+        <div className="vibe-network-fact">
+          <span className="form-label">{t("vibeNetwork.applicationsLabel")}</span>
+          <span className="vibe-network-fact-value">{applicationCount}</span>
+        </div>
+        <div className="vibe-network-fact">
+          <span className="form-label">{t("vibeNetwork.endpointsLabel")}</span>
+          <span className="vibe-network-fact-value">{endpointCount ?? "—"}</span>
+        </div>
+        <div className="vibe-network-fact">
+          <span className="form-label">{t("vibeNetwork.lastSyncLabel")}</span>
+          <span className="vibe-network-fact-value">{lastSyncUnix > 0 ? formatRelativeTime(lastSyncUnix * 1000, t) : t("vibeNetwork.neverHandshaked")}</span>
         </div>
       </div>
 
@@ -324,13 +363,6 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, onLeave
           ))}
         </div>
       )}
-
-      <div className="form-actions">
-        <Button variant="danger" size="sm" onClick={onLeave}>
-          <Icon name="trash" size={14} />
-          {t("vibeNetwork.leaveButton")}
-        </Button>
-      </div>
     </Card>
   );
 }
@@ -343,7 +375,7 @@ function formatBytes(bytes: number): string {
 }
 
 interface AddNodeModalProps {
-  joinableServers: { id: string; name: string }[];
+  joinableServers: ManagedServer[];
   onClose: () => void;
   onJoined: () => void;
 }
@@ -390,16 +422,14 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
           {joinableServers.length === 0 ? (
             <p className="form-note">{t("vibeNetwork.noJoinableServers")}</p>
           ) : (
-            <label className="form-field">
-              <span className="form-label">{t("vibeNetwork.chooseServer")}</span>
-              <select className="form-input" value={serverId} onChange={(e) => setServerId(e.target.value)} disabled={busy}>
-                {joinableServers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <RowPicker
+              label={t("vibeNetwork.chooseServer")}
+              placeholder={t("vibeNetwork.chooseServer")}
+              value={serverId}
+              onChange={setServerId}
+              disabled={busy}
+              options={joinableServers.map((s) => serverRowPickerOption(s, t))}
+            />
           )}
           <p className="form-note">{t("vibeNetwork.addNodeHelp")}</p>
           {step === "joining" && <p className="form-note">{t("vibeNetwork.joining")}</p>}
@@ -420,15 +450,27 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
 
 interface EndpointsPanelProps {
   members: NodeNetworkMember[];
-  serverName: (serverId: string) => string;
+  servers: ManagedServer[];
+  meshStatus: NodeMeshStatus[];
+  advanced: boolean;
 }
 
 /** "Endpoints" - a Node-scoped read over the *existing* Application Ports
  * data (see the Rust `NodeEndpoint`'s own doc comment for why this isn't a
  * separate model) - CRUD reuses the exact same commands the Ports tab
  * already uses. */
-function EndpointsPanel({ members, serverName }: EndpointsPanelProps) {
+function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPanelProps) {
   const { t } = useTranslation();
+  const nodeOptions: RowPickerOption[] = members.map((m) => {
+    const server = servers.find((s) => s.id === m.serverId);
+    const reachable = meshStatus.find((s) => s.serverId === m.serverId)?.reachable ?? false;
+    return {
+      id: m.serverId,
+      name: server?.name ?? m.serverId,
+      meta: m.wireguardIp,
+      status: { tone: reachable ? "success" : "danger", label: t(reachable ? "vibeNetwork.online" : "vibeNetwork.offline") },
+    };
+  });
   const [serverId, setServerId] = useState(members[0]?.serverId ?? "");
   const [endpoints, setEndpoints] = useState<NodeEndpoint[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -476,16 +518,9 @@ function EndpointsPanel({ members, serverName }: EndpointsPanelProps) {
   return (
     <>
       <div className="application-detail-header-row">
-        <label className="form-field vibe-network-node-picker">
-          <span className="form-label">{t("vibeNetwork.chooseServer")}</span>
-          <select className="form-input" value={serverId} onChange={(e) => setServerId(e.target.value)}>
-            {members.map((m) => (
-              <option key={m.serverId} value={m.serverId}>
-                {serverName(m.serverId)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="vibe-network-node-picker">
+          <RowPicker label={t("vibeNetwork.chooseServer")} placeholder={t("vibeNetwork.chooseServer")} value={serverId} onChange={setServerId} options={nodeOptions} />
+        </div>
         <Button
           size="sm"
           onClick={() => {
@@ -515,9 +550,14 @@ function EndpointsPanel({ members, serverName }: EndpointsPanelProps) {
                     {endpoint.name}
                   </span>
                   <span className="server-list-host">
-                    {endpoint.applicationName} · {endpoint.bindAddress}:{endpoint.externalPort ?? endpoint.internalPort}
-                    {endpoint.externalPort ? ` → ${endpoint.internalPort}` : ""}
+                    {endpoint.internalPort}/{endpoint.protocol.toUpperCase()} · {t("vibeNetwork.pointsTo", { application: endpoint.applicationName, port: endpoint.internalPort })}
                   </span>
+                  {advanced && (
+                    <span className="server-list-host vibe-network-mono">
+                      {endpoint.bindAddress}:{endpoint.externalPort ?? endpoint.internalPort}
+                      {endpoint.externalPort ? ` → ${endpoint.internalPort}` : ""}
+                    </span>
+                  )}
                 </div>
                 <Badge tone="neutral">{visibilityLabel(endpoint.visibility, t)}</Badge>
                 <IconButton
@@ -759,7 +799,9 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
 
   async function handleDelete(record: DnsRecord) {
     try {
-      await deleteDnsAlias(record.id);
+      const results = await deleteDnsAlias(record.id);
+      const failed = results.filter((r) => !r.ok);
+      setSyncNote(failed.length === 0 ? t("vibeNetwork.dnsSyncOk", { count: results.length }) : t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: results.length }));
       reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("vibeNetwork.dnsDeleteError"));
@@ -878,10 +920,12 @@ function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalP
     setBusy(true);
     setError(null);
     try {
-      if (editing) {
-        await updateDnsAlias(editing.id, hostname.trim());
+      const { syncResults } = editing ? await updateDnsAlias(editing.id, hostname.trim()) : await createDnsAlias(applicationId, hostname.trim());
+      const failed = syncResults.filter((r) => !r.ok);
+      if (failed.length === 0) {
+        toastSuccess(t("vibeNetwork.dnsSyncOk", { count: syncResults.length }));
       } else {
-        await createDnsAlias(applicationId, hostname.trim());
+        toastError(t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: syncResults.length }));
       }
       onSaved();
     } catch (err) {

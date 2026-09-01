@@ -9,6 +9,11 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  /* Wraps the actions block onto its own row instead of squeezing it (and
+     the buttons inside it) narrower than their labels once the title on
+     the left leaves too little room. */
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
 .page-title {
@@ -78,6 +83,7 @@
    docs/UI_AUDIT.md's Phase 8 notes). */
 .page-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: var(--space-4);

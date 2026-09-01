@@ -19,6 +19,7 @@
 //! dead ceremony - nothing in this module currently checks them.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use uuid::Uuid;
@@ -27,6 +28,7 @@ use crate::errors::{AppError, AppResult};
 use crate::files::{self, archive, ApplicationFileProvider};
 use crate::models::Application;
 use crate::services::ssh_service::get_or_connect;
+use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::server_repository::ServerRepository;
@@ -50,7 +52,7 @@ pub mod permissions {
     pub const CHMOD: &str = "applications.files.chmod";
 }
 
-async fn resolve_provider(
+pub(crate) async fn resolve_provider(
     app_repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
@@ -59,10 +61,54 @@ async fn resolve_provider(
     let detail = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?;
     let connection = match detail.application.server_id {
         None => None,
-        Some(server_id) => Some(get_or_connect(server_repo, sessions, server_id).await?),
+        Some(server_id) => Some(connect_with_live_sftp(server_repo, sessions, server_id).await?),
     };
-    let provider = files::provider_for(&detail.application, connection)?;
+    if let Some(connection) = &connection {
+        if files::wants_dedicated_user(&detail.application, &detail.runtime_config) {
+            // Best-effort, proactive: Application Files must work for an
+            // Application that opted into a dedicated account but has never
+            // actually been started yet (`runtime::docker::start`/`restart`
+            // is normally what provisions the account and the helper
+            // script) - not only after the user happens to click
+            // Start/Restart first. A failure here isn't swallowed silently:
+            // `files::provider_for`'s provider will still surface a clear
+            // error from the helper itself (e.g. "unknown user") right
+            // after this if provisioning genuinely didn't work.
+            let username = crate::dedicated_user::username(detail.application.id);
+            let _ = crate::dedicated_user::ensure_provisioned(connection, &username).await;
+            let _ = files::sudo_user::ensure_helper_installed(connection).await;
+        }
+    }
+    let provider = files::provider_for(&detail.application, &detail.runtime_config, connection)?;
     Ok((detail.application, provider))
+}
+
+/// `SshSession` opens its SFTP subsystem channel once and caches it for the
+/// session's whole lifetime (`OnceCell`, see `ssh::client`) - unlike
+/// `execute_command`, which opens a fresh exec channel every call, so
+/// nothing about a cached `SshSession` continuing to run plain commands
+/// fine proves its SFTP channel is still alive. A real Node's SFTP
+/// subsystem can die on its own (an idle timeout scoped tighter than the
+/// main connection's, the remote sshd recycling subsystem channels) while
+/// the cached `SshSession` otherwise looks healthy - every file operation
+/// would then keep failing with a misleadingly specific error (e.g.
+/// `resolve()`'s own "the containing directory doesn't exist", from a
+/// `REALPATH` call that's actually failing because the channel is dead, not
+/// because the directory is missing) for as long as this app runs, since
+/// nothing ever resets that `OnceCell`. A cheap `REALPATH "."` here is the
+/// same probe `resolve()` would make anyway as its first real SFTP call -
+/// this just makes it early enough to still recover: on failure, drop the
+/// whole cached `SshSession` (not just its SFTP channel, which has no reset
+/// of its own) and reconnect fresh, same "dead session, drop and retry
+/// once" recovery `ssh_service::execute_command` already does for plain
+/// commands.
+async fn connect_with_live_sftp(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
+    let connection = get_or_connect(server_repo, sessions, server_id).await?;
+    if connection.canonicalize_path(".").await.is_ok() {
+        return Ok(connection);
+    }
+    sessions.remove(server_id).await;
+    get_or_connect(server_repo, sessions, server_id).await
 }
 
 pub async fn list_directory(
@@ -319,6 +365,28 @@ pub async fn restore_file_history(
     atomic_write(provider.as_ref(), path, &contents).await
 }
 
+/// Deletes every saved backup version for `path` in one go - the same
+/// `delete()` a normal file/folder removal already goes through (its own
+/// doc comment: "a file, or a directory and everything under it"), just
+/// pointed at the history directory instead of the file itself. A missing
+/// history directory (nothing was ever backed up) is treated as already
+/// having nothing to clear, not an error - matching `list_file_history`'s
+/// own "no history dir yet just means no backups exist" stance.
+pub async fn clear_file_history(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    path: &str,
+) -> AppResult<()> {
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+    let history_dir = history_dir_for(path);
+    if provider.metadata(&history_dir).await.is_err() {
+        return Ok(());
+    }
+    provider.delete(&history_dir).await
+}
+
 fn history_dir_for(path: &str) -> String {
     format!(".vibessh/history/{}", path.trim_start_matches('/'))
 }
@@ -441,6 +509,31 @@ mod tests {
         // Restoring the backup brings the old content back.
         restore_file_history(&app_repo, &server_repo, &sessions, application_id, "config.yml", &history[0].timestamp).await.unwrap();
         assert_eq!(read_file_for_editor(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap(), b"version: 1");
+    }
+
+    #[tokio::test]
+    async fn clear_file_history_removes_every_saved_version() {
+        let (app_repo, server_repo, sessions, application_id) = temp_setup();
+        write_file(&app_repo, &server_repo, &sessions, application_id, "config.yml", b"version: 1").await.unwrap();
+        save_file(&app_repo, &server_repo, &sessions, application_id, "config.yml", b"version: 2", true).await.unwrap();
+        // Consecutive saves within the same second collapse into one backup
+        // entry (`history_entry_path`'s timestamp is second-granularity) -
+        // this only needs "at least one exists", not an exact count.
+        assert!(!list_file_history(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap().is_empty());
+
+        clear_file_history(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap();
+
+        assert!(list_file_history(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap().is_empty());
+        // The live file itself is untouched - only the backups are gone.
+        assert_eq!(read_file_for_editor(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap(), b"version: 2");
+    }
+
+    #[tokio::test]
+    async fn clear_file_history_on_a_file_with_no_backups_yet_is_a_no_op_not_an_error() {
+        let (app_repo, server_repo, sessions, application_id) = temp_setup();
+        write_file(&app_repo, &server_repo, &sessions, application_id, "config.yml", b"version: 1").await.unwrap();
+
+        clear_file_history(&app_repo, &server_repo, &sessions, application_id, "config.yml").await.unwrap();
     }
 
     #[tokio::test]

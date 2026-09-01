@@ -1,0 +1,39 @@
+.overflow-menu {
+  position: fixed;
+  z-index: var(--z-modal-popover);
+  min-width: 160px;
+  background: var(--t-bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--t-elev-2);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overflow-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.overflow-menu-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.overflow-menu-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.overflow-menu-item-danger {
+  color: var(--danger);
+}

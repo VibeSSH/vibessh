@@ -40,10 +40,28 @@ pub enum AgentStatus {
 /// on its own - `Server::node_capabilities` stays `None` until a real probe
 /// has actually run, see that field's own doc comment for why the
 /// distinction matters.
+/// `#[serde(default)]` is load-bearing, not decoration: a `NodeCapabilities`
+/// blob persisted before `wireguard`/`ufw` existed (just `{"docker":true}`)
+/// must still deserialize - falling back to `Default`'s `false` for a field
+/// that row predates, exactly what this module's own doc comment above
+/// promises "join this later without a new migration" actually means.
+/// Without it, `row_to_server`'s `.expect(...)` turns a merely-stale field
+/// into a hard panic on every launch for any user who probed a Node before
+/// this field existed - confirmed the hard way: this exact case crashed the
+/// app on startup for every previously-probed server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct NodeCapabilities {
     pub docker: bool,
+    /// The `wg` CLI is on this Node's `PATH` - what `network::wireguard::
+    /// install_if_missing` itself checks before deciding whether to install,
+    /// surfaced here too so a Setup flow can show it without a redundant
+    /// probe of its own.
+    pub wireguard: bool,
+    /// `ufw` is on this Node's `PATH` - the same detection
+    /// `firewall::ufw::UfwProvider::detect` already does for
+    /// `firewall::provider_for`, reused rather than re-implemented.
+    pub ufw: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

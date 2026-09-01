@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost};
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
@@ -128,7 +128,6 @@ pub async fn create_application_database(
 ) -> AppResult<ApplicationDatabase> {
     let host = load_host(db_repo, database_host_id)?;
     let application = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?.application;
-    let connection = connect_to_host(server_repo, sessions, &host).await?;
     let admin_password = load_host_admin_password(&host)?;
 
     let seed = purpose.map(str::trim).filter(|p| !p.is_empty()).unwrap_or(&application.name);
@@ -142,7 +141,7 @@ pub async fn create_application_database(
          GRANT ALL PRIVILEGES ON `{database_name}`.* TO '{username}'@'{CONNECTIONS_FROM}'; \
          FLUSH PRIVILEGES;"
     );
-    run_mysql(&connection, &host, &admin_password, &sql, &[&password]).await?;
+    run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[&password]).await?;
 
     let record = match db_repo.create_database(&CreateApplicationDatabaseInput {
         application_id,
@@ -158,7 +157,7 @@ pub async fn create_application_database(
             // host would otherwise be orphaned (untracked, but real).
             // Best-effort undo rather than leaving that behind silently.
             let cleanup_sql = format!("DROP USER IF EXISTS '{username}'@'{CONNECTIONS_FROM}'; DROP DATABASE IF EXISTS `{database_name}`;");
-            let _ = run_mysql(&connection, &host, &admin_password, &cleanup_sql, &[]).await;
+            let _ = run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &cleanup_sql, &[]).await;
             return Err(err);
         }
     };
@@ -179,14 +178,13 @@ pub async fn delete_application_database(
 ) -> AppResult<()> {
     let database = load_database(db_repo, id)?;
     let host = load_host(db_repo, database.database_host_id)?;
-    let connection = connect_to_host(server_repo, sessions, &host).await?;
     let admin_password = load_host_admin_password(&host)?;
 
     let sql = format!(
         "DROP USER IF EXISTS '{}'@'{}'; DROP DATABASE IF EXISTS `{}`;",
         database.username, database.connections_from, database.database_name
     );
-    run_mysql(&connection, &host, &admin_password, &sql, &[]).await?;
+    run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[]).await?;
 
     db_repo.delete_database(id)?;
     let _ = credentials::delete_secret(id, SecretKind::ApplicationDatabaseUser);
@@ -210,12 +208,11 @@ pub async fn reset_application_database_password(
 ) -> AppResult<String> {
     let database = load_database(db_repo, id)?;
     let host = load_host(db_repo, database.database_host_id)?;
-    let connection = connect_to_host(server_repo, sessions, &host).await?;
     let admin_password = load_host_admin_password(&host)?;
 
     let new_password = generate_password();
     let sql = format!("ALTER USER '{}'@'{}' IDENTIFIED BY '{new_password}'; FLUSH PRIVILEGES;", database.username, database.connections_from);
-    run_mysql(&connection, &host, &admin_password, &sql, &[&new_password]).await?;
+    run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[&new_password]).await?;
 
     credentials::store_secret(id, SecretKind::ApplicationDatabaseUser, &new_password)?;
     Ok(new_password)
@@ -283,6 +280,196 @@ fn load_host_admin_password(host: &DatabaseHost) -> AppResult<String> {
 /// documented limitation (Section 12.1's whole provisioning design is built
 /// on `SshSession::execute_command`), not silently attempted and failing
 /// somewhere deeper.
+/// Resolves the host's connection and runs `sql` against it, retrying once
+/// - with the cached session dropped first - if the connection turns out to
+/// be dead (idle timeout, network blip). Same dead-cached-session recovery
+/// `ssh_service::execute_command` already does for a single command,
+/// generalized here since provisioning talks to `SshSession::execute_command`
+/// through `run_mysql` (a `mysql` client invocation), not through that
+/// plain-command wrapper directly.
+async fn run_mysql_with_retry(
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    host: &DatabaseHost,
+    admin_password: &str,
+    sql: &str,
+    redact: &[&str],
+) -> AppResult<()> {
+    retry_on_connection_failure(sessions, host.server_id, || async {
+        let connection = connect_to_host(server_repo, sessions, host).await?;
+        ensure_mysql_client_installed(&connection).await;
+        ensure_mysql_server_installed(&connection, host, admin_password).await;
+        run_mysql(&connection, host, admin_password, sql, redact).await
+    })
+    .await
+}
+
+/// "Plug and play, no manual server prep" (the same standing bar
+/// `server_service::install_docker` already meets for Docker) applies here
+/// too: a Database Host's own MySQL/MariaDB *server* is always assumed
+/// already running (its `host`/`port`/admin credentials are all supplied by
+/// the user when they link the host - this module never provisions a
+/// server), but the `mysql` *client* binary this whole flow shells out to
+/// isn't guaranteed to be on a fresh Node's PATH just because a database
+/// server is reachable from it. Probes first (`command -v`) so a Node that
+/// already has it never pays for an `apt-get` round trip on every single
+/// provisioning call. Best-effort and silent either way: if the install
+/// fails (a non-apt distro, no network egress, whatever), the `mysql`
+/// invocation right after this still runs and surfaces its own
+/// "command not found" error same as before - this only ever removes that
+/// error for the common case, never hides a real one.
+async fn ensure_mysql_client_installed(connection: &SshSession) {
+    let probe = connection.execute_command("command -v mysql >/dev/null 2>&1 && echo yes || echo no").await;
+    if matches!(probe, Ok(ref output) if output.stdout.trim() == "yes") {
+        return;
+    }
+    let _ = connection
+        .execute_command(
+            "sudo apt-get update -qq && \
+             (sudo DEBIAN_FRONTEND=noninteractive apt-get install -y default-mysql-client \
+             || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-client)",
+        )
+        .await;
+}
+
+/// `host.host` values meaning "this Database Host's own server lives on the
+/// exact same Node it's linked to" - the only case `ensure_mysql_server_installed`
+/// below is safe to act on, never a value pointing at some other, already-
+/// managed MySQL server elsewhere that this codebase has no business
+/// installing a *server* onto.
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// Single-quote SQL string-literal escaping (doubling an embedded `'`, the
+/// ANSI-SQL/MySQL-standard way) - separate from `shell_quote` above, which
+/// escapes for the *shell* wrapping a `mysql -e` invocation, not for SQL
+/// syntax itself. Needed here (unlike the rest of this module, whose own
+/// doc comment explains why `database_name`/`username` never need it -
+/// they're always machine-generated) because `host.admin_username`/
+/// `host.host` embedded below are free-text the user typed into the
+/// Database Host form.
+fn sql_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+/// "Plug and play, no manual server prep" (`server_service::install_docker`'s
+/// same standing bar) extended to a self-hosted Database Host: a Node with
+/// no MySQL/MariaDB server reachable at all (the common case for a fresh
+/// Database Host pointed at its own Node's `127.0.0.1`, before anything's
+/// ever been installed there) gets one auto-installed and started rather
+/// than surfacing a bare "Can't connect to MySQL server" for the user to
+/// puzzle out and go fix by hand over a separate SSH session. Skipped
+/// entirely for a non-loopback `host.host` (see `is_loopback_host`) - this
+/// only ever provisions a server on the exact Node this Database Host is
+/// already linked to, never anywhere else.
+///
+/// Debian/Ubuntu's `mariadb-server` package leaves `root@localhost`
+/// authenticating via the `unix_socket` plugin (no password, but only
+/// usable from a local shell as the Linux `root` user - not over the TCP
+/// connection this whole flow always uses, see `build_mysql_command`'s own
+/// doc comment on why). **Must actually change that exact account, not just
+/// add a separate one**: with name resolution on (the default), MySQL/
+/// MariaDB resolve a TCP connection from `127.0.0.1` back to `localhost`
+/// (via `/etc/hosts`) *before* matching it against `mysql.user`, so a
+/// connection to `-h 127.0.0.1` is checked against `'<user>'@'localhost'`,
+/// never a separately-created `'<user>'@'127.0.0.1'` row - granting only the
+/// latter (an earlier version of this function's own mistake) leaves the
+/// original `unix_socket`-only account in place and every TCP login still
+/// gets rejected. `ALTER USER` (not just `CREATE USER IF NOT EXISTS`, which
+/// no-ops when the account already exists) is what actually swaps that
+/// account's auth method to a password. Sets it on both the `localhost` and
+/// literal `host.host` forms, over the same local socket (`sudo mysql`,
+/// authenticating as the Linux root user, no TCP/password needed for *this*
+/// one-time step) - covers a server with name resolution off too, where the
+/// literal-host row is the one actually consulted.
+///
+/// The install step is skipped once the server's already active (no point
+/// re-running `apt-get` every single provisioning call) - but the grant
+/// step below always runs regardless, cheap and idempotent (`ALTER USER`
+/// to the same password is a no-op), so a Node whose server was already
+/// installed *before* this function knew to fix the `localhost` account
+/// still gets self-healed on its very next provisioning attempt, not only
+/// on a fresh install.
+async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseHost, admin_password: &str) {
+    if !is_loopback_host(&host.host) {
+        return;
+    }
+    let active = connection.execute_command("systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql").await;
+    if !matches!(active, Ok(ref output) if output.exit_code == 0) {
+        let install = connection
+            .execute_command(
+                "sudo apt-get update -qq \
+                 && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server \
+                 && sudo systemctl enable --now mariadb",
+            )
+            .await;
+        if !matches!(install, Ok(ref output) if output.exit_code == 0) {
+            return;
+        }
+    }
+    let user = sql_quote(&host.admin_username);
+    let addr = sql_quote(&host.host);
+    let local = sql_quote("localhost");
+    let pass = sql_quote(admin_password);
+    let grant_sql = format!(
+        "CREATE USER IF NOT EXISTS {user}@{addr} IDENTIFIED BY {pass}; \
+         CREATE USER IF NOT EXISTS {user}@{local} IDENTIFIED BY {pass}; \
+         ALTER USER {user}@{addr} IDENTIFIED BY {pass}; \
+         ALTER USER {user}@{local} IDENTIFIED BY {pass}; \
+         GRANT ALL PRIVILEGES ON *.* TO {user}@{addr} WITH GRANT OPTION; \
+         GRANT ALL PRIVILEGES ON *.* TO {user}@{local} WITH GRANT OPTION; \
+         FLUSH PRIVILEGES;"
+    );
+    let _ = connection.execute_command(&format!("sudo mysql -e {}", shell_quote(&grant_sql))).await;
+    ensure_mysql_listens_on_all_interfaces(connection, host.port).await;
+}
+
+/// Two independent things stand between a phpMyAdmin (or any other) Docker
+/// container and a self-hosted MariaDB, and both have to be fixed for
+/// `host.docker.internal` to actually work - fixing only one still times
+/// out, it just times out for a different reason:
+///
+/// 1. **The bind address.** Debian/Ubuntu's `mariadb-server` package ships
+///    `bind-address = 127.0.0.1` in `50-server.cnf` - loopback-only, by
+///    design. A container's connection arrives over the `docker0` bridge
+///    interface, never `lo`, and a socket bound specifically to
+///    `127.0.0.1` never accepts a connection arriving on any other
+///    interface, full stop - no firewall rule changes that. A drop-in
+///    config file (`99-vibessh-bind.cnf`, loaded after `50-server.cnf` so
+///    it wins) widens it to every interface.
+/// 2. **The firewall.** A host with `ufw` active (this codebase's own
+///    `firewall_service` sets exactly this kind of default-deny-incoming
+///    policy up) drops - not rejects, which is exactly why this fails as a
+///    silent connection *timeout* rather than an immediate refusal -
+///    anything not explicitly allowed, and nothing before this ever taught
+///    it about `docker0`. `ufw allow in on docker0 ... proto tcp` scopes
+///    the allow to traffic arriving over that one interface specifically
+///    (not a CIDR guess at Docker's bridge subnet, which varies) - the
+///    public internet stays exactly as blocked from this port as it always
+///    was, nothing here opens it there. Skipped entirely if `ufw` isn't
+///    installed or isn't active, so this never *turns on* a firewall that
+///    wasn't already managing this host's incoming traffic.
+///
+/// Only restarts MariaDB when the drop-in's content actually needs to
+/// change, not on every provisioning call; the `ufw allow` is idempotent by
+/// nature (re-adding an identical rule is a no-op) so it's safe to just run
+/// every time too.
+async fn ensure_mysql_listens_on_all_interfaces(connection: &SshSession, port: u16) {
+    let script = format!(
+        "path=/etc/mysql/mariadb.conf.d/99-vibessh-bind.cnf; \
+         desired=$(printf '[mysqld]\\nbind-address = 0.0.0.0\\n'); \
+         current=$(sudo cat \"$path\" 2>/dev/null || true); \
+         if [ \"$current\" != \"$desired\" ]; then \
+             printf '%s' \"$desired\" | sudo tee \"$path\" >/dev/null && sudo systemctl restart mariadb; \
+         fi; \
+         if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q '^Status: active'; then \
+             sudo ufw allow in on docker0 to any port {port} proto tcp >/dev/null; \
+         fi"
+    );
+    let _ = connection.execute_command(&script).await;
+}
+
 async fn connect_to_host(server_repo: &ServerRepository, sessions: &SshSessionManager, host: &DatabaseHost) -> AppResult<Arc<SshSession>> {
     let Some(server_id) = host.server_id else {
         return Err(AppError::InvalidInput("this database host has no linked Server - VibeSSH can't run commands on it".into()));
@@ -448,6 +635,21 @@ mod tests {
         // A raw embedded quote would otherwise close the shell string early.
         assert!(command.contains("MYSQL_PWD='pa'\\''ss'"));
         assert!(command.contains("-u 'ro'\\''ot'"));
+    }
+
+    #[test]
+    fn is_loopback_host_accepts_only_the_same_node_addresses() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("::1"));
+        assert!(!is_loopback_host("10.0.0.5"));
+        assert!(!is_loopback_host("db.example.com"));
+    }
+
+    #[test]
+    fn sql_quote_doubles_an_embedded_single_quote() {
+        assert_eq!(sql_quote("root"), "'root'");
+        assert_eq!(sql_quote("o'brien"), "'o''brien'");
     }
 
     #[test]

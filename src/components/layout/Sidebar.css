@@ -108,16 +108,34 @@
   width: 36px;
 }
 
+/* The hairline divider + spacing live on this wrapper, not the button
+   itself - putting border-top/padding-top directly on a fixed-height flex
+   button ate asymmetrically into its own box (padding-top but no
+   padding-bottom), throwing the icon's vertical centering off. The wrapper
+   carries the border edge-to-edge and centers the button inside it; the
+   button itself stays a plain, symmetric, truly-centered box. */
+.sidebar-footer {
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
+/* Resting color moved up from --text-tertiary to --text-secondary so it
+   isn't the near-invisible tier reserved for pure decoration (see
+   forms.css's own note on that same distinction). */
 .sidebar-collapse-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
+  height: 36px;
   width: 100%;
-  flex-shrink: 0;
-  margin-top: 8px;
   border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  transition: color 120ms ease, background-color 120ms ease;
 }
 .sidebar-collapsed .sidebar-collapse-btn {
   width: 36px;
@@ -125,4 +143,7 @@
 .sidebar-collapse-btn:hover {
   color: var(--text-primary);
   background: color-mix(in srgb, #ffffff 6%, transparent);
+}
+.sidebar-collapse-btn:active {
+  background: color-mix(in srgb, #ffffff 10%, transparent);
 }

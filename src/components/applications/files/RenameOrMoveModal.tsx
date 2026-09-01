@@ -13,13 +13,15 @@ interface RenameOrMoveModalProps {
   onClose: () => void;
   /** `to` is a full path relative to the application root - the caller builds it from the current directory + the new name (rename) or the typed destination directory (move). */
   onConfirm: (to: string) => Promise<void>;
+  /** Overrides the default "relative to the application root" destination help text/placeholder - the plain server-wide Files browser (`pages/Files.tsx`) uses absolute host paths instead of an application-relative one, so its own copy doesn't fit here. */
+  destinationHelp?: { note: string; placeholder: string };
 }
 
 const TITLE_KEY = { rename: "applicationFilesTab.renameTitle", move: "applicationFilesTab.moveTitle", copy: "applicationFilesTab.copyTitle" } as const;
 const ERROR_KEY = { rename: "applicationFilesTab.renameError", move: "applicationFilesTab.moveError", copy: "applicationFilesTab.copyError" } as const;
 
 /** Covers "Rename", "Move", and "Copy" (design brief sections 108/121) - Rename/Move both call the same backend `rename` primitive with a different destination path (the caller's `onConfirm` decides which), matching how the actual filesystem/SFTP operation is identical either way; Copy's `onConfirm` calls the separate `copy` primitive instead, but shares this exact same "type a destination path" UI. */
-export function RenameOrMoveModal({ mode, currentPath, currentName, onClose, onConfirm }: RenameOrMoveModalProps) {
+export function RenameOrMoveModal({ mode, currentPath, currentName, onClose, onConfirm, destinationHelp }: RenameOrMoveModalProps) {
   const { t } = useTranslation();
   const backdrop = useBackdropClose(onClose);
   const parentDir = currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/")) : "";
@@ -61,10 +63,10 @@ export function RenameOrMoveModal({ mode, currentPath, currentName, onClose, onC
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={mode !== "rename" ? t("applicationFilesTab.destinationPathPlaceholder") : undefined}
+                placeholder={mode !== "rename" ? (destinationHelp?.placeholder ?? t("applicationFilesTab.destinationPathPlaceholder")) : undefined}
               />
             </label>
-            {mode !== "rename" && <p className="form-note">{t("applicationFilesTab.moveNote")}</p>}
+            {mode !== "rename" && <p className="form-note">{destinationHelp?.note ?? t("applicationFilesTab.moveNote")}</p>}
             <div className="form-actions">
               <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
                 {t("common.cancel")}

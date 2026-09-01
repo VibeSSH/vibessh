@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
 import { cloudLogout } from "@/services/cloudService";
 import { useAuthModalStore } from "@/stores/authModalStore";
@@ -12,6 +14,7 @@ import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import { useToastStore } from "@/stores/toastStore";
+import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./Rail.css";
 
@@ -20,25 +23,21 @@ interface RailButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> 
   iconSize?: number;
 }
 
-function RailButton({ icon, iconSize = 18, className, ...rest }: RailButtonProps) {
+function RailButton({ icon, iconSize = 18, className, title, ...rest }: RailButtonProps) {
   const { createRipple, rippleEls } = useRipple();
-  return (
+  const button = (
     <button className={`rail-btn ripple-host ${className ?? ""}`} onPointerDown={createRipple} {...rest}>
       {rippleEls}
       <Icon name={icon} size={iconSize} />
     </button>
   );
-}
-
-function formatRelativeTime(at: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - at) / 1000));
-  if (seconds < 5) return t("time.justNow");
-  if (seconds < 60) return t("time.secondsAgo", { count: seconds });
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t("time.minutesAgo", { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t("time.hoursAgo", { count: hours });
-  return t("time.daysAgo", { count: Math.floor(hours / 24) });
+  return title ? (
+    <Tooltip label={String(title)} placement="right">
+      {button}
+    </Tooltip>
+  ) : (
+    button
+  );
 }
 
 const TONE_ICON: Record<string, string> = { success: "check", error: "x", info: "activity" };
@@ -191,7 +190,6 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | undefined>(undefined);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
-  const [hostRevealed, setHostRevealed] = useState(false);
 
   /**
    * The tooltip is rendered through a portal (see below), so it isn't a DOM
@@ -210,7 +208,6 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
   function handleLeave() {
     closeTimer.current = window.setTimeout(() => {
       setTooltipPos(null);
-      setHostRevealed(false);
     }, 120);
   }
 
@@ -245,18 +242,7 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
                 {t(STATUS_LABEL_KEY[server.status])}
               </span>
             </div>
-            <div className="rail-instance-tooltip-host">
-              <span className={`rail-instance-tooltip-host-value ${hostRevealed ? "" : "rail-instance-tooltip-host-masked"}`}>
-                {hostRevealed ? server.host : t("rail.hostHidden")}
-              </span>
-              <button
-                className="rail-instance-tooltip-eye"
-                onClick={() => setHostRevealed((revealed) => !revealed)}
-                aria-label={hostRevealed ? t("rail.hideHostAria") : t("rail.revealHostAria")}
-              >
-                <Icon name={hostRevealed ? "eye-off" : "eye"} size={12} />
-              </button>
-            </div>
+            <HostAddress value={server.host} className="rail-instance-tooltip-host" />
             {!isAgent && server.status === "online" && typeof latencyMs === "number" && (
               <div className="rail-instance-tooltip-latency">{latencyMs} ms</div>
             )}

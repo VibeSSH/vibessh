@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { cloudAssignRole, cloudListMemberRoles, cloudListRoles, cloudUnassignRole } from "@/services/cloudService";
 import { toastError } from "@/stores/toastStore";
 import type { CloudRole } from "@/types/cloud";
@@ -74,14 +74,7 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner, canMana
 
   return (
     <div className="member-roles-anchor" ref={anchorRef}>
-      <button
-        className="server-list-action"
-        title={t("roles.manageRolesAria", { name: memberName })}
-        aria-label={t("roles.manageRolesAria", { name: memberName })}
-        onClick={handleOpen}
-      >
-        <Icon name="key" size={14} />
-      </button>
+      <IconButton icon="key" size="sm" title={t("roles.manageRolesAria", { name: memberName })} onClick={handleOpen} />
       {open && (
         <div className="member-roles-popover">
           <div className="member-roles-popover-header">{t("roles.rolesFor", { name: memberName })}</div>

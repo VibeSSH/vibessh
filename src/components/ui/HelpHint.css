@@ -1,0 +1,21 @@
+.help-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hover);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.help-hint:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

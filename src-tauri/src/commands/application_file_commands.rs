@@ -265,3 +265,14 @@ pub async fn restore_application_file_history(
 ) -> AppResult<()> {
     services::restore_file_history(&app_repo, &server_repo, &sessions, application_id, &path, &timestamp).await
 }
+
+#[tauri::command]
+pub async fn clear_application_file_history(
+    app_repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    application_id: Uuid,
+    path: String,
+) -> AppResult<()> {
+    services::clear_file_history(&app_repo, &server_repo, &sessions, application_id, &path).await
+}

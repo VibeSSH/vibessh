@@ -120,8 +120,23 @@ pub async fn reconcile_mesh(
             })
             .collect();
 
+        // A cached session that's gone stale (idle timeout, network blip,
+        // Node reboot) fails here with a raw "couldn't open an SSH channel"
+        // error instead of reconnecting - `ssh_service::execute_command`
+        // already handles this for a single command by dropping the dead
+        // session and retrying once, so mirror that here since `apply` runs
+        // its own multi-line script over the connection directly.
         let outcome = match get_or_connect(server_repo, sessions, member.server_id).await {
-            Ok(connection) => wireguard::apply(&connection, &member.wireguard_ip, &peers).await,
+            Ok(connection) => match wireguard::apply(&connection, &member.wireguard_ip, &peers).await {
+                Ok(()) => Ok(()),
+                Err(first_err) => {
+                    sessions.remove(member.server_id).await;
+                    match get_or_connect(server_repo, sessions, member.server_id).await {
+                        Ok(connection) => wireguard::apply(&connection, &member.wireguard_ip, &peers).await.map_err(|_| first_err),
+                        Err(_) => Err(first_err),
+                    }
+                }
+            },
             Err(err) => Err(err),
         };
         results.push(match outcome {
@@ -253,6 +268,8 @@ pub async fn sync_vibe_network(
     server_repo: &ServerRepository,
     app_repo: &crate::storage::application_repository::ApplicationRepository,
     dns_repo: &crate::storage::dns_repository::DnsRepository,
+    dns_suffix: &str,
+    firewall_rule_repo: &crate::storage::firewall_rule_repository::FirewallRuleRepository,
     sessions: &SshSessionManager,
 ) -> AppResult<Vec<VibeNetworkSyncResult>> {
     let members = network_repo.list()?;
@@ -261,13 +278,13 @@ pub async fn sync_vibe_network(
     }
 
     let mesh_results = reconcile_mesh(network_repo, server_repo, sessions).await?;
-    let dns_results = crate::services::dns_service::sync_dns(network_repo, server_repo, app_repo, dns_repo, sessions).await?;
+    let dns_results = crate::services::dns_service::sync_dns(dns_suffix, network_repo, server_repo, app_repo, dns_repo, sessions).await?;
 
     let mut results = Vec::with_capacity(members.len());
     for member in &members {
         let mesh_error = mesh_results.iter().find(|r| r.server_id == member.server_id).and_then(|r| r.error.clone());
         let dns_error = dns_results.iter().find(|r| r.server_id == member.server_id).and_then(|r| r.error.clone());
-        let firewall_error = match crate::services::firewall_service::reconcile_node(app_repo, server_repo, network_repo, sessions, member.server_id).await {
+        let firewall_error = match crate::services::firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, member.server_id).await {
             Ok(_) => None,
             Err(err) => Some(err.to_string()),
         };

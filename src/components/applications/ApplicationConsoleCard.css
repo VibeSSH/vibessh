@@ -1,0 +1,53 @@
+.application-console-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.application-console-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.application-console-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.application-console-dot-red {
+  background: #ff5f57;
+}
+
+.application-console-dot-yellow {
+  background: #febc2e;
+}
+
+.application-console-dot-green {
+  background: #28c840;
+}
+
+.application-console-output {
+  height: 420px;
+  overflow: auto;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.application-console-input-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.application-console-input-row .form-input {
+  flex: 1;
+  font-family: var(--font-mono);
+}

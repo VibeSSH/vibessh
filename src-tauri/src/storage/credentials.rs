@@ -101,6 +101,36 @@ pub fn delete_cloud_refresh_token() -> AppResult<()> {
     }
 }
 
+/// The S3-compatible backup destination's secret access key - not keyed by
+/// any id, same as the cloud refresh token above, since there's exactly
+/// one destination for the whole install (see `models::BackupDestinationConfig`'s
+/// own doc comment).
+const BACKUP_DESTINATION_SECRET_ENTRY: &str = "backup-destination-secret-access-key";
+
+fn backup_destination_secret_entry() -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, BACKUP_DESTINATION_SECRET_ENTRY)
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_backup_destination_secret(value: &str) -> AppResult<()> {
+    backup_destination_secret_entry()?.set_password(value).map_err(|err| AppError::Storage(format!("failed to store the backup destination secret: {err}")))
+}
+
+pub fn load_backup_destination_secret() -> AppResult<Option<String>> {
+    match backup_destination_secret_entry()?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the backup destination secret: {err}"))),
+    }
+}
+
+pub fn delete_backup_destination_secret() -> AppResult<()> {
+    match backup_destination_secret_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to clear the backup destination secret: {err}"))),
+    }
+}
+
 // Named wrappers for the one call site (pairing_commands.rs) that predates
 // SecretKind - self-documenting at the call site, same implementation.
 pub fn store_agent_credential(server_id: Uuid, credential: &str) -> AppResult<()> {
@@ -113,6 +143,70 @@ pub fn load_agent_credential(server_id: Uuid) -> AppResult<Option<String>> {
 
 pub fn delete_agent_credential(server_id: Uuid) -> AppResult<()> {
     delete_secret(server_id, SecretKind::AgentCredential)
+}
+
+/// A secret `EnvironmentVariable`'s real value (`models::EnvironmentVariable::value`'s
+/// own doc comment) - keyed by `(application_id, key)` rather than through
+/// `SecretKind`/`entry_for`, since an Application can have any number of
+/// secret variables (not one fixed secret per id the way every other
+/// `SecretKind` is). Only `services::application_service` calls these -
+/// see that module's `resolve_environment_secrets`/
+/// `store_secret_environment_values`.
+fn environment_secret_entry(application_id: Uuid, key: &str) -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, &format!("{application_id}:env:{key}"))
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_environment_secret(application_id: Uuid, key: &str, value: &str) -> AppResult<()> {
+    environment_secret_entry(application_id, key)?
+        .set_password(value)
+        .map_err(|err| AppError::Storage(format!("failed to store the '{key}' secret: {err}")))
+}
+
+pub fn load_environment_secret(application_id: Uuid, key: &str) -> AppResult<Option<String>> {
+    match environment_secret_entry(application_id, key)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the '{key}' secret: {err}"))),
+    }
+}
+
+pub fn delete_environment_secret(application_id: Uuid, key: &str) -> AppResult<()> {
+    match environment_secret_entry(application_id, key)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to delete the '{key}' secret: {err}"))),
+    }
+}
+
+/// Same per-row keyring shape as `environment_secret_entry` (identical
+/// reasoning: any number of registry credentials can exist, not one fixed
+/// secret per id), keyed by the credential row's own id rather than an
+/// Application id - see `storage::registry_credential_repository`, the only
+/// caller.
+fn registry_credential_entry(credential_id: Uuid) -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, &format!("{credential_id}:registry-password"))
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_registry_credential_password(credential_id: Uuid, password: &str) -> AppResult<()> {
+    registry_credential_entry(credential_id)?
+        .set_password(password)
+        .map_err(|err| AppError::Storage(format!("failed to store the registry credential: {err}")))
+}
+
+pub fn load_registry_credential_password(credential_id: Uuid) -> AppResult<Option<String>> {
+    match registry_credential_entry(credential_id)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the registry credential: {err}"))),
+    }
+}
+
+pub fn delete_registry_credential_password(credential_id: Uuid) -> AppResult<()> {
+    match registry_credential_entry(credential_id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to delete the registry credential: {err}"))),
+    }
 }
 
 /// Every test across this crate that touches the real OS credential store -
@@ -221,5 +315,83 @@ mod tests {
 
         delete_secret(host_id, SecretKind::DatabaseHostAdmin).unwrap();
         assert_eq!(load_secret(host_id, SecretKind::DatabaseHostAdmin).unwrap(), None);
+    }
+
+    #[test]
+    fn environment_secrets_store_load_and_delete_via_the_real_os_keyring() {
+        let _guard = lock();
+        let application_id = Uuid::new_v4();
+        struct EnvCleanup(Uuid, &'static str);
+        impl Drop for EnvCleanup {
+            fn drop(&mut self) {
+                let _ = delete_environment_secret(self.0, self.1);
+            }
+        }
+        let _cleanup = EnvCleanup(application_id, "DB_PASSWORD");
+
+        assert_eq!(load_environment_secret(application_id, "DB_PASSWORD").unwrap(), None);
+
+        store_environment_secret(application_id, "DB_PASSWORD", "hunter2").unwrap();
+        assert_eq!(load_environment_secret(application_id, "DB_PASSWORD").unwrap(), Some("hunter2".to_string()));
+
+        delete_environment_secret(application_id, "DB_PASSWORD").unwrap();
+        assert_eq!(load_environment_secret(application_id, "DB_PASSWORD").unwrap(), None);
+    }
+
+    #[test]
+    fn registry_credential_password_stores_loads_and_deletes_via_the_real_os_keyring() {
+        let _guard = lock();
+        let credential_id = Uuid::new_v4();
+        struct Cleanup(Uuid);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = delete_registry_credential_password(self.0);
+            }
+        }
+        let _cleanup = Cleanup(credential_id);
+
+        assert_eq!(load_registry_credential_password(credential_id).unwrap(), None);
+        store_registry_credential_password(credential_id, "ghp_realtoken").unwrap();
+        assert_eq!(load_registry_credential_password(credential_id).unwrap(), Some("ghp_realtoken".to_string()));
+        delete_registry_credential_password(credential_id).unwrap();
+        assert_eq!(load_registry_credential_password(credential_id).unwrap(), None);
+    }
+
+    #[test]
+    fn backup_destination_secret_stores_loads_and_deletes_via_the_real_os_keyring() {
+        let _guard = lock();
+        struct Cleanup;
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = delete_backup_destination_secret();
+            }
+        }
+        let _cleanup = Cleanup;
+
+        assert_eq!(load_backup_destination_secret().unwrap(), None);
+        store_backup_destination_secret("s3-secret-value").unwrap();
+        assert_eq!(load_backup_destination_secret().unwrap(), Some("s3-secret-value".to_string()));
+        delete_backup_destination_secret().unwrap();
+        assert_eq!(load_backup_destination_secret().unwrap(), None);
+    }
+
+    #[test]
+    fn environment_secrets_for_different_keys_on_the_same_application_dont_collide() {
+        let _guard = lock();
+        let application_id = Uuid::new_v4();
+        struct EnvCleanup(Uuid, &'static str);
+        impl Drop for EnvCleanup {
+            fn drop(&mut self) {
+                let _ = delete_environment_secret(self.0, self.1);
+            }
+        }
+        let _cleanup_a = EnvCleanup(application_id, "DB_PASSWORD");
+        let _cleanup_b = EnvCleanup(application_id, "API_KEY");
+
+        store_environment_secret(application_id, "DB_PASSWORD", "hunter2").unwrap();
+        store_environment_secret(application_id, "API_KEY", "sk-real-value").unwrap();
+
+        assert_eq!(load_environment_secret(application_id, "DB_PASSWORD").unwrap(), Some("hunter2".to_string()));
+        assert_eq!(load_environment_secret(application_id, "API_KEY").unwrap(), Some("sk-real-value".to_string()));
     }
 }

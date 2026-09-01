@@ -24,7 +24,7 @@
 }
 
 .form-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -45,6 +45,13 @@
 }
 .form-input::placeholder {
   color: var(--text-tertiary);
+}
+/* Same opacity-fade language Button/IconButton already use for :disabled -
+   keeps "disabled" visually distinct from merely-muted/secondary text,
+   which never fades, only recolors. */
+.form-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .form-textarea {
@@ -81,6 +88,7 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: 4px;
 }
@@ -98,8 +106,8 @@
 
 .form-note {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -113,6 +121,27 @@
 
 .form-note-success {
   color: var(--success);
+}
+
+/* An inline text link inside a `.form-note` sentence (e.g. "generate one at
+   flags.sh") - a real `<button>` that opens through Tauri's shell plugin
+   rather than a plain `<a target="_blank">`, so it actually reaches the
+   user's system browser instead of trying to navigate the app's own
+   webview (see DatabasesTab's phpMyAdmin link for the same pattern). Styled
+   to read as a link, not a button - inherits the surrounding text's size. */
+.form-note-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.form-note-link:hover {
+  color: var(--accent-hover);
 }
 
 /* The "13px/1.5 line-height/primary text" paragraph style repeated
@@ -196,9 +225,9 @@
 }
 
 .pairing-code-timer {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 .pairing-code-timer-low {
@@ -250,4 +279,30 @@
 
 .file-editor-codemirror .cm-editor {
   height: 360px;
+}
+
+.secure-firewall-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  background: var(--surface-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.secure-firewall-rule-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.secure-firewall-rule-list li svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }

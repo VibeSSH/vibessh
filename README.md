@@ -27,6 +27,29 @@ It connects to your servers in one of two modes:
 The frontend never knows which mode it's talking to — both go through the
 same `ServerConnection` interface on the Rust side.
 
+## Node requirements
+
+Plain SSH/SFTP, the terminal, and the file manager work on any Linux box
+you can already `ssh` into — nothing to install.
+
+Running Applications (Docker containers), joining the Vibe Network mesh,
+or using Vibe Firewall needs three things on the Node itself:
+
+- [Docker](https://docs.docker.com/engine/install/) — runs every
+  Application as a container
+- [WireGuard](https://www.wireguard.com/install/) — the Vibe Network's
+  private mesh between Nodes
+- [ufw](https://help.ubuntu.com/community/UFW) — Vibe Firewall's backend
+
+You don't need to install any of these by hand: the Setup Page (the gear
+icon on a server card, opened automatically right after adding a new
+SSH-mode server) detects what's missing and offers to install each one
+for you over the same SSH connection. From there it also offers to pair
+a Vibe Agent for realtime metrics and a fuller terminal, and to turn on
+Vibe Firewall — SSH always stays reachable, everything else is denied by
+default, and you always see the exact rule set before anything is
+actually enforced.
+
 ## Modules
 
 - **VibeSSH Terminal** — interactive, multi-session SSH terminal
@@ -495,7 +518,10 @@ same `ServerConnection` interface on the Rust side.
 Built in stages on purpose — each one lands as something that actually runs
 and can be tested, not a partial slice of a bigger unfinished feature.
 
-## Prerequisites
+## Development prerequisites
+
+What you need to build/run VibeSSH itself from source - see "Node
+requirements" above for what your *managed servers* need.
 
 - [Node.js](https://nodejs.org) 18+
 - [Rust](https://rustup.rs) (stable toolchain)

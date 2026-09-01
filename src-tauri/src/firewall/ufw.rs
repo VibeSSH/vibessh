@@ -5,11 +5,18 @@
 //! behind the same trait - nothing here assumes ufw is the only one that
 //! will ever exist.
 //!
-//! Every rule this module adds carries `comment 'vibessh'` - not read back
-//! anywhere yet (`ufw status` doesn't surface comments, see `firewall::mod`'s
-//! own doc comment on why removal isn't attempted this phase), but it's
-//! cheap, harmless, and exactly the kind of marker a future removal story
-//! would need, so it's written from day one rather than retrofitted later.
+//! Every rule this module adds carries `comment 'vibessh'` - written from
+//! day one as the marker `vibessh_owned_rules` needs to tell "a rule this
+//! code added" apart from "a rule the host's own admin added by hand" (see
+//! `firewall::mod`'s own doc comment on why that distinction is the whole
+//! safety story behind removal). Read back through `sudo ufw show added`,
+//! not `sudo ufw status` - `status` prints the comment too on this ufw
+//! version (confirmed live: `# vibessh` trails each rule's row), but that's
+//! not guaranteed across every ufw version this project might run against,
+//! while `show added` reprints the exact `ufw allow ...` invocation
+//! (comment included) that created each rule - the same shape
+//! `allow_command` builds, so parsing it back is a near-mirror of building
+//! it, not a second format to keep in sync by hand.
 
 use crate::errors::{AppError, AppResult};
 use crate::models::PortProtocol;
@@ -48,6 +55,16 @@ fn allow_command(rule: &FirewallRule) -> String {
     }
 }
 
+/// The exact inverse of `allow_command`, minus the comment - `ufw delete
+/// <rule spec>` matches against the port/protocol/source shape a rule was
+/// created with, not its comment, so the comment plays no part in deletion.
+fn revoke_command(rule: &FirewallRule) -> String {
+    match &rule.source_cidr {
+        None => format!("sudo ufw delete allow {}/{}", rule.port, protocol_str(rule.protocol)),
+        Some(cidr) => format!("sudo ufw delete allow from {cidr} to any port {} proto {}", rule.port, protocol_str(rule.protocol)),
+    }
+}
+
 #[async_trait::async_trait]
 impl FirewallProvider for UfwProvider {
     fn name(&self) -> &'static str {
@@ -73,6 +90,27 @@ impl FirewallProvider for UfwProvider {
     async fn current_rules(&self, connection: &SshSession) -> AppResult<Vec<FirewallRule>> {
         let output = connection.execute_command("sudo ufw status").await?;
         Ok(parse_status_rules(&output.stdout))
+    }
+
+    async fn vibessh_owned_rules(&self, connection: &SshSession) -> AppResult<Vec<FirewallRule>> {
+        let output = connection.execute_command("sudo ufw show added").await?;
+        Ok(parse_added_rules(&output.stdout))
+    }
+
+    async fn revoke_rules(&self, connection: &SshSession, obsolete: &[FirewallRule]) -> AppResult<()> {
+        for rule in obsolete {
+            let output = connection.execute_command(&revoke_command(rule)).await?;
+            if output.exit_code != 0 {
+                let detail = output.stderr.trim();
+                let detail = if detail.is_empty() { "ufw delete failed".to_string() } else { detail.to_string() };
+                return Err(AppError::Connection(format!(
+                    "couldn't remove the {}/{} ufw rule: {detail}",
+                    rule.port,
+                    protocol_str(rule.protocol)
+                )));
+            }
+        }
+        Ok(())
     }
 
     async fn is_active(&self, connection: &SshSession) -> AppResult<bool> {
@@ -138,6 +176,54 @@ fn parse_status_rules(output: &str) -> Vec<FirewallRule> {
         .collect()
 }
 
+/// Parses `sudo ufw show added` output, e.g.:
+/// ```text
+/// Added user rules (see 'ufw status' for running firewall):
+/// ufw allow 22/tcp comment 'vibessh'
+/// ufw allow from 10.77.0.0/16 to any port 8080 proto tcp comment 'vibessh'
+/// ufw allow in on docker0 to any port 3306 proto tcp
+/// ```
+/// Only lines ending in `comment 'vibessh'` are considered - see
+/// `firewall::mod`'s own doc comment on why that's the entire safety
+/// property `revoke_rules` depends on. The last line above (a manually
+/// added rule with no comment, e.g. `database_service`'s own docker0 MySQL
+/// rule) is correctly never returned - it doesn't carry the marker, so this
+/// module has no way to know it's safe to touch and must not try.
+fn parse_added_rules(output: &str) -> Vec<FirewallRule> {
+    output
+        .lines()
+        .filter(|line| line.trim_end().ends_with("comment 'vibessh'"))
+        .filter_map(|line| {
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.first() != Some(&"ufw") || tokens.get(1) != Some(&"allow") {
+                return None;
+            }
+            if tokens.get(2) == Some(&"from") {
+                let cidr = (*tokens.get(3)?).to_string();
+                if tokens.get(4) != Some(&"to") || tokens.get(5) != Some(&"any") || tokens.get(6) != Some(&"port") || tokens.get(8) != Some(&"proto") {
+                    return None;
+                }
+                let port: u16 = tokens.get(7)?.parse().ok()?;
+                let protocol = match *tokens.get(9)? {
+                    "tcp" => PortProtocol::Tcp,
+                    "udp" => PortProtocol::Udp,
+                    _ => return None,
+                };
+                Some(FirewallRule { port, protocol, source_cidr: Some(cidr) })
+            } else {
+                let (port, proto) = tokens.get(2)?.split_once('/')?;
+                let port: u16 = port.parse().ok()?;
+                let protocol = match proto {
+                    "tcp" => PortProtocol::Tcp,
+                    "udp" => PortProtocol::Udp,
+                    _ => return None,
+                };
+                Some(FirewallRule { port, protocol, source_cidr: None })
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +268,42 @@ mod tests {
     fn parse_status_rules_on_an_empty_or_inactive_status_is_empty() {
         assert!(parse_status_rules("Status: inactive\n").is_empty());
         assert!(parse_status_rules("").is_empty());
+    }
+
+    #[test]
+    fn revoke_command_mirrors_allow_command_without_the_comment() {
+        assert_eq!(revoke_command(&rule(25565, PortProtocol::Tcp)), "sudo ufw delete allow 25565/tcp");
+        let scoped = FirewallRule { port: 8080, protocol: PortProtocol::Tcp, source_cidr: Some("10.77.0.0/16".to_string()) };
+        assert_eq!(revoke_command(&scoped), "sudo ufw delete allow from 10.77.0.0/16 to any port 8080 proto tcp");
+    }
+
+    #[test]
+    fn parse_added_rules_reads_a_realistic_show_added_listing() {
+        let output = "Added user rules (see 'ufw status' for running firewall):\n\
+ufw allow 22/tcp comment 'vibessh'\n\
+ufw allow 54221/udp comment 'vibessh'\n\
+ufw allow from 10.77.0.0/16 to any port 8080 proto tcp comment 'vibessh'\n\
+ufw allow in on docker0 to any port 3306 proto tcp\n";
+        let rules = parse_added_rules(output);
+        assert_eq!(
+            rules,
+            vec![
+                rule(22, PortProtocol::Tcp),
+                FirewallRule { port: 54221, protocol: PortProtocol::Udp, source_cidr: None },
+                FirewallRule { port: 8080, protocol: PortProtocol::Tcp, source_cidr: Some("10.77.0.0/16".to_string()) },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_added_rules_never_includes_a_rule_without_the_vibessh_comment() {
+        let output = "Added user rules (see 'ufw status' for running firewall):\nufw allow in on docker0 to any port 3306 proto tcp\nufw allow 9000/tcp\n";
+        assert!(parse_added_rules(output).is_empty());
+    }
+
+    #[test]
+    fn parse_added_rules_on_an_empty_listing_is_empty() {
+        assert!(parse_added_rules("Added user rules (see 'ufw status' for running firewall):\n").is_empty());
+        assert!(parse_added_rules("").is_empty());
     }
 }

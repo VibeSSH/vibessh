@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { DeleteServerDialog } from "@/components/servers/DeleteServerDialog";
+import { NodeSetupWizard } from "@/components/servers/NodeSetupWizard";
 import { ServerCard } from "@/components/servers/ServerCard";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { deleteServer, listServers, serverSummaryToManagedServer } from "@/services/serverService";
@@ -20,6 +21,7 @@ export function Servers() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [deletingServer, setDeletingServer] = useState<ManagedServer | null>(null);
+  const [settingUpServer, setSettingUpServer] = useState<ManagedServer | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -106,6 +108,8 @@ export function Servers() {
                   onOpenFiles={() => navigate(`/files/${server.id}`)}
                   onOpenMonitor={() => navigate(`/monitor/${server.id}`)}
                   onOpenActions={() => navigate(`/actions/${server.id}`)}
+                  onOpenFirewall={() => navigate(`/firewall/${server.id}`)}
+                  onSetupNode={() => setSettingUpServer(server)}
                   onEdit={() => openForEdit(server)}
                   onDelete={() => {
                     setDeleteError(null);
@@ -126,6 +130,10 @@ export function Servers() {
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeletingServer(null)}
         />
+      )}
+
+      {settingUpServer && (
+        <NodeSetupWizard serverId={settingUpServer.id} serverName={settingUpServer.name} onClose={() => setSettingUpServer(null)} />
       )}
     </div>
   );

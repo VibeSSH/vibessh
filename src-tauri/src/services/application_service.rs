@@ -13,15 +13,20 @@ use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput,
-    CreateApplicationInput, HealthCheckType, PortInput, RuntimeType, SetHealthCheckInput, SetResourceLimitsInput,
+    CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortVisibility, RegistryCredential, RuntimeType,
+    SetHealthCheckInput, SetRegistryCredentialInput, SetResourceLimitsInput, UpdateApplicationInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{self, ApplicationRuntime, HealthCheckSpec, HealthStatus, ResourceUsage, RuntimeContext};
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::ssh::SshSession;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::credentials;
+use crate::storage::firewall_rule_repository::FirewallRuleRepository;
+use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
+use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
 pub fn list_applications(repo: &ApplicationRepository) -> AppResult<Vec<Application>> {
@@ -36,14 +41,6 @@ pub fn list_blueprints(registry: &BlueprintRegistry) -> Vec<Blueprint> {
     registry.list().into_iter().cloned().collect()
 }
 
-/// **Known, deliberate scope gap**: this validates ports for collisions
-/// against this same Application's *other* declared ports only (the
-/// repository's own job, see `ApplicationRepository::add_port`'s doc
-/// comment) - it does not check whether the port is actually free on the
-/// target host, local or remote. That needs a real live probe (a bind
-/// attempt locally, an `ss`/`netstat`-style query over SSH remotely) that
-/// hasn't been built yet; declaring a port here is documentation of intent
-/// today, not a guarantee nothing else on the host is already using it.
 pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid) -> AppResult<Vec<ApplicationPort>> {
     repo.list_ports(application_id)
 }
@@ -64,6 +61,61 @@ fn resolve_bind_address(port: &PortInput) -> String {
     }
 }
 
+/// Blocks a port save that would collide with something else, before any
+/// firewall/container change ever happens - the design doc's own
+/// requirement ("Przed zastosowaniem EXIT PORT VibeSSH musi sprawdzić: inne
+/// APPLICATION, inne EXIT PORTS, Docker bindings, listening sockets").
+/// Two checks, in order: a DB-level check against every other Application's
+/// own declared ports on this same Node (`ApplicationRepository::
+/// find_external_port_owner` - fast, always available, catches the most
+/// common mistake of two Applications both wanting the same port), then a
+/// live probe of what's actually bound on the host right now
+/// (`firewall_service::listening_process` via `ss` - catches a port taken
+/// by something VibeSSH doesn't know about at all: a manually-run service,
+/// a Docker container from outside VibeSSH). A `None` `external_port`, or
+/// no `server_id` (a Local application), or the port being saved unchanged
+/// from what it already was, all skip straight through - nothing is
+/// actually about to change in any of those cases, so there's nothing new
+/// to collide with. The live probe is best-effort in the sense that a
+/// Node the desktop can't currently reach never blocks the save (the same
+/// "a connectivity hiccup must never block an otherwise valid change"
+/// stance `sync_firewall_best_effort` below already takes) - but an
+/// *answered* probe that finds the port already bound to something else is
+/// a hard stop, same as the DB check.
+async fn check_external_port_available(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    excluding_port_id: Option<Uuid>,
+    port: &PortInput,
+) -> AppResult<()> {
+    let Some(external_port) = port.external_port else { return Ok(()) };
+    let application = get_application(repo, application_id)?;
+    let Some(server_id) = application.application.server_id else { return Ok(()) };
+
+    if let Some(current_port_id) = excluding_port_id {
+        let unchanged = application
+            .ports
+            .iter()
+            .any(|existing| existing.id == current_port_id && existing.external_port == Some(external_port) && existing.protocol == port.protocol);
+        if unchanged {
+            return Ok(());
+        }
+    }
+
+    if let Some(owner) = repo.find_external_port_owner(server_id, excluding_port_id, port.protocol, external_port)? {
+        return Err(AppError::InvalidInput(format!("port {external_port} is already published by '{owner}' on this Node")));
+    }
+
+    if let Ok(connection) = crate::services::ssh_service::get_or_connect(server_repo, sessions, server_id).await {
+        if let Some(process) = crate::services::firewall_service::listening_process(&connection, port.protocol, external_port).await.ok().flatten() {
+            return Err(AppError::InvalidInput(format!("port {external_port} is already in use on this Node (by {process})")));
+        }
+    }
+    Ok(())
+}
+
 /// Publishing a port (`external_port` set) should open it in the Node's
 /// firewall right away, not only whenever someone next thinks to click
 /// "Sync Firewall" on the Ports tab - `sync_firewall_best_effort` fires
@@ -76,13 +128,15 @@ pub async fn add_application_port(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     application_id: Uuid,
     port: &PortInput,
 ) -> AppResult<ApplicationPort> {
     let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    check_external_port_available(repo, server_repo, sessions, application_id, None, &port).await?;
     let created = repo.add_port(application_id, &port)?;
-    sync_firewall_best_effort(repo, server_repo, network_repo, sessions, application_id).await;
+    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
     Ok(created)
 }
 
@@ -90,14 +144,16 @@ pub async fn update_application_port(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     application_id: Uuid,
     port_id: Uuid,
     port: &PortInput,
 ) -> AppResult<ApplicationPort> {
     let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    check_external_port_available(repo, server_repo, sessions, application_id, Some(port_id), &port).await?;
     let updated = repo.update_port(application_id, port_id, &port)?;
-    sync_firewall_best_effort(repo, server_repo, network_repo, sessions, application_id).await;
+    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
     Ok(updated)
 }
 
@@ -105,16 +161,34 @@ async fn sync_firewall_best_effort(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     application_id: Uuid,
 ) {
-    if let Err(err) = crate::services::firewall_service::sync_application_node_firewall(repo, server_repo, network_repo, sessions, application_id).await {
+    if let Err(err) =
+        crate::services::firewall_service::sync_application_node_firewall(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await
+    {
         log::warn!("firewall sync after a port change failed (application {application_id}): {err}");
     }
 }
 
-pub fn remove_application_port(repo: &ApplicationRepository, application_id: Uuid, port_id: Uuid) -> AppResult<()> {
-    repo.remove_port(application_id, port_id)
+/// Also syncs the firewall afterward (best-effort, same as
+/// `add_application_port`/`update_application_port`) - a removed port's
+/// rule no longer appears in `firewall_service::desired_rules`, so this is
+/// what actually revokes it on the host rather than leaving it open
+/// forever (see `firewall::mod`'s own doc comment on removal).
+pub async fn remove_application_port(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    network_repo: &NodeNetworkRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    port_id: Uuid,
+) -> AppResult<()> {
+    repo.remove_port(application_id, port_id)?;
+    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
+    Ok(())
 }
 
 /// Creates the working directory (local `create_dir_all`, or `mkdir -p`
@@ -172,6 +246,30 @@ pub async fn create_application(
 
     let runtime_config = handler.render_runtime_config(&blueprint_inputs)?;
 
+    // A blueprint's own well-known port (Paper/Velocity's 25565) is created
+    // as a real, published port from the start - see `Blueprint::default_ports`'s
+    // own doc comment for why leaving this for the user to notice and add
+    // by hand (on the Ports tab, after wondering why their server isn't
+    // reachable) is exactly the kind of manual step this feature set exists
+    // to remove. `required: true` since removing it would silently break
+    // the one thing this Application is for; still freely editable
+    // (a different external port, a different visibility) same as any
+    // other port.
+    let ports = handler
+        .blueprint()
+        .default_ports
+        .iter()
+        .map(|port| PortInput {
+            name: port.name.clone(),
+            protocol: port.protocol,
+            bind_address: "0.0.0.0".to_string(),
+            internal_port: port.internal_port,
+            external_port: Some(port.external_port),
+            visibility: PortVisibility::Public,
+            required: true,
+        })
+        .collect();
+
     let create_input = CreateApplicationInput {
         server_id: input.server_id,
         name: name.to_string(),
@@ -181,11 +279,135 @@ pub async fn create_application(
         runtime_type: input.runtime_type,
         working_directory: working_directory.to_string(),
         environment: input.environment,
-        ports: vec![],
+        ports,
         runtime_config,
-        metadata: serde_json::json!({}),
+        // Stored so a later edit (`update_application_config`) can re-render
+        // `runtime_config` from the blueprint plus only the fields the user
+        // actually changed, instead of needing the whole rendered config
+        // reverse-engineered back into field values.
+        metadata: serde_json::json!({ "blueprintInputs": blueprint_inputs }),
     };
-    repo.create(&create_input)
+    let detail = repo.create(&create_input)?;
+    store_secret_environment_values(detail.application.id, &create_input.environment)?;
+    Ok(detail)
+}
+
+/// Writes every secret row's real value into the OS keyring, keyed by this
+/// Application's own id - the counterpart to `ApplicationRepository::create`/
+/// `set_environment` never writing that value into SQLite themselves (see
+/// `EnvironmentVariable::value`'s own doc comment). Takes the caller's own
+/// in-memory list (still holding the real values it was given) rather than
+/// re-reading from the repository, which would only see the redacted rows
+/// it just wrote.
+pub(crate) fn store_secret_environment_values(application_id: Uuid, environment: &[EnvironmentVariable]) -> AppResult<()> {
+    for env in environment {
+        if env.is_secret {
+            credentials::store_environment_secret(application_id, &env.key, &env.value)?;
+        }
+    }
+    Ok(())
+}
+
+/// The inverse of `store_secret_environment_values` - fills in each secret
+/// row's real value from the OS keyring, for the one case that's actually
+/// allowed to see it: a runtime about to start/inspect the real process
+/// (`load_runtime`). Never called on a path that returns straight to the
+/// frontend.
+pub(crate) fn resolve_environment_secrets(application_id: Uuid, environment: Vec<EnvironmentVariable>) -> AppResult<Vec<EnvironmentVariable>> {
+    environment
+        .into_iter()
+        .map(|mut env| {
+            if env.is_secret {
+                env.value = credentials::load_environment_secret(application_id, &env.key)?.unwrap_or_default();
+            }
+            Ok(env)
+        })
+        .collect()
+}
+
+/// Re-renders `runtime_config` from the blueprint after applying `field_values`
+/// on top of whatever was stored at creation (or the last edit) - lets the
+/// user change one field (JVM args, Java version, ...) without having to
+/// resupply every other field the blueprint needs. An application created
+/// before this existed has no stored `blueprintInputs` yet - `field_values`
+/// is then all this has to render from, which the caller (the edit form) is
+/// responsible for pre-filling with the blueprint's own defaults rather than
+/// silently rendering from an empty map.
+///
+/// **Re-runs `provision()`**, same as `create_application` does - fixes a
+/// real bug where changing Paper/Purpur's Minecraft version (or Velocity/
+/// Waterfall's own version field) silently kept running the *old* jar:
+/// `render_runtime_config` only ever reads the already-downloaded
+/// `__jarFilename` a blueprint's `provision()` step discovers, never the
+/// version field itself, so skipping `provision()` here left that field
+/// editable in the UI but functionally inert. The cost is every edit
+/// re-running `provision()` even when only an unrelated field changed
+/// (JVM args, say) - for Paper/Purpur/Velocity/Waterfall that means a
+/// redundant jar re-download; every other built-in blueprint's `provision()`
+/// is a no-op, so this costs them nothing. A `HashMap` has no stable field
+/// order to diff against to skip the redundant case cheaply, and knowing
+/// *which* fields actually require re-provisioning is knowledge only each
+/// blueprint's own `provision()` has - correctness first, this is the
+/// simple way to get it without teaching `BlueprintHandler` a new "does
+/// this field matter" concept.
+pub async fn update_application_config(
+    repo: &ApplicationRepository,
+    registry: &BlueprintRegistry,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    id: Uuid,
+    field_values: serde_json::Value,
+) -> AppResult<ApplicationDetail> {
+    let detail = repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))?;
+    let handler = registry
+        .get(&detail.application.blueprint_id)
+        .ok_or_else(|| AppError::InvalidInput(format!("unknown blueprint '{}'", detail.application.blueprint_id)))?;
+    // A blueprint's own supported runtime types can narrow after an
+    // Application already exists on one that's no longer listed (e.g.
+    // Paper/Velocity going Docker-only for mandatory isolation, Etap M1,
+    // after some existing Application was created as a Remote Process) -
+    // that Application keeps running fine on its already-stored
+    // `runtime_config` (nothing here touches it), but re-rendering that
+    // config from today's blueprint logic would silently assume a runtime
+    // type it was never designed for (Paper/Velocity's Docker-shape
+    // renderer, for one, doesn't even produce the `{command, args}` shape
+    // `RemoteProcessConfig` needs) - rejected outright with a clear reason
+    // rather than either corrupting the config or surfacing whatever
+    // internal error the renderer happens to fail with first.
+    if !handler.blueprint().supported_runtime_types.contains(&detail.application.runtime_type) {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' no longer supports this application's runtime type - its configuration can't be edited here",
+            handler.blueprint().name
+        )));
+    }
+
+    let edited: HashMap<String, serde_json::Value> = match field_values {
+        serde_json::Value::Object(map) => map.into_iter().collect(),
+        serde_json::Value::Null => HashMap::new(),
+        _ => return Err(AppError::InvalidInput("blueprint inputs must be an object".into())),
+    };
+
+    let mut merged: HashMap<String, serde_json::Value> = match detail.metadata.get("blueprintInputs") {
+        Some(serde_json::Value::Object(map)) => map.clone().into_iter().collect(),
+        _ => HashMap::new(),
+    };
+    merged.extend(edited);
+
+    let connection = resolve_connection(server_repo, sessions, detail.application.server_id).await?;
+    let provision_context = ProvisionContext { working_directory: &detail.application.working_directory, connection };
+    let discovered = handler.provision(&merged, &provision_context).await?;
+    merged.extend(discovered);
+
+    let runtime_config = handler.render_runtime_config(&merged)?;
+
+    let update_input = UpdateApplicationInput {
+        name: detail.application.name.clone(),
+        description: detail.application.description.clone(),
+        working_directory: detail.application.working_directory.clone(),
+        runtime_config,
+        metadata: serde_json::json!({ "blueprintInputs": merged }),
+    };
+    repo.update(id, &update_input)
 }
 
 pub(super) async fn ensure_working_directory_exists(
@@ -198,16 +420,51 @@ pub(super) async fn ensure_working_directory_exists(
         None => tokio::fs::create_dir_all(working_directory)
             .await
             .map_err(|err| AppError::InvalidInput(format!("couldn't create working directory '{working_directory}': {err}"))),
-        Some(server_id) => {
+        // Same dead-cached-session recovery every other SSH-touching
+        // function in this file already gets - this one just never had it
+        // before, which made it possible to hit a raw "couldn't open an SSH
+        // channel" right at the very first step of creating an Application,
+        // on a session that had simply gone idle since it was last used.
+        Some(server_id) => retry_on_connection_failure(sessions, Some(server_id), || async {
             let connection = get_or_connect(server_repo, sessions, server_id).await?;
             let output = connection.execute_command(&format!("mkdir -p {}", shell_quote(working_directory))).await?;
-            if output.exit_code != 0 {
-                let detail = output.stderr.trim();
-                let detail = if detail.is_empty() { "mkdir failed".to_string() } else { detail.to_string() };
-                return Err(AppError::InvalidInput(format!("couldn't create working directory '{working_directory}' on the remote host: {detail}")));
+            if output.exit_code == 0 {
+                return Ok(());
             }
-            Ok(())
-        }
+
+            // Plain `mkdir` fails whenever the connecting SSH user doesn't
+            // own some parent in the path - a stock cloud Ubuntu image's
+            // default non-root user (e.g. "ubuntu") owns its own home
+            // directory but nothing else, so the Pterodactyl-style
+            // `/home/container/<name>` default this wizard suggests fails
+            // outright there. "Plug and play, no manual server prep" is the
+            // whole point of this button, so this retries once with `sudo`
+            // (non-interactive: `-n` fails fast instead of hanging on a
+            // password prompt the SSH exec channel can never answer) and
+            // hands the new directory's ownership back to the connecting
+            // user, same "assume passwordless sudo for first-time setup"
+            // stance `install_docker` already takes. If sudo itself isn't
+            // usable either, its own error is far more actionable ("a
+            // password is required") than the original mkdir's bare
+            // "Permission denied", so that's what gets surfaced.
+            let server = server_repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
+            let dir = shell_quote(working_directory);
+            let user = shell_quote(&server.username);
+            let sudo_output = connection.execute_command(&format!("sudo -n mkdir -p {dir} && sudo -n chown {user}:{user} {dir}")).await?;
+            if sudo_output.exit_code == 0 {
+                return Ok(());
+            }
+
+            let detail = sudo_output.stderr.trim();
+            let detail = if !detail.is_empty() {
+                detail.to_string()
+            } else {
+                let mkdir_detail = output.stderr.trim();
+                if mkdir_detail.is_empty() { "mkdir failed".to_string() } else { mkdir_detail.to_string() }
+            };
+            Err(AppError::InvalidInput(format!("couldn't create working directory '{working_directory}' on the remote host: {detail}")))
+        })
+        .await,
     }
 }
 
@@ -230,7 +487,21 @@ fn shell_quote(value: &str) -> String {
     quoted
 }
 
-pub fn delete_application(repo: &ApplicationRepository, id: Uuid) -> AppResult<()> {
+pub async fn delete_application(repo: &ApplicationRepository, log_capture: &LogCaptureStore, id: Uuid) -> AppResult<()> {
+    // Best-effort, and before the row itself goes away - `ON DELETE CASCADE`
+    // takes care of the `application_environment` rows, but the OS keyring
+    // has no idea those rows ever existed, so a secret's entry would
+    // otherwise outlive the Application it belonged to forever.
+    if let Ok(Some(detail)) = repo.get(id) {
+        for env in &detail.environment {
+            if env.is_secret {
+                let _ = credentials::delete_environment_secret(id, &env.key);
+            }
+        }
+    }
+    // Same reasoning as the secrets above - a deleted Application's own
+    // captured log history has nothing left to belong to.
+    log_capture.delete(id).await;
     repo.delete(id)
 }
 
@@ -259,7 +530,12 @@ async fn load_runtime(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<(ApplicationDetail, Option<Arc<SshSession>>, Box<dyn ApplicationRuntime>)> {
-    let detail = get_application(repo, id)?;
+    let mut detail = get_application(repo, id)?;
+    // Every other reader of `ApplicationDetail` (the Tauri commands that
+    // hand it to the frontend) sees a secret row redacted - this is the one
+    // path that's actually about to start/inspect the real process, so it's
+    // the one place real secret values get resolved back in.
+    detail.environment = resolve_environment_secrets(detail.application.id, detail.environment)?;
     let connection = resolve_connection(server_repo, sessions, detail.application.server_id).await?;
     let runtime = runtime::runtime_for(detail.application.runtime_type, local_process_manager.clone());
     Ok((detail, connection, runtime))
@@ -284,13 +560,25 @@ pub async fn start_application(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
+    registry_repo: &RegistryCredentialRepository,
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.start(&ctx).await?;
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        // Best-effort login before whatever `start()` does under the hood
+        // (a `docker create` that only pulls if the image isn't already
+        // cached locally) - a no-op for every image without a stored
+        // credential, see `ensure_registry_login`'s own doc comment.
+        if let (Some(conn), Some(image)) = (&connection, detail.runtime_config.get("image").and_then(|v| v.as_str())) {
+            ensure_registry_login(conn, registry_repo, image).await?;
+        }
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.start(&ctx).await?;
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 pub async fn stop_application(
@@ -301,10 +589,14 @@ pub async fn stop_application(
     id: Uuid,
     graceful: bool,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.stop(&ctx, graceful).await?;
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.stop(&ctx, graceful).await?;
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 pub async fn restart_application(
@@ -314,10 +606,14 @@ pub async fn restart_application(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.restart(&ctx).await?;
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.restart(&ctx).await?;
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 /// "Recreate Container" (Etap M1) - `destroy()` then `start()`, so an edited
@@ -334,17 +630,31 @@ pub async fn recreate_application(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
+    registry_repo: &RegistryCredentialRepository,
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+    let detail = get_application(repo, id)?;
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("recreating is only meaningful for Docker applications".into()));
     }
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.destroy(&ctx).await?;
-    runtime.start(&ctx).await?;
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = detail.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.destroy(&ctx).await?;
+        // Same best-effort login as `start_application` - `recreate` is
+        // exactly the path a changed image (via `ApplicationConfigCard`/
+        // `DockerImageCard`'s own auto-recreate) goes through, so this is
+        // the realistic place a *new*, never-before-pulled private image
+        // actually gets requested.
+        if let (Some(conn), Some(image)) = (&ctx.connection, ctx.runtime_config.get("image").and_then(|v| v.as_str())) {
+            ensure_registry_login(conn, registry_repo, image).await?;
+        }
+        runtime.start(&ctx).await?;
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 pub async fn kill_application(
@@ -354,10 +664,14 @@ pub async fn kill_application(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.kill(&ctx).await?;
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.kill(&ctx).await?;
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 pub async fn refresh_application_status(
@@ -367,9 +681,13 @@ pub async fn refresh_application_status(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
 }
 
 pub async fn application_resource_usage(
@@ -379,9 +697,13 @@ pub async fn application_resource_usage(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ResourceUsage> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.resource_usage(&ctx).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.resource_usage(&ctx).await
+    })
+    .await
 }
 
 /// The last `max_lines` lines available right now - a snapshot the Logs tab
@@ -389,17 +711,83 @@ pub async fn application_resource_usage(
 /// `ContainerLogsPanel`'s existing `get_server_container_logs` already
 /// uses. Not live-streamed - see `runtime::mod`'s own `LogProvider` doc
 /// comment for why that's a pull-based API in the first place.
+/// Merges a fresh live fetch into `log_capture` (see that module's own doc
+/// comment for why this exists at all) before answering from the merged,
+/// locally-persisted result rather than the live fetch directly - so a
+/// Recreate's brand new, empty container log buffer never actually looks
+/// empty to the user, and a briefly unreachable Node degrades to "whatever
+/// was captured last time" instead of a hard error on a tab that's mostly
+/// used to figure out *why* something just failed.
 pub async fn application_logs(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
     local_process_manager: &Arc<LocalProcessManager>,
+    log_capture: &LogCaptureStore,
     id: Uuid,
     max_lines: u32,
 ) -> AppResult<Vec<String>> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.logs(&ctx).await?.tail(max_lines).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    let live_fetch = retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.logs(&ctx).await?.tail(max_lines).await
+    })
+    .await;
+
+    if let Ok(live_lines) = live_fetch {
+        let previous_last_line = log_capture.tail(id, 1).await?;
+        let new_lines = merge_new_log_lines(previous_last_line.first().map(String::as_str), live_lines);
+        log_capture.append(id, &new_lines).await?;
+    }
+
+    log_capture.tail(id, max_lines).await
+}
+
+/// Finds where genuinely new output starts in a fresh live fetch, using the
+/// single most-recently-captured line as the anchor - the *rightmost*
+/// match (not the first), so a line that happens to repeat further back in
+/// the live batch doesn't fool this into re-appending everything after an
+/// earlier, spurious match. No anchor at all (first capture ever, or the
+/// container was just recreated and its brand new buffer shares nothing
+/// with the old one) means the whole live batch is "new" - appended after
+/// whatever's already stored, so a Recreate only ever adds to history, it
+/// never loses what came before.
+fn merge_new_log_lines(previous_last_line: Option<&str>, live_lines: Vec<String>) -> Vec<String> {
+    match previous_last_line.and_then(|anchor| live_lines.iter().rposition(|line| line == anchor)) {
+        Some(index) => live_lines[index + 1..].to_vec(),
+        None => live_lines,
+    }
+}
+
+/// Sends one line of input to the application's stdin/console (a Minecraft
+/// server's `say hello`, a generic process's own REPL, etc.) - `Ok(None)`
+/// from `runtime.console` (a systemd unit with no stdin, see that trait
+/// method's own doc comment) and a console that reports `supports_input() ==
+/// false` are both surfaced as the same clear "read-only" error rather than
+/// silently swallowing the keystrokes.
+pub async fn application_console_write(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+    input: &str,
+) -> AppResult<()> {
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let console = runtime
+            .console(&ctx)
+            .await?
+            .ok_or_else(|| AppError::InvalidInput("this application has no interactive console".into()))?;
+        if !console.supports_input() {
+            return Err(AppError::InvalidInput("this application's console is read-only".into()));
+        }
+        console.write(input).await
+    })
+    .await
 }
 
 /// Validates a health check configuration before it's stored - beyond the
@@ -447,8 +835,15 @@ pub fn set_application_resource_limits(
     input: SetResourceLimitsInput,
 ) -> AppResult<ApplicationDetail> {
     let detail = get_application(repo, id)?;
-    if !matches!(detail.application.runtime_type, RuntimeType::Docker | RuntimeType::Systemd) {
-        return Err(AppError::InvalidInput("resource limits are only supported for Docker and systemd applications".into()));
+    if !matches!(detail.application.runtime_type, RuntimeType::Docker | RuntimeType::Systemd | RuntimeType::RemoteProcess) {
+        return Err(AppError::InvalidInput("resource limits are only supported for Docker, systemd, and remote process applications".into()));
+    }
+    // A bare SSH-launched process has no cgroup of its own to cap memory
+    // through the way Docker/systemd do (see `runtime::remote_process`'s own
+    // `cpulimit`-based CPU cap for why CPU is still possible there) - reject
+    // rather than silently store a limit that will never actually apply.
+    if detail.application.runtime_type == RuntimeType::RemoteProcess && input.memory_limit_mb.is_some() {
+        return Err(AppError::InvalidInput("a memory limit isn't supported for remote process applications".into()));
     }
     runtime::validate_resource_limits(input.memory_limit_mb, input.cpu_limit_cores)?;
 
@@ -464,6 +859,214 @@ pub fn set_application_resource_limits(
     };
 
     repo.update_runtime_config(id, &runtime_config)
+}
+
+/// Patches only the `image` key inside a Docker Application's own
+/// `runtime_config` - same one-key-patch shape `set_application_resource_limits`
+/// already established, Docker-only for the same kind of reason: `image` is
+/// a Docker-specific concept, the other three runtime types run a bare
+/// `command`/`args` instead and have nothing here to change. Like every
+/// other `runtime_config` edit in this codebase, this alone doesn't affect
+/// an already-created container - the caller still needs a Recreate
+/// (`recreate_application`) for a running Application to actually pick up
+/// the new image, same "change it, save it, then Recreate" pattern the
+/// frontend already applies for resource limits/environment/ports.
+pub fn set_application_image(repo: &ApplicationRepository, id: Uuid, image: String) -> AppResult<ApplicationDetail> {
+    let detail = get_application(repo, id)?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("the image is only configurable for Docker applications".into()));
+    }
+    let image = image.trim();
+    if image.is_empty() {
+        return Err(AppError::InvalidInput("an image is required".into()));
+    }
+    if image.contains(['\n', '\r']) {
+        return Err(AppError::InvalidInput("the image can't contain a newline".into()));
+    }
+
+    let mut runtime_config = detail.runtime_config.clone();
+    let object = runtime_config.as_object_mut().ok_or_else(|| AppError::Internal("runtime_config wasn't a JSON object".into()))?;
+    object.insert("image".to_string(), serde_json::json!(image));
+
+    repo.update_runtime_config(id, &runtime_config)
+}
+
+// ---- Private Docker registry credentials ----
+
+pub fn list_registry_credentials(repo: &RegistryCredentialRepository) -> AppResult<Vec<RegistryCredential>> {
+    repo.list()
+}
+
+/// Sets (creating or overwriting) the login for one registry host - keyed
+/// by `input.registry`, not a fresh row every call, so re-saving a
+/// registry's credential updates the existing keyring entry in place rather
+/// than leaking an orphaned one under a discarded id (see
+/// `models::RegistryCredential`'s own doc comment on the one-row-per-host
+/// shape).
+pub fn set_registry_credential(repo: &RegistryCredentialRepository, input: SetRegistryCredentialInput) -> AppResult<RegistryCredential> {
+    let registry = input.registry.trim();
+    let username = input.username.trim();
+    if registry.is_empty() {
+        return Err(AppError::InvalidInput("a registry host is required".into()));
+    }
+    if username.is_empty() {
+        return Err(AppError::InvalidInput("a username is required".into()));
+    }
+    if input.password.is_empty() {
+        return Err(AppError::InvalidInput("a password or token is required".into()));
+    }
+
+    let credential = match repo.find_by_registry(registry)? {
+        Some(existing) => {
+            repo.update_username(existing.id, username)?;
+            RegistryCredential { username: username.to_string(), ..existing }
+        }
+        None => repo.create(registry, username)?,
+    };
+    credentials::store_registry_credential_password(credential.id, &input.password)?;
+    Ok(credential)
+}
+
+pub fn remove_registry_credential(repo: &RegistryCredentialRepository, id: Uuid) -> AppResult<()> {
+    repo.delete(id)?;
+    // Best-effort, same reasoning as every other "delete the row, then the
+    // secret that went with it" cleanup in this file - the row is already
+    // gone either way, and a leftover keyring entry under a dead id is
+    // orphaned but harmless, not a correctness problem worth failing this
+    // call over.
+    let _ = credentials::delete_registry_credential_password(id);
+    Ok(())
+}
+
+/// Docker's own reference-parsing rule: the first path segment before a
+/// `/` is a registry host only if it looks like one (has a `.` or `:`, or
+/// is literally `localhost`) - otherwise the whole reference is an implicit
+/// Docker Hub repository (`nginx:latest`, `someuser/someimage:tag`). Not
+/// guessing - this is the same heuristic the real `docker` CLI/distribution
+/// tooling itself uses to tell `myuser/myimage` (Hub) apart from
+/// `ghcr.io/myuser/myimage` (not Hub).
+fn registry_host(image: &str) -> &str {
+    match image.split_once('/') {
+        Some((first, _)) if first.contains('.') || first.contains(':') || first == "localhost" => first,
+        _ => "docker.io",
+    }
+}
+
+/// Best-effort `docker login` before a pull/create that might need one -
+/// a no-op (not an error) when no credential is stored for the image's own
+/// registry host, so every ordinary public-image pull stays exactly as
+/// cheap as before this existed. `--password-stdin` (never `-p` /
+/// `--password`, both deprecated specifically because the value would
+/// otherwise show up in `ps`/shell history on the remote host) - the
+/// password is piped in via `printf`, never interpolated into the command
+/// string itself.
+async fn ensure_registry_login(connection: &SshSession, registry_repo: &RegistryCredentialRepository, image: &str) -> AppResult<()> {
+    let host = registry_host(image);
+    let Some(credential) = registry_repo.find_by_registry(host)? else { return Ok(()) };
+    let Some(password) = credentials::load_registry_credential_password(credential.id)? else { return Ok(()) };
+
+    // A bare `docker login` (no host argument) targets Docker Hub - passing
+    // `docker.io` explicitly as a host argument isn't guaranteed to be
+    // treated the same way, so the sentinel gets the no-argument form
+    // instead of just interpolating it in unconditionally.
+    let target = if host == "docker.io" { String::new() } else { format!(" {}", shell_quote(host)) };
+    let command = format!("printf '%s' {} | sudo docker login{target} -u {} --password-stdin", shell_quote(&password), shell_quote(&credential.username));
+    let output = connection.execute_command(&command).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() { "docker login failed".to_string() } else { detail.to_string() };
+        return Err(AppError::Connection(format!("couldn't log in to {host}: {detail}")));
+    }
+    Ok(())
+}
+
+/// `docker pull` for a Docker Application's currently-configured image, on
+/// the Node it actually runs on - the design doc's "aktualizacja image"
+/// requirement. Only re-fetches whatever layers changed upstream since the
+/// last pull (meaningful for a floating tag like `:latest`, or a version
+/// tag whose upstream image was rebuilt in place) - an already-running
+/// container keeps running its existing layers regardless, same as every
+/// other `runtime_config`-adjacent change; the caller still needs a
+/// Recreate to actually switch a running container onto the freshly
+/// pulled layers. Returns Docker's own pull output (image digest, "Status:
+/// Downloaded newer image" / "Image is up to date") for the caller to show
+/// as proof something real happened, not just a bare success.
+pub async fn pull_application_image(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    registry_repo: &RegistryCredentialRepository,
+    application_id: Uuid,
+) -> AppResult<String> {
+    let detail = get_application(repo, application_id)?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("pulling an image is only supported for Docker applications".into()));
+    }
+    let image = detail
+        .runtime_config
+        .get("image")
+        .and_then(|value| value.as_str())
+        .filter(|image| !image.trim().is_empty())
+        .ok_or_else(|| AppError::InvalidInput("no image configured for this application".into()))?
+        .to_string();
+    let server_id = detail.application.server_id;
+
+    retry_on_connection_failure(sessions, server_id, || async {
+        let connection = resolve_connection(server_repo, sessions, server_id)
+            .await?
+            .ok_or_else(|| AppError::Internal("a Docker application must have a Node".into()))?;
+        ensure_registry_login(&connection, registry_repo, &image).await?;
+        let output = connection.execute_command(&format!("sudo docker pull {}", shell_quote(&image))).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "docker pull failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't pull '{image}': {detail}")));
+        }
+        Ok(output.stdout)
+    })
+    .await
+}
+
+/// Replaces an Application's whole environment variable set - same
+/// "editable after creation, not just once in the wizard" bar
+/// `set_application_resource_limits`/`update_application_config` already
+/// meet for their own fields. No runtime-type restriction (unlike resource
+/// limits): every runtime already reads `ctx.environment` the same way, so
+/// there's no runtime that genuinely can't support this. Key/value
+/// validation itself is deliberately left to whichever runtime's own
+/// `start`/`create_container` reads this back (`validate_environment` in
+/// `runtime::docker`/`runtime::remote_process`) rather than duplicated
+/// here - the same single-source-of-truth reasoning
+/// `update_application_config` already applies to blueprint field
+/// validation.
+/// **Secret handling**: the frontend never has a secret row's real value to
+/// resend (`ApplicationRepository::get` always redacts it - see
+/// `EnvironmentVariable::value`'s own doc comment), so a secret row with an
+/// empty value here means "unchanged," not "clear it" - resolved below by
+/// keeping the previous real value from the keyring. A key that was secret
+/// before and no longer appears (removed, or flipped back to a plain
+/// variable) has its keyring entry deleted, so nothing outlives the row
+/// that referenced it.
+pub fn set_application_environment(repo: &ApplicationRepository, id: Uuid, environment: Vec<EnvironmentVariable>) -> AppResult<ApplicationDetail> {
+    let previous = get_application(repo, id)?.environment;
+
+    let mut resolved = Vec::with_capacity(environment.len());
+    for mut env in environment {
+        if env.is_secret && env.value.is_empty() && previous.iter().any(|p| p.key == env.key && p.is_secret) {
+            env.value = credentials::load_environment_secret(id, &env.key)?.unwrap_or_default();
+        }
+        resolved.push(env);
+    }
+
+    for prev in &previous {
+        if prev.is_secret && !resolved.iter().any(|env| env.key == prev.key && env.is_secret) {
+            let _ = credentials::delete_environment_secret(id, &prev.key);
+        }
+    }
+
+    repo.set_environment(id, &resolved)?;
+    store_secret_environment_values(id, &resolved)?;
+    get_application(repo, id)
 }
 
 /// Turns an Application's stored `health_check_*` columns into the
@@ -507,17 +1110,82 @@ pub async fn application_health_check(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<HealthStatus> {
-    let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-    let Some(spec) = resolve_health_check_spec(server_repo, &detail.application, &detail.ports)? else {
-        return Ok(HealthStatus::Unknown);
-    };
-    let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
-    runtime.health_check(&ctx, &spec).await
+    let server_id = get_application(repo, id)?.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let Some(spec) = resolve_health_check_spec(server_repo, &detail.application, &detail.ports)? else {
+            return Ok(HealthStatus::Unknown);
+        };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        runtime.health_check(&ctx, &spec).await
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_new_log_lines_with_no_anchor_treats_the_whole_batch_as_new() {
+        let live = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(merge_new_log_lines(None, live.clone()), live);
+    }
+
+    #[test]
+    fn merge_new_log_lines_returns_only_what_comes_after_the_anchor() {
+        let live = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        assert_eq!(merge_new_log_lines(Some("b"), live), vec!["c".to_string(), "d".to_string()]);
+    }
+
+    #[test]
+    fn merge_new_log_lines_returns_nothing_new_when_the_anchor_is_the_last_line() {
+        let live = vec!["a".to_string(), "b".to_string()];
+        assert!(merge_new_log_lines(Some("b"), live).is_empty());
+    }
+
+    #[test]
+    fn merge_new_log_lines_uses_the_rightmost_match_when_a_line_repeats() {
+        let live = vec!["retry".to_string(), "ok".to_string(), "retry".to_string(), "done".to_string()];
+        assert_eq!(merge_new_log_lines(Some("retry"), live), vec!["done".to_string()]);
+    }
+
+    #[test]
+    fn merge_new_log_lines_treats_a_missing_anchor_as_a_fresh_container_and_keeps_everything() {
+        // The anchor line isn't in the live batch at all - a Recreate gave
+        // the container a brand new buffer with nothing in common with what
+        // was captured before. Everything live is new, not dropped.
+        let live = vec!["fresh start".to_string(), "line two".to_string()];
+        assert_eq!(merge_new_log_lines(Some("something from the old container"), live.clone()), live);
+    }
+
+    #[test]
+    fn registry_host_treats_a_bare_image_as_docker_hub() {
+        assert_eq!(registry_host("nginx:latest"), "docker.io");
+        assert_eq!(registry_host("alpine"), "docker.io");
+    }
+
+    #[test]
+    fn registry_host_treats_a_user_org_path_with_no_dot_or_colon_as_docker_hub() {
+        assert_eq!(registry_host("someuser/someimage:tag"), "docker.io");
+    }
+
+    #[test]
+    fn registry_host_recognizes_a_domain_looking_first_segment_as_the_registry() {
+        assert_eq!(registry_host("ghcr.io/someuser/someimage:tag"), "ghcr.io");
+        assert_eq!(registry_host("my.private.registry/team/app:tag"), "my.private.registry");
+    }
+
+    #[test]
+    fn registry_host_recognizes_a_localhost_or_port_first_segment_as_the_registry() {
+        assert_eq!(registry_host("localhost:5000/app:tag"), "localhost:5000");
+        assert_eq!(registry_host("localhost/app:tag"), "localhost");
+    }
+
+    #[test]
+    fn registry_host_recognizes_an_explicit_docker_io_prefix_too() {
+        assert_eq!(registry_host("docker.io/library/nginx:latest"), "docker.io");
+    }
 
     /// A real `ApplicationRepository` + `ServerRepository` against a fresh
     /// temp SQLite file, a real `LocalProcessManager`, and the real
@@ -527,12 +1195,36 @@ mod tests {
     /// isolation. `ServerRepository`/`SshSessionManager` are unused by a
     /// Local application's own lifecycle but still required by every
     /// function's signature, matching production's own shape.
-    fn temp_setup() -> (ApplicationRepository, ServerRepository, NodeNetworkRepository, SshSessionManager, Arc<LocalProcessManager>, BlueprintRegistry) {
+    #[allow(clippy::type_complexity)]
+    fn temp_setup() -> (
+        ApplicationRepository,
+        ServerRepository,
+        NodeNetworkRepository,
+        SshSessionManager,
+        Arc<LocalProcessManager>,
+        BlueprintRegistry,
+        FirewallRuleRepository,
+        RegistryCredentialRepository,
+        LogCaptureStore,
+    ) {
         let path = std::env::temp_dir().join(format!("vibessh-app-service-test-{}.sqlite3", Uuid::new_v4()));
         let app_repo = ApplicationRepository::open(&path).unwrap();
         let server_repo = ServerRepository::open(&path).unwrap();
         let network_repo = NodeNetworkRepository::open(&path).unwrap();
-        (app_repo, server_repo, network_repo, SshSessionManager::new(), Arc::new(LocalProcessManager::new()), BlueprintRegistry::with_builtins())
+        let firewall_rule_repo = FirewallRuleRepository::open(&path).unwrap();
+        let registry_repo = RegistryCredentialRepository::open(&path).unwrap();
+        let log_capture = LogCaptureStore::new(std::env::temp_dir().join(format!("vibessh-app-service-test-logs-{}", Uuid::new_v4()))).unwrap();
+        (
+            app_repo,
+            server_repo,
+            network_repo,
+            SshSessionManager::new(),
+            Arc::new(LocalProcessManager::new()),
+            BlueprintRegistry::with_builtins(),
+            firewall_rule_repo,
+            registry_repo,
+            log_capture,
+        )
     }
 
     fn sleep_command_input() -> CreateApplicationFromBlueprintInput {
@@ -555,13 +1247,13 @@ mod tests {
 
     #[tokio::test]
     async fn full_lifecycle_create_start_status_stop_delete() {
-        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, registry, _firewall_rule_repo, registry_credential_repo, log_capture) = temp_setup();
 
         let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
         assert_eq!(detail.application.status, ApplicationStatus::Unknown);
         assert_eq!(detail.runtime_config["command"], serde_json::json!(if cfg!(windows) { "cmd" } else { "sh" }));
 
-        let status = start_application(&app_repo, &server_repo, &sessions, &local_process_manager, detail.application.id).await.unwrap();
+        let status = start_application(&app_repo, &server_repo, &sessions, &registry_credential_repo, &local_process_manager, detail.application.id).await.unwrap();
         assert_eq!(status, ApplicationStatus::Running);
 
         let refreshed = get_application(&app_repo, detail.application.id).unwrap();
@@ -571,7 +1263,7 @@ mod tests {
         // than assume it's already flushed by the time start() returned.
         let mut saw_output = false;
         for _ in 0..30 {
-            let lines = application_logs(&app_repo, &server_repo, &sessions, &local_process_manager, detail.application.id, 10).await.unwrap();
+            let lines = application_logs(&app_repo, &server_repo, &sessions, &local_process_manager, &log_capture, detail.application.id, 10).await.unwrap();
             if lines.iter().any(|line| line.contains("hello-from-application-service")) {
                 saw_output = true;
                 break;
@@ -583,13 +1275,13 @@ mod tests {
         let status = stop_application(&app_repo, &server_repo, &sessions, &local_process_manager, detail.application.id, true).await.unwrap();
         assert_eq!(status, ApplicationStatus::Stopped);
 
-        delete_application(&app_repo, detail.application.id).unwrap();
+        delete_application(&app_repo, &log_capture, detail.application.id).await.unwrap();
         assert!(get_application(&app_repo, detail.application.id).is_err());
     }
 
     #[tokio::test]
     async fn create_rejects_an_unknown_blueprint() {
-        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.blueprint_id = "does-not-exist".to_string();
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -597,7 +1289,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_rejects_a_runtime_type_the_blueprint_doesnt_support() {
-        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.runtime_type = RuntimeType::Docker;
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -605,7 +1297,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_rejects_a_blank_name() {
-        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.name = "   ".to_string();
         assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
@@ -613,7 +1305,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_creates_a_missing_local_working_directory() {
-        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         let fresh_dir = std::env::temp_dir().join(format!("vibessh-app-service-workdir-{}", Uuid::new_v4()));
         assert!(!fresh_dir.exists());
@@ -628,7 +1320,7 @@ mod tests {
 
     #[tokio::test]
     async fn port_crud_add_update_remove_round_trips_through_the_service_layer() {
-        let (app_repo, server_repo, network_repo, sessions, _local_process_manager, registry) = temp_setup();
+        let (app_repo, server_repo, network_repo, sessions, _local_process_manager, registry, firewall_rule_repo, ..) = temp_setup();
         let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
         let application_id = detail.application.id;
 
@@ -643,21 +1335,94 @@ mod tests {
             visibility: crate::models::PortVisibility::Public,
             required: false,
         };
-        let added = add_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, &input).await.unwrap();
+        let added = add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, &input).await.unwrap();
         assert_eq!(added.internal_port, 25565);
         assert_eq!(list_application_ports(&app_repo, application_id).unwrap().len(), 1);
 
         // Adding the exact same internal_port/bind_address/protocol again
         // is a real collision, not a silent duplicate - the service layer
         // must surface the repository's own collision error, not swallow it.
-        assert!(add_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, &input).await.is_err());
+        assert!(add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, &input).await.is_err());
 
         let updated_input = crate::models::PortInput { internal_port: 25566, ..input };
-        let updated = update_application_port(&app_repo, &server_repo, &network_repo, &sessions, application_id, added.id, &updated_input).await.unwrap();
+        let updated = update_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.id, &updated_input).await.unwrap();
         assert_eq!(updated.internal_port, 25566);
 
-        remove_application_port(&app_repo, application_id, added.id).unwrap();
+        remove_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.id).await.unwrap();
         assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
+    }
+
+    /// The design doc's own "check other Applications, other Exit Ports"
+    /// collision requirement, exercised end to end through the service
+    /// layer that actually enforces it (`check_external_port_available`) -
+    /// the repository-level check this reuses only ever looked at ports on
+    /// the *same* Application (see `add_port`'s own doc comment), so a
+    /// second, unrelated Application publishing the exact same host port
+    /// used to be silently allowed. The Node's host is unreachable
+    /// (`203.0.113.10` is a TEST-NET-3 address, RFC 5737) - the live `ss`
+    /// probe half of the check is expected to fail to connect and get
+    /// skipped, proving the DB-level half alone is what's catching this,
+    /// not a lucky live probe result.
+    #[tokio::test]
+    async fn add_application_port_rejects_an_external_port_already_published_by_a_different_application_on_the_same_node() {
+        let (app_repo, server_repo, network_repo, sessions, _local_process_manager, _registry, firewall_rule_repo, ..) = temp_setup();
+        let server = server_repo
+            .create(&crate::models::ServerInput {
+                name: "Collision Test Node".into(),
+                host: "203.0.113.10".into(),
+                ssh_port: 22,
+                username: "root".into(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("x".into()),
+                key_passphrase: None,
+            })
+            .unwrap();
+
+        fn docker_app_input(server_id: Uuid, name: &str) -> CreateApplicationInput {
+            CreateApplicationInput {
+                server_id: Some(server_id),
+                name: name.to_string(),
+                description: None,
+                blueprint_id: "generic-docker".to_string(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::Docker,
+                working_directory: "/srv/app".to_string(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config: serde_json::json!({}),
+                metadata: serde_json::json!({}),
+            }
+        }
+        let app_a = app_repo.create(&docker_app_input(server.id, "App A")).unwrap();
+        let app_b = app_repo.create(&docker_app_input(server.id, "App B")).unwrap();
+
+        let published_by_a = crate::models::PortInput {
+            name: "game".to_string(),
+            protocol: crate::models::PortProtocol::Tcp,
+            bind_address: "0.0.0.0".to_string(),
+            internal_port: 25565,
+            external_port: Some(25565),
+            visibility: crate::models::PortVisibility::Public,
+            required: false,
+        };
+        add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, app_a.application.id, &published_by_a).await.unwrap();
+
+        let colliding_from_b = crate::models::PortInput { internal_port: 25566, ..published_by_a.clone() };
+        let err = add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, app_b.application.id, &colliding_from_b).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+        assert!(list_application_ports(&app_repo, app_b.application.id).unwrap().is_empty(), "the colliding port must never have been saved");
+
+        // A different protocol on the same port number is not a collision.
+        let different_protocol = crate::models::PortInput { protocol: crate::models::PortProtocol::Udp, ..colliding_from_b.clone() };
+        assert!(add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, app_b.application.id, &different_protocol).await.is_ok());
+
+        // Re-saving App A's own port unchanged (e.g. editing its name) must
+        // not collide against itself.
+        let app_a_port = list_application_ports(&app_repo, app_a.application.id).unwrap().remove(0);
+        let renamed = crate::models::PortInput { name: "renamed".to_string(), ..published_by_a };
+        assert!(update_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, app_a.application.id, app_a_port.id, &renamed).await.is_ok());
     }
 
     fn create_raw(app_repo: &ApplicationRepository, runtime_type: RuntimeType, runtime_config: serde_json::Value) -> ApplicationDetail {
@@ -684,18 +1449,106 @@ mod tests {
             .unwrap()
     }
 
+    /// Reproduces a real Application from before Paper/Velocity went
+    /// Docker-only (Etap M1): the row still has `runtime_type =
+    /// RemoteProcess` and its own already-working `runtime_config`
+    /// (untouched by this test, and by `update_application_config` itself -
+    /// see that function's own doc comment), but the blueprint that created
+    /// it no longer lists RemoteProcess as supported.
+    #[tokio::test]
+    async fn update_application_config_rejects_an_application_whose_runtime_type_the_blueprint_no_longer_supports() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
+        let legacy_velocity = app_repo
+            .create(&CreateApplicationInput {
+                server_id: None,
+                name: "Legacy Velocity".to_string(),
+                description: None,
+                blueprint_id: "velocity".to_string(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::RemoteProcess,
+                working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config: serde_json::json!({ "command": "java", "args": ["-jar", "velocity-3.4.0-566.jar"] }),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let err = update_application_config(&app_repo, &registry, &server_repo, &sessions, legacy_velocity.application.id, serde_json::json!({ "javaVersion": "25" }))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::InvalidInput(_)));
+        // The Application's own config must be completely untouched - this
+        // rejects before ever calling `render_runtime_config`, not after.
+        let reloaded = get_application(&app_repo, legacy_velocity.application.id).unwrap();
+        assert_eq!(reloaded.runtime_config, serde_json::json!({ "command": "java", "args": ["-jar", "velocity-3.4.0-566.jar"] }));
+    }
+
+    /// The real-infra regression test for the bug this session actually
+    /// found: changing Velocity's own version field used to silently keep
+    /// running the jar downloaded at creation, because `update_application_config`
+    /// never re-ran `provision()` - see that function's own doc comment for
+    /// the full explanation. A real network call against papermc.io, same
+    /// "skip if unreachable" pattern this crate's other provision tests
+    /// already use.
+    #[tokio::test]
+    async fn update_application_config_re_provisions_so_a_changed_version_downloads_a_different_jar() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
+        let working_directory = std::env::temp_dir().join(format!("vibessh-config-reprovision-test-{}", uuid::Uuid::new_v4()));
+
+        let input = CreateApplicationFromBlueprintInput {
+            server_id: None,
+            name: "Version Change Test".to_string(),
+            description: None,
+            blueprint_id: "velocity".to_string(),
+            runtime_type: RuntimeType::Docker,
+            working_directory: working_directory.to_string_lossy().into_owned(),
+            environment: vec![],
+            blueprint_inputs: serde_json::json!({ "velocityVersion": "3.1.1" }),
+        };
+
+        let created = match create_application(&app_repo, &registry, &server_repo, &sessions, input).await {
+            Ok(created) => created,
+            Err(err) => {
+                eprintln!("skipping: papermc.io unreachable from this environment ({err:?})");
+                return;
+            }
+        };
+        let first_jar = created.runtime_config["command"][2].as_str().unwrap().to_string();
+        assert!(first_jar.contains("3.1.1"), "expected the 3.1.1 jar, got {first_jar}");
+
+        let updated = update_application_config(
+            &app_repo,
+            &registry,
+            &server_repo,
+            &sessions,
+            created.application.id,
+            serde_json::json!({ "velocityVersion": "3.4.0" }),
+        )
+        .await
+        .unwrap();
+
+        let second_jar = updated.runtime_config["command"][2].as_str().unwrap().to_string();
+        assert!(second_jar.contains("3.4.0"), "expected the 3.4.0 jar after changing the version, got {second_jar}");
+        assert_ne!(first_jar, second_jar, "changing the version must actually change the downloaded jar");
+        assert!(working_directory.join(&second_jar).is_file(), "the newly downloaded jar should exist in the working directory");
+
+        tokio::fs::remove_dir_all(&working_directory).await.ok();
+    }
+
     #[tokio::test]
     async fn recreate_application_rejects_a_non_docker_runtime_type() {
-        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, _registry) = temp_setup();
+        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, _registry, _firewall_rule_repo, registry_credential_repo, ..) = temp_setup();
         let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
 
-        let err = recreate_application(&app_repo, &server_repo, &sessions, &local_process_manager, local.application.id).await.unwrap_err();
+        let err = recreate_application(&app_repo, &server_repo, &sessions, &registry_credential_repo, &local_process_manager, local.application.id).await.unwrap_err();
         assert!(matches!(err, AppError::InvalidInput(_)));
     }
 
     #[test]
     fn set_application_resource_limits_rejects_a_runtime_type_that_cant_enforce_them() {
-        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
         let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
 
         let result = set_application_resource_limits(&app_repo, local.application.id, SetResourceLimitsInput { memory_limit_mb: Some(512), cpu_limit_cores: None });
@@ -704,7 +1557,7 @@ mod tests {
 
     #[test]
     fn set_application_resource_limits_patches_and_clears_the_docker_runtime_config() {
-        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
         let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "image": "alpine:latest", "command": [] }));
 
         let updated = set_application_resource_limits(
@@ -727,10 +1580,121 @@ mod tests {
 
     #[test]
     fn set_application_resource_limits_rejects_a_zero_memory_limit() {
-        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry) = temp_setup();
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
         let systemd = create_raw(&app_repo, RuntimeType::Systemd, serde_json::json!({ "command": "/usr/bin/java", "args": [] }));
 
         let result = set_application_resource_limits(&app_repo, systemd.application.id, SetResourceLimitsInput { memory_limit_mb: Some(0), cpu_limit_cores: None });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_application_image_patches_the_docker_runtime_config_and_leaves_the_rest_untouched() {
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
+        let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "image": "alpine:latest", "command": ["sleep", "999"] }));
+
+        let updated = set_application_image(&app_repo, docker.application.id, "  eclipse-temurin:25-jre-alpine  ".to_string()).unwrap();
+        assert_eq!(updated.runtime_config["image"], serde_json::json!("eclipse-temurin:25-jre-alpine"));
+        assert_eq!(updated.runtime_config["command"], serde_json::json!(["sleep", "999"]));
+    }
+
+    #[test]
+    fn set_application_image_rejects_a_non_docker_runtime_type() {
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
+        let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
+
+        assert!(set_application_image(&app_repo, local.application.id, "alpine:latest".to_string()).is_err());
+    }
+
+    #[test]
+    fn set_application_image_rejects_a_blank_or_newline_containing_image() {
+        let (app_repo, _server_repo, _network_repo, _sessions, _local_process_manager, _registry, ..) = temp_setup();
+        let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "image": "alpine:latest", "command": [] }));
+
+        assert!(set_application_image(&app_repo, docker.application.id, "   ".to_string()).is_err());
+        assert!(set_application_image(&app_repo, docker.application.id, "alpine:latest\nrm -rf /".to_string()).is_err());
+    }
+
+    #[tokio::test]
+    async fn pull_application_image_rejects_a_non_docker_runtime_type() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, _registry, _firewall_rule_repo, registry_credential_repo, ..) = temp_setup();
+        let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
+
+        let err = pull_application_image(&app_repo, &server_repo, &sessions, &registry_credential_repo, local.application.id).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn pull_application_image_rejects_a_docker_application_with_no_image_configured() {
+        let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, _registry, _firewall_rule_repo, registry_credential_repo, ..) = temp_setup();
+        let docker = create_raw(&app_repo, RuntimeType::Docker, serde_json::json!({ "command": [] }));
+
+        let err = pull_application_image(&app_repo, &server_repo, &sessions, &registry_credential_repo, docker.application.id).await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)));
+    }
+
+    /// End-to-end through the real OS keyring (guarded by the same
+    /// process-wide lock every other keyring-touching test in this crate
+    /// takes - see `storage::credentials::KEYRING_TEST_LOCK`'s own doc
+    /// comment), covering the whole life of a secret environment variable:
+    /// never plaintext on a normal read, resolved back only for an actual
+    /// runtime, "leave blank to keep" on edit, and cleaned up both when
+    /// removed and when the Application itself is deleted.
+    #[tokio::test]
+    async fn secret_environment_variables_never_leak_plaintext_and_round_trip_through_the_keyring() {
+        let _guard = crate::storage::credentials::KEYRING_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (app_repo, server_repo, _network_repo, sessions, local_process_manager, registry, _firewall_rule_repo, _registry_credential_repo, log_capture) = temp_setup();
+
+        let mut input = sleep_command_input();
+        input.environment = vec![
+            EnvironmentVariable { key: "PLAIN".into(), value: "visible".into(), is_secret: false },
+            EnvironmentVariable { key: "DB_PASSWORD".into(), value: "hunter2".into(), is_secret: true },
+        ];
+        let created = create_application(&app_repo, &registry, &server_repo, &sessions, input).await.unwrap();
+        let id = created.application.id;
+        struct Cleanup(Uuid);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = crate::storage::credentials::delete_environment_secret(self.0, "DB_PASSWORD");
+            }
+        }
+        let _cleanup = Cleanup(id);
+
+        // A plain read - what every Tauri command hands to the frontend -
+        // never carries the secret's real value, only that it is one.
+        let redacted = get_application(&app_repo, id).unwrap();
+        let secret_row = redacted.environment.iter().find(|e| e.key == "DB_PASSWORD").unwrap();
+        assert!(secret_row.is_secret);
+        assert_eq!(secret_row.value, "");
+        assert_eq!(redacted.environment.iter().find(|e| e.key == "PLAIN").unwrap().value, "visible");
+
+        // An actual runtime (about to start the process) resolves the real
+        // value back in.
+        let (runtime_detail, _connection, _runtime) = load_runtime(&app_repo, &server_repo, &sessions, &local_process_manager, id).await.unwrap();
+        assert_eq!(runtime_detail.environment.iter().find(|e| e.key == "DB_PASSWORD").unwrap().value, "hunter2");
+
+        // Editing another field without retyping the secret (the frontend
+        // never has the real value to resend) preserves it.
+        set_application_environment(
+            &app_repo,
+            id,
+            vec![
+                EnvironmentVariable { key: "PLAIN".into(), value: "still-visible".into(), is_secret: false },
+                EnvironmentVariable { key: "DB_PASSWORD".into(), value: "".into(), is_secret: true },
+            ],
+        )
+        .unwrap();
+        let (runtime_detail, _connection, _runtime) = load_runtime(&app_repo, &server_repo, &sessions, &local_process_manager, id).await.unwrap();
+        assert_eq!(runtime_detail.environment.iter().find(|e| e.key == "DB_PASSWORD").unwrap().value, "hunter2");
+
+        // Removing the key deletes its keyring entry rather than leaving it
+        // orphaned forever.
+        set_application_environment(&app_repo, id, vec![EnvironmentVariable { key: "PLAIN".into(), value: "still-visible".into(), is_secret: false }])
+            .unwrap();
+        assert_eq!(crate::storage::credentials::load_environment_secret(id, "DB_PASSWORD").unwrap(), None);
+
+        // Deleting the Application cleans up any secret still attached to it.
+        set_application_environment(&app_repo, id, vec![EnvironmentVariable { key: "DB_PASSWORD".into(), value: "again".into(), is_secret: true }]).unwrap();
+        delete_application(&app_repo, &log_capture, id).await.unwrap();
+        assert_eq!(crate::storage::credentials::load_environment_secret(id, "DB_PASSWORD").unwrap(), None);
     }
 }

@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
@@ -81,6 +84,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
   const [jarWarning, setJarWarning] = useState<{ fileName: string; localSrc: string; targetPath: string } | null>(null);
   const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingEntry(null));
+  const contextMenu = useContextMenu();
 
   const addTransfer = useFileTransferStore((s) => s.addTransfer);
   const updateProgress = useFileTransferStore((s) => s.updateProgress);
@@ -243,6 +247,33 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
     }
   }
 
+  /** Shared by the per-row "..." button and right-click - same actions
+   * either way, just two different ways to reach them (the global
+   * native-context-menu suppression in main.tsx means right-click would
+   * otherwise open nothing at all here). */
+  function buildMenuItems(entry: RemoteFileEntry): ContextMenuItem[] {
+    return [
+      ...(!entry.isDir && /\.zip$/i.test(entry.name)
+        ? [{ label: t("applicationFilesTab.extractAria", { name: entry.name }), icon: "archive", disabled: extractingPath === entry.path, onClick: () => handleExtract(entry) }]
+        : []),
+      { label: t("applicationFilesTab.renameAria", { name: entry.name }), icon: "edit", onClick: () => setRenameTarget({ entry, mode: "rename" }) },
+      { label: t("applicationFilesTab.moveAria", { name: entry.name }), icon: "move", onClick: () => setRenameTarget({ entry, mode: "move" }) },
+      { label: t("applicationFilesTab.copyAria", { name: entry.name }), icon: "copy", onClick: () => setRenameTarget({ entry, mode: "copy" }) },
+      ...(entry.permissions !== undefined
+        ? [{ label: t("applicationFilesTab.chmodAria", { name: entry.name }), icon: "lock", onClick: () => setChmodTarget(entry) }]
+        : []),
+      {
+        label: t("applicationFilesTab.deleteAria", { name: entry.name }),
+        icon: "trash",
+        danger: true,
+        onClick: () => {
+          setDeleteError(null);
+          setDeletingEntry(entry);
+        },
+      },
+    ];
+  }
+
   if (openFile) {
     return (
       <ApplicationFileEditorPanel
@@ -268,22 +299,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       )}
 
       <div className="application-files-breadcrumb-row">
-        <div className="files-breadcrumb">
-          <button className="files-breadcrumb-item" onClick={() => load(ROOT_PATH)}>
-            /
-          </button>
-          {segments.map((segment, index) => {
-            const target = segments.slice(0, index + 1).join("/");
-            return (
-              <span key={target}>
-                <span className="files-breadcrumb-sep">/</span>
-                <button className="files-breadcrumb-item" onClick={() => load(target)}>
-                  {segment}
-                </button>
-              </span>
-            );
-          })}
-        </div>
+        <Breadcrumbs segments={segments} onNavigate={load} rootPath={ROOT_PATH} />
         <div className="application-files-toolbar">
           <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
             <Icon name="folder-plus" size={14} />
@@ -310,7 +326,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         ) : (
           <ul className="server-list">
             {entries.map((entry) => (
-              <li key={entry.path} className="server-list-item">
+              <li key={entry.path} className="server-list-item" onContextMenu={(e) => contextMenu.open(e, buildMenuItems(entry))}>
                 <div className="server-list-icon">
                   <Icon name={entry.isDir ? "folder" : "file"} size={16} />
                 </div>
@@ -327,15 +343,6 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
                   {entry.modifiedAt && <span>{new Date(entry.modifiedAt).toLocaleDateString()}</span>}
                   {entry.permissions !== undefined && <span>{formatOctal(entry.permissions)}</span>}
                 </div>
-                {!entry.isDir && /\.zip$/i.test(entry.name) && (
-                  <IconButton
-                    icon="archive"
-                    size="sm"
-                    title={t("applicationFilesTab.extractAria", { name: entry.name })}
-                    onClick={() => handleExtract(entry)}
-                    disabled={extractingPath === entry.path}
-                  />
-                )}
                 {!entry.isDir && (
                   <IconButton
                     icon="download"
@@ -344,47 +351,14 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
                     onClick={() => runDownload(entry)}
                   />
                 )}
-                <IconButton
-                  icon="edit"
-                  size="sm"
-                  title={t("applicationFilesTab.renameAria", { name: entry.name })}
-                  onClick={() => setRenameTarget({ entry, mode: "rename" })}
-                />
-                <IconButton
-                  icon="move"
-                  size="sm"
-                  title={t("applicationFilesTab.moveAria", { name: entry.name })}
-                  onClick={() => setRenameTarget({ entry, mode: "move" })}
-                />
-                <IconButton
-                  icon="copy"
-                  size="sm"
-                  title={t("applicationFilesTab.copyAria", { name: entry.name })}
-                  onClick={() => setRenameTarget({ entry, mode: "copy" })}
-                />
-                {entry.permissions !== undefined && (
-                  <IconButton
-                    icon="lock"
-                    size="sm"
-                    title={t("applicationFilesTab.chmodAria", { name: entry.name })}
-                    onClick={() => setChmodTarget(entry)}
-                  />
-                )}
-                <IconButton
-                  icon="trash"
-                  size="sm"
-                  danger
-                  title={t("applicationFilesTab.deleteAria", { name: entry.name })}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeletingEntry(entry);
-                  }}
-                />
+                <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={buildMenuItems(entry)} />
               </li>
             ))}
           </ul>
         )}
       </Card>
+
+      {contextMenu.element}
 
       <TransferQueuePanel />
 

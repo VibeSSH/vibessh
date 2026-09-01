@@ -18,7 +18,7 @@ type TestStatus = "idle" | "testing" | "success" | "error";
 interface SshServerFormProps {
   /** Present in edit mode - prefills the form and calls updateServer instead of createServer. */
   editingServer?: ManagedServer;
-  onSaved: () => void;
+  onSaved: (server: ManagedServer) => void;
 }
 
 export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
@@ -76,9 +76,10 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
       const saved = isEditing && editingServer
         ? await updateServer(editingServer.id, input)
         : await createServer(input);
-      upsertServer(serverSummaryToManagedServer(saved));
+      const managed = serverSummaryToManagedServer(saved);
+      upsertServer(managed);
       toastSuccess(isEditing ? t("sshForm.savedChangesToast", { name: saved.name }) : t("sshForm.addedToast", { name: saved.name }));
-      onSaved();
+      onSaved(managed);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("sshForm.errorSave"));
     } finally {

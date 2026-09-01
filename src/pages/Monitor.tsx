@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { MetricsPreview } from "@/components/servers/MetricsPreview";
@@ -88,7 +89,7 @@ export function MonitorPage() {
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{server ? server.name : t("nav.monitor")}</h1>
-          <p className="page-subtitle">{server ? server.host : serverId}</p>
+          <p className="page-subtitle">{server ? <HostAddress value={server.host} /> : serverId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />

@@ -1,10 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
+import { SkeletonRows } from "@/components/ui/SkeletonRows";
+import { Switch } from "@/components/ui/Switch";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { getAppInfo } from "@/services/appService";
+import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
+import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
+import { getDnsSuffix, setDnsSuffix } from "@/services/networkService";
+import { toastSuccess } from "@/stores/toastStore";
+import type { BackupDestinationConfig, RegistryCredential } from "@/types/application";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n";
 import "./pages.css";
 import "./Settings.css";
+import "@/components/servers/forms.css";
+import "@/components/servers/AddServerModal.css";
 
 const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
   en: "settings.languageEnglish",
@@ -49,6 +64,12 @@ export function Settings() {
         </div>
       </Card>
 
+      <BackupDestinationCard />
+
+      <RegistryCredentialsCard />
+
+      <DnsSuffixCard />
+
       <Card title={t("settings.about")} subtitle={t("settings.aboutSubtitle")}>
         {appInfo ? (
           <p className="settings-row">
@@ -58,6 +79,359 @@ export function Settings() {
           <p className="settings-muted">{t("settings.backendWaiting")}</p>
         )}
       </Card>
+    </div>
+  );
+}
+
+/** One global S3-compatible destination Application backups can additionally upload to, on top of the local `.vibessh-backups/` copy every backup already gets - see the Rust `models::BackupDestinationConfig`'s own doc comment. */
+function BackupDestinationCard() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<BackupDestinationConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [enabled, setEnabled] = useState(false);
+  const [endpoint, setEndpoint] = useState("");
+  const [region, setRegion] = useState("");
+  const [bucket, setBucket] = useState("");
+  const [accessKeyId, setAccessKeyId] = useState("");
+  const [pathPrefix, setPathPrefix] = useState("");
+  const [pathStyle, setPathStyle] = useState(false);
+  const [secretAccessKey, setSecretAccessKey] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [testOk, setTestOk] = useState(false);
+
+  useEffect(() => {
+    getBackupDestination()
+      .then((loaded) => {
+        setConfig(loaded);
+        setEnabled(loaded.enabled);
+        setEndpoint(loaded.endpoint);
+        setRegion(loaded.region);
+        setBucket(loaded.bucket);
+        setAccessKeyId(loaded.accessKeyId);
+        setPathPrefix(loaded.pathPrefix);
+        setPathStyle(loaded.pathStyle);
+      })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.backupDestinationLoadError")))
+      .finally(() => setLoading(false));
+  }, [t]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    setTestOk(false);
+    try {
+      const saved = await setBackupDestination({ enabled, endpoint, region, bucket, accessKeyId, pathPrefix, pathStyle, secretAccessKey });
+      setConfig(saved);
+      setSecretAccessKey("");
+      toastSuccess(t("settings.backupDestinationSavedToast"));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : t("settings.backupDestinationSaveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestError(null);
+    setTestOk(false);
+    try {
+      await testBackupDestination();
+      setTestOk(true);
+    } catch (err) {
+      setTestError(err instanceof Error ? err.message : t("settings.backupDestinationTestError"));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card title={t("settings.backupDestinationTitle")} subtitle={t("settings.backupDestinationSubtitle")}>
+      {loading ? (
+        <SkeletonRows />
+      ) : (
+        <form className="server-form" onSubmit={handleSubmit}>
+          {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
+          {saveError && <p className="form-note form-note-danger form-note-spaced">{saveError}</p>}
+          <Switch checked={enabled} onChange={setEnabled} label={t("settings.backupDestinationEnable")} />
+          {enabled && (
+            <>
+              <label className="form-field">
+                <span className="form-label">{t("settings.backupDestinationEndpoint")}</span>
+                <input className="form-input" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://s3.amazonaws.com" />
+              </label>
+              <div className="form-row">
+                <label className="form-field">
+                  <span className="form-label">{t("settings.backupDestinationRegion")}</span>
+                  <input className="form-input" value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1" />
+                </label>
+                <label className="form-field">
+                  <span className="form-label">{t("settings.backupDestinationBucket")}</span>
+                  <input className="form-input" value={bucket} onChange={(e) => setBucket(e.target.value)} />
+                </label>
+              </div>
+              <label className="form-field">
+                <span className="form-label">{t("settings.backupDestinationAccessKey")}</span>
+                <input className="form-input" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} autoComplete="off" />
+              </label>
+              <label className="form-field">
+                <span className="form-label">{t("settings.backupDestinationSecretKey")}</span>
+                <input
+                  className="form-input"
+                  type="password"
+                  value={secretAccessKey}
+                  onChange={(e) => setSecretAccessKey(e.target.value)}
+                  placeholder={config?.enabled ? t("settings.backupDestinationSecretKeyPlaceholderExisting") : t("settings.backupDestinationSecretKeyPlaceholder")}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="form-field">
+                <span className="form-label">{t("settings.backupDestinationPathPrefix")}</span>
+                <input className="form-input" value={pathPrefix} onChange={(e) => setPathPrefix(e.target.value)} placeholder="vibessh-backups" />
+              </label>
+              <Checkbox checked={pathStyle} onChange={setPathStyle} label={t("settings.backupDestinationPathStyle")} />
+              <p className="form-note">{t("settings.backupDestinationNote")}</p>
+            </>
+          )}
+          <div className="form-actions form-actions-split">
+            <div>
+              {config?.enabled && (
+                <Button type="button" variant="secondary" size="sm" onClick={handleTest} disabled={testing}>
+                  <Icon name="zap" size={14} />
+                  {testing ? t("common.loading") : t("settings.backupDestinationTest")}
+                </Button>
+              )}
+              {testOk && <span className="form-note form-note-success"> {t("settings.backupDestinationTestOk")}</span>}
+              {testError && <span className="form-note form-note-danger"> {testError}</span>}
+            </div>
+            <Button type="submit" size="sm" disabled={saving}>
+              {saving ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+/** The suffix every Vibe Network / Private DNS alias gets (e.g. `.vibe`) - configurable per install. Only affects aliases created from now on, so changing it never breaks an already-working alias. */
+function DnsSuffixCard() {
+  const { t } = useTranslation();
+  const [current, setCurrent] = useState<string | null>(null);
+  const [suffix, setSuffixValue] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDnsSuffix()
+      .then((loaded) => {
+        setCurrent(loaded);
+        setSuffixValue(loaded);
+      })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.dnsSuffixLoadError")))
+      .finally(() => setLoading(false));
+  }, [t]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await setDnsSuffix(suffix);
+      setCurrent(saved);
+      setSuffixValue(saved);
+      toastSuccess(t("settings.dnsSuffixSavedToast"));
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : t("settings.dnsSuffixSaveError"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card title={t("settings.dnsSuffixTitle")} subtitle={t("settings.dnsSuffixSubtitle")}>
+      {loading ? (
+        <SkeletonRows />
+      ) : (
+        <form className="server-form" onSubmit={handleSubmit}>
+          {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
+          {saveError && <p className="form-note form-note-danger form-note-spaced">{saveError}</p>}
+          <label className="form-field">
+            <span className="form-label">{t("settings.dnsSuffixLabel")}</span>
+            <input className="form-input" value={suffix} onChange={(e) => setSuffixValue(e.target.value)} placeholder=".vibe" />
+          </label>
+          <p className="form-note">{t("settings.dnsSuffixNote")}</p>
+          <div className="form-actions form-actions-split">
+            <div>{current && suffix !== current && <span className="form-note">{t("settings.dnsSuffixCurrent", { suffix: current })}</span>}</div>
+            <Button type="submit" size="sm" disabled={saving || suffix === current}>
+              {saving ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+/** Login for a private Docker registry (Docker Hub, ghcr.io, a self-hosted one) - one row per registry host, reused by every Application whose image comes from it. `docker login` happens on the Node itself right before a pull that needs it; nothing here touches any Application directly. */
+function RegistryCredentialsCard() {
+  const { t } = useTranslation();
+  const [credentials, setCredentials] = useState<RegistryCredential[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  function load() {
+    setLoading(true);
+    setLoadError(null);
+    listRegistryCredentials()
+      .then(setCredentials)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.registryLoadError")))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(load, []);
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    setActionError(null);
+    try {
+      await removeRegistryCredential(id);
+      load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t("settings.registryDeleteError"));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <Card title={t("settings.registryTitle")} subtitle={t("settings.registrySubtitle")}>
+      {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
+      {actionError && <p className="form-note form-note-danger form-note-spaced">{actionError}</p>}
+      <div className="application-detail-header-row">
+        <p className="form-note">{t("settings.registryNote")}</p>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Icon name="plus" size={14} />
+          {t("settings.registryAdd")}
+        </Button>
+      </div>
+
+      {loading ? (
+        <SkeletonRows />
+      ) : credentials.length === 0 ? (
+        <EmptyState icon="key" title={t("settings.registryEmptyTitle")} description={t("settings.registryEmptyDescription")} />
+      ) : (
+        <ul className="server-list">
+          {credentials.map((credential) => (
+            <li key={credential.id} className="server-list-item">
+              <div className="server-list-main">
+                <span className="server-list-name">{credential.registry}</span>
+                <span className="server-list-host">{credential.username}</span>
+              </div>
+              <IconButton
+                icon="trash"
+                size="sm"
+                danger
+                title={t("settings.registryDeleteAria")}
+                onClick={() => handleDelete(credential.id)}
+                disabled={deletingId === credential.id}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {addOpen && (
+        <AddRegistryCredentialModal
+          onClose={() => setAddOpen(false)}
+          onAdded={() => {
+            setAddOpen(false);
+            load();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+interface AddRegistryCredentialModalProps {
+  onClose: () => void;
+  onAdded: () => void;
+}
+
+function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialModalProps) {
+  const { t } = useTranslation();
+  const backdrop = useBackdropClose(onClose);
+  const [registry, setRegistry] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!registry.trim() || !username.trim() || !password) {
+      setError(t("settings.registryInvalidForm"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await setRegistryCredential({ registry: registry.trim(), username: username.trim(), password });
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("settings.registrySaveError"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" {...backdrop}>
+      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">{t("settings.registryAddTitle")}</h2>
+          <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
+        </div>
+        <form className="server-form" onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
+            <label className="form-field">
+              <span className="form-label">{t("settings.registryHost")}</span>
+              <input className="form-input" value={registry} onChange={(e) => setRegistry(e.target.value)} placeholder="docker.io" autoFocus />
+              <p className="form-note">{t("settings.registryHostHelp")}</p>
+            </label>
+            <label className="form-field">
+              <span className="form-label">{t("settings.registryUsername")}</span>
+              <input className="form-input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
+            </label>
+            <label className="form-field">
+              <span className="form-label">{t("settings.registryPassword")}</span>
+              <input className="form-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+            </label>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? t("common.saving") : t("common.save")}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

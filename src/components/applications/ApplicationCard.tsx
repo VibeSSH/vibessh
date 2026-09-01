@@ -6,7 +6,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import type { Application, ApplicationStatus } from "@/types/application";
 import "./ApplicationCard.css";
 
-const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
+export const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
   unknown: "neutral",
   starting: "warning",
   running: "success",

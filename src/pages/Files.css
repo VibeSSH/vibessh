@@ -6,44 +6,24 @@
   min-height: 0;
 }
 
-.files-breadcrumb {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 13px;
-  font-family: var(--font-mono);
-}
-
+/* .files-breadcrumb/.files-breadcrumb-item/.files-breadcrumb-sep now live in
+   src/components/ui/Breadcrumbs.css, owned by the shared <Breadcrumbs>
+   component. This row is the page-level wrapper around it (breadcrumb on
+   the left, toolbar actions on the right) - self-contained rather than
+   relying on being combined with .files-breadcrumb on the same element,
+   since the breadcrumb trail itself is now a separate child component. */
 .files-breadcrumb-row {
-  justify-content: space-between;
-  gap: 12px;
-}
-.files-breadcrumb-row > div {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-}
-
-.files-breadcrumb-item {
-  padding: 2px 4px;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.files-breadcrumb-item:hover {
-  background: var(--surface-2);
-  color: var(--text-primary);
-}
-
-.files-breadcrumb-sep {
-  color: var(--text-tertiary);
-  margin: 0 2px;
+  gap: 12px;
 }
 
 .files-toolbar-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -67,7 +47,25 @@
 
 .files-entry-size {
   flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--text-secondary);
   font-family: var(--font-mono);
+}
+
+.files-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.files-selection-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.files-entry-selected {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }

@@ -5,24 +5,29 @@
 //! capability, several possible host-side backends," not a new one invented
 //! for this feature.
 //!
-//! **Scope of this phase, and why**: rules are derived live from
-//! `application_ports` (every port with `external_port` set, across every
-//! Application on a Node, plus that Node's own SSH port - see
-//! `services::firewall_service::reconcile_node`) and only ever *added*,
-//! never removed. `ufw allow` is itself idempotent (re-adding an existing
-//! rule is a safe no-op), which is what makes "always re-derive and
-//! re-apply the full desired set" safe without this module tracking what it
-//! applied last time - no new `firewall_rules` table. What this
-//! *deliberately does not do*: remove a rule for a port that's since been
-//! un-published or an Application that's been deleted. `ufw` doesn't
-//! surface a rule's origin (a comment) back through `ufw status`, so there
-//! is no reliable way to tell "a rule VibeSSH added" apart from "a rule the
-//! host's own admin added by hand" without a redundant tracking table -
-//! and deleting the wrong one is a real, host-affecting mistake, not a
-//! recoverable one. Additive-only trades perfect cleanup for the guarantee
-//! that this code can never remove a rule it didn't create. A real removal
-//! story is future work, once there's a tracking mechanism trustworthy
-//! enough to build that safely on.
+//! **Scope, and why**: rules are derived live from `application_ports`
+//! (every port with `external_port` set, across every Application on a
+//! Node, plus that Node's own SSH port - see
+//! `services::firewall_service::reconcile_node`) - no `firewall_rules`
+//! table tracking what was applied last time. `ufw allow` is itself
+//! idempotent (re-adding an existing rule is a safe no-op), which is what
+//! makes "always re-derive and re-apply the full desired set" safe.
+//!
+//! **Removal is real, but conservative on purpose.** A rule for a port
+//! that's since been un-published, or belonged to an Application that's
+//! been deleted or migrated to another Node, no longer appears in
+//! `desired_rules` - `reconcile_node` diffs that against
+//! `FirewallProvider::vibessh_owned_rules` and revokes exactly the
+//! difference. The whole design turns on one thing: `vibessh_owned_rules`
+//! must never report a rule this code didn't create itself, even one that
+//! happens to allow the exact same port - deleting the host admin's own
+//! rule by mistake would be a real, host-affecting error, not a
+//! recoverable one. `UfwProvider` gets this for free from a feature ufw
+//! already had (every rule this module applies carries `comment 'vibessh'`,
+//! read back losslessly through `ufw show added` - see that impl's own doc
+//! comment), not a new tracking table of its own. A backend that can't
+//! prove a rule's origin this reliably must report `vibessh_owned_rules`
+//! as empty rather than guess.
 //!
 //! **Enabling ufw itself is a deliberately separate, explicit action, never
 //! automatic.** A host with ufw installed but inactive (the common default)
@@ -47,7 +52,8 @@ use crate::ssh::SshSession;
 /// plain "allow from anywhere" rule); scoping a rule to the private Vibe
 /// Network (Etap M/future) is a later addition to this struct, not a
 /// different one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FirewallRule {
     pub port: u16,
     pub protocol: PortProtocol,
@@ -74,6 +80,27 @@ pub trait FirewallProvider: Send + Sync {
     /// reconcile path (`apply_rules` is unconditionally additive and
     /// idempotent, so it never needs to read state first).
     async fn current_rules(&self, connection: &SshSession) -> AppResult<Vec<FirewallRule>>;
+
+    /// Every rule this exact backend created and is still present - the
+    /// trusted signal `services::firewall_service::reconcile_node` diffs
+    /// against `desired` to know what it's safe to remove (a port that's
+    /// been unpublished, an Application that's been deleted or migrated
+    /// away). Distinct from `current_rules`: this only ever returns a rule
+    /// this backend can prove it added itself (`UfwProvider` does this via
+    /// the `comment 'vibessh'` every `apply_rules` call already writes,
+    /// read back through `ufw show added` rather than `ufw status` - see
+    /// that impl's own doc comment for why the two differ). A rule the
+    /// host's own admin added by hand must never appear here, even if it
+    /// happens to allow the exact same port - this module's own doc
+    /// comment above is the reasoning this method exists to finally make
+    /// safe.
+    async fn vibessh_owned_rules(&self, connection: &SshSession) -> AppResult<Vec<FirewallRule>>;
+
+    /// Removes exactly the given rules - each must be a rule `apply_rules`
+    /// itself could have created (same port/protocol/source_cidr shape).
+    /// Only ever called with rules `vibessh_owned_rules` itself reported,
+    /// never on a caller's own say-so.
+    async fn revoke_rules(&self, connection: &SshSession, obsolete: &[FirewallRule]) -> AppResult<()>;
 
     /// Whether the firewall is actively enforcing (`ufw status` says
     /// `active`) - `false` doesn't mean rules are missing, only that

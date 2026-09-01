@@ -4,12 +4,13 @@
 //! fingerprint before calling `connect`, keeping this module pure protocol
 //! mechanics and independently testable against a bare SSH server.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use russh::keys::{load_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
-use russh::{client, ChannelMsg, Disconnect};
+use russh::{client, Channel, ChannelMsg, Disconnect};
 use russh_sftp::client::SftpSession;
 use tokio::sync::{mpsc, OnceCell};
 
@@ -19,6 +20,16 @@ use vibessh_protocol::CommandOutput;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// SSH's "stderr" extended-data stream id, per RFC 4254 5.2.
 const SSH_EXTENDED_DATA_STDERR: u32 = 1;
+
+/// Routes an incoming `forwarded-tcpip` channel (someone connected to a
+/// Remote-forwarded port on the Node's side) back to whichever
+/// `start_remote_forward` call registered that port - keyed by the actual
+/// bound port, shared between `TofuHandler` (which receives the channel
+/// from the SSH protocol layer) and `SshSession` (which registers/
+/// unregisters ports as forwards start/stop). See `ssh::port_forward`'s own
+/// doc comment for why the rest of the forwarding logic lives there instead
+/// of here.
+type ForwardRegistry = Arc<Mutex<HashMap<u32, mpsc::UnboundedSender<Channel<client::Msg>>>>>;
 
 pub struct SshCredentials {
     pub host: String,
@@ -48,6 +59,7 @@ pub struct SshSession {
     /// reports 0 rather than a meaningless number for a sample it has no
     /// prior point to compare against.
     metrics_sample: Mutex<Option<MetricsSample>>,
+    forward_registry: ForwardRegistry,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -70,9 +82,11 @@ pub struct ConnectOutcome {
 
 pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<String>) -> AppResult<ConnectOutcome> {
     let seen = Arc::new(Mutex::new(SeenHostKey::default()));
+    let forward_registry: ForwardRegistry = Arc::new(Mutex::new(HashMap::new()));
     let handler = TofuHandler {
         expected_fingerprint: known_fingerprint,
         seen: seen.clone(),
+        forward_registry: forward_registry.clone(),
     };
 
     let config = Arc::new(client::Config {
@@ -124,6 +138,7 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
             handle,
             sftp: OnceCell::new(),
             metrics_sample: Mutex::new(None),
+            forward_registry,
         },
         host_key_fingerprint,
     })
@@ -263,6 +278,58 @@ impl SshSession {
 
         Ok(TerminalHandle { input_tx })
     }
+
+    /// Opens a `direct-tcpip` channel to `host_to_connect:port_to_connect` -
+    /// the primitive `ssh::port_forward`'s Local/Dynamic forward accept
+    /// loops call once per accepted local connection. `originator_*`
+    /// identifies the local peer to the server (informational only, per RFC
+    /// 4254 7.2 - no server this app talks to acts on it).
+    pub(super) async fn open_direct_tcpip(
+        &self,
+        host_to_connect: &str,
+        port_to_connect: u16,
+        originator_address: &str,
+        originator_port: u16,
+    ) -> AppResult<Channel<client::Msg>> {
+        self.handle
+            .channel_open_direct_tcpip(host_to_connect, port_to_connect as u32, originator_address, originator_port as u32)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open a tunnel to {host_to_connect}:{port_to_connect}: {err}")))
+    }
+
+    /// Asks the Node to start listening on `bind_address:bind_port` (`0` =
+    /// any free port) and registers this session to receive whatever
+    /// `forwarded-tcpip` channels that listener produces - see
+    /// `TofuHandler::server_channel_open_forwarded_tcpip` below for the
+    /// other half of the handoff. Returns the port actually bound (russh's
+    /// own `tcpip_forward` only reports a real value back when `0` was
+    /// requested - it returns `0` for an explicitly chosen port, so the
+    /// request's own port is what gets used in that case).
+    pub(super) async fn register_remote_forward(&self, bind_address: &str, bind_port: u16) -> AppResult<(u16, mpsc::UnboundedReceiver<Channel<client::Msg>>)> {
+        let returned_port = self
+            .handle
+            .tcpip_forward(bind_address, bind_port as u32)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't ask the Node to listen on {bind_address}:{bind_port}: {err}")))?;
+        let actual_port = if bind_port == 0 { returned_port as u16 } else { bind_port };
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        self.forward_registry.lock().expect("forward registry mutex poisoned").insert(actual_port as u32, sender);
+        Ok((actual_port, receiver))
+    }
+
+    /// Tears down a remote forward - stops routing incoming channels for
+    /// this port (further ones are rejected, see
+    /// `server_channel_open_forwarded_tcpip`) and asks the Node to stop
+    /// listening. Best-effort on the Node side deliberately: the registry
+    /// removal already stops anything new from being handed to a forward
+    /// that's going away, so a `cancel_tcpip_forward` failure (session
+    /// already gone, Node unreachable) isn't worth surfacing as an error to
+    /// a caller that's already in the middle of stopping this forward.
+    pub(super) async fn unregister_remote_forward(&self, bind_address: &str, bound_port: u16) {
+        self.forward_registry.lock().expect("forward registry mutex poisoned").remove(&(bound_port as u32));
+        let _ = self.handle.cancel_tcpip_forward(bind_address, bound_port as u32).await;
+    }
 }
 
 /// A handle to a running interactive shell, opened by `SshSession::open_terminal`.
@@ -303,6 +370,7 @@ struct SeenHostKey {
 struct TofuHandler {
     expected_fingerprint: Option<String>,
     seen: Arc<Mutex<SeenHostKey>>,
+    forward_registry: ForwardRegistry,
 }
 
 impl client::Handler for TofuHandler {
@@ -321,6 +389,35 @@ impl client::Handler for TofuHandler {
                 Ok(false)
             }
         }
+    }
+
+    /// The other half of `SshSession::register_remote_forward` - the Node
+    /// just accepted a connection on a port we asked it to forward, and is
+    /// handing us the channel to carry it over. Routed by port to whichever
+    /// `ssh::port_forward::start_remote_forward` call registered it; a port
+    /// with nothing registered (already stopped, or somehow not ours) is
+    /// rejected rather than silently accepted and then dropped, which would
+    /// leave the connecting peer hanging until it times out instead of
+    /// seeing an immediate refusal.
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let sender = self.forward_registry.lock().expect("forward registry mutex poisoned").get(&connected_port).cloned();
+        if let Some(sender) = sender {
+            if sender.send(channel).is_ok() {
+                reply.accept().await;
+                return Ok(());
+            }
+        }
+        reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+        Ok(())
     }
 }
 

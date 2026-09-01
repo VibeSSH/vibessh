@@ -69,6 +69,12 @@ export interface DnsSyncResult {
   error: string | null;
 }
 
+/** Mirrors the Rust `DnsAliasWithSync` DTO - what `createDnsAlias`/`updateDnsAlias` return now that saving an alias automatically pushes it to every mesh member, instead of leaving the user to separately click "Synchronizuj". */
+export interface DnsAliasWithSync {
+  alias: DnsRecord | null;
+  syncResults: DnsSyncResult[];
+}
+
 /** Mirrors the Rust `VibeNetworkSyncResult` DTO - the combined "Synchronize Vibe Network" action's per-Node outcome. */
 export interface VibeNetworkSyncResult {
   serverId: string;

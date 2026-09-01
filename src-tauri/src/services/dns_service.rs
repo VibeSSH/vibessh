@@ -2,10 +2,23 @@
 //! every Vibe Network member, not a real DNS server (see this module's own
 //! "v1 shape" note below). Two kinds of alias share one namespace:
 //!
-//! - **Node aliases** (`<slugified-name>.vibe`) - always present for every
-//!   mesh member, computed on the fly from `Server::name`, never stored.
+//! - **Node aliases** (`<slugified-name><suffix>`) - always present for
+//!   every mesh member, computed on the fly from `Server::name`, never
+//!   stored.
 //! - **Service aliases** (`dns_records`, e.g. `db01.vibe`) - explicitly
 //!   created by the user, one per Application.
+//!
+//! **The suffix is a configurable, global per-install setting**
+//! (`storage::dns_config`/`state::DnsSuffixState`, `.vibe` by default -
+//! never `.local`, which collides with mDNS), passed as a plain `&str`
+//! into every function here that needs it rather than a module-level
+//! constant, so `normalize_alias`/`node_alias`/`resolve_dns_view` stay
+//! synchronous and unit-testable without a runtime (the caller, which does
+//! have `State<DnsSuffixState>` access, resolves it once and passes it
+//! down). **Changing the suffix is not retroactive**: an already-created
+//! service alias (`dns_records.hostname`) keeps its exact stored hostname
+//! forever - only Node aliases (always computed fresh) and any *new*
+//! service alias pick up a changed suffix.
 //!
 //! **What makes a service alias survive moving its Application to another
 //! Node**: the IP behind `db01.vibe` is resolved at render time via
@@ -31,7 +44,25 @@ use crate::storage::dns_repository::DnsRepository;
 use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
 
-const SUFFIX: &str = ".vibe";
+/// A suffix must be a plausible FQDN label chain: starts with `.`, at
+/// least one more character after it, and only `[a-z0-9.-]` - the same
+/// character set `slugify` itself ever produces, plus `.` as the label
+/// separator. Rejects whitespace/newlines outright (this gets
+/// string-interpolated into a shell heredoc via `push_fragment`, same
+/// `reject_unsafe` concern as a hostname itself).
+pub fn validate_dns_suffix(suffix: &str) -> AppResult<()> {
+    if !suffix.starts_with('.') || suffix.len() < 2 {
+        return Err(AppError::InvalidInput("the DNS suffix must start with '.' and have at least one character after it".into()));
+    }
+    if suffix.len() > 32 {
+        return Err(AppError::InvalidInput("the DNS suffix is too long".into()));
+    }
+    if !suffix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-') {
+        return Err(AppError::InvalidInput("the DNS suffix can only contain lowercase letters, digits, '.', and '-'".into()));
+    }
+    Ok(())
+}
+
 const BEGIN_MARKER: &str = "# BEGIN VIBESSH-MANAGED-DNS";
 const END_MARKER: &str = "# END VIBESSH-MANAGED-DNS";
 
@@ -39,11 +70,19 @@ const END_MARKER: &str = "# END VIBESSH-MANAGED-DNS";
 /// repeats, and trims leading/trailing `-` - the same treatment a Node's
 /// own name (arbitrary user text) and a user-typed alias both need before
 /// either is safe to use as a hostname or to interpolate into a shell
-/// heredoc. Never empty: an all-symbol input becomes `"node"`.
+/// heredoc. Never empty: an all-symbol input becomes `"node"`. Capped at 63
+/// characters - RFC 1123's own limit for a single DNS label - so a long
+/// Node/Application name can't produce a hostname real DNS/`/etc/hosts`
+/// rejects; every char actually pushed here is single-byte ASCII
+/// (alphanumeric or `-`), so `result.len()` is a safe stand-in for a char
+/// count when checking the cap.
 fn slugify(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
+    let mut result = String::with_capacity(input.len().min(63));
     let mut last_was_dash = false;
     for ch in input.chars().flat_map(char::to_lowercase) {
+        if result.len() >= 63 {
+            break;
+        }
         if ch.is_ascii_alphanumeric() {
             result.push(ch);
             last_was_dash = false;
@@ -62,18 +101,18 @@ fn slugify(input: &str) -> String {
     }
 }
 
-/// Slugifies and appends `.vibe` if not already present - `"db01"` and
+/// Slugifies and appends `suffix` if not already present - `"db01"` and
 /// `"db01.vibe"` (and `"DB01!!"`) all normalize to the exact same stored
-/// hostname, so a user typing either the bare alias or the full name gets
-/// the same, predictable result.
-pub fn normalize_alias(input: &str) -> String {
+/// hostname when `suffix` is `.vibe`, so a user typing either the bare
+/// alias or the full name gets the same, predictable result.
+pub fn normalize_alias(suffix: &str, input: &str) -> String {
     let trimmed = input.trim().to_ascii_lowercase();
-    let base = trimmed.strip_suffix(SUFFIX).unwrap_or(&trimmed);
-    format!("{}{SUFFIX}", slugify(base))
+    let base = trimmed.strip_suffix(suffix).unwrap_or(&trimmed);
+    format!("{}{suffix}", slugify(base))
 }
 
-fn node_alias(server_name: &str) -> String {
-    format!("{}{SUFFIX}", slugify(server_name))
+fn node_alias(suffix: &str, server_name: &str) -> String {
+    format!("{}{suffix}", slugify(server_name))
 }
 
 /// Every alias a mesh member's `/etc/hosts` should carry - every current
@@ -81,13 +120,19 @@ fn node_alias(server_name: &str) -> String {
 /// currently lives on a mesh member (a service alias for an Application on
 /// a Node that hasn't joined the mesh, or with no `server_id` at all,
 /// simply can't resolve to anything yet and is skipped, not an error).
-pub fn resolve_dns_view(network_repo: &NodeNetworkRepository, server_repo: &ServerRepository, app_repo: &ApplicationRepository, dns_repo: &DnsRepository) -> AppResult<Vec<DnsView>> {
+pub fn resolve_dns_view(
+    suffix: &str,
+    network_repo: &NodeNetworkRepository,
+    server_repo: &ServerRepository,
+    app_repo: &ApplicationRepository,
+    dns_repo: &DnsRepository,
+) -> AppResult<Vec<DnsView>> {
     let members = network_repo.list()?;
     let mut views = Vec::new();
 
     for member in &members {
         let server = server_repo.get(member.server_id)?.ok_or_else(|| AppError::NotFound(format!("server {}", member.server_id)))?;
-        views.push(DnsView { hostname: node_alias(&server.name), ip: member.wireguard_ip.clone(), kind: DnsViewKind::Node, server_id: member.server_id });
+        views.push(DnsView { hostname: node_alias(suffix, &server.name), ip: member.wireguard_ip.clone(), kind: DnsViewKind::Node, server_id: member.server_id });
     }
 
     for record in dns_repo.list()? {
@@ -157,20 +202,33 @@ pub struct DnsSyncResult {
 /// for a Node that was unreachable" requirement every other reconcile path
 /// here applies.
 pub async fn sync_dns(
+    suffix: &str,
     network_repo: &NodeNetworkRepository,
     server_repo: &ServerRepository,
     app_repo: &ApplicationRepository,
     dns_repo: &DnsRepository,
     sessions: &SshSessionManager,
 ) -> AppResult<Vec<DnsSyncResult>> {
-    let views = resolve_dns_view(network_repo, server_repo, app_repo, dns_repo)?;
+    let views = resolve_dns_view(suffix, network_repo, server_repo, app_repo, dns_repo)?;
     let fragment = render_hosts_fragment(&views)?;
     let members = network_repo.list()?;
 
     let mut results = Vec::with_capacity(members.len());
     for member in &members {
+        // Same dead-cached-session recovery as `network_service::reconcile_mesh`
+        // - see that call site's comment for why this can't just rely on
+        // `get_or_connect` alone.
         let outcome = match get_or_connect(server_repo, sessions, member.server_id).await {
-            Ok(connection) => push_fragment(&connection, &fragment).await,
+            Ok(connection) => match push_fragment(&connection, &fragment).await {
+                Ok(()) => Ok(()),
+                Err(first_err) => {
+                    sessions.remove(member.server_id).await;
+                    match get_or_connect(server_repo, sessions, member.server_id).await {
+                        Ok(connection) => push_fragment(&connection, &fragment).await.map_err(|_| first_err),
+                        Err(_) => Err(first_err),
+                    }
+                }
+            },
             Err(err) => Err(err),
         };
         results.push(match outcome {
@@ -195,8 +253,10 @@ pub async fn verify_alias(
     reject_unsafe(hostname)?;
     let members = network_repo.list()?;
     let verifier = members.first().ok_or_else(|| AppError::InvalidInput("the Vibe Network has no members to verify DNS from".into()))?;
-    let connection = get_or_connect(server_repo, sessions, verifier.server_id).await?;
-    let output = connection.execute_command(&format!("getent hosts {}", shell_quote(hostname))).await?;
+    // A single command, so this can just delegate to the same
+    // retry-on-dead-session primitive plain command execution already gets
+    // elsewhere, instead of calling the connection directly.
+    let output = crate::services::ssh_service::execute_command(server_repo, sessions, verifier.server_id, &format!("getent hosts {}", shell_quote(hostname))).await?;
     Ok(output.exit_code == 0 && output.stdout.split_whitespace().next() == Some(expected_ip))
 }
 
@@ -214,16 +274,49 @@ fn shell_quote(value: &str) -> String {
     quoted
 }
 
+/// What every alias-mutating Tauri command actually returns - the mutated
+/// alias itself (`None` for a delete, nothing left to describe) plus the
+/// outcome of the full-mesh `sync_dns` push this codebase now runs
+/// automatically right after, instead of leaving the user to notice and
+/// click "Synchronizuj" themselves. The DB write and the sync are still two
+/// separate steps under the hood (a sync failure on one unreachable Node
+/// must never undo an alias that was otherwise saved successfully) - this
+/// struct is just what bundles their outcomes for the frontend to show in
+/// one place.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DnsAliasWithSync {
+    pub alias: Option<DnsRecord>,
+    pub sync_results: Vec<DnsSyncResult>,
+}
+
+pub fn get_dns_suffix(state: &crate::state::DnsSuffixState) -> String {
+    state.get()
+}
+
+/// Persists the new suffix (file) and updates the live state every
+/// alias/Node-hostname computation reads from - see `state::DnsSuffixState`'s
+/// own doc comment for why those are two separate steps. Rejects an
+/// invalid suffix before touching either (see `validate_dns_suffix`) -
+/// this is not retroactive, see this module's own doc comment.
+pub fn set_dns_suffix(state: &crate::state::DnsSuffixState, config_dir: &std::path::Path, suffix: &str) -> AppResult<String> {
+    let suffix = suffix.trim().to_ascii_lowercase();
+    validate_dns_suffix(&suffix)?;
+    crate::storage::dns_config::save_dns_suffix(config_dir, &suffix)?;
+    state.set(suffix.clone());
+    Ok(suffix)
+}
+
 pub fn list_records(dns_repo: &DnsRepository) -> AppResult<Vec<DnsRecord>> {
     dns_repo.list()
 }
 
-pub fn create_alias(dns_repo: &DnsRepository, application_id: Uuid, hostname: &str) -> AppResult<DnsRecord> {
-    dns_repo.create(application_id, &normalize_alias(hostname))
+pub fn create_alias(suffix: &str, dns_repo: &DnsRepository, application_id: Uuid, hostname: &str) -> AppResult<DnsRecord> {
+    dns_repo.create(application_id, &normalize_alias(suffix, hostname))
 }
 
-pub fn update_alias(dns_repo: &DnsRepository, id: Uuid, hostname: &str) -> AppResult<DnsRecord> {
-    dns_repo.update_hostname(id, &normalize_alias(hostname))
+pub fn update_alias(suffix: &str, dns_repo: &DnsRepository, id: Uuid, hostname: &str) -> AppResult<DnsRecord> {
+    dns_repo.update_hostname(id, &normalize_alias(suffix, hostname))
 }
 
 pub fn delete_alias(dns_repo: &DnsRepository, id: Uuid) -> AppResult<()> {
@@ -236,16 +329,58 @@ mod tests {
 
     #[test]
     fn normalize_alias_slugifies_and_appends_the_suffix() {
-        assert_eq!(normalize_alias("db01"), "db01.vibe");
-        assert_eq!(normalize_alias("DB01"), "db01.vibe");
-        assert_eq!(normalize_alias("db 01!!"), "db-01.vibe");
-        assert_eq!(normalize_alias("db01.vibe"), "db01.vibe", "already-suffixed input must not become db01.vibe.vibe");
+        assert_eq!(normalize_alias(".vibe", "db01"), "db01.vibe");
+        assert_eq!(normalize_alias(".vibe", "DB01"), "db01.vibe");
+        assert_eq!(normalize_alias(".vibe", "db 01!!"), "db-01.vibe");
+        assert_eq!(normalize_alias(".vibe", "db01.vibe"), "db01.vibe", "already-suffixed input must not become db01.vibe.vibe");
+    }
+
+    #[test]
+    fn normalize_alias_uses_whatever_suffix_is_configured() {
+        assert_eq!(normalize_alias(".internal", "db01"), "db01.internal");
+        assert_eq!(normalize_alias(".internal", "db01.vibe"), "db01-vibe.internal", "a stale .vibe-suffixed input isn't the new suffix, so it's just more text to slugify");
     }
 
     #[test]
     fn node_alias_slugifies_the_server_name() {
-        assert_eq!(node_alias("Hetzner 01"), "hetzner-01.vibe");
-        assert_eq!(node_alias("  weird///name  "), "weird-name.vibe");
+        assert_eq!(node_alias(".vibe", "Hetzner 01"), "hetzner-01.vibe");
+        assert_eq!(node_alias(".vibe", "  weird///name  "), "weird-name.vibe");
+    }
+
+    #[test]
+    fn validate_dns_suffix_requires_a_leading_dot_and_a_safe_character_set() {
+        assert!(validate_dns_suffix(".vibe").is_ok());
+        assert!(validate_dns_suffix(".my-network.internal").is_ok());
+        assert!(validate_dns_suffix("vibe").is_err(), "must start with a dot");
+        assert!(validate_dns_suffix(".").is_err(), "must have at least one character after the dot");
+        assert!(validate_dns_suffix(".Vibe").is_err(), "uppercase isn't a valid DNS label character here");
+        assert!(validate_dns_suffix(".vi be").is_err(), "no whitespace");
+        assert!(validate_dns_suffix(&format!(".{}", "a".repeat(40))).is_err(), "too long");
+    }
+
+    /// A real bug, not a hypothetical: without this cap, a Node/Application
+    /// name longer than 63 characters produced a hostname label real
+    /// DNS/`/etc/hosts` would reject outright - see `slugify`'s own doc
+    /// comment for why RFC 1123's 63-character DNS label limit is the exact
+    /// bound.
+    #[test]
+    fn slugify_truncates_to_the_rfc1123_dns_label_limit() {
+        let long_name = "a".repeat(80);
+        let slug = slugify(&long_name);
+        assert_eq!(slug.len(), 63);
+        assert_eq!(slug, "a".repeat(63));
+    }
+
+    /// Truncation must never leave a dangling trailing dash, even in the
+    /// unlucky case where the cutoff lands exactly on a separator - a
+    /// slightly shorter label is correct here, a label ending in `-` is not
+    /// (rejected by real DNS the same as one over the length limit).
+    #[test]
+    fn slugify_truncation_never_leaves_a_trailing_dash() {
+        let name = format!("{} more-text-after-the-cutoff", "a".repeat(62));
+        let slug = slugify(&name);
+        assert!(slug.len() <= 63);
+        assert!(!slug.ends_with('-'), "must never end with a dash: {slug:?}");
     }
 
     #[test]

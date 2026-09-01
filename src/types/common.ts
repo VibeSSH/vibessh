@@ -9,6 +9,8 @@ export interface NavModule {
   path: string;
   icon: string;
   comingSoon?: boolean;
+  /** Hidden entirely while signed out, rather than shown with a link that would just bounce to a login prompt - see Sidebar.tsx. Item-level so a group can mix signed-in-only and always-visible entries (e.g. "Security" holding both Firewall and Team). */
+  requiresAuth?: boolean;
 }
 
 export interface SidebarGroup {

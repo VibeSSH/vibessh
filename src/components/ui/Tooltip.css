@@ -1,0 +1,15 @@
+.tooltip {
+  position: fixed;
+  z-index: var(--z-modal-popover);
+  background: var(--t-bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  max-width: 240px;
+  box-shadow: var(--t-elev-2);
+  pointer-events: none;
+  white-space: normal;
+}

@@ -44,6 +44,10 @@
   background: var(--surface-2);
 }
 
+/* A locked/disabled row, not just de-emphasized info - same opacity-fade
+   language Button/IconButton/.form-input already use for :disabled, so it
+   reads as "can't touch this" rather than merely "less important". */
 .member-roles-checkbox-locked {
-  color: var(--text-tertiary);
+  opacity: 0.55;
+  cursor: not-allowed;
 }

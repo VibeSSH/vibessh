@@ -5,6 +5,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
+import { NodeSetupWizard } from "./NodeSetupWizard";
 import type { ManagedServer } from "@/stores/serversStore";
 import "./AddServerModal.css";
 
@@ -21,6 +22,16 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
   const backdrop = useBackdropClose(onClose);
+  // A freshly created SSH-mode Node still needs Docker/WireGuard/ufw/Vibe
+  // Network - the design doc's own "Setup Page" - so a brand new server
+  // hands off into that guided flow instead of just closing (an edit, or a
+  // freshly paired Agent-mode Node whose install already covers the same
+  // groundwork, both still just close as before).
+  const [justCreatedServer, setJustCreatedServer] = useState<ManagedServer | null>(null);
+
+  if (justCreatedServer) {
+    return <NodeSetupWizard serverId={justCreatedServer.id} serverName={justCreatedServer.name} onClose={onClose} />;
+  }
 
   return (
     <div className="modal-backdrop" {...backdrop}>
@@ -51,7 +62,16 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
 
         <div className="modal-body">
           {isEditing || tab === "ssh" ? (
-            <SshServerForm editingServer={editingServer} onSaved={onClose} />
+            <SshServerForm
+              editingServer={editingServer}
+              onSaved={(server) => {
+                if (isEditing) {
+                  onClose();
+                  return;
+                }
+                setJustCreatedServer(server);
+              }}
+            />
           ) : (
             <AgentPairingFlow onPaired={onClose} />
           )}

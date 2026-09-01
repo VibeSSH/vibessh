@@ -96,42 +96,18 @@
   flex-shrink: 0;
 }
 
+/* Overrides the shared `.host-address`'s own (tighter, generic) flex/gap
+   defaults - source order wins them on equal specificity, since this file
+   is imported after HostAddress's own CSS. */
 .rail-instance-tooltip-host {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin-top: 6px;
-}
-
-.rail-instance-tooltip-host-value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-secondary);
-}
-
-.rail-instance-tooltip-host-masked {
-  letter-spacing: 0.1em;
-  color: var(--text-tertiary);
-}
-
-.rail-instance-tooltip-eye {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  color: var(--text-tertiary);
-}
-.rail-instance-tooltip-eye:hover {
-  color: var(--text-primary);
-  background: var(--surface-2);
 }
 
 .rail-instance-tooltip-latency {

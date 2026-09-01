@@ -425,7 +425,7 @@ mod tests {
     fn render_unit_file_produces_a_well_formed_service_section() {
         let application = stub_application(Uuid::new_v4());
         let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()], memory_limit_mb: None, cpu_limit_cores: None };
-        let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into() }];
+        let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 
@@ -454,7 +454,7 @@ mod tests {
     fn render_unit_file_rejects_an_invalid_environment_key() {
         let application = stub_application(Uuid::new_v4());
         let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
-        let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }];
+        let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 

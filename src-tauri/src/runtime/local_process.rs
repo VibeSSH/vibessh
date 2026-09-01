@@ -666,7 +666,7 @@ mod tests {
         let config = LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), "echo $VIBESSH_TEST_VAR".into()] };
 
         let config_value = serde_json::to_value(config).unwrap();
-        let environment = vec![EnvironmentVariable { key: "VIBESSH_TEST_VAR".into(), value: "vibessh-marker-42".into() }];
+        let environment = vec![EnvironmentVariable { key: "VIBESSH_TEST_VAR".into(), value: "vibessh-marker-42".into(), is_secret: false }];
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();

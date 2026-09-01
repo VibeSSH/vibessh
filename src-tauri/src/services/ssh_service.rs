@@ -9,8 +9,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{AuthenticationType, Server, ServerInput};
-use crate::ssh::{self, SshAuth, SshCredentials, SshSession, TerminalHandle};
+use crate::files::{self, sftp::SftpApplicationFileProvider, ApplicationFileProvider};
+use crate::models::{AuthenticationType, PortForwardKind, PortForwardStatus, Server, ServerInput, StartPortForwardInput};
+use crate::ssh::{self, PortForwardHandle, SshAuth, SshCredentials, SshSession, TerminalHandle};
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
 use crate::storage::server_repository::ServerRepository;
@@ -36,23 +37,52 @@ pub async fn execute_command(
     server_id: Uuid,
     command: &str,
 ) -> AppResult<CommandOutput> {
-    let session = get_or_connect(repo, sessions, server_id).await?;
-    match session.execute_command(command).await {
-        Ok(output) => Ok(output),
+    retry_on_connection_failure(sessions, Some(server_id), || async {
+        get_or_connect(repo, sessions, server_id).await?.execute_command(command).await
+    })
+    .await
+}
+
+/// Runs `attempt` once, retrying it exactly once - with the cached session
+/// for `server_id` dropped first - if it fails. The general form of
+/// `execute_command`'s own dead-cached-session recovery above (idle
+/// timeout, network blip, Node reboot), for callers that need more than one
+/// command against the connection, or hand it to something else
+/// (`application_service`'s `ApplicationRuntime` calls, `database_service`'s
+/// `run_mysql`) rather than running one command here directly. `attempt` is
+/// expected to re-resolve its own connection on each call (a cheap local
+/// read either way, and simpler than threading a `RuntimeContext`-shaped
+/// borrow through a generic retry wrapper) rather than this handing back an
+/// already-built connection. `server_id: None` (a Local application, or
+/// nothing to reconnect) just runs `attempt` once - there's no cached
+/// session to go stale.
+pub(crate) async fn retry_on_connection_failure<T, F, Fut>(sessions: &SshSessionManager, server_id: Option<Uuid>, mut attempt: F) -> AppResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = AppResult<T>>,
+{
+    match attempt().await {
+        Ok(value) => Ok(value),
         Err(first_err) => {
+            let Some(server_id) = server_id else {
+                return Err(first_err);
+            };
             sessions.remove(server_id).await;
-            let session = get_or_connect(repo, sessions, server_id).await?;
-            session.execute_command(command).await.map_err(|_| first_err)
+            attempt().await.map_err(|_| first_err)
         }
     }
 }
 
 /// Opens an interactive shell against a saved server, reusing a cached
-/// connection when there is one. Unlike `execute_command`, a dead cached
-/// connection here isn't retried automatically - opening a terminal is a
-/// user-initiated action with its own visible feedback, so surfacing the
-/// failure and letting them try again is clearer than silently reconnecting
-/// underneath a UI element they just clicked.
+/// connection when there is one. Doesn't retry a dead cached connection
+/// itself - `on_output`/`on_closed` are one-shot (`on_closed` is literally
+/// `FnOnce`), so a retry that calls this twice needs a fresh pair each time,
+/// which only the caller can cheaply reconstruct (it's usually just an
+/// `AppHandle` clone and an event-name String). See
+/// `commands::terminal_commands::open_terminal`, which is what actually
+/// does the "dead session, drop and retry once" recovery here - the same
+/// policy `execute_command`/every other SSH-touching feature already
+/// applies, just at the layer above instead of inside this function.
 pub async fn open_terminal(
     repo: &ServerRepository,
     sessions: &SshSessionManager,
@@ -127,6 +157,83 @@ pub async fn upload_file(
 ) -> AppResult<()> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.upload_file(local_path, remote_path).await
+}
+
+/// An `ApplicationFileProvider` rooted at "/" - not jailed to anything,
+/// deliberately: the plain server-wide Files browser already has full SSH
+/// access to this host (the same trust boundary Terminal and every other
+/// Node Files command already operate inside), so there's no sandbox to
+/// enforce here the way there is for one Application's own working
+/// directory. `is_within_root`'s own root-trimming makes any absolute path
+/// satisfy a "/" root trivially, so this reuses `SftpApplicationFileProvider`
+/// (recursive delete/copy, rename, chmod, archive extraction - all already
+/// written and tested for the Application Files case) instead of
+/// duplicating that logic for a "no jail" variant.
+async fn plain_file_provider(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<SftpApplicationFileProvider> {
+    let session = connect_with_live_sftp(repo, sessions, server_id).await?;
+    Ok(SftpApplicationFileProvider::new(session, "/".to_string()))
+}
+
+/// See `application_files_service::connect_with_live_sftp`'s own doc
+/// comment for the full reasoning - `SshSession` caches its SFTP subsystem
+/// channel for the session's whole lifetime, so a cached session that's
+/// still fine for plain command exec can have a long-dead SFTP channel that
+/// nothing ever resets on its own.
+async fn connect_with_live_sftp(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
+    let connection = get_or_connect(repo, sessions, server_id).await?;
+    if connection.canonicalize_path(".").await.is_ok() {
+        return Ok(connection);
+    }
+    sessions.remove(server_id).await;
+    get_or_connect(repo, sessions, server_id).await
+}
+
+pub async fn rename_path(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, from: &str, to: &str) -> AppResult<()> {
+    plain_file_provider(repo, sessions, server_id).await?.rename(from, to).await
+}
+
+/// Recursive for a directory - see `ApplicationFileProvider::delete`'s own
+/// doc comment; the same primitive as the Application Files "Delete"
+/// action, just against the whole filesystem instead of one working
+/// directory.
+pub async fn delete_path(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, path: &str) -> AppResult<()> {
+    plain_file_provider(repo, sessions, server_id).await?.delete(path).await
+}
+
+pub async fn set_permissions(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, path: &str, mode: u32) -> AppResult<()> {
+    if mode > 0o7777 {
+        return Err(AppError::InvalidInput("not a valid POSIX permission value".into()));
+    }
+    plain_file_provider(repo, sessions, server_id).await?.set_permissions(path, mode).await
+}
+
+/// Extracts an already-uploaded `.zip` at `archive_path` into `destination`
+/// - reuses the exact Zip-Slip-guarded `files::archive::extract_zip` the
+/// Application Files "Extract" action already uses, just against the
+/// unjailed provider above.
+pub async fn extract_archive(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    archive_path: &str,
+    destination: &str,
+) -> AppResult<u32> {
+    let provider = plain_file_provider(repo, sessions, server_id).await?;
+    let bytes = provider.read_file(archive_path).await?;
+    files::archive::extract_zip(&provider, &bytes, destination).await
+}
+
+/// Compresses `paths` into a new `.zip` written to `destination_path` - see
+/// `files::archive::create_zip`'s own doc comment for the entry-naming rule.
+pub async fn compress_paths(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    paths: &[String],
+    destination_path: &str,
+) -> AppResult<()> {
+    let provider = plain_file_provider(repo, sessions, server_id).await?;
+    files::archive::create_zip(&provider, paths, destination_path).await
 }
 
 /// A fresh sample each call - the CPU%/network-rate delta math lives on
@@ -260,6 +367,51 @@ pub async fn container_logs(
 ) -> AppResult<String> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.container_logs(container, tail).await
+}
+
+/// Starts a Local/Remote/Dynamic SSH tunnel against a saved server, reusing
+/// a cached connection when there is one. No dead-connection retry here -
+/// unlike a single command or one terminal session, a forward is meant to
+/// keep running unattended, so `commands::port_forward_commands` is what
+/// actually inserts the result into `state::PortForwardManager` once this
+/// returns; this only resolves the connection and starts the tunnel itself.
+pub async fn start_port_forward(repo: &ServerRepository, sessions: &SshSessionManager, input: &StartPortForwardInput) -> AppResult<(PortForwardStatus, PortForwardHandle)> {
+    let session = get_or_connect(repo, sessions, input.server_id).await?;
+
+    let handle = match input.kind {
+        PortForwardKind::Local => {
+            SshSession::start_local_forward(session, &input.bind_address, input.bind_port, require_target_host(input)?, require_target_port(input)?).await?
+        }
+        PortForwardKind::Remote => {
+            SshSession::start_remote_forward(session, &input.bind_address, input.bind_port, require_target_host(input)?, require_target_port(input)?).await?
+        }
+        PortForwardKind::Dynamic => SshSession::start_dynamic_forward(session, &input.bind_address, input.bind_port).await?,
+    };
+
+    let status = PortForwardStatus {
+        id: Uuid::new_v4(),
+        server_id: input.server_id,
+        kind: input.kind,
+        bind_address: input.bind_address.clone(),
+        bind_port: handle.actual_port,
+        target_host: input.target_host.clone(),
+        target_port: input.target_port,
+    };
+    Ok((status, handle))
+}
+
+fn require_target_host(input: &StartPortForwardInput) -> AppResult<String> {
+    input
+        .target_host
+        .as_deref()
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| AppError::InvalidInput("a target host is required".into()))
+}
+
+fn require_target_port(input: &StartPortForwardInput) -> AppResult<u16> {
+    input.target_port.filter(|&port| port != 0).ok_or_else(|| AppError::InvalidInput("a target port is required".into()))
 }
 
 /// `pub(super)` (not just private) so `application_service`'s

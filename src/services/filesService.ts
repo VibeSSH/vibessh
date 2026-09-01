@@ -28,6 +28,26 @@ export function uploadRemoteFile(serverId: string, localPath: string, remotePath
   return callCommand<void>("upload_remote_file", { serverId, localPath, remotePath });
 }
 
+/** Covers both "Rename" (same parent, new name) and "Move" (new parent) - the same underlying primitive either way, the caller just builds a different `to`. */
+export function renameRemotePath(serverId: string, from: string, to: string): Promise<void> {
+  return callCommand<void>("rename_remote_path", { serverId, from, to });
+}
+
+/** Recursive for a directory. */
+export function deleteRemotePath(serverId: string, path: string): Promise<void> {
+  return callCommand<void>("delete_remote_path", { serverId, path });
+}
+
+/** Extracts an already-present `.zip` at `archivePath` into `destination` - resolves to the number of files written. */
+export function extractRemoteArchive(serverId: string, archivePath: string, destination: string): Promise<number> {
+  return callCommand<number>("extract_remote_archive", { serverId, archivePath, destination });
+}
+
+/** Compresses `paths` into a new `.zip` written to `destinationPath`. */
+export function compressRemotePaths(serverId: string, paths: string[], destinationPath: string): Promise<void> {
+  return callCommand<void>("compress_remote_paths", { serverId, paths, destinationPath });
+}
+
 export function bytesToText(bytes: number[]): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }

@@ -74,6 +74,11 @@ export function restoreApplicationFileHistory(applicationId: string, path: strin
   return callCommand<void>("restore_application_file_history", { applicationId, path, timestamp });
 }
 
+/** Deletes every saved backup version for this file - the live file itself is untouched. */
+export function clearApplicationFileHistory(applicationId: string, path: string): Promise<void> {
+  return callCommand<void>("clear_application_file_history", { applicationId, path });
+}
+
 /** Same not-in-a-Tauri-webview guard as pairingService/terminalService's own event helpers. */
 export function onTransferProgress(transferId: string, handler: (progress: TransferProgressEvent) => void): Promise<UnlistenFn> {
   return listen<TransferProgressEvent>(`application-files://${transferId}/progress`, (event) => handler(event.payload)).catch(() => () => {});

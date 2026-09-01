@@ -11,7 +11,7 @@ import {
   onAgentPairingState,
   startAgentPairing,
 } from "@/services/pairingService";
-import { startAgentSession, upsertAgentServer } from "@/services/serverService";
+import { startAgentSession, upgradeServerToAgent, upsertAgentServer } from "@/services/serverService";
 import type { AgentConnectionState } from "@/types/pairing";
 import type { ServerMetrics } from "@/types/serverEvent";
 import { CapabilityBadges } from "./CapabilityBadges";
@@ -22,6 +22,8 @@ const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agen
 
 interface AgentPairingFlowProps {
   onPaired: () => void;
+  /** When set, a successful pairing upgrades this already-known SSH-mode server in place (same id, `host` pre-filled and locked - we already know exactly which machine this is) instead of creating a brand new row - the Setup Page's own "also install the Vibe Agent" step. */
+  upgradeExistingServer?: { id: string; host: string };
 }
 
 /**
@@ -34,9 +36,9 @@ interface AgentPairingFlowProps {
  * server storage, Etap 2). Reopening "Add Server" reconnects from scratch.
  */
 
-export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
+export function AgentPairingFlow({ onPaired, upgradeExistingServer }: AgentPairingFlowProps) {
   const { t } = useTranslation();
-  const [host, setHost] = useState("");
+  const [host, setHost] = useState(upgradeExistingServer?.host ?? "");
   const [port, setPort] = useState("7420");
   const [code, setCode] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -64,8 +66,14 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
         // previously agent-paired servers only ever lived in this
         // component's own upsertServer call below, gone the moment the app
         // closed (see README's own "still only show for the current
-        // session" note on Etap H).
-        const persisted = await upsertAgentServer(name, host, state.agentId, state.capabilities.docker);
+        // session" note on Etap H). `upgradeExistingServer` set means this
+        // pairing is for a Node the user already added over SSH (the Setup
+        // Page's own "also install the Vibe Agent" step) - upgrade that
+        // same row in place instead of creating a confusing second entry
+        // for the same physical machine.
+        const persisted = upgradeExistingServer
+          ? await upgradeServerToAgent(upgradeExistingServer.id, state.agentId, state.capabilities.docker)
+          : await upsertAgentServer(name, host, state.agentId, state.capabilities.docker);
         // Hands the connection off to a persistent, app-session-long one
         // (Etap M3) - this is the one moment host/port/a fresh credential
         // are all in hand at once, see AgentSessionManager's own doc
@@ -166,7 +174,7 @@ export function AgentPairingFlow({ onPaired }: AgentPairingFlowProps) {
             placeholder="203.0.113.10"
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            disabled={connectionState?.status === "connected"}
+            disabled={Boolean(upgradeExistingServer) || connectionState?.status === "connected"}
           />
         </label>
         <label className="form-field form-field-narrow">

@@ -1,34 +1,63 @@
+/* A quiet pill with a small colored dot carrying the actual status signal,
+   not a fully color-washed, all-caps block - the dot+neutral-ish-text combo
+   is the same "small colored indicator, calm supporting text" language the
+   rest of the app's status dots (ServerCard, NodeMiniCard) already speak,
+   applied here too instead of every badge shouting its own tone at full
+   saturation. */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 9px 0 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
   white-space: nowrap;
-  /* Never lets a badge squish inside a flex row (server-list rows with a
-     long name + multiple badges + action buttons, see docs/UI_AUDIT.md
-     finding C3) - the sibling with min-width:0 truncates instead. */
+  flex-shrink: 0;
+  border: 1px solid transparent;
+}
+
+.badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
   flex-shrink: 0;
 }
 
 .badge-neutral {
-  background: var(--surface-3);
+  background: var(--surface-2);
+  border-color: var(--border);
   color: var(--text-secondary);
 }
+.badge-neutral .badge-dot {
+  background: var(--text-tertiary);
+}
+
 .badge-success {
-  background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: var(--success);
+  background: color-mix(in srgb, var(--success) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+  color: color-mix(in srgb, var(--success) 65%, var(--text-primary));
 }
+.badge-success .badge-dot {
+  background: var(--success);
+}
+
 .badge-danger {
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  color: color-mix(in srgb, var(--danger) 65%, var(--text-primary));
 }
+.badge-danger .badge-dot {
+  background: var(--danger);
+}
+
 .badge-warning {
-  background: color-mix(in srgb, var(--warning) 18%, transparent);
-  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface-1));
+  border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+  color: color-mix(in srgb, var(--warning) 65%, var(--text-primary));
+}
+.badge-warning .badge-dot {
+  background: var(--warning);
 }

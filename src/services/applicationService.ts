@@ -9,9 +9,11 @@ import type {
   HealthStatus,
   JavaInstallation,
   PortInput,
+  RegistryCredential,
   ResourceUsage,
   RuntimeType,
   SetHealthCheckInput,
+  SetRegistryCredentialInput,
   SetResourceLimitsInput,
 } from "@/types/application";
 
@@ -46,6 +48,11 @@ export function createApplication(input: CreateApplicationInput): Promise<Applic
 
 export function deleteApplication(id: string): Promise<void> {
   return callCommand<void>("delete_application", { id });
+}
+
+/** Re-renders `runtimeConfig` from the blueprint after merging `fieldValues` on top of whatever was stored at creation (or the last edit) - see the Rust `update_application_config`'s own doc comment. A restart is required for a running process to actually pick up the new config, same as an uploaded jar replacement. */
+export function updateApplicationConfig(id: string, fieldValues: Record<string, unknown>): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("update_application_config", { id, fieldValues });
 }
 
 export function startApplication(id: string): Promise<ApplicationStatus> {
@@ -83,6 +90,11 @@ export function getApplicationLogs(id: string, maxLines: number): Promise<string
   return callCommand<string[]>("get_application_logs", { id, maxLines });
 }
 
+/** Sends one line to the application's stdin/console - rejects with a clear message when the runtime has no console at all, or reports it as read-only (see `runtime::ApplicationConsole`'s own doc comment for both cases). */
+export function writeApplicationConsole(id: string, input: string): Promise<void> {
+  return callCommand<void>("write_application_console", { id, input });
+}
+
 /** Real, actually-installed Java runtimes - `serverId` undefined detects on this machine, set detects on that Remote server over SSH. Best-effort: an empty array just means the wizard's free-text fallback stays available, not an error. */
 export function detectJavaInstallations(serverId?: string): Promise<JavaInstallation[]> {
   return callCommand<JavaInstallation[]>("detect_java_installations", { serverId });
@@ -98,6 +110,16 @@ export function listVelocityVersions(): Promise<string[]> {
   return callCommand<string[]>("list_velocity_versions");
 }
 
+/** Same idea as listPaperVersions, for the Waterfall proxy - a different papermc.io project, so a separate list. */
+export function listWaterfallVersions(): Promise<string[]> {
+  return callCommand<string[]>("list_waterfall_versions");
+}
+
+/** Every currently-available Purpur version (from purpurmc.org, a separate build API from papermc.io), newest first. */
+export function listPurpurVersions(): Promise<string[]> {
+  return callCommand<string[]>("list_purpur_versions");
+}
+
 /** Declared ports are documentation of intent, not a live guarantee - VibeSSH checks for a collision against this same application's *other* declared ports, not whether the port is actually free on the host. */
 export function listApplicationPorts(id: string): Promise<ApplicationPort[]> {
   return callCommand<ApplicationPort[]>("list_application_ports", { id });
@@ -111,11 +133,12 @@ export function updateApplicationPort(id: string, portId: string, port: PortInpu
   return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
 }
 
-/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error) - see the Rust `firewall` module's own doc comment for why this only ever adds rules, never removes or enables enforcement. */
+/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. */
 export interface FirewallSyncResult {
   backend: string | null;
   active: boolean;
   rulesApplied: number;
+  rulesRemoved: number;
 }
 
 /** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically, best-effort, after every `addApplicationPort`/`updateApplicationPort` - this is for a port declared before the feature existed, or retrying after a failed sync. */
@@ -139,6 +162,35 @@ export function setApplicationHealthCheck(id: string, input: SetHealthCheckInput
 /** Only accepted for a Docker/systemd application - see the Rust `set_application_resource_limits`'s own doc comment for why a Local/Remote process application rejects this outright instead of silently accepting and ignoring it. */
 export function setApplicationResourceLimits(id: string, input: SetResourceLimitsInput): Promise<ApplicationDetail> {
   return callCommand<ApplicationDetail>("set_application_resource_limits", { id, input });
+}
+
+/** Replaces the whole environment variable set - every runtime type accepts this (unlike resource limits). Key/value validation happens when the runtime next actually starts, not here. */
+export function setApplicationEnvironment(id: string, environment: EnvironmentVariable[]): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("set_application_environment", { id, environment });
+}
+
+/** Docker-only, same restriction as `setApplicationResourceLimits`. Patches `runtimeConfig.image` - doesn't touch an already-running container by itself, call `recreateApplication` afterward for a running Docker application to actually pick it up. */
+export function setApplicationImage(id: string, image: string): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("set_application_image", { id, image });
+}
+
+/** `docker pull` for this Docker application's currently-configured image, on its own Node - re-fetches whatever layers changed upstream (meaningful for a floating tag like `:latest`). Returns Docker's own pull output as proof something real happened. Same as `setApplicationImage`: doesn't affect an already-running container, `recreateApplication` still needed for that. */
+export function pullApplicationImage(id: string): Promise<string> {
+  return callCommand<string>("pull_application_image", { id });
+}
+
+/** Every stored private-registry login, across every registry host - shared by any Application whose image comes from one of them. */
+export function listRegistryCredentials(): Promise<RegistryCredential[]> {
+  return callCommand<RegistryCredential[]>("list_registry_credentials");
+}
+
+/** Sets (creating or replacing) the login for one registry host, keyed by `input.registry` - re-saving a host's credential overwrites the existing one rather than adding a duplicate. */
+export function setRegistryCredential(input: SetRegistryCredentialInput): Promise<RegistryCredential> {
+  return callCommand<RegistryCredential>("set_registry_credential", { input });
+}
+
+export function removeRegistryCredential(id: string): Promise<void> {
+  return callCommand<void>("remove_registry_credential", { id });
 }
 
 /** Mirrors the Rust `MigrationResult` DTO. */

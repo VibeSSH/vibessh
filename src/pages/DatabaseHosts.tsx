@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { listApplications } from "@/services/applicationService";
@@ -241,17 +242,13 @@ function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps)
               <span className="form-label">{t("databaseHosts.name")}</span>
               <input className="form-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("databaseHosts.namePlaceholder")} />
             </label>
-            <label className="form-field">
-              <span className="form-label">{t("databaseHosts.linkedServer")}</span>
-              <select className="form-input" value={serverId} onChange={(e) => setServerId(e.target.value)}>
-                <option value="">{t("databaseHosts.noLinkedServer")}</option>
-                {servers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <RowPicker
+              label={t("databaseHosts.linkedServer")}
+              placeholder={t("databaseHosts.noLinkedServer")}
+              value={serverId}
+              onChange={setServerId}
+              options={[{ id: "", icon: "x", name: t("databaseHosts.noLinkedServer") }, ...servers.map((s) => serverRowPickerOption(s, t))]}
+            />
             <p className="form-note">{t("databaseHosts.linkedServerNote")}</p>
             <div className="form-row">
               <label className="form-field form-field-narrow">

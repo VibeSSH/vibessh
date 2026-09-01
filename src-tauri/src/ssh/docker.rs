@@ -1,10 +1,17 @@
-//! Docker container control over plain SSH, same reasoning as `systemd.rs`:
-//! the SSH session runs as whatever user it authenticated as, so `docker
-//! restart <container>` here has exactly the privileges that user (or their
-//! membership in the `docker` group) would already have running the same
-//! command by hand - no separate elevation mechanism to secure. What does
-//! need guarding is that a container name/ID reaches a remote shell command
-//! at all - see `validate_container_ref`.
+//! Docker container control over plain SSH. Every command is prefixed with
+//! `sudo` unconditionally - the plug-and-play promise VibeSSH makes (connect
+//! a fresh cloud server, everything just works) can't depend on the
+//! connecting user already being in the host's `docker` group, which a
+//! stock cloud image's default user never is even right after
+//! `services::install_docker` runs (`usermod -aG` only takes effect on a
+//! *new* login session, not the one already connected - not something worth
+//! chasing when `sudo` sidesteps the whole problem). Same idiom
+//! `firewall::ufw`'s `allow_command` already established: `sudo` is a
+//! harmless no-op prefix when the connection already *is* root, and this
+//! assumes the same passwordless sudo `install_docker`/
+//! `ensure_working_directory_exists` already assume for a freshly connected
+//! Node. What does need guarding is that a container name/ID reaches a
+//! remote shell command at all - see `validate_container_ref`.
 
 use vibessh_protocol::ContainerSummary;
 
@@ -15,7 +22,7 @@ use crate::errors::{AppError, AppResult};
 /// isn't guaranteed to survive a shell round trip the same way a literal
 /// character does): Docker's own name/ID/image syntax never allows `|`, so
 /// it can't appear inside a field and be mistaken for a separator.
-const LIST_COMMAND: &str = "docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.State}}'";
+const LIST_COMMAND: &str = "sudo docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.State}}'";
 
 impl SshSession {
     pub async fn list_containers(&self) -> AppResult<Vec<ContainerSummary>> {
@@ -59,7 +66,7 @@ impl SshSession {
         validate_container_ref(container)?;
         let tail = tail.clamp(1, 5000);
         let output = self
-            .execute_command(&format!("docker logs --tail {tail} --timestamps {container} 2>&1"))
+            .execute_command(&format!("sudo docker logs --tail {tail} --timestamps {container} 2>&1"))
             .await?;
         if output.exit_code != 0 {
             let detail = output.stdout.trim();
@@ -79,7 +86,7 @@ impl SshSession {
 
     async fn run_docker(&self, action: &str, container: &str) -> AppResult<()> {
         validate_container_ref(container)?;
-        let output = self.execute_command(&format!("docker {action} {container}")).await?;
+        let output = self.execute_command(&format!("sudo docker {action} {container}")).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { format!("docker {action} failed") } else { detail.to_string() };

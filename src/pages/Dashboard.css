@@ -1,0 +1,266 @@
+/* Overrides .page's 1100px reading-width cap - the one page in the app that
+   should actually use the full window, since its whole point is to show
+   several Nodes/panels side by side rather than a single centered column
+   of text. */
+.dashboard-page {
+  max-width: none;
+}
+
+.dashboard-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dashboard-node-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* The "operations center" workspace - one bounded panel whose content
+   switches with the tab bar, rather than Applications/Terminal/Activity
+   each getting their own permanent tile (see the memory note this session
+   is built from: "not everything as separate big tiles"). */
+.dashboard-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+  background: var(--t-bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--space-4);
+}
+
+.dashboard-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.dashboard-workspace-header .page-tabs {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.dashboard-workspace-selection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.dashboard-workspace-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 4px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dashboard-workspace-clear:hover {
+  color: var(--accent-hover);
+}
+
+.dashboard-workspace-divider {
+  border-bottom: 1px solid var(--border);
+  margin: var(--space-3) 0;
+}
+
+.dashboard-workspace-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* A fixed height, not flex:1 - unlike the dedicated Terminal page (whose
+   `.terminal-page` sets `height:100%` all the way up from a viewport-bounded
+   `<main>`), the Dashboard is a normally-scrolling page with no bounded
+   height anywhere in its ancestor chain, so a flexed height here has no
+   real space to resolve against and xterm's own fitAddon ends up sizing
+   itself against unconstrained/runaway layout instead. */
+.dashboard-workspace-terminal {
+  height: 420px;
+}
+
+.dashboard-workspace-prompt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: var(--space-6);
+}
+
+.dashboard-workspace-activity-agent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: var(--space-3) 0;
+}
+
+.dashboard-panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.dashboard-panel-link:hover {
+  color: var(--accent-hover);
+}
+
+.dashboard-empty-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* A small colored chip around the icon, not the whole line painted the
+   status color - same "dot/chip carries the tone, text stays calm"
+   language Badge uses, rather than a full row of saturated green text. */
+.dashboard-empty-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+}
+.dashboard-empty-row-ok .dashboard-empty-row-icon {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+}
+
+/* A `.server-list-main` that's also a real `<button>` (ModulePicker's own
+   pattern for a clickable list row) - resets the button chrome so it still
+   looks like the plain two-line name/host block, not a button. */
+.dashboard-row-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* The compact Vibe Network / Alerts / Tasks status strip - three glanceable
+   rows in one Card instead of three separate large tiles. Alerts/Tasks
+   expand in place on click rather than jumping to a dedicated tab, since
+   they're cross-cutting (not scoped to one Node) and usually empty. */
+.dashboard-ops-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px;
+  margin: 0 -4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.dashboard-ops-row:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.dashboard-ops-row + .dashboard-ops-row {
+  border-top: 1px solid var(--border);
+}
+
+.dashboard-ops-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dashboard-ops-expanded {
+  padding: 0 0 6px;
+}
+
+.dashboard-task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px;
+}
+.dashboard-task-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Closes the layout, same role the reference screenshot's own footer bar
+   plays - an always-visible aggregate reading, not another clickable panel. */
+.dashboard-footer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 10px 16px;
+  background: var(--t-bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.dashboard-footer-bar-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dashboard-footer-bar-value {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.dashboard-footer-bar-spacer {
+  flex: 1;
+}
+.dashboard-footer-bar-online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--success);
+}
+.dashboard-footer-bar-online-problem {
+  color: var(--danger);
+}

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, KnownFile, RuntimeType};
+use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, DefaultPort, KnownFile, PortProtocol, RuntimeType};
 use crate::services::latest_paper_build;
 
 use super::{bool_input, render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
@@ -64,7 +64,7 @@ impl PaperBlueprint {
                         field_type: BlueprintFieldType::Text,
                         required: false,
                         default_value: Some(serde_json::Value::String("21".to_string())),
-                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
+                        help_text: Some("Any Java major version available as an eclipse-temurin image, e.g. 25, 21, 17, or 11 - selects the matching Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jvmArgs".to_string(),
@@ -90,6 +90,12 @@ impl PaperBlueprint {
                     KnownFile { path: "config/paper-global.yml".to_string(), label: "paper-global.yml".to_string() },
                     KnownFile { path: "config/paper-world-defaults.yml".to_string(), label: "paper-world-defaults.yml".to_string() },
                 ],
+                default_ports: vec![DefaultPort {
+                    name: "Minecraft".to_string(),
+                    protocol: PortProtocol::Tcp,
+                    internal_port: 25565,
+                    external_port: 25565,
+                }],
                 is_builtin: true,
             },
         }
@@ -175,9 +181,22 @@ async fn download_file(context: &ProvisionContext<'_>, url: &str, filename: &str
         // desktop connection and re-uploading it over SFTP - meaningfully
         // faster for a ~50MB server jar, and the only sane choice on a
         // metered or slow desktop connection.
+        //
+        // `sudo curl`, not a plain `curl` - same reasoning as
+        // `runtime::docker::DockerConsole::write`'s own `sudo tee`: a
+        // `run_as_dedicated_user` Application's whole `working_directory`
+        // gets `chown -R`'d to that Application's own dedicated account on
+        // every start (`ensure_working_directory_owned_by_dedicated_user`),
+        // so a re-provision (e.g. changing the Minecraft version after the
+        // Application has already been started once) would otherwise fail
+        // to write here as the plain SSH login user - `curl: (23) Failure
+        // writing output to destination`, not an obviously
+        // permissions-shaped error. `sudo` sidesteps the ownership question
+        // entirely; the next start re-chowns the freshly downloaded jar
+        // along with everything else already in the working directory.
         Some(connection) => {
             let path = format!("{}/{}", context.working_directory.trim_end_matches('/'), filename);
-            let output = connection.execute_command(&format!("curl -fsSL -o {} {}", shell_quote(&path), shell_quote(url))).await?;
+            let output = connection.execute_command(&format!("sudo curl -fsSL -o {} {}", shell_quote(&path), shell_quote(url))).await?;
             if output.exit_code != 0 {
                 let detail = output.stderr.trim();
                 let detail = if detail.is_empty() { "curl failed".to_string() } else { detail.to_string() };
@@ -189,15 +208,28 @@ async fn download_file(context: &ProvisionContext<'_>, url: &str, filename: &str
 }
 
 async fn write_eula(context: &ProvisionContext<'_>) -> AppResult<()> {
-    const EULA_CONTENT: &[u8] = b"eula=true\n";
+    const EULA_CONTENT: &str = "eula=true\n";
     match &context.connection {
         None => {
             let path = std::path::Path::new(context.working_directory).join("eula.txt");
             tokio::fs::write(&path, EULA_CONTENT).await.map_err(|err| AppError::InvalidInput(format!("couldn't write eula.txt: {err}")))
         }
+        // `sudo tee`, not the plain SFTP `write_file` - same
+        // dedicated-user-ownership reason `download_file`'s own `sudo curl`
+        // (just above) and `runtime::docker::DockerConsole::write`'s `sudo
+        // tee` both already need: a re-provision (changing the Minecraft
+        // version after the Application has already been started once)
+        // would otherwise fail to overwrite a working directory this
+        // connection's own login user no longer owns.
         Some(connection) => {
             let path = format!("{}/eula.txt", context.working_directory.trim_end_matches('/'));
-            connection.write_file(&path, EULA_CONTENT).await
+            let output = connection.execute_command(&format!("printf '%s' {} | sudo tee {} >/dev/null", shell_quote(EULA_CONTENT), shell_quote(&path))).await?;
+            if output.exit_code != 0 {
+                let detail = output.stderr.trim();
+                let detail = if detail.is_empty() { "couldn't write eula.txt".to_string() } else { detail.to_string() };
+                return Err(AppError::Connection(format!("couldn't write eula.txt on the remote host: {detail}")));
+            }
+            Ok(())
         }
     }
 }
@@ -223,6 +255,16 @@ fn shell_quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declares_a_default_published_port_so_a_fresh_server_is_reachable_without_manual_setup() {
+        let blueprint = PaperBlueprint::new();
+        assert_eq!(blueprint.blueprint().default_ports.len(), 1);
+        let port = &blueprint.blueprint().default_ports[0];
+        assert_eq!(port.internal_port, 25565);
+        assert_eq!(port.external_port, 25565);
+        assert_eq!(port.protocol, PortProtocol::Tcp);
+    }
 
     fn accepted_inputs(jar_filename: Option<&str>) -> HashMap<String, serde_json::Value> {
         let mut inputs = HashMap::new();
@@ -266,7 +308,7 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "paper-1.21.11-132.jar", "nogui"] })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "paper-1.21.11-132.jar", "nogui"], "runAsDedicatedUser": true })
         );
     }
 

@@ -46,6 +46,20 @@
   border-color: var(--border-hover);
 }
 
+/* The tab's own selectable label - a real `<button>`, sibling to (not
+   wrapping) the close button below, so the two never nest interactive
+   controls inside each other. Inherits the pill's own color/font instead
+   of native button chrome. */
+.terminal-tab-select {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .terminal-tab-close {
   display: flex;
   align-items: center;
@@ -53,7 +67,11 @@
   width: 16px;
   height: 16px;
   border-radius: 4px;
+  background: transparent;
+  border: none;
   color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 .terminal-tab-close:hover {
   background: var(--surface-3);

@@ -1,0 +1,23 @@
+.host-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.host-address-prefix {
+  flex-shrink: 0;
+}
+
+.host-address-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  letter-spacing: 1px;
+}
+
+.host-address-eye {
+  flex-shrink: 0;
+}

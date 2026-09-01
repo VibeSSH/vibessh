@@ -17,7 +17,7 @@ use vibessh_protocol::RemoteFileEntry;
 use crate::errors::{AppError, AppResult};
 use crate::ssh::SshSession;
 
-use super::sandbox::{is_within_root, sanitize_relative_path};
+use super::sandbox::{is_within_root, relativize, sanitize_relative_path};
 use super::{ApplicationFileProvider, ProgressFn};
 
 pub struct SftpApplicationFileProvider {
@@ -118,12 +118,20 @@ fn split_parent(path: &str) -> AppResult<(String, String)> {
 impl ApplicationFileProvider for SftpApplicationFileProvider {
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
         let dir = self.resolve(path).await?;
-        self.connection.list_directory(&dir).await
+        let canonical_root = self.canonical_root().await?;
+        let mut entries = self.connection.list_directory(&dir).await?;
+        for entry in &mut entries {
+            entry.path = relativize(&entry.path, &canonical_root);
+        }
+        Ok(entries)
     }
 
     async fn metadata(&self, path: &str) -> AppResult<RemoteFileEntry> {
         let resolved = self.resolve(path).await?;
-        self.connection.symlink_metadata(&resolved).await
+        let canonical_root = self.canonical_root().await?;
+        let mut entry = self.connection.symlink_metadata(&resolved).await?;
+        entry.path = relativize(&entry.path, &canonical_root);
+        Ok(entry)
     }
 
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>> {

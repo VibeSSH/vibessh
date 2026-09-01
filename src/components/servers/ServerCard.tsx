@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { usePingStore } from "@/stores/pingStore";
@@ -16,7 +17,7 @@ import "./ServerCard.css";
  * rather than polling - this is a manual "check in on this Node" action,
  * not a live dashboard.
  */
-function NodeSyncBadge({ serverId }: { serverId: string }) {
+function NodeSyncBadge({ serverId, name }: { serverId: string; name: string }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<NodeSyncStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +62,7 @@ function NodeSyncBadge({ serverId }: { serverId: string }) {
           {status.inSync ? t("serverCard.syncOk") : t("serverCard.syncStale")}
         </span>
       )}
-      <IconButton icon="refresh-cw" size="sm" title={t("serverCard.reconcileAria")} onClick={handleReconcile} disabled={busy} />
+      <IconButton icon="refresh-cw" size="sm" title={t("serverCard.reconcileAria", { name })} onClick={handleReconcile} disabled={busy} />
     </span>
   );
 }
@@ -95,6 +96,10 @@ interface ServerCardProps {
   onOpenFiles: () => void;
   onOpenMonitor: () => void;
   onOpenActions: () => void;
+  /** Navigates to the Firewall page for this Node (SSH-mode only - see `pages/Firewall.tsx`'s own doc comment). Omitted the same way `onEdit`/`onDelete` are on read-mostly surfaces. */
+  onOpenFirewall?: () => void;
+  /** Re-opens the Node Setup flow (SSH-mode only - see `NodeSetupWizard`'s own doc comment) - not just a first-run step, re-runnable any time to check/finish requirements. Omitted the same way `onEdit`/`onDelete` are on read-mostly surfaces. */
+  onSetupNode?: () => void;
   /** Omitted on read-mostly surfaces (Dashboard's recent-servers view) - matches Voltius using a simpler card there instead of the full HostCard's edit/delete affordances. */
   onEdit?: () => void;
   onDelete?: () => void;
@@ -109,12 +114,11 @@ interface ServerCardProps {
  * don't have (pin, team presence, cloud sync, vault move/copy, snippets) -
  * this only wires the actions VibeSSH actually has.
  */
-export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor, onOpenActions, onEdit, onDelete }: ServerCardProps) {
+export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor, onOpenActions, onOpenFirewall, onSetupNode, onEdit, onDelete }: ServerCardProps) {
   const { t } = useTranslation();
   const isAgent = server.connectionMode === "agent";
   const protocolLabel = isAgent ? "AGENT" : "SSH";
   const statusColor = STATUS_COLOR[server.status];
-  const identity = server.username ? `${server.username}@${server.host}` : server.host;
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
 
   return (
@@ -138,18 +142,28 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
                 </span>
               </span>
             </div>
-            <p className="server-card-host" title={identity}>{identity}</p>
+            <HostAddress value={server.host} prefix={server.username ? `${server.username}@` : undefined} className="server-card-host" />
           </div>
         </div>
 
         <div className="server-card-footer">
-          <div className="server-card-actions">
-            {onDelete && <ServerCardActionButton icon="trash" title={t("serverCard.removeAria", { name: server.name })} danger onClick={onDelete} />}
-            {onEdit && <ServerCardActionButton icon="edit" title={t("serverCard.editAria", { name: server.name })} onClick={onEdit} />}
-            {!isAgent && <ServerCardActionButton icon="folder" title={t("serverCard.browseFilesAria", { name: server.name })} onClick={onOpenFiles} />}
-            {!isAgent && <ServerCardActionButton icon="activity" title={t("serverCard.monitorAria", { name: server.name })} onClick={onOpenMonitor} />}
-            {!isAgent && <ServerCardActionButton icon="zap" title={t("serverCard.actionsAria", { name: server.name })} onClick={onOpenActions} />}
-            {isAgent && <NodeSyncBadge serverId={server.id} />}
+          <div className="server-card-actions-col">
+            <div className="server-card-actions">
+              {onDelete && <ServerCardActionButton icon="trash" title={t("serverCard.removeAria", { name: server.name })} danger onClick={onDelete} />}
+              {onEdit && <ServerCardActionButton icon="edit" title={t("serverCard.editAria", { name: server.name })} onClick={onEdit} />}
+              {!isAgent && <ServerCardActionButton icon="folder" title={t("serverCard.browseFilesAria", { name: server.name })} onClick={onOpenFiles} />}
+              {!isAgent && <ServerCardActionButton icon="activity" title={t("serverCard.monitorAria", { name: server.name })} onClick={onOpenMonitor} />}
+              {!isAgent && <ServerCardActionButton icon="zap" title={t("serverCard.actionsAria", { name: server.name })} onClick={onOpenActions} />}
+              {!isAgent && onOpenFirewall && (
+                <ServerCardActionButton icon="shield" title={t("serverCard.openFirewallAria", { name: server.name })} onClick={onOpenFirewall} />
+              )}
+              {isAgent && <NodeSyncBadge serverId={server.id} name={server.name} />}
+            </div>
+            {!isAgent && onSetupNode && (
+              <div className="server-card-actions">
+                <ServerCardActionButton icon="settings" title={t("serverCard.setupNodeAria", { name: server.name })} onClick={onSetupNode} />
+              </div>
+            )}
           </div>
 
           {!isAgent && (
@@ -162,7 +176,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
               <div className="server-card-terminal-line">
                 <span className="server-card-terminal-user">{server.username ?? "root"}</span>
                 <span>@</span>
-                <span className="server-card-terminal-host">{server.host}</span>
+                <HostAddress value={server.host} className="server-card-terminal-host" interactive={false} />
                 <span>
                   {" "}
                   &gt;<span className="server-card-cursor">_</span>

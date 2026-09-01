@@ -33,7 +33,7 @@ impl GenericJavaBlueprint {
                         field_type: BlueprintFieldType::Text,
                         required: false,
                         default_value: Some(serde_json::Value::String("21".to_string())),
-                        help_text: Some("The Java major version to run this on, e.g. 21, 17, 11, or 8 - selects the matching eclipse-temurin Docker image.".to_string()),
+                        help_text: Some("Any Java major version available as an eclipse-temurin image, e.g. 25, 21, 17, or 11 - selects the matching Docker image.".to_string()),
                     },
                     BlueprintField {
                         key: "jarPath".to_string(),
@@ -61,6 +61,7 @@ impl GenericJavaBlueprint {
                     },
                 ],
                 known_files: vec![],
+                default_ports: vec![],
                 is_builtin: true,
             },
         }
@@ -106,7 +107,7 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"] })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"], "runAsDedicatedUser": true })
         );
     }
 
@@ -118,7 +119,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "server.jar"] }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "server.jar"], "runAsDedicatedUser": true }));
     }
 
     #[test]

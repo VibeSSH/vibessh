@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
@@ -6,8 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
+import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
+import { ApplicationConsoleCard } from "@/components/applications/ApplicationConsoleCard";
 import { DatabasesTab } from "@/components/applications/DatabasesTab";
+import { DockerImageCard } from "@/components/applications/DockerImageCard";
+import { EnvironmentTab } from "@/components/applications/EnvironmentTab";
 import { ApplicationFilesTab } from "@/components/applications/files/ApplicationFilesTab";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
 import { PortsTab } from "@/components/applications/PortsTab";
@@ -26,6 +32,7 @@ import {
 } from "@/services/applicationService";
 import { useServersStore } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
+import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { ApplicationDetail as ApplicationDetailData, ApplicationStatus, Blueprint, ResourceUsage } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -36,7 +43,7 @@ import "./ApplicationDetail.css";
 const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files";
+type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files" | "backups" | "settings";
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -52,7 +59,7 @@ const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | 
 const VERB_IS_DESTRUCTIVE: Record<Verb, boolean> = { start: false, stop: true, restart: false, kill: true, recreate: false };
 
 export function ApplicationDetail() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const servers = useServersStore((s) => s.servers);
@@ -87,9 +94,12 @@ export function ApplicationDetail() {
 
   useEffect(() => {
     listBlueprints()
-      .then((all) => setBlueprint(all.find((b) => b.id === application?.blueprintId) ?? null))
+      .then((all) => {
+        const found = all.find((b) => b.id === application?.blueprintId) ?? null;
+        setBlueprint(found ? translateBlueprint(found, i18n.language) : null);
+      })
       .catch(() => {});
-  }, [application?.blueprintId]);
+  }, [application?.blueprintId, i18n.language]);
 
   useEffect(() => {
     if (!id) return;
@@ -97,14 +107,28 @@ export function ApplicationDetail() {
 
     async function poll() {
       try {
-        const [nextApplication, nextUsage] = await Promise.all([getApplication(id!), getApplicationResourceUsage(id!)]);
+        const nextApplication = await getApplication(id!);
         if (cancelled) return;
         setApplication(nextApplication);
-        setResourceUsage(nextUsage);
         setLoadError(null);
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError"));
+        return;
+      }
+      // A separate try/catch on purpose - resource usage (a Remote Process
+      // over SSH, in particular) can fail on its own (a temporarily
+      // unreachable Node) without that meaning the Application itself
+      // failed to load. Bundling both into one Promise.all used to throw
+      // away an already-successful `getApplication` result and leave the
+      // whole page stuck on a bare id with nothing usable on it.
+      try {
+        const nextUsage = await getApplicationResourceUsage(id!);
+        if (!cancelled) setResourceUsage(nextUsage);
+      } catch {
+        // Leave the last-known usage in place rather than clearing it -
+        // this tab already shows its own errors where it matters (Console,
+        // Logs, ...), no need for a second banner here.
       }
     }
 
@@ -279,10 +303,18 @@ export function ApplicationDetail() {
                 {t("applicationDetail.tabFiles")}
               </button>
             )}
+            <button className={`modal-tab ${tab === "backups" ? "modal-tab-active" : ""}`} onClick={() => setTab("backups")}>
+              {t("applicationDetail.tabBackups")}
+            </button>
+            <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
+              {t("applicationDetail.tabSettings")}
+            </button>
           </div>
 
           {tab === "overview" && (
             <div className="application-detail-overview">
+              {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
+
               <Card title={t("applicationDetail.resourceUsageTitle")}>
                 {application.status === "running" && resourceUsage ? (
                   <div className="stat-grid">
@@ -305,7 +337,11 @@ export function ApplicationDetail() {
                   <p className="form-note">{t("applicationDetail.notRunning")}</p>
                 )}
               </Card>
+            </div>
+          )}
 
+          {tab === "settings" && (
+            <div className="application-detail-overview">
               <Card title={t("applicationDetail.detailsTitle")}>
                 <div className="wizard-review-grid">
                   <span className="wizard-review-label">{t("createApplicationWizard.location")}</span>
@@ -319,11 +355,15 @@ export function ApplicationDetail() {
                 </div>
               </Card>
 
+              <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onSaved={reload} />
+
+              {application.runtimeType === "docker" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
+
               {features.includes("healthCheck") && (
                 <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
               )}
 
-              {(application.runtimeType === "docker" || application.runtimeType === "systemd") && (
+              {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (
                 <ResourceLimitsCard applicationId={id} application={application} onSaved={reload} />
               )}
             </div>
@@ -344,28 +384,14 @@ export function ApplicationDetail() {
             </Card>
           )}
 
-          {tab === "environment" && (
-            <Card>
-              {application.environment.length === 0 ? (
-                <p className="form-note">{t("applicationDetail.environmentEmpty")}</p>
-              ) : (
-                <div className="wizard-review-grid">
-                  {application.environment.map((row) => (
-                    <Fragment key={row.key}>
-                      <span className="wizard-review-label">{row.key}</span>
-                      <span className="wizard-review-value">{row.value}</span>
-                    </Fragment>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
+          {tab === "environment" && <EnvironmentTab application={application} onSaved={reload} />}
 
-          {tab === "ports" && <PortsTab applicationId={id} />}
+          {tab === "ports" && <PortsTab applicationId={id} application={application} />}
 
           {tab === "databases" && <DatabasesTab applicationId={id} />}
 
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={blueprint?.knownFiles ?? []} />}
+          {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
         </>
       )}
 
@@ -403,16 +429,15 @@ export function ApplicationDetail() {
             </div>
             <div className="modal-body">
               <p className="dialog-body-text">{t("applicationDetail.migrateBody", { name: application?.name ?? "" })}</p>
-              <label className="form-field">
-                <span className="form-label">{t("applicationDetail.migrateTargetLabel")}</span>
-                <select className="form-input" value={migrateTargetServerId} onChange={(e) => setMigrateTargetServerId(e.target.value)} disabled={migrateBusy}>
-                  {migrationTargets.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <p className="form-note form-note-spaced">{t("applicationDetail.migrateBodyNote")}</p>
+              <RowPicker
+                label={t("applicationDetail.migrateTargetLabel")}
+                placeholder={t("applicationDetail.migrateTargetLabel")}
+                value={migrateTargetServerId}
+                onChange={setMigrateTargetServerId}
+                disabled={migrateBusy}
+                options={migrationTargets.map((s) => serverRowPickerOption(s, t))}
+              />
               {migrateTargetWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
               {migrateError && <p className="form-note form-note-danger form-note-spaced">{migrateError}</p>}
               <div className="form-actions">

@@ -70,9 +70,15 @@ impl ApplicationRepository {
         .map_err(|err| storage_or_fk_error(err, "server"))?;
 
         for env in &input.environment {
+            // A secret's real value never reaches this column - see
+            // `EnvironmentVariable::value`'s own doc comment. The caller
+            // (`services::application_service`) is responsible for writing
+            // the real value into the OS keyring once it knows this row's
+            // generated `application_id`.
+            let stored_value = if env.is_secret { "" } else { env.value.as_str() };
             tx.execute(
-                "INSERT INTO application_environment (application_id, key, value) VALUES (?1, ?2, ?3)",
-                params![id.to_string(), env.key, env.value],
+                "INSERT INTO application_environment (application_id, key, value, is_secret) VALUES (?1, ?2, ?3, ?4)",
+                params![id.to_string(), env.key, stored_value, env.is_secret],
             )
             .map_err(|err| AppError::Storage(format!("failed to insert environment variable: {err}")))?;
         }
@@ -280,9 +286,12 @@ impl ApplicationRepository {
         tx.execute("DELETE FROM application_environment WHERE application_id = ?1", params![application_id.to_string()])
             .map_err(|err| AppError::Storage(format!("failed to clear environment: {err}")))?;
         for env in environment {
+            // Same rule as `create` - a secret's real value never lands in
+            // this column.
+            let stored_value = if env.is_secret { "" } else { env.value.as_str() };
             tx.execute(
-                "INSERT INTO application_environment (application_id, key, value) VALUES (?1, ?2, ?3)",
-                params![application_id.to_string(), env.key, env.value],
+                "INSERT INTO application_environment (application_id, key, value, is_secret) VALUES (?1, ?2, ?3, ?4)",
+                params![application_id.to_string(), env.key, stored_value, env.is_secret],
             )
             .map_err(|err| AppError::Storage(format!("failed to insert environment variable: {err}")))?;
         }
@@ -370,10 +379,12 @@ impl ApplicationRepository {
 
     fn list_environment_locked(&self, conn: &Connection, application_id: Uuid) -> AppResult<Vec<EnvironmentVariable>> {
         let mut stmt = conn
-            .prepare("SELECT key, value FROM application_environment WHERE application_id = ?1 ORDER BY key")
+            .prepare("SELECT key, value, is_secret FROM application_environment WHERE application_id = ?1 ORDER BY key")
             .map_err(|err| AppError::Storage(format!("failed to prepare environment query: {err}")))?;
         let rows = stmt
-            .query_map(params![application_id.to_string()], |row| Ok(EnvironmentVariable { key: row.get(0)?, value: row.get(1)? }))
+            .query_map(params![application_id.to_string()], |row| {
+                Ok(EnvironmentVariable { key: row.get(0)?, value: row.get(1)?, is_secret: row.get(2)? })
+            })
             .map_err(|err| AppError::Storage(format!("failed to list environment: {err}")))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|err| AppError::Storage(format!("failed to read an environment row: {err}")))
     }
@@ -385,6 +396,40 @@ impl ApplicationRepository {
         let rows =
             stmt.query_map(params![application_id.to_string()], row_to_port).map_err(|err| AppError::Storage(format!("failed to list ports: {err}")))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|err| AppError::Storage(format!("failed to read a port row: {err}")))
+    }
+
+    /// `Some(application_name)` if `external_port`+`protocol` is already
+    /// published by *some* port on this same Node (`server_id`) - a
+    /// different Application's port, or a different port on this same
+    /// Application - `None` if free. Deliberately scoped to one Node: two
+    /// different Nodes publishing the same external port isn't a collision
+    /// at all, each has its own network stack. This is the DB half of the
+    /// design doc's "check other Applications, other Exit Ports" collision
+    /// requirement - `services::firewall_service::listening_process` covers
+    /// the other half (an actual live probe against the host).
+    pub fn find_external_port_owner(
+        &self,
+        server_id: Uuid,
+        excluding_port_id: Option<Uuid>,
+        protocol: PortProtocol,
+        external_port: u16,
+    ) -> AppResult<Option<String>> {
+        let conn = self.lock();
+        conn.query_row(
+            "SELECT a.name FROM application_ports p
+             JOIN applications a ON a.id = p.application_id
+             WHERE a.server_id = ?1 AND p.protocol = ?2 AND p.external_port = ?3
+             AND p.id != ?4",
+            params![
+                server_id.to_string(),
+                protocol_to_str(protocol),
+                external_port,
+                excluding_port_id.map(|id| id.to_string()).unwrap_or_default(),
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| AppError::Storage(format!("failed to check for an external port collision: {err}")))
     }
 
     fn find_port_collision_locked(
@@ -619,7 +664,7 @@ mod tests {
             blueprint_version: 1,
             runtime_type: RuntimeType::LocalProcess,
             working_directory: "/tmp/app".to_string(),
-            environment: vec![EnvironmentVariable { key: "FOO".to_string(), value: "bar".to_string() }],
+            environment: vec![EnvironmentVariable { key: "FOO".to_string(), value: "bar".to_string(), is_secret: false }],
             ports: vec![PortInput {
                 name: "game".to_string(),
                 protocol: PortProtocol::Tcp,
@@ -781,7 +826,7 @@ mod tests {
 
         repo.set_environment(
             detail.application.id,
-            &[EnvironmentVariable { key: "NEW_KEY".to_string(), value: "1".to_string() }],
+            &[EnvironmentVariable { key: "NEW_KEY".to_string(), value: "1".to_string(), is_secret: false }],
         )
         .unwrap();
 

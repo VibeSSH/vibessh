@@ -6,7 +6,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
-import { listApplicationFileHistory, restoreApplicationFileHistory } from "@/services/applicationFilesService";
+import { clearApplicationFileHistory, listApplicationFileHistory, restoreApplicationFileHistory } from "@/services/applicationFilesService";
 import type { FileHistoryVersion } from "@/types/applicationFiles";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -27,6 +27,9 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [restoringTimestamp, setRestoringTimestamp] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const clearBackdrop = useBackdropClose(() => !clearing && setConfirmingClear(false));
 
   useEffect(() => {
     listApplicationFileHistory(applicationId, path)
@@ -48,12 +51,31 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
     }
   }
 
+  async function handleClear() {
+    setClearing(true);
+    setError(null);
+    try {
+      await clearApplicationFileHistory(applicationId, path);
+      setVersions([]);
+      setConfirmingClear(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("fileHistory.clearError"));
+    } finally {
+      setClearing(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" {...backdrop}>
       <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t("fileHistory.title", { name: fileName })}</h2>
-          <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
+          <div className="modal-header-actions">
+            {versions.length > 0 && (
+              <IconButton icon="trash" size="sm" danger onClick={() => setConfirmingClear(true)} title={t("fileHistory.clearAria")} />
+            )}
+            <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
+          </div>
         </div>
         <div className="modal-body">
           {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
@@ -81,6 +103,28 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
           )}
         </div>
       </div>
+
+      {confirmingClear && (
+        <div className="modal-backdrop" {...clearBackdrop}>
+          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">{t("fileHistory.clearTitle")}</h2>
+              <IconButton icon="x" size="sm" onClick={() => setConfirmingClear(false)} title={t("common.close")} disabled={clearing} />
+            </div>
+            <div className="modal-body">
+              <p className="dialog-body-text">{t("fileHistory.clearBody", { name: fileName })}</p>
+              <div className="form-actions">
+                <Button variant="secondary" onClick={() => setConfirmingClear(false)} disabled={clearing}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="danger" onClick={handleClear} disabled={clearing}>
+                  {clearing ? t("common.loading") : t("fileHistory.clear")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,26 +11,35 @@
 //! describe the same kind of thing (name, path, is_dir, is_symlink, size,
 //! modified_at, permissions).
 //!
-//! **Docker is not a fourth provider.** An Application's Docker container
-//! only ever gets `working_directory` bind-mounted in - Application Files
-//! always reads/writes that host directory through the same Local/SFTP
-//! provider a non-Docker Application on the same host/location would use,
-//! never `docker exec`. This matches the design brief's own instruction
-//! ("Docker nie powinien mieć osobnego filesystem UI") and means container
-//! filesystem changes need no restart to take effect (unless the
-//! application itself needs to reload).
+//! **Docker never goes through `docker exec`.** An Application's Docker
+//! container only ever gets `working_directory` bind-mounted in -
+//! Application Files always reads/writes that host directory directly, the
+//! same way a non-Docker Application on the same host/location would, never
+//! by shelling into the container. This matches the design brief's own
+//! instruction ("Docker nie powinien mieć osobnego filesystem UI") and means
+//! container filesystem changes need no restart to take effect (unless the
+//! application itself needs to reload). A Docker Application that opted
+//! into `runtime::docker::DockerConfig::run_as_dedicated_user` does get its
+//! own fourth provider (`sudo_user::SudoUserApplicationFileProvider`) - not
+//! because Docker itself needs one, but because that Application's files
+//! are owned by its own dedicated Linux account (`crate::dedicated_user`),
+//! not the connecting SSH admin SFTP already authenticates as, so plain
+//! SFTP can no longer read/write them at all.
 //!
 //! **Agent provider intentionally absent.** The design calls for one
 //! eventually (`AgentApplicationFileProvider`, application-scoped requests
 //! the Agent itself resolves and sandboxes), but no Agent-side file API
 //! exists yet (`runtime::docker`'s own doc comment notes the same "Agent
 //! path deferred" decision for process management) - `provider_for` below
-//! only ever resolves Local or SFTP.
+//! only ever resolves Local, SFTP, or the sudo-user provider, all reached
+//! through the existing admin SSH connection, never a second Agent
+//! transport.
 
 pub mod archive;
 pub mod local;
 pub mod sandbox;
 pub mod sftp;
+pub mod sudo_user;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -38,7 +47,7 @@ use std::sync::Arc;
 use vibessh_protocol::RemoteFileEntry;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Application, ApplicationLocation};
+use crate::models::{Application, ApplicationLocation, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Progress callback every streaming transfer reports through - called with
@@ -83,17 +92,35 @@ pub trait ApplicationFileProvider: Send + Sync {
     async fn upload_file(&self, local_src: &Path, path: &str, on_progress: ProgressFn<'_>) -> AppResult<()>;
 }
 
-/// The one place that picks Local vs SFTP for a given Application - same
-/// "one match site" convention `runtime::runtime_for` already establishes
-/// for `ApplicationRuntime`. Picked from `Application::location()`
-/// (`server_id` alone), never `runtime_type` - see this module's own doc
-/// comment for why Docker doesn't get its own provider.
-pub fn provider_for(application: &Application, connection: Option<Arc<SshSession>>) -> AppResult<Box<dyn ApplicationFileProvider>> {
+/// `true` only for a Docker Application whose already-rendered
+/// `runtime_config` set `runAsDedicatedUser` (Paper/Velocity/GenericJava,
+/// via `blueprints::render_java_docker_config` - never
+/// `GenericDockerBlueprint`, see that field's own doc comment on
+/// `DockerConfig`). Reads the raw JSON directly rather than deserializing
+/// the whole `DockerConfig` - `provider_for` below is called for every
+/// `RuntimeType`, most of which don't have that shape at all, and a parse
+/// failure here isn't this function's problem to surface.
+pub(crate) fn wants_dedicated_user(application: &Application, runtime_config: &serde_json::Value) -> bool {
+    application.runtime_type == RuntimeType::Docker && runtime_config.get("runAsDedicatedUser").and_then(serde_json::Value::as_bool).unwrap_or(false)
+}
+
+/// The one place that picks Local vs SFTP vs the sudo-user provider for a
+/// given Application - same "one match site" convention
+/// `runtime::runtime_for` already establishes for `ApplicationRuntime`.
+/// Location (`Application::location()`, `server_id` alone) decides Local
+/// vs. remote; `runtime_config` (see `wants_dedicated_user`) decides which
+/// of the two remote providers actually owns this Application's files.
+pub fn provider_for(application: &Application, runtime_config: &serde_json::Value, connection: Option<Arc<SshSession>>) -> AppResult<Box<dyn ApplicationFileProvider>> {
     match application.location() {
         ApplicationLocation::Local => Ok(Box::new(local::LocalApplicationFileProvider::new(application.working_directory.clone()))),
         ApplicationLocation::Remote => {
             let connection = connection.ok_or_else(|| AppError::Internal("a remote application's file provider requires a connection".into()))?;
-            Ok(Box::new(sftp::SftpApplicationFileProvider::new(connection, application.working_directory.clone())))
+            if wants_dedicated_user(application, runtime_config) {
+                let username = crate::dedicated_user::username(application.id);
+                Ok(Box::new(sudo_user::SudoUserApplicationFileProvider::new(connection, application.working_directory.clone(), username)))
+            } else {
+                Ok(Box::new(sftp::SftpApplicationFileProvider::new(connection, application.working_directory.clone())))
+            }
         }
     }
 }

@@ -5,6 +5,10 @@ pub mod agent_client;
 mod blueprints;
 pub mod cloud_client;
 mod commands;
+// `pub` for the same reason as `files`/`runtime` above - the file-operation
+// helper's install/provisioning logic (`files::sudo_user`) needs this, and a
+// future real-server integration test would too.
+pub mod dedicated_user;
 mod errors;
 // `pub` for the same reason as `runtime`/`ssh` above - a real-server
 // integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
@@ -26,6 +30,10 @@ pub mod network;
 // real-server integration test (`tests/docker_runtime.rs`) drives
 // `runtime::docker::DockerRuntime` directly against a live Docker daemon.
 pub mod runtime;
+// SigV4 client for the S3-compatible backup destination
+// (`services::application_backup_service`) - see `s3::mod`'s own doc
+// comment for why this is hand-rolled rather than `aws-sdk-s3`.
+mod s3;
 // `pub` for the same reason as `runtime`/`network` above - a real-server
 // integration test (`tests/vibe_network.rs`) drives the service-layer
 // orchestration (`join_node`, `sync_dns`, ...) directly, not just the
@@ -44,7 +52,7 @@ mod transport;
 
 use blueprints::BlueprintRegistry;
 use runtime::local_process::LocalProcessManager;
-use state::{AppState, CloudState, PairingSession, SshSessionManager, TerminalSessionManager};
+use state::{AppState, BackupDestinationState, CloudState, DnsSuffixState, PairingSession, PortForwardManager, SshSessionManager, TerminalSessionManager};
 use std::sync::Arc;
 use storage::application_repository::ApplicationRepository;
 use storage::server_repository::ServerRepository;
@@ -69,6 +77,7 @@ pub fn run() {
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(PortForwardManager::new())
         .manage(state::AgentSessionManager::new())
         .manage(state::FileTransferManager::new())
         .manage(state::MigrationLockManager::new())
@@ -104,10 +113,27 @@ pub fn run() {
             // `servers`/`applications`.
             app.manage(storage::node_network_repository::NodeNetworkRepository::open(&db_path)?);
             app.manage(storage::dns_repository::DnsRepository::open(&db_path)?);
+            // Same physical file again - Application backups foreign-key
+            // into `applications`.
+            app.manage(storage::application_backup_repository::ApplicationBackupRepository::open(&db_path)?);
+            // Same physical file again - manual firewall rules foreign-key
+            // into `servers`.
+            app.manage(storage::firewall_rule_repository::FirewallRuleRepository::open(&db_path)?);
+            // Same physical file again - one row per registry host, not
+            // scoped to any particular server/application.
+            app.manage(storage::registry_credential_repository::RegistryCredentialRepository::open(&db_path)?);
 
             let config_dir = app.path().app_config_dir()?;
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
             app.manage(CloudState::new(backend_url));
+
+            app.manage(storage::log_capture::LogCaptureStore::new(config_dir.join("logs"))?);
+
+            let backup_destination = storage::backup_destination_config::load_backup_destination(&config_dir)?;
+            app.manage(BackupDestinationState::new(backup_destination));
+
+            let dns_suffix = storage::dns_config::load_dns_suffix(&config_dir)?;
+            app.manage(DnsSuffixState::new(dns_suffix));
 
             // Silently turns a keyring-stored refresh token from a previous
             // run back into a live session, if there is one - see
@@ -133,6 +159,8 @@ pub fn run() {
             commands::application_commands::list_applications,
             commands::application_commands::list_paper_versions,
             commands::application_commands::list_velocity_versions,
+            commands::application_commands::list_waterfall_versions,
+            commands::application_commands::list_purpur_versions,
             commands::application_commands::list_application_ports,
             commands::application_commands::add_application_port,
             commands::application_commands::update_application_port,
@@ -141,6 +169,17 @@ pub fn run() {
             commands::application_commands::get_application,
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,
+            commands::application_commands::update_application_config,
+            commands::application_backup_commands::list_application_backups,
+            commands::application_backup_commands::create_application_backup,
+            commands::application_backup_commands::delete_application_backup,
+            commands::application_backup_commands::restore_application_backup,
+            commands::application_backup_commands::get_application_backup_schedule,
+            commands::application_backup_commands::set_application_backup_schedule,
+            commands::application_backup_commands::run_due_application_backups,
+            commands::application_backup_commands::get_backup_destination,
+            commands::application_backup_commands::set_backup_destination,
+            commands::application_backup_commands::test_backup_destination,
             commands::application_commands::delete_application,
             commands::application_commands::start_application,
             commands::application_commands::stop_application,
@@ -150,9 +189,16 @@ pub fn run() {
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,
             commands::application_commands::get_application_logs,
+            commands::application_commands::write_application_console,
             commands::application_commands::get_application_health,
             commands::application_commands::set_application_health_check,
             commands::application_commands::set_application_resource_limits,
+            commands::application_commands::set_application_environment,
+            commands::application_commands::set_application_image,
+            commands::application_commands::pull_application_image,
+            commands::application_commands::list_registry_credentials,
+            commands::application_commands::set_registry_credential,
+            commands::application_commands::remove_registry_credential,
             commands::application_commands::detect_java_installations,
             commands::migration_commands::migrate_application,
             commands::database_commands::list_database_hosts,
@@ -180,6 +226,7 @@ pub fn run() {
             commands::application_file_commands::extract_application_archive,
             commands::application_file_commands::list_application_file_history,
             commands::application_file_commands::restore_application_file_history,
+            commands::application_file_commands::clear_application_file_history,
             commands::database_commands::get_phpmyadmin_url,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
@@ -187,7 +234,17 @@ pub fn run() {
             commands::server_commands::get_server,
             commands::server_commands::list_servers,
             commands::server_commands::upsert_agent_server,
+            commands::server_commands::upgrade_server_to_agent,
             commands::server_commands::probe_server_capabilities,
+            commands::server_commands::install_docker,
+            commands::server_commands::install_wireguard,
+            commands::server_commands::install_ufw,
+            commands::server_commands::preview_server_firewall_rules,
+            commands::server_commands::enable_server_firewall,
+            commands::server_commands::sync_node_firewall,
+            commands::server_commands::get_node_firewall_overview,
+            commands::server_commands::add_firewall_custom_rule,
+            commands::server_commands::remove_firewall_custom_rule,
             commands::agent_session_commands::start_agent_session,
             commands::agent_session_commands::get_node_sync_status,
             commands::agent_session_commands::reconcile_agent_node,
@@ -205,6 +262,8 @@ pub fn run() {
             commands::network_commands::verify_dns_alias,
             commands::network_commands::resolve_dns_view,
             commands::network_commands::sync_vibe_network,
+            commands::network_commands::get_dns_suffix,
+            commands::network_commands::set_dns_suffix,
             commands::ssh_commands::test_ssh_connection,
             commands::ssh_commands::execute_ssh_command,
             commands::ssh_commands::ping_server,
@@ -212,12 +271,20 @@ pub fn run() {
             commands::terminal_commands::write_to_terminal,
             commands::terminal_commands::resize_terminal,
             commands::terminal_commands::close_terminal,
+            commands::port_forward_commands::start_port_forward,
+            commands::port_forward_commands::list_port_forwards,
+            commands::port_forward_commands::stop_port_forward,
             commands::file_commands::list_remote_directory,
             commands::file_commands::create_remote_directory,
             commands::file_commands::read_remote_file,
             commands::file_commands::write_remote_file,
             commands::file_commands::download_remote_file,
             commands::file_commands::upload_remote_file,
+            commands::file_commands::rename_remote_path,
+            commands::file_commands::delete_remote_path,
+            commands::file_commands::set_remote_permissions,
+            commands::file_commands::extract_remote_archive,
+            commands::file_commands::compress_remote_paths,
             commands::monitor_commands::get_server_metrics,
             commands::monitor_commands::list_server_processes,
             commands::actions_commands::list_server_services,

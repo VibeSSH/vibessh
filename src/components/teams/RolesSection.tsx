@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import {
   cloudCreateRole,
@@ -131,22 +133,13 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
               </div>
               {!role.isSystem && canManage && (
                 <div className="roles-list-actions">
-                  <button
-                    className="server-list-action"
+                  <IconButton
+                    icon="edit"
+                    size="sm"
                     title={t("roles.editAria", { name: role.name })}
-                    aria-label={t("roles.editAria", { name: role.name })}
                     onClick={() => setForm({ id: role.id, name: role.name, description: role.description ?? "", permissions: new Set(role.permissions) })}
-                  >
-                    <Icon name="edit" size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
-                    title={t("roles.deleteAria", { name: role.name })}
-                    aria-label={t("roles.deleteAria", { name: role.name })}
-                    onClick={() => handleDelete(role)}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
+                  />
+                  <IconButton icon="trash" size="sm" danger title={t("roles.deleteAria", { name: role.name })} onClick={() => handleDelete(role)} />
                 </div>
               )}
             </li>
@@ -179,10 +172,12 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
             <span className="form-label">{t("roles.permissions")}</span>
             <div className="roles-permission-grid">
               {allPermissions.map((permission) => (
-                <label key={permission} className="roles-permission-checkbox">
-                  <input type="checkbox" checked={form.permissions.has(permission)} onChange={() => togglePermission(permission)} />
-                  {permissionLabel(t, permission)}
-                </label>
+                <Checkbox
+                  key={permission}
+                  checked={form.permissions.has(permission)}
+                  onChange={() => togglePermission(permission)}
+                  label={permissionLabel(t, permission)}
+                />
               ))}
             </div>
           </div>

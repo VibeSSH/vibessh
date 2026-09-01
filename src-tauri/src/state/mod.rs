@@ -1,16 +1,22 @@
 mod agent_sessions;
+mod backup_destination_state;
 pub mod cloud_session;
+mod dns_suffix_state;
 mod file_transfers;
 mod migration_locks;
 mod pairing_session;
+mod port_forward_sessions;
 mod ssh_sessions;
 mod terminal_sessions;
 
 pub use agent_sessions::AgentSessionManager;
+pub use backup_destination_state::BackupDestinationState;
 pub use cloud_session::CloudState;
+pub use dns_suffix_state::DnsSuffixState;
 pub use file_transfers::FileTransferManager;
 pub use migration_locks::MigrationLockManager;
 pub use pairing_session::PairingSession;
+pub use port_forward_sessions::PortForwardManager;
 pub use ssh_sessions::SshSessionManager;
 pub use terminal_sessions::TerminalSessionManager;
 

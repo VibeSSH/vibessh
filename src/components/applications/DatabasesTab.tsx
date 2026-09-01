@@ -38,9 +38,14 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [purpose, setPurpose] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [busyRowId, setBusyRowId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+
+  const [revealingDatabase, setRevealingDatabase] = useState<ApplicationDatabase | null>(null);
+  const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const revealBackdrop = useBackdropClose(() => setRevealingDatabase(null));
 
   const [deletingDatabase, setDeletingDatabase] = useState<ApplicationDatabase | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -87,24 +92,17 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     }
   }
 
-  async function toggleReveal(database: ApplicationDatabase) {
-    if (revealed[database.id] !== undefined) {
-      setRevealed((prev) => {
-        const next = { ...prev };
-        delete next[database.id];
-        return next;
-      });
-      return;
-    }
-    setBusyRowId(database.id);
-    setRowError(null);
+  async function handleReveal(database: ApplicationDatabase) {
+    setRevealingDatabase(database);
+    setRevealedPassword(null);
+    setRevealError(null);
+    setRevealBusy(true);
     try {
-      const password = await revealApplicationDatabasePassword(database.id);
-      setRevealed((prev) => ({ ...prev, [database.id]: password }));
+      setRevealedPassword(await revealApplicationDatabasePassword(database.id));
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : t("databasesTab.revealError"));
+      setRevealError(err instanceof Error ? err.message : t("databasesTab.revealError"));
     } finally {
-      setBusyRowId(null);
+      setRevealBusy(false);
     }
   }
 
@@ -113,7 +111,9 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     setRowError(null);
     try {
       const password = await resetApplicationDatabasePassword(database.id);
-      setRevealed((prev) => ({ ...prev, [database.id]: password }));
+      setRevealingDatabase(database);
+      setRevealedPassword(password);
+      setRevealError(null);
     } catch (err) {
       setRowError(err instanceof Error ? err.message : t("databasesTab.resetError"));
     } finally {
@@ -161,7 +161,6 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
         <ul className="server-list">
           {databases.map((database) => {
             const host = hostFor(database.databaseHostId);
-            const password = revealed[database.id];
             const busy = busyRowId === database.id;
             return (
               <li key={database.id} className="server-list-item">
@@ -175,12 +174,6 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
                   <span className="server-list-host">
                     {database.username}@{host ? `${host.host}:${host.port}` : t("databasesTab.unknownHost")}
                   </span>
-                  {password !== undefined && (
-                    <span className="server-list-host databases-tab-password" title={t("databasesTab.password")}>
-                      <Icon name="key" size={12} />
-                      {password}
-                    </span>
-                  )}
                 </div>
                 <Badge tone="neutral">{database.connectionsFrom}</Badge>
                 {host?.phpmyadminApplicationId && (
@@ -190,10 +183,10 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
                   </Button>
                 )}
                 <IconButton
-                  icon={password !== undefined ? "eye-off" : "eye"}
+                  icon="eye"
                   size="sm"
-                  title={t(password !== undefined ? "databasesTab.hidePasswordAria" : "databasesTab.revealPasswordAria", { name: database.databaseName })}
-                  onClick={() => toggleReveal(database)}
+                  title={t("databasesTab.revealPasswordAria", { name: database.databaseName })}
+                  onClick={() => handleReveal(database)}
                   disabled={busy}
                 />
                 <IconButton
@@ -273,6 +266,63 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
           </div>
         </div>
       )}
+
+      {revealingDatabase && (
+        <div className="modal-backdrop" {...revealBackdrop}>
+          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">{t("databasesTab.credentialsTitle", { name: revealingDatabase.databaseName })}</h2>
+              <IconButton icon="x" size="sm" onClick={() => setRevealingDatabase(null)} title={t("common.close")} />
+            </div>
+            <div className="modal-body">
+              {revealError && <p className="form-note form-note-danger form-note-spaced">{revealError}</p>}
+              {revealBusy ? (
+                <SkeletonRows />
+              ) : (
+                <>
+                  <CredentialRow label={t("databasesTab.credHost")} value={hostAddressFor(revealingDatabase, hosts, t)} />
+                  <CredentialRow label={t("databasesTab.credDatabase")} value={revealingDatabase.databaseName} />
+                  <CredentialRow label={t("databasesTab.credUser")} value={revealingDatabase.username} />
+                  {revealedPassword !== null && <CredentialRow label={t("databasesTab.credPassword")} value={revealedPassword} />}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function hostAddressFor(database: ApplicationDatabase, hosts: DatabaseHost[], t: (key: string) => string): string {
+  const host = hosts.find((h) => h.id === database.databaseHostId);
+  return host ? `${host.host}:${host.port}` : t("databasesTab.unknownHost");
+}
+
+interface CredentialRowProps {
+  label: string;
+  value: string;
+}
+
+/** One copyable connection-detail field - reuses the same `.code-block`/`.code-block-copy` monospace-value-plus-copy-button pattern `InvitationsSection.tsx` already established for a single token, just repeated per field here (host/database/user/password). */
+function CredentialRow({ label, value }: CredentialRowProps) {
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // clipboard access denied - nothing useful to do about it here
+    }
+  }
+
+  return (
+    <label className="form-field">
+      <span className="form-label">{label}</span>
+      <div className="code-block">
+        <span className="code-block-text">{value}</span>
+        <button type="button" className="code-block-copy" onClick={handleCopy} aria-label={label}>
+          <Icon name="copy" size={14} />
+        </button>
+      </div>
+    </label>
   );
 }

@@ -126,13 +126,10 @@
 }
 
 .server-card-host {
-  margin: 0;
   font-size: 12px;
   font-family: var(--font-mono);
   color: var(--t-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
 }
 
 .server-card-footer {
@@ -151,6 +148,19 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* Two stacked `.server-card-actions` rows rather than one long one - past
+   ~6 icons the single row started crowding `.server-card-terminal-btn`
+   into illegibility (reported live: it collapsed to just a single letter).
+   `.server-card-footer`'s own `align-items: flex-end` keeps this column's
+   *bottom* row level with the terminal preview's own bottom edge, so a
+   second, lower-priority action (Node Setup) reads as visually secondary
+   without needing its own separate layout. */
+.server-card-actions-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* The flagship "1:1 Voltius" element - a mini terminal preview that bleeds
@@ -210,8 +220,7 @@
 
 .server-card-terminal-host {
   color: #7de8ff;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .server-card-cursor {

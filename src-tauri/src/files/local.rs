@@ -14,7 +14,7 @@ use vibessh_protocol::RemoteFileEntry;
 
 use crate::errors::{AppError, AppResult};
 
-use super::sandbox::{is_within_root, sanitize_relative_path};
+use super::sandbox::{is_within_root, relativize, sanitize_relative_path};
 use super::{ApplicationFileProvider, ProgressFn};
 
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
@@ -82,9 +82,9 @@ fn permissions_of(_metadata: Option<&std::fs::Metadata>) -> Option<u32> {
     None
 }
 
-async fn entry_to_remote_file_entry(entry: &tokio::fs::DirEntry) -> RemoteFileEntry {
+async fn entry_to_remote_file_entry(entry: &tokio::fs::DirEntry, canonical_root: &Path) -> RemoteFileEntry {
     let name = entry.file_name().to_string_lossy().into_owned();
-    let path = path_key(&entry.path());
+    let path = relativize(&path_key(&entry.path()), &path_key(canonical_root));
     let is_symlink = entry.file_type().await.map(|t| t.is_symlink()).unwrap_or(false);
     // `DirEntry::metadata` follows a symlink - if that fails (a broken
     // link, or a target this process can't stat), this falls back to
@@ -151,16 +151,18 @@ async fn copy_with_progress(from: &Path, to: &Path, on_progress: ProgressFn<'_>)
 impl ApplicationFileProvider for LocalApplicationFileProvider {
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
         let dir = self.resolve(path)?;
+        let canonical_root = self.canonical_root()?;
         let mut read_dir = tokio::fs::read_dir(&dir).await.map_err(|err| AppError::Internal(format!("couldn't list {}: {err}", dir.display())))?;
         let mut entries = Vec::new();
         while let Some(entry) = read_dir.next_entry().await.map_err(|err| AppError::Internal(format!("couldn't read a directory entry: {err}")))? {
-            entries.push(entry_to_remote_file_entry(&entry).await);
+            entries.push(entry_to_remote_file_entry(&entry, &canonical_root).await);
         }
         Ok(entries)
     }
 
     async fn metadata(&self, path: &str) -> AppResult<RemoteFileEntry> {
         let resolved = self.resolve(path)?;
+        let canonical_root = self.canonical_root()?;
         let name = resolved.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let symlink_meta = tokio::fs::symlink_metadata(&resolved)
             .await
@@ -171,7 +173,7 @@ impl ApplicationFileProvider for LocalApplicationFileProvider {
         let effective = full_meta.as_ref().unwrap_or(&symlink_meta);
         Ok(RemoteFileEntry {
             name,
-            path: path_key(&resolved),
+            path: relativize(&path_key(&resolved), &path_key(&canonical_root)),
             is_dir,
             is_symlink: symlink_meta.is_symlink(),
             size,
@@ -328,6 +330,43 @@ mod tests {
 
         let result = provider.read_file("link.txt").await;
         assert!(result.is_err(), "reading through an escaping symlink must be blocked");
+    }
+
+    #[tokio::test]
+    async fn a_listed_entrys_own_path_round_trips_back_into_delete() {
+        // Regression test: `list_directory`'s entries used to carry the raw
+        // absolute filesystem path, which `resolve` (via
+        // `sanitize_relative_path`) then re-joined onto `root` a *second*
+        // time - so passing a real listed entry's own `.path` straight back
+        // into another provider call (exactly what the frontend does for
+        // delete/rename/download/etc) silently pointed at a nonexistent,
+        // doubly-nested path instead of the real file.
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(&root);
+        provider.write_file("velocity.toml", b"config").await.unwrap();
+
+        let listing = provider.list_directory(".").await.unwrap();
+        let entry = listing.iter().find(|e| e.name == "velocity.toml").unwrap();
+
+        provider.delete(&entry.path).await.unwrap();
+
+        assert!(provider.list_directory(".").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_listed_subdirectorys_own_path_round_trips_back_into_a_further_listing() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(&root);
+        provider.create_directory("plugins").await.unwrap();
+        provider.write_file("plugins/MyPlugin.jar", b"jar").await.unwrap();
+
+        let top_level = provider.list_directory(".").await.unwrap();
+        let plugins_dir = top_level.iter().find(|e| e.name == "plugins").unwrap();
+        assert_eq!(plugins_dir.path, "plugins", "a listed entry's path should be root-relative, not the raw absolute filesystem path");
+
+        let nested = provider.list_directory(&plugins_dir.path).await.unwrap();
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].name, "MyPlugin.jar");
     }
 
     #[tokio::test]

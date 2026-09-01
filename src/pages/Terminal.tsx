@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { TerminalView } from "@/components/servers/TerminalView";
 import { useServersStore } from "@/stores/serversStore";
@@ -67,7 +68,7 @@ export function TerminalPage() {
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{server ? server.name : "Terminal"}</h1>
-          <p className="page-subtitle">{server ? server.host : serverId}</p>
+          <p className="page-subtitle">{server ? <HostAddress value={server.host} /> : serverId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />
@@ -75,32 +76,33 @@ export function TerminalPage() {
         </Button>
       </div>
 
-      <div className="terminal-tabs">
+      <div className="terminal-tabs" role="tablist">
         {tabs.map((tab) => {
           const label = t("terminalPage.shellLabel", { number: tab.number });
           return (
-            <button
-              key={tab.id}
-              className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}`}
-              onClick={() => setActiveTabId(tab.id)}
-            >
-              <span>{label}</span>
-              <span
-                role="button"
-                tabIndex={0}
+            <div key={tab.id} className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}`}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab.id === activeTabId}
+                className="terminal-tab-select"
+                onClick={() => setActiveTabId(tab.id)}
+              >
+                {label}
+              </button>
+              <button
+                type="button"
                 aria-label={t("terminalPage.closeTabAria", { label })}
+                title={t("terminalPage.closeTabAria", { label })}
                 className="terminal-tab-close"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(tab.id);
-                }}
+                onClick={() => closeTab(tab.id)}
               >
                 <Icon name="x" size={12} />
-              </span>
-            </button>
+              </button>
+            </div>
           );
         })}
-        <button className="terminal-tab terminal-tab-add" aria-label={t("terminalPage.newTabAria")} onClick={addTab}>
+        <button className="terminal-tab terminal-tab-add" aria-label={t("terminalPage.newTabAria")} title={t("terminalPage.newTabAria")} onClick={addTab}>
           <Icon name="plus" size={14} />
         </button>
       </div>

@@ -11,6 +11,7 @@ pub mod client;
 // validate.
 pub(crate) mod docker;
 mod monitor;
+mod port_forward;
 mod sftp;
 // `pub(crate)` (not just `mod`) so `runtime::systemd` (Applications) can
 // reuse `validate_unit_name` for its own unit-file writes, not only the
@@ -19,3 +20,4 @@ pub(crate) mod systemd;
 mod transport;
 
 pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};
+pub use port_forward::PortForwardHandle;

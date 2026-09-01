@@ -1,0 +1,71 @@
+.checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Kept in the DOM and focusable (not display:none) so keyboard activation
+   and screen readers work the normal way - only visually hidden, sized and
+   positioned to exactly overlap the box below so its native click/tap
+   target is the same size as what's actually drawn. */
+.checkbox-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.checkbox-disabled .checkbox-input {
+  cursor: not-allowed;
+}
+
+.checkbox-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-hover);
+  background: var(--surface-1);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.checkbox-input:checked + .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-input:focus-visible + .checkbox-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.checkbox-check {
+  color: var(--accent-contrast);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.checkbox-input:checked + .checkbox-box .checkbox-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.checkbox-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}

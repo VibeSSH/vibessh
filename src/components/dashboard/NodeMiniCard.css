@@ -1,0 +1,224 @@
+.node-mini-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  background: var(--t-bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--t-ring), var(--t-elev-1);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+.node-mini-card:hover {
+  background: var(--t-bg-card-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.node-mini-card-attention {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+/* The Node whose context the central workspace panel below is currently
+   showing - a persistent ring rather than just a hover state, since this
+   selection stays "on" while the user works in the Applications/Terminal/
+   Activity tabs, not just for the moment of the click. */
+.node-mini-card-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--t-elev-1);
+}
+
+.node-mini-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-mini-card-avatar {
+  --tile-base: var(--t-bg-card-avatar);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  color: var(--t-text-bright);
+}
+.node-mini-card-avatar-agent {
+  --tile-base: color-mix(in srgb, var(--warning) 55%, var(--t-bg-card-avatar));
+}
+
+.node-mini-card-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.node-mini-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.node-mini-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--t-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-mini-card-protocol-pill {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--t-text-dim);
+  background: var(--t-bg-input);
+  border: 1px solid var(--t-border);
+}
+
+.node-mini-card-host {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--t-text-secondary);
+  min-width: 0;
+}
+
+.node-mini-card-status-dot-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.node-mini-card-status-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.node-mini-card-status-ping {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  animation: node-mini-card-ping 2s ease-out infinite;
+}
+@keyframes node-mini-card-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.node-mini-card-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node-mini-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.node-mini-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.node-mini-bar-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.node-mini-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 400ms ease;
+}
+
+.node-mini-card-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.node-mini-card-footer-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.node-mini-card-latency {
+  font-family: var(--font-mono);
+  color: var(--t-status-connected);
+}
+
+.node-mini-spark {
+  width: 100%;
+  height: 22px;
+  display: block;
+  overflow: visible;
+}
+.node-mini-spark-empty {
+  height: 22px;
+}
+.node-mini-spark-area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: none;
+}
+.node-mini-spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.node-mini-card-sync-row {
+  display: flex;
+}
+.node-mini-card-sync-pill {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+}
+.node-mini-card-sync-pill-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.node-mini-card-sync-pill-stale {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.node-mini-card-metric-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}

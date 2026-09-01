@@ -205,6 +205,47 @@ impl ServerRepository {
         Ok(server)
     }
 
+    /// Converts an existing SSH-mode Server row to Agent mode *in place* -
+    /// same `id`, same `created_at`/`name`/`host`, so every Application/DNS
+    /// alias/Firewall membership already foreign-keyed to this server's own
+    /// id keeps working unchanged (`connection_mode` is the only thing
+    /// anything downstream branches on - see that field's own doc comment
+    /// on `models::server::ConnectionMode`). Used by the Setup Page's own
+    /// "also install the Vibe Agent" step: the user already has a working
+    /// SSH-mode Node, so pairing an Agent for it should upgrade that same
+    /// Node, not create a confusing second entry for the same physical
+    /// machine (which is what `upsert_agent` above would do here, since it
+    /// matches by `agent_id`, not by an already-known server id). The old
+    /// SSH credential in the keyring is deliberately left alone, not
+    /// deleted - there's no "downgrade" flow that would need it back, but
+    /// silently deleting a credential the user might still want is worse
+    /// than leaving one harmless, now-unread row behind.
+    pub fn upgrade_to_agent(&self, server_id: Uuid, agent_id: Uuid, capabilities: Option<NodeCapabilities>) -> AppResult<Server> {
+        let existing = self.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
+        let updated = Server {
+            connection_mode: ConnectionMode::Agent,
+            agent_id: Some(agent_id),
+            agent_status: Some(AgentStatus::Disconnected),
+            node_capabilities: capabilities.or(existing.node_capabilities),
+            updated_at: Utc::now(),
+            ..existing
+        };
+        self.lock()
+            .execute(
+                "UPDATE servers SET connection_mode = ?2, agent_id = ?3, agent_status = ?4, node_capabilities_json = ?5, updated_at = ?6 WHERE id = ?1",
+                params![
+                    updated.id.to_string(),
+                    connection_mode_to_str(updated.connection_mode),
+                    updated.agent_id.map(|id| id.to_string()),
+                    agent_status_to_str(AgentStatus::Disconnected),
+                    updated.node_capabilities.map(|c| serde_json::to_string(&c).expect("NodeCapabilities always serializes")),
+                    updated.updated_at.to_rfc3339(),
+                ],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to upgrade server to agent mode: {err}")))?;
+        Ok(updated)
+    }
+
     /// Records the result of a real capability probe (Etap M1) - an SSH-mode
     /// `command -v docker` check today, run on demand (see
     /// `services::probe_node_capabilities`), not on a schedule. Doesn't
@@ -590,11 +631,11 @@ mod tests {
         let agent_id = Uuid::new_v4();
         {
             let repo = ServerRepository::open(&path).unwrap();
-            let server = repo.upsert_agent("Prod Agent", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true })).unwrap();
+            let server = repo.upsert_agent("Prod Agent", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true, ..Default::default() })).unwrap();
             assert_eq!(server.connection_mode, ConnectionMode::Agent);
             assert_eq!(server.agent_id, Some(agent_id));
             assert_eq!(server.agent_status, Some(AgentStatus::Disconnected));
-            assert_eq!(server.node_capabilities, Some(NodeCapabilities { docker: true }));
+            assert_eq!(server.node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }));
         }
 
         // Reopening simulates the next app launch - the row must still be
@@ -606,22 +647,51 @@ mod tests {
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].name, "Prod Agent");
         assert_eq!(servers[0].agent_id, Some(agent_id));
-        assert_eq!(servers[0].node_capabilities, Some(NodeCapabilities { docker: true }), "a capability reading must survive a reopen, same as every other field");
+        assert_eq!(servers[0].node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }), "a capability reading must survive a reopen, same as every other field");
     }
 
     #[test]
     fn upsert_agent_on_an_already_known_agent_id_updates_instead_of_duplicating() {
         let repo = temp_repository();
         let agent_id = Uuid::new_v4();
-        let first = repo.upsert_agent("Old Name", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true })).unwrap();
+        let first = repo.upsert_agent("Old Name", "203.0.113.20", agent_id, Some(NodeCapabilities { docker: true, ..Default::default() })).unwrap();
 
         let second = repo.upsert_agent("New Name", "203.0.113.21", agent_id, None).unwrap();
         assert_eq!(second.id, first.id, "re-pairing the same agent should update its row, not create a new one");
         assert_eq!(second.name, "New Name");
         assert_eq!(second.host, "203.0.113.21");
-        assert_eq!(second.node_capabilities, Some(NodeCapabilities { docker: true }), "a missing fresh reading must not erase a previously known-good one");
+        assert_eq!(second.node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }), "a missing fresh reading must not erase a previously known-good one");
 
         assert_eq!(repo.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn upgrade_to_agent_converts_an_ssh_mode_row_in_place() {
+        let repo = temp_repository();
+        let ssh_server = repo.create(&test_input("My Node")).unwrap();
+        assert_eq!(ssh_server.connection_mode, ConnectionMode::Ssh);
+        let agent_id = Uuid::new_v4();
+
+        let upgraded = repo.upgrade_to_agent(ssh_server.id, agent_id, Some(NodeCapabilities { docker: true, ..Default::default() })).unwrap();
+
+        assert_eq!(upgraded.id, ssh_server.id, "must be the exact same row, not a new one");
+        assert_eq!(upgraded.name, "My Node", "name is left untouched by an upgrade");
+        assert_eq!(upgraded.host, "203.0.113.10", "host is left untouched by an upgrade");
+        assert_eq!(upgraded.created_at, ssh_server.created_at);
+        assert_eq!(upgraded.connection_mode, ConnectionMode::Agent);
+        assert_eq!(upgraded.agent_id, Some(agent_id));
+        assert_eq!(upgraded.agent_status, Some(AgentStatus::Disconnected));
+        assert_eq!(upgraded.node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }));
+
+        // Only ever the one row for this Node - no duplicate second entry.
+        assert_eq!(repo.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn upgrade_to_agent_of_an_unknown_server_is_not_found() {
+        let repo = temp_repository();
+        let err = repo.upgrade_to_agent(Uuid::new_v4(), Uuid::new_v4(), None).unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[test]
@@ -632,20 +702,45 @@ mod tests {
             let created = repo.create(&test_input("Docker Box")).unwrap();
             assert_eq!(created.node_capabilities, None, "a freshly created server is unprobed, not known-incapable");
 
-            repo.set_node_capabilities(created.id, NodeCapabilities { docker: true }).unwrap();
+            repo.set_node_capabilities(created.id, NodeCapabilities { docker: true, ..Default::default() }).unwrap();
             let loaded = repo.get(created.id).unwrap().unwrap();
-            assert_eq!(loaded.node_capabilities, Some(NodeCapabilities { docker: true }));
+            assert_eq!(loaded.node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }));
             created.id
         };
 
         let repo = ServerRepository::open(&path).unwrap();
-        assert_eq!(repo.get(id).unwrap().unwrap().node_capabilities, Some(NodeCapabilities { docker: true }));
+        assert_eq!(repo.get(id).unwrap().unwrap().node_capabilities, Some(NodeCapabilities { docker: true, ..Default::default() }));
+    }
+
+    /// A real crash, reproduced and pinned down: a `node_capabilities_json`
+    /// blob written back when `NodeCapabilities` only had `docker` (every
+    /// row probed before `wireguard`/`ufw` existed) used to fail
+    /// `row_to_server`'s `serde_json::from_str(..).expect(...)` on every
+    /// single launch, aborting the whole app rather than just that one
+    /// server's capabilities reading as unprobed. See `NodeCapabilities`'s
+    /// own doc comment for the `#[serde(default)]` fix this pins down.
+    #[test]
+    fn a_node_capabilities_blob_persisted_before_wireguard_and_ufw_existed_still_loads() {
+        let path = std::env::temp_dir().join(format!("vibessh-capabilities-legacy-test-{}.sqlite3", Uuid::new_v4()));
+        let id = {
+            let repo = ServerRepository::open(&path).unwrap();
+            repo.create(&test_input("Legacy Box")).unwrap().id
+        };
+
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute("UPDATE servers SET node_capabilities_json = '{\"docker\":true}' WHERE id = ?1", params![id.to_string()]).unwrap();
+        }
+
+        let repo = ServerRepository::open(&path).unwrap();
+        let loaded = repo.get(id).unwrap().unwrap();
+        assert_eq!(loaded.node_capabilities, Some(NodeCapabilities { docker: true, wireguard: false, ufw: false }));
     }
 
     #[test]
     fn set_node_capabilities_on_a_missing_server_is_not_found() {
         let repo = temp_repository();
-        let err = repo.set_node_capabilities(Uuid::new_v4(), NodeCapabilities { docker: true }).unwrap_err();
+        let err = repo.set_node_capabilities(Uuid::new_v4(), NodeCapabilities { docker: true, ..Default::default() }).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
     }
 

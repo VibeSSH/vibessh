@@ -242,6 +242,110 @@ pub fn migrations() -> Migrations<'static> {
                 created_at      TEXT NOT NULL
             );",
         ),
+        // Migration 10: Application backups. Two tables, not columns bolted
+        // onto `applications` - same reasoning `node_desired_state`/
+        // `node_applied_state` already established for keeping a growable,
+        // optional concern out of the one row every other Application read
+        // already selects. `application_backups` is the history (one row per
+        // archive actually written); `application_backup_schedules` is
+        // per-Application config, one row max (absent = never configured,
+        // same "NULL means unset" idiom `servers.node_capabilities_json`
+        // uses) rather than a boolean-plus-nullable-columns trio on
+        // `applications` itself. The archive bytes themselves live on the
+        // Application's own filesystem (`.vibessh-backups/<file>.zip` inside
+        // its working directory, written through the same
+        // `ApplicationFileProvider` the Files tab already uses) - these
+        // tables are metadata only, so a backup is always exactly where the
+        // Files tab would also show it, not a second hidden copy elsewhere.
+        // `kind` is `'manual'` or `'scheduled'`, not enforced by a CHECK
+        // constraint - same policy every other free-text enum-shaped column
+        // in this schema (e.g. `application_databases.engine`) already
+        // follows, validated in Rust instead.
+        M::up(
+            "CREATE TABLE application_backups (
+                id              TEXT PRIMARY KEY,
+                application_id  TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                file_name       TEXT NOT NULL,
+                size_bytes      INTEGER NOT NULL,
+                kind            TEXT NOT NULL,
+                created_at      TEXT NOT NULL
+            );
+            CREATE INDEX application_backups_application_id_idx ON application_backups (application_id);
+
+            CREATE TABLE application_backup_schedules (
+                application_id   TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                enabled          INTEGER NOT NULL DEFAULT 0,
+                interval_hours   INTEGER NOT NULL DEFAULT 24,
+                retention_count  INTEGER NOT NULL DEFAULT 5,
+                updated_at       TEXT NOT NULL
+            );",
+        ),
+        // Migration 11: marks an environment variable as a secret. A
+        // secret row's `value` column is never the real value - the real
+        // value lives in the OS credential store, keyed by
+        // `(application_id, key)` (see `storage::credentials::
+        // store_environment_secret`), the same "never plaintext in SQLite"
+        // rule `database_repository` already applies to database host/user
+        // passwords. Existing rows default to `0` (not secret) - they were
+        // already plaintext in this same column, so nothing changes for
+        // them.
+        M::up("ALTER TABLE application_environment ADD COLUMN is_secret INTEGER NOT NULL DEFAULT 0;"),
+        // Migration 12: manual firewall rules - a port a user wants open on
+        // a Node for a reason that isn't tied to any Application's own
+        // published port (the design doc's own "full configuration" ask).
+        // A real table, not a JSON blob: `services::firewall_service::
+        // desired_rules` already builds its rule list by querying real
+        // tables (`application_ports`, `node_network_members`), and this
+        // needs the exact same per-row CRUD - add one, remove one, list
+        // them for one Node - a JSON column can't do without parsing
+        // client-side first. `source_cidr` nullable (`NULL` = open to
+        // anywhere) mirrors `FirewallRule::source_cidr`'s own shape exactly,
+        // no translation needed between the stored row and the applied rule.
+        M::up(
+            "CREATE TABLE firewall_custom_rules (
+                id          TEXT PRIMARY KEY,
+                server_id   TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                label       TEXT,
+                protocol    TEXT NOT NULL,
+                port        INTEGER NOT NULL,
+                source_cidr TEXT,
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX firewall_custom_rules_server_id_idx ON firewall_custom_rules (server_id);",
+        ),
+        // Migration 13: S3-compatible backup destination support. `s3_key`
+        // records which backups actually made it to the configured
+        // destination (`NULL` = local-only, either because no destination
+        // was configured at the time or the upload failed) - see
+        // `models::ApplicationBackup::s3_key`'s own doc comment for why
+        // `restore_backup` needs this. The two new retention columns are
+        // nullable the same way `application_ports.external_port` already
+        // is: `NULL` means "this rule is off," not zero - see
+        // `models::SetBackupScheduleInput`'s own doc comment.
+        M::up(
+            "ALTER TABLE application_backups ADD COLUMN s3_key TEXT;
+            ALTER TABLE application_backup_schedules ADD COLUMN retention_max_age_days INTEGER;
+            ALTER TABLE application_backup_schedules ADD COLUMN retention_max_total_bytes INTEGER;",
+        ),
+        // Migration 14: private Docker registry credentials - so an
+        // Application's image can come from a private Docker Hub repo,
+        // ghcr.io, or any other authenticated registry, not just public
+        // images. `password` is never a real column, same "never plaintext
+        // in SQLite" rule migration 11 already applies - the real secret
+        // lives in the OS credential store, keyed by this row's own `id`
+        // (see `storage::credentials::store_registry_credential_password`).
+        // One row per registry host, not per Application: the same
+        // credential is reused by every Application that pulls from that
+        // registry.
+        M::up(
+            "CREATE TABLE registry_credentials (
+                id         TEXT PRIMARY KEY,
+                registry   TEXT NOT NULL,
+                username   TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX registry_credentials_registry_idx ON registry_credentials (registry);",
+        ),
     ])
 }
 

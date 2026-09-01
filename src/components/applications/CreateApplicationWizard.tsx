@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { HelpHint } from "@/components/ui/HelpHint";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
-import { createApplication, detectJavaInstallations, listPaperVersions, listVelocityVersions } from "@/services/applicationService";
-import { listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
+import { createApplication, detectJavaInstallations, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
+import { installDocker, listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
+import { toastSuccess } from "@/stores/toastStore";
+import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
 import { listBlueprints } from "@/services/applicationService";
 import "@/components/servers/AddServerModal.css";
@@ -25,7 +30,7 @@ function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): Runtim
   return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" : rt !== "localProcess"));
 }
 
-function fieldValueOrDefault(field: BlueprintField, values: Record<string, unknown>): unknown {
+export function fieldValueOrDefault(field: BlueprintField, values: Record<string, unknown>): unknown {
   return field.key in values ? values[field.key] : field.defaultValue;
 }
 
@@ -33,6 +38,19 @@ function fieldValueOrDefault(field: BlueprintField, values: Record<string, unkno
 function splitTextListInput(text: string): string[] {
   return text.trim().split(/\s+/).filter((token) => token.length > 0);
 }
+
+/** A filesystem-safe directory name from whatever the user has typed as the application's name so far - lowercased, non-alphanumerics collapsed to a single hyphen, no leading/trailing hyphen. Falls back to "app" for an empty/all-punctuation name so the suggested path is never left with a trailing slash and nothing after it. */
+function slugify(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "app";
+}
+
+/** Not real language content (JVM flag syntax is the same in every locale) - a plain constant rather than an i18n key, same as the app's other command-line examples (e.g. "-Xmx2G") already sit inline in translated help text rather than being translated themselves. */
+const JVM_ARGS_PLACEHOLDER = "-Xms1G\n-Xmx2G";
 
 /** Matches a bare "java"/"java.exe", or a path ending in one - the binary itself, which has its own dedicated "Java version" field and is never a real JVM flag or program argument. */
 const JAVA_BINARY_TOKEN = /(^|[\\/])java(\.exe)?$/i;
@@ -55,11 +73,25 @@ function isFieldFilled(field: BlueprintField, values: Record<string, unknown>): 
   return typeof value === "string" ? value.trim().length > 0 : value !== undefined && value !== null;
 }
 
+/** The step-3 fields (Egg-specific: Java/Minecraft version, JVM flags, the EULA checkbox, ...) as a read-only summary line for the final review step - so "what am I about to create" is actually answerable there instead of only listing the fixed name/location/runtime fields every blueprint shares. Joins a textList with spaces (JVM/program arguments read as the command line they actually become), not commas or newlines. */
+export function formatFieldValueForReview(field: BlueprintField, value: unknown, yesLabel: string, noLabel: string): string {
+  if (field.fieldType === "boolean") return value ? yesLabel : noLabel;
+  if (field.fieldType === "textList") {
+    const items = Array.isArray(value) ? value : [];
+    return items.length > 0 ? items.join(" ") : "—";
+  }
+  if (typeof value === "string") return value.trim().length > 0 ? value : "—";
+  if (typeof value === "number") return String(value);
+  return "—";
+}
+
 export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicationWizardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [installingDocker, setInstallingDocker] = useState(false);
+  const [dockerInstallError, setDockerInstallError] = useState<string | null>(null);
 
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const servers = useServersStore((s) => s.servers);
@@ -69,6 +101,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [serverId, setServerId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [workingDirectory, setWorkingDirectory] = useState("");
+  const [workingDirectoryTouched, setWorkingDirectoryTouched] = useState(false);
   const [blueprintId, setBlueprintId] = useState<string | null>(null);
   const [runtimeType, setRuntimeType] = useState<RuntimeType | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
@@ -77,7 +110,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
 
   useEffect(() => {
     listBlueprints()
-      .then(setBlueprints)
+      .then((loaded) => setBlueprints(loaded.map((b) => translateBlueprint(b, i18n.language))))
       .catch(() => setError(t("createApplicationWizard.loadError")));
     if (servers.length === 0) {
       listServers()
@@ -91,6 +124,18 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   }, []);
 
   const isLocal = serverId === null;
+
+  // A Pterodactyl-style suggested path, not a requirement - a remote
+  // application always runs inside its own bind-mounted Docker directory
+  // (or a plain SSH working directory for non-Docker runtimes) either way,
+  // so a sensible default beats an empty required field. Stops suggesting
+  // the moment the user edits the field themselves; Local has no such
+  // convention to suggest, so it's left for the placeholder text alone.
+  useEffect(() => {
+    if (workingDirectoryTouched) return;
+    setWorkingDirectory(isLocal ? "" : `/home/container/${slugify(name)}`);
+  }, [name, isLocal, workingDirectoryTouched]);
+
   const selectedBlueprint = useMemo(() => blueprints.find((b) => b.id === blueprintId) ?? null, [blueprints, blueprintId]);
   const availableRuntimeTypes = useMemo(
     () => (selectedBlueprint ? runtimeTypesForLocation(selectedBlueprint, isLocal) : []),
@@ -130,6 +175,11 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     runtimeType === "docker" &&
     selectedServer &&
     (selectedServer.connectionMode === "agent" ? selectedServer.capabilities?.docker === false : selectedServer.nodeCapabilities?.docker === false);
+  // Agent-mode Nodes have no SSH session this could run over - only an
+  // SSH-mode server can offer the one-click install below; an Agent-mode
+  // one just keeps the plain warning telling the user to install it
+  // themselves.
+  const canInstallDocker = Boolean(dockerCapabilityWarning) && selectedServer?.connectionMode === "ssh";
 
   // Auto-pick the runtime type once it's the only option (always true for
   // Local today, since every built-in blueprint offers exactly one Local
@@ -160,6 +210,25 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     if (currentStep === 2) return step2Valid;
     if (currentStep === 3) return step3Valid;
     return true;
+  }
+
+  async function handleInstallDocker() {
+    if (!selectedServer) return;
+    setInstallingDocker(true);
+    setDockerInstallError(null);
+    try {
+      const nodeCapabilities = await installDocker(selectedServer.id);
+      upsertServer({ ...selectedServer, nodeCapabilities });
+      if (nodeCapabilities.docker) {
+        toastSuccess(t("createApplicationWizard.dockerInstalled", { name: selectedServer.name }));
+      } else {
+        setDockerInstallError(t("createApplicationWizard.dockerInstallError"));
+      }
+    } catch (err) {
+      setDockerInstallError(err instanceof Error ? err.message : t("createApplicationWizard.dockerInstallError"));
+    } finally {
+      setInstallingDocker(false);
+    }
   }
 
   async function handleCreate() {
@@ -240,10 +309,15 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                   <input
                     className="form-input"
                     value={workingDirectory}
-                    onChange={(e) => setWorkingDirectory(e.target.value)}
+                    onChange={(e) => {
+                      setWorkingDirectory(e.target.value);
+                      setWorkingDirectoryTouched(true);
+                    }}
                     placeholder={isLocal ? t("createApplicationWizard.workingDirectoryPlaceholderLocal") : t("createApplicationWizard.workingDirectoryPlaceholderRemote")}
                   />
-                  <p className="form-note">{t("createApplicationWizard.workingDirectoryNote")}</p>
+                  <p className="form-note">
+                    {isLocal ? t("createApplicationWizard.workingDirectoryNote") : t("createApplicationWizard.workingDirectoryNoteRemote")}
+                  </p>
                 </label>
               </>
             )}
@@ -251,7 +325,10 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
             {step === 2 && (
               <>
                 <label className="form-field">
-                  <span className="form-label">{t("createApplicationWizard.blueprint")}</span>
+                  <span className="form-label">
+                    {t("createApplicationWizard.blueprint")}
+                    <HelpHint label={t("createApplicationWizard.eggHint")} />
+                  </span>
                   <div className="wizard-blueprint-options">
                     {blueprints.map((blueprint) => (
                       <button
@@ -285,7 +362,18 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 {selectedBlueprint && availableRuntimeTypes.length === 0 && (
                   <p className="form-note form-note-danger">{t("createApplicationWizard.noRuntimeForLocation")}</p>
                 )}
-                {dockerCapabilityWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
+                {dockerCapabilityWarning && (
+                  <div className="wizard-docker-warning">
+                    <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>
+                    {canInstallDocker && (
+                      <Button type="button" variant="secondary" size="sm" onClick={handleInstallDocker} disabled={installingDocker}>
+                        <Icon name="download" size={14} />
+                        {installingDocker ? t("createApplicationWizard.installingDocker") : t("createApplicationWizard.installDockerButton")}
+                      </Button>
+                    )}
+                    {dockerInstallError && <p className="form-note form-note-danger">{dockerInstallError}</p>}
+                  </div>
+                )}
               </>
             )}
 
@@ -363,7 +451,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                     />
                   </div>
                 ))}
-                <Button variant="secondary" size="sm" onClick={() => setEnvironment((prev) => [...prev, { key: "", value: "" }])}>
+                <Button variant="secondary" size="sm" onClick={() => setEnvironment((prev) => [...prev, { key: "", value: "", isSecret: false }])}>
                   <Icon name="plus" size={14} />
                   {t("createApplicationWizard.addVariable")}
                 </Button>
@@ -384,6 +472,14 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 <span className="wizard-review-value">{t(`createApplicationWizard.runtimeTypeOption.${runtimeType}`)}</span>
                 <span className="wizard-review-label">{t("createApplicationWizard.workingDirectory")}</span>
                 <span className="wizard-review-value">{workingDirectory}</span>
+                {selectedBlueprint.fields.map((field) => (
+                  <Fragment key={field.key}>
+                    <span className="wizard-review-label">{field.label}</span>
+                    <span className="wizard-review-value">
+                      {formatFieldValueForReview(field, fieldValueOrDefault(field, fieldValues), t("common.yes"), t("common.no"))}
+                    </span>
+                  </Fragment>
+                ))}
                 <span className="wizard-review-label">{t("createApplicationWizard.environmentReviewLabel")}</span>
                 <span className="wizard-review-value">
                   {environment.filter((row) => row.key.trim()).length || t("createApplicationWizard.environmentReviewNone")}
@@ -412,14 +508,27 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   );
 }
 
-interface BlueprintFieldInputProps {
+/** flags.sh generates a ready-made set of JVM flags for a Minecraft server given its RAM/player count - opens through Tauri's shell plugin (a real system-browser navigation, not the app's own webview) rather than a plain `<a target="_blank">`, same as DatabasesTab's phpMyAdmin link. */
+function JvmArgsGeneratorNote() {
+  const { t } = useTranslation();
+  return (
+    <p className="form-note">
+      {t("createApplicationWizard.jvmArgsGeneratorNote")}{" "}
+      <button type="button" className="form-note-link" onClick={() => open("https://flags.sh/")}>
+        flags.sh
+      </button>
+    </p>
+  );
+}
+
+export interface BlueprintFieldInputProps {
   field: BlueprintField;
   value: unknown;
   onChange: (value: unknown) => void;
   serverId: string | null;
 }
 
-function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFieldInputProps) {
+export function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFieldInputProps) {
   if (field.fieldType === "javaVersion") {
     return <JavaVersionFieldInput field={field} value={value} onChange={onChange} serverId={serverId} />;
   }
@@ -430,19 +539,25 @@ function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFiel
 
   if (field.fieldType === "boolean") {
     return (
-      <label className="form-field">
-        <span className="form-label">
-          {field.label}
-          {field.required ? " *" : ""}
-        </span>
-        <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+      <div className="form-field">
+        <Checkbox
+          checked={Boolean(value)}
+          onChange={onChange}
+          label={
+            <>
+              {field.label}
+              {field.required ? " *" : ""}
+            </>
+          }
+        />
         {field.helpText && <p className="form-note">{field.helpText}</p>}
-      </label>
+      </div>
     );
   }
 
   if (field.fieldType === "textList") {
     const text = Array.isArray(value) ? value.join("\n") : "";
+    const isJvmArgs = field.key === "jvmArgs";
     return (
       <label className="form-field">
         <span className="form-label">
@@ -453,8 +568,10 @@ function BlueprintFieldInput({ field, value, onChange, serverId }: BlueprintFiel
           className="form-input form-textarea"
           value={text}
           onChange={(e) => onChange(splitTextListInput(e.target.value))}
+          placeholder={isJvmArgs ? JVM_ARGS_PLACEHOLDER : undefined}
         />
         {field.helpText && <p className="form-note">{field.helpText}</p>}
+        {isJvmArgs && <JvmArgsGeneratorNote />}
       </label>
     );
   }
@@ -568,9 +685,16 @@ interface PapermcVersionFieldInputProps {
   onChange: (value: unknown) => void;
 }
 
-/** Which papermc.io project's release list this field's own key means - "minecraftVersion" (PaperBlueprint) and "velocityVersion" (VelocityBlueprint) are the only two fields with this field type today. */
+/** Which project's release list this field's own key means - one entry per blueprint using this field type. Falls back to Paper's own list for any future field key that forgets to register here, same as the previous two-way check already did. */
+const VERSION_FETCHERS: Record<string, () => Promise<string[]>> = {
+  minecraftVersion: listPaperVersions,
+  velocityVersion: listVelocityVersions,
+  waterfallVersion: listWaterfallVersions,
+  purpurVersion: listPurpurVersions,
+};
+
 function fetchVersionsFor(fieldKey: string): Promise<string[]> {
-  return fieldKey === "velocityVersion" ? listVelocityVersions() : listPaperVersions();
+  return (VERSION_FETCHERS[fieldKey] ?? listPaperVersions)();
 }
 
 /** A picker populated from the real, current PaperMC release list for whichever project this field belongs to - falls back to a plain text input (with the load error, if any, shown rather than hidden) if the list couldn't be fetched at all, e.g. no network. */

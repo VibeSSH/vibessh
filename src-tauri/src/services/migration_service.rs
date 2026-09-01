@@ -34,7 +34,10 @@ use crate::services::ssh_service::get_or_connect;
 use crate::state::{MigrationLockManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::dns_repository::DnsRepository;
+use crate::storage::firewall_rule_repository::FirewallRuleRepository;
+use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
+use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -51,6 +54,10 @@ pub async fn migrate_application(
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
     dns_repo: &DnsRepository,
+    dns_suffix: &str,
+    firewall_rule_repo: &FirewallRuleRepository,
+    registry_repo: &RegistryCredentialRepository,
+    log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     locks: &MigrationLockManager,
     local_process_manager: &Arc<LocalProcessManager>,
@@ -65,6 +72,10 @@ pub async fn migrate_application(
         server_repo,
         network_repo,
         dns_repo,
+        dns_suffix,
+        firewall_rule_repo,
+        registry_repo,
+        log_capture,
         sessions,
         local_process_manager,
         source_application_id,
@@ -81,6 +92,10 @@ async fn migrate_application_inner(
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
     dns_repo: &DnsRepository,
+    dns_suffix: &str,
+    firewall_rule_repo: &FirewallRuleRepository,
+    registry_repo: &RegistryCredentialRepository,
+    log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     local_process_manager: &Arc<LocalProcessManager>,
     source_application_id: Uuid,
@@ -111,6 +126,13 @@ async fn migrate_application_inner(
     // moving what's actually there), so this goes straight through the
     // repository the same way `application_service::create_application`
     // does internally, once its own blueprint step is done.
+    // `source.environment` comes back from `app_repo.get` with every secret
+    // row redacted (see `models::EnvironmentVariable::value`'s own doc
+    // comment) - resolved back to real values here since this whole
+    // function's job is to reproduce the source Application exactly on the
+    // target, not to reproduce it with its secrets silently blanked out.
+    let source_environment = application_service::resolve_environment_secrets(source_application_id, source.environment.clone())?;
+
     let create_input = CreateApplicationInput {
         server_id: Some(target_server_id),
         name: source.application.name.clone(),
@@ -119,7 +141,7 @@ async fn migrate_application_inner(
         blueprint_version: source.application.blueprint_version,
         runtime_type: source.application.runtime_type,
         working_directory: source.application.working_directory.clone(),
-        environment: source.environment.clone(),
+        environment: source_environment,
         ports: vec![],
         runtime_config: source.runtime_config.clone(),
         metadata: source.metadata.clone(),
@@ -136,19 +158,28 @@ async fn migrate_application_inner(
     // than left behind as a broken, empty duplicate in the Applications
     // list - the source is exactly where it started, and the caller gets a
     // real error to retry, not a half-finished migration to clean up by hand.
-    let files_copied = match provision_target(app_repo, server_repo, network_repo, sessions, &source, &created.application, target_server_id).await {
+    let files_copied = match provision_target(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, &source, &created.application, target_server_id).await {
         Ok(files_copied) => files_copied,
         Err(err) => {
             let _ = app_repo.delete(target_application_id);
             return Err(err);
         }
     };
+    // Only written once the target row is otherwise fully provisioned - on
+    // any earlier failure above, the target row (and so its keyring
+    // namespace) is rolled back, so there'd be nothing to clean up; on a
+    // failure here, the same rollback still applies rather than leaving a
+    // target Application missing its secrets.
+    if let Err(err) = application_service::store_secret_environment_values(target_application_id, &create_input.environment) {
+        let _ = app_repo.delete(target_application_id);
+        return Err(err);
+    }
 
     // Step 5: cut the DNS alias over, if this service has one - the
     // hostname never changes, only which Application it resolves through.
     let dns_repointed = dns_repo.repoint_application(source_application_id, target_application_id)?.is_some();
     if dns_repointed {
-        let _ = dns_service::sync_dns(network_repo, server_repo, app_repo, dns_repo, sessions).await;
+        let _ = dns_service::sync_dns(dns_suffix, network_repo, server_repo, app_repo, dns_repo, sessions).await;
     }
 
     // Step 6: bring the new instance up, then retire the old one. Both are
@@ -157,12 +188,16 @@ async fn migrate_application_inner(
     // succeeded; a start failure or a firewall sync hiccup is now the same
     // kind of already-surfaced, retryable problem as it would be for any
     // other Application, not a reason to unwind everything above.
-    let _ = application_service::start_application(app_repo, server_repo, sessions, local_process_manager, target_application_id).await;
-    application_service::delete_application(app_repo, source_application_id)?;
+    let _ = application_service::start_application(app_repo, server_repo, sessions, registry_repo, local_process_manager, target_application_id).await;
+    // Carry captured log history over to the new id before the source row
+    // (and, if this were skipped, its own orphaned capture file) is retired
+    // - see `LogCaptureStore::rename`'s own doc comment.
+    log_capture.rename(source_application_id, target_application_id).await;
+    application_service::delete_application(app_repo, log_capture, source_application_id).await?;
     if let Some(source_server_id) = source.application.server_id {
-        let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, sessions, source_server_id).await;
+        let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, source_server_id).await;
     }
-    let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, sessions, target_server_id).await;
+    let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target_server_id).await;
 
     let final_detail = application_service::get_application(app_repo, target_application_id)?;
     Ok(MigrationResult { application: final_detail, files_copied, dns_repointed })
@@ -177,6 +212,7 @@ async fn provision_target(
     app_repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     source: &ApplicationDetail,
     target: &crate::models::Application,
@@ -195,7 +231,7 @@ async fn provision_target(
             visibility: port.visibility,
             required: port.required,
         };
-        application_service::add_application_port(app_repo, server_repo, network_repo, sessions, target.id, &input).await?;
+        application_service::add_application_port(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target.id, &input).await?;
     }
     let target_after_ports = application_service::get_application(app_repo, target.id)?;
 
@@ -224,9 +260,21 @@ async fn provision_target(
         None => None,
         Some(server_id) => Some(get_or_connect(server_repo, sessions, server_id).await?),
     };
-    let source_provider = files::provider_for(&source.application, source_connection)?;
+    let source_provider = files::provider_for(&source.application, &source.runtime_config, source_connection)?;
     let target_connection = Some(get_or_connect(server_repo, sessions, target_server_id).await?);
-    let target_provider = files::provider_for(target, target_connection)?;
+    // Deliberately `Value::Null` (never resolves `wants_dedicated_user`,
+    // always SFTP-as-admin for this copy) rather than threading the
+    // target's own freshly-rendered `runtime_config` through: the caller
+    // right after this (`start_application`, `migrate_application_inner`'s
+    // line just above this function) already `chown -R`s the whole
+    // `working_directory` to the dedicated user on its very first start
+    // (`runtime::docker::ensure_working_directory_owned_by_dedicated_user`)
+    // regardless of which provider wrote these files - so the ownership
+    // this copy leaves behind is corrected a moment later either way, and
+    // this avoids this function needing to separately load the target's own
+    // rendered config just to make the same eventual outcome happen one
+    // step earlier.
+    let target_provider = files::provider_for(target, &serde_json::Value::Null, target_connection)?;
     copy_directory(source_provider.as_ref(), target_provider.as_ref()).await
 }
 

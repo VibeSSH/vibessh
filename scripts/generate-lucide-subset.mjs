@@ -61,6 +61,11 @@ const ICON_NAMES = [
   "archive",
   "clock",
   "lock",
+  "triangle-alert",
+  "list-checks",
+  "shield",
+  "cloud",
+  "arrow-left-right",
 ];
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));

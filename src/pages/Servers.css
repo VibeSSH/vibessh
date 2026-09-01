@@ -59,8 +59,8 @@
 }
 
 .server-list-host {
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -72,24 +72,15 @@
   flex-shrink: 0;
 }
 
-.server-list-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, transform 100ms ease;
-}
-.server-list-action:hover {
-  background: var(--surface-3);
-  color: var(--accent);
-}
-.server-list-action:active {
-  transform: scale(0.92);
+/* A plain status dot for a `.server-list-item` row that isn't a full
+   `ServerCard`/`Rail` entry (e.g. `ModulePicker`'s server-pick list) -
+   same 8px dot, no ping animation, since a dense list row doesn't have the
+   room a card does. */
+.server-list-status-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
 }
 
 .servers-filter-row {

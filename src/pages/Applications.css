@@ -3,3 +3,33 @@
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px;
 }
+
+.applications-header-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.applications-group-by {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.applications-group-by .form-input {
+  min-width: 160px;
+}
+
+.applications-group + .applications-group {
+  margin-top: 28px;
+}
+
+.applications-group-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

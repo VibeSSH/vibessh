@@ -10,21 +10,46 @@ import { useBackdropClose } from "@/hooks/useBackdropClose";
 import {
   addApplicationPort,
   listApplicationPorts,
+  recreateApplication,
+  refreshApplicationStatus,
   removeApplicationPort,
   syncApplicationNodeFirewall,
   updateApplicationPort,
   type FirewallSyncResult,
 } from "@/services/applicationService";
-import type { ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
+import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 
 interface PortsTabProps {
   applicationId: string;
+  application: ApplicationDetail;
+}
+
+/** A Docker container's published ports (`-p host:container`) are baked in
+ * at `docker create` time (see `runtime::docker`'s own doc comment) - a
+ * plain restart reuses the same, now-stale container, so adding/editing/
+ * removing a port would silently never actually take effect on a running
+ * app. Same Pterodactyl-matching "change it, it just works" auto-recreate
+ * `ApplicationConfigCard`/`ResourceLimitsCard` already do for their own
+ * saves - a stopped app is left stopped, see those components' own doc
+ * comments for why auto-starting it would be its own surprise. Best-effort:
+ * a failed recreate here doesn't undo the port change that already saved
+ * successfully, it just means the user needs to notice and recreate by hand.
+ *
+ * Checks the freshly-probed status, not the `application.status` prop - see
+ * `EnvironmentTab`'s own copy of this function for why that prop alone
+ * isn't trustworthy enough for this check. */
+async function recreateIfRunningDocker(application: ApplicationDetail) {
+  if (application.runtimeType !== "docker") return;
+  const status = await refreshApplicationStatus(application.id);
+  if (status === "running") {
+    await recreateApplication(application.id);
+  }
 }
 
 /** Declared ports are documentation of intent, not a live guarantee - see applicationService.listApplicationPorts's own doc comment. A "required" port (blueprint-declared, none of the built-in blueprints set one up yet) can be edited but not removed here, same rule the backend itself enforces. */
-export function PortsTab({ applicationId }: PortsTabProps) {
+export function PortsTab({ applicationId, application }: PortsTabProps) {
   const { t } = useTranslation();
   const [ports, setPorts] = useState<ApplicationPort[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +98,7 @@ export function PortsTab({ applicationId }: PortsTabProps) {
     try {
       await removeApplicationPort(applicationId, deletingPort.id);
       setDeletingPort(null);
+      await recreateIfRunningDocker(application);
       reload();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : t("portsTab.deleteError"));
@@ -104,11 +130,13 @@ export function PortsTab({ applicationId }: PortsTabProps) {
           {firewallResult === undefined && t("portsTab.firewallSyncNote")}
           {firewallResult === null && t("portsTab.firewallSyncLocal")}
           {firewallResult && firewallResult.backend === null && t("portsTab.firewallSyncNoBackend")}
-          {firewallResult && firewallResult.backend !== null &&
-            t("portsTab.firewallSyncSummary", {
+          {firewallResult &&
+            firewallResult.backend !== null &&
+            t(firewallResult.rulesRemoved > 0 ? "portsTab.firewallSyncSummaryWithRemoved" : "portsTab.firewallSyncSummary", {
               backend: firewallResult.backend,
               status: firewallResult.active ? t("portsTab.firewallActive") : t("portsTab.firewallInactive"),
               count: firewallResult.rulesApplied,
+              removed: firewallResult.rulesRemoved,
             })}
           {firewallError && <span className="form-note-danger"> {firewallError}</span>}
         </p>
@@ -166,6 +194,7 @@ export function PortsTab({ applicationId }: PortsTabProps) {
       {formOpen && (
         <PortFormModal
           applicationId={applicationId}
+          application={application}
           editingPort={editingPort}
           onClose={() => setFormOpen(false)}
           onSaved={() => {
@@ -203,12 +232,13 @@ export function PortsTab({ applicationId }: PortsTabProps) {
 
 interface PortFormModalProps {
   applicationId: string;
+  application: ApplicationDetail;
   editingPort: ApplicationPort | null;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFormModalProps) {
+function PortFormModal({ applicationId, application, editingPort, onClose, onSaved }: PortFormModalProps) {
   const { t } = useTranslation();
   const backdrop = useBackdropClose(onClose);
   const isEditing = Boolean(editingPort);
@@ -248,6 +278,7 @@ function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFor
       } else {
         await addApplicationPort(applicationId, input);
       }
+      await recreateIfRunningDocker(application);
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("portsTab.saveError"));

@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
+import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { cloudCreateServer, cloudDeleteServer, cloudListServers } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
@@ -80,20 +82,14 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
               </div>
               <div className="server-list-main">
                 <span className="server-list-name" title={server.name}>{server.name}</span>
-                <span className="server-list-host" title={`${server.username ? `${server.username}@` : ""}${server.host}:${server.sshPort}`}>
-                  {server.username ? `${server.username}@` : ""}
-                  {server.host}:{server.sshPort}
-                </span>
+                <HostAddress
+                  value={`${server.host}:${server.sshPort}`}
+                  prefix={server.username ? `${server.username}@` : undefined}
+                  className="server-list-host"
+                />
               </div>
               {canManage && (
-                <button
-                  className="server-list-action"
-                  title={t("teamServers.removeAria", { name: server.name })}
-                  aria-label={t("teamServers.removeAria", { name: server.name })}
-                  onClick={() => handleDelete(server)}
-                >
-                  <Icon name="trash" size={14} />
-                </button>
+                <IconButton icon="trash" size="sm" danger title={t("teamServers.removeAria", { name: server.name })} onClick={() => handleDelete(server)} />
               )}
             </li>
           ))}

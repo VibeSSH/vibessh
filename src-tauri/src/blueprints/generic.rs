@@ -46,6 +46,7 @@ impl GenericBlueprint {
                     },
                 ],
                 known_files: vec![],
+                default_ports: vec![],
                 is_builtin: true,
             },
         }

@@ -4,9 +4,15 @@ export type RuntimeType = "localProcess" | "remoteProcess" | "systemd" | "docker
 /** Mirrors the Rust `ApplicationStatus` enum - last-known, always refreshed from the runtime, never trusted as sole truth. */
 export type ApplicationStatus = "unknown" | "starting" | "running" | "stopping" | "stopped" | "failed";
 
+/** `value` is always empty for a secret row (`isSecret === true`) on every
+ * plain read - the backend never sends a secret's real value back over IPC,
+ * only that it is one (see the Rust `EnvironmentVariable::value` doc
+ * comment). Submitting a secret row with an empty `value` on save means
+ * "keep the current value," not "clear it." */
 export interface EnvironmentVariable {
   key: string;
   value: string;
+  isSecret: boolean;
 }
 
 export type PortProtocol = "tcp" | "udp";
@@ -51,7 +57,7 @@ export interface SetHealthCheckInput {
   httpPath?: string;
 }
 
-/** What `setApplicationResourceLimits` submits - mirrors the Rust `SetResourceLimitsInput` DTO. `undefined` clears that particular limit rather than leaving it untouched. Only accepted for a `"docker"`/`"systemd"` application - see that function's own doc comment for why `"localProcess"`/`"remoteProcess"` reject it outright. */
+/** What `setApplicationResourceLimits` submits - mirrors the Rust `SetResourceLimitsInput` DTO. `undefined` clears that particular limit rather than leaving it untouched. `cpuLimitCores` is accepted for `"docker"`/`"systemd"`/`"remoteProcess"`; `memoryLimitMb` only for `"docker"`/`"systemd"` - a bare SSH-launched process has no cgroup to cap memory through, see the Rust `set_application_resource_limits`'s own doc comment. `"localProcess"` rejects both. */
 export interface SetResourceLimitsInput {
   memoryLimitMb?: number;
   cpuLimitCores?: number;
@@ -61,6 +67,25 @@ export interface SetResourceLimitsInput {
 export interface ResourceLimitsConfig {
   memoryLimitMb?: number;
   cpuLimitCores?: number;
+}
+
+/** The one field of a Docker application's own `runtimeConfig` the Docker Image card reads/writes - see `ResourceLimitsConfig`'s own doc comment for why the rest of that shape stays opaque here. */
+export interface DockerImageConfig {
+  image?: string;
+}
+
+/** One registry's login - reused by every Application that pulls from that host. `password` never comes back from the backend, only ever sent when setting/replacing it. */
+export interface RegistryCredential {
+  id: string;
+  registry: string;
+  username: string;
+  createdAt: string;
+}
+
+export interface SetRegistryCredentialInput {
+  registry: string;
+  username: string;
+  password: string;
 }
 
 export interface Application {
@@ -95,6 +120,52 @@ export interface ResourceUsage {
   cpuPercent?: number;
   ramBytes?: number;
   uptimeSeconds?: number;
+}
+
+export type BackupKind = "manual" | "scheduled";
+
+/** Mirrors the Rust `ApplicationBackup` DTO - a `.zip` of the working directory, listed via `listApplicationBackups`. */
+export interface ApplicationBackup {
+  id: string;
+  applicationId: string;
+  fileName: string;
+  sizeBytes: number;
+  kind: BackupKind;
+  /** Present when this backup was also uploaded to the configured S3-compatible destination - see the Rust `ApplicationBackup::s3_key` doc comment. */
+  s3Key?: string;
+  createdAt: string;
+}
+
+/** Mirrors the Rust `BackupSchedule` DTO - absent config reads back as `{enabled: false, intervalHours: 24, retentionCount: 5}`, see `getApplicationBackupSchedule`'s own doc comment. `retentionMaxAgeDays`/`retentionMaxTotalBytes` are `undefined` when that rule is off. */
+export interface BackupSchedule {
+  enabled: boolean;
+  intervalHours: number;
+  retentionCount: number;
+  retentionMaxAgeDays?: number;
+  retentionMaxTotalBytes?: number;
+}
+
+/** Mirrors the Rust `BackupDestinationConfig` DTO - one global S3-compatible destination every Application's backups can additionally upload to. Never carries the secret access key - see the Rust struct's own doc comment. */
+export interface BackupDestinationConfig {
+  enabled: boolean;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  pathPrefix: string;
+  pathStyle: boolean;
+}
+
+/** What `setBackupDestination` submits - mirrors the Rust `SetBackupDestinationInput` DTO. `secretAccessKey` blank means "keep the currently stored secret." */
+export interface SetBackupDestinationInput {
+  enabled: boolean;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  pathPrefix: string;
+  pathStyle: boolean;
+  secretAccessKey: string;
 }
 
 export type BlueprintFeature = "console" | "logs" | "environment" | "ports" | "healthCheck" | "databases" | "files";

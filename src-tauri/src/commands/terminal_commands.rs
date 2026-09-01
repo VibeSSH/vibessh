@@ -25,22 +25,40 @@ pub async fn open_terminal(
     let terminal_id = Uuid::new_v4();
     let output_event = format!("terminal://{terminal_id}/output");
     let closed_event = format!("terminal://{terminal_id}/closed");
-    let app_for_closed = app.clone();
 
-    let handle = services::open_ssh_terminal(
-        &repo,
-        &ssh_sessions,
-        server_id,
-        cols,
-        rows,
-        move |data| {
-            let _ = app.emit(&output_event, data);
-        },
-        move |reason| {
-            let _ = app_for_closed.emit(&closed_event, reason);
-        },
-    )
-    .await?;
+    // `services::open_ssh_terminal` itself never retries (see its own doc
+    // comment - its `on_closed` is one-shot, so a retry needs a fresh
+    // closure pair, which only this caller can cheaply rebuild). Same
+    // "dead cached SSH session, drop it and retry once" recovery every
+    // other SSH-touching feature already has - a terminal opened right
+    // after the server was idle long enough for its cached connection to
+    // die shouldn't need the user to notice the error and manually retry.
+    let attempt = |app: AppHandle| {
+        let output_event = output_event.clone();
+        let closed_event = closed_event.clone();
+        let app_for_closed = app.clone();
+        services::open_ssh_terminal(
+            &repo,
+            &ssh_sessions,
+            server_id,
+            cols,
+            rows,
+            move |data| {
+                let _ = app.emit(&output_event, data);
+            },
+            move |reason| {
+                let _ = app_for_closed.emit(&closed_event, reason);
+            },
+        )
+    };
+
+    let handle = match attempt(app.clone()).await {
+        Ok(handle) => handle,
+        Err(_) => {
+            ssh_sessions.remove(server_id).await;
+            attempt(app).await?
+        }
+    };
 
     terminal_sessions.insert(terminal_id, handle).await;
     Ok(terminal_id)

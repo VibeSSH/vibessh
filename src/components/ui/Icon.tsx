@@ -77,6 +77,11 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   archive: "archive",
   history: "clock",
   lock: "lock",
+  "alert-triangle": "triangle-alert",
+  "list-checks": "list-checks",
+  shield: "shield",
+  cloud: "cloud",
+  "arrow-left-right": "arrow-left-right",
 };
 
 interface IconProps {

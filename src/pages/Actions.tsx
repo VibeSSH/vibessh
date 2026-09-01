@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
@@ -144,7 +145,7 @@ export function ActionsPage() {
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{server ? server.name : t("nav.actions")}</h1>
-          <p className="page-subtitle">{server ? server.host : serverId}</p>
+          <p className="page-subtitle">{server ? <HostAddress value={server.host} /> : serverId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/servers")}>
           <Icon name="chevron-left" size={16} />
@@ -163,6 +164,10 @@ export function ActionsPage() {
         />
         {servicesLoading ? (
           <SkeletonRows />
+        ) : services.length === 0 ? (
+          <p className="settings-muted">{t("actionsPage.noServices")}</p>
+        ) : filteredServices.length === 0 ? (
+          <p className="settings-muted">{t("actionsPage.noServicesMatch")}</p>
         ) : (
           <ul className="server-list">
             {filteredServices.slice(0, MAX_ROWS_SHOWN).map((service) => (
@@ -174,34 +179,24 @@ export function ActionsPage() {
                 <Badge tone={service.active ? "success" : "neutral"}>{service.active ? t("actionsPage.active") : t("actionsPage.inactive")}</Badge>
                 <Badge tone="neutral">{service.enabled ? t("actionsPage.enabled") : t("actionsPage.disabled")}</Badge>
                 <div className="server-list-actions">
-                  <button
-                    className="server-list-action"
+                  <IconButton
+                    icon={service.active ? "square" : "play"}
+                    size="sm"
                     title={service.active ? t("actionsPage.stopAria", { name: service.name }) : t("actionsPage.startAria", { name: service.name })}
-                    aria-label={service.active ? t("actionsPage.stopAria", { name: service.name }) : t("actionsPage.startAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.active ? "stop" : "start" })}
-                  >
-                    <Icon name={service.active ? "square" : "play"} size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
+                  />
+                  <IconButton
+                    icon="zap"
+                    size="sm"
                     title={t("actionsPage.restartAria", { name: service.name })}
-                    aria-label={t("actionsPage.restartAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: "restart" })}
-                  >
-                    <Icon name="zap" size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
-                    title={
-                      service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })
-                    }
-                    aria-label={
-                      service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })
-                    }
+                  />
+                  <IconButton
+                    icon="power"
+                    size="sm"
+                    title={service.enabled ? t("actionsPage.disableAria", { name: service.name }) : t("actionsPage.enableAria", { name: service.name })}
                     onClick={() => askConfirm({ kind: "service", name: service.name, verb: service.enabled ? "disable" : "enable" })}
-                  >
-                    <Icon name="power" size={14} />
-                  </button>
+                  />
                 </div>
               </li>
             ))}
@@ -228,44 +223,31 @@ export function ActionsPage() {
                 </div>
                 <Badge tone={container.running ? "success" : "neutral"}>{container.running ? t("actionsPage.running") : t("actionsPage.stopped")}</Badge>
                 <div className="server-list-actions">
-                  <button
-                    className="server-list-action"
+                  <IconButton
+                    icon="terminal"
+                    size="sm"
                     title={t("actionsPage.viewLogsAria", { name: container.name })}
-                    aria-label={t("actionsPage.viewLogsAria", { name: container.name })}
                     onClick={() => setViewingLogsFor(container.name)}
-                  >
-                    <Icon name="terminal" size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
-                    title={
-                      container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })
-                    }
-                    aria-label={
-                      container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })
-                    }
-                    onClick={() =>
-                      askConfirm({ kind: "container", name: container.name, verb: container.running ? "stop" : "start" })
-                    }
-                  >
-                    <Icon name={container.running ? "square" : "play"} size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
+                  />
+                  <IconButton
+                    icon={container.running ? "square" : "play"}
+                    size="sm"
+                    title={container.running ? t("actionsPage.stopAria", { name: container.name }) : t("actionsPage.startAria", { name: container.name })}
+                    onClick={() => askConfirm({ kind: "container", name: container.name, verb: container.running ? "stop" : "start" })}
+                  />
+                  <IconButton
+                    icon="zap"
+                    size="sm"
                     title={t("actionsPage.restartAria", { name: container.name })}
-                    aria-label={t("actionsPage.restartAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "restart" })}
-                  >
-                    <Icon name="zap" size={14} />
-                  </button>
-                  <button
-                    className="server-list-action"
+                  />
+                  <IconButton
+                    icon="trash"
+                    size="sm"
+                    danger
                     title={t("actionsPage.removeAria", { name: container.name })}
-                    aria-label={t("actionsPage.removeAria", { name: container.name })}
                     onClick={() => askConfirm({ kind: "container", name: container.name, verb: "remove" })}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
+                  />
                 </div>
               </li>
             ))}

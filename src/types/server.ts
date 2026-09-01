@@ -12,9 +12,11 @@ export interface ServerGroup {
   color?: string;
 }
 
-/** Mirrors the Rust `NodeCapabilities` struct - `docker` is the only field detected today (Etap M1). */
+/** Mirrors the Rust `NodeCapabilities` struct. `wireguard`/`ufw` are only ever real (SSH-probed) values for an SSH-mode Node - an Agent-mode Node's handshake doesn't report them, so they read as `false` there regardless of actual state. */
 export interface NodeCapabilities {
   docker: boolean;
+  wireguard: boolean;
+  ufw: boolean;
 }
 
 export interface ServerSummary {

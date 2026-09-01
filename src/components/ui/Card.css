@@ -8,6 +8,11 @@
 .card {
   background: var(--t-bg-card);
   border-radius: var(--radius-md);
+  /* No `overflow: hidden` here on purpose - `MemberRolesEditor`'s
+     `.member-roles-popover` (and similar absolutely-positioned panels)
+     render as normal DOM children of a `<Card>` and need to escape its
+     box. The 16px padding already keeps ordinary content inset from the
+     rounded corners; see forms.css's own note for why that's enough. */
   padding: 16px;
   box-shadow: var(--t-ring), var(--t-elev-1);
   transition: box-shadow 150ms ease;
@@ -26,6 +31,6 @@
 
 .card-subtitle {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
 }

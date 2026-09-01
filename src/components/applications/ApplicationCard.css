@@ -42,8 +42,8 @@
 
 .application-card-meta {
   margin: 0;
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -53,10 +53,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .application-card-actions-group {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }

@@ -6,15 +6,18 @@ use uuid::Uuid;
 use crate::blueprints::BlueprintRegistry;
 use crate::errors::AppResult;
 use crate::models::{
-    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, PortInput,
-    SetHealthCheckInput, SetResourceLimitsInput,
+    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, EnvironmentVariable,
+    PortInput, RegistryCredential, SetHealthCheckInput, SetRegistryCredentialInput, SetResourceLimitsInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::firewall_rule_repository::FirewallRuleRepository;
+use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
+use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
 #[tauri::command]
@@ -30,6 +33,16 @@ pub async fn list_paper_versions() -> AppResult<Vec<String>> {
 #[tauri::command]
 pub async fn list_velocity_versions() -> AppResult<Vec<String>> {
     services::list_velocity_versions().await
+}
+
+#[tauri::command]
+pub async fn list_waterfall_versions() -> AppResult<Vec<String>> {
+    services::list_waterfall_versions().await
+}
+
+#[tauri::command]
+pub async fn list_purpur_versions() -> AppResult<Vec<String>> {
+    services::list_purpur_versions().await
 }
 
 #[tauri::command]
@@ -52,11 +65,12 @@ pub async fn add_application_port(
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     network_repo: State<'_, NodeNetworkRepository>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     port: PortInput,
 ) -> AppResult<ApplicationPort> {
-    services::add_application_port(&repo, &server_repo, &network_repo, &sessions, id, &port).await
+    services::add_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, &port).await
 }
 
 #[tauri::command]
@@ -64,12 +78,13 @@ pub async fn update_application_port(
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     network_repo: State<'_, NodeNetworkRepository>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     port_id: Uuid,
     port: PortInput,
 ) -> AppResult<ApplicationPort> {
-    services::update_application_port(&repo, &server_repo, &network_repo, &sessions, id, port_id, &port).await
+    services::update_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, port_id, &port).await
 }
 
 /// "Sync Firewall" (Etap M2, Ports tab) - manually re-applies the current
@@ -84,15 +99,24 @@ pub async fn sync_application_node_firewall(
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     network_repo: State<'_, NodeNetworkRepository>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
 ) -> AppResult<Option<services::FirewallSyncResult>> {
-    services::sync_application_node_firewall(&repo, &server_repo, &network_repo, &sessions, id).await
+    services::sync_application_node_firewall(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id).await
 }
 
 #[tauri::command]
-pub fn remove_application_port(repo: State<ApplicationRepository>, id: Uuid, port_id: Uuid) -> AppResult<()> {
-    services::remove_application_port(&repo, id, port_id)
+pub async fn remove_application_port(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    network_repo: State<'_, NodeNetworkRepository>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+    port_id: Uuid,
+) -> AppResult<()> {
+    services::remove_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, port_id).await
 }
 
 #[tauri::command]
@@ -107,8 +131,20 @@ pub async fn create_application(
 }
 
 #[tauri::command]
-pub fn delete_application(repo: State<ApplicationRepository>, id: Uuid) -> AppResult<()> {
-    services::delete_application(&repo, id)
+pub async fn update_application_config(
+    repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+    field_values: serde_json::Value,
+) -> AppResult<ApplicationDetail> {
+    services::update_application_config(&repo, &registry, &server_repo, &sessions, id, field_values).await
+}
+
+#[tauri::command]
+pub async fn delete_application(repo: State<'_, ApplicationRepository>, log_capture: State<'_, LogCaptureStore>, id: Uuid) -> AppResult<()> {
+    services::delete_application(&repo, &log_capture, id).await
 }
 
 #[tauri::command]
@@ -116,10 +152,11 @@ pub async fn start_application(
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
+    registry_repo: State<'_, RegistryCredentialRepository>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    services::start_application(&repo, &server_repo, &sessions, &local_process_manager, id).await
+    services::start_application(&repo, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
 }
 
 #[tauri::command]
@@ -153,10 +190,11 @@ pub async fn recreate_application(
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
+    registry_repo: State<'_, RegistryCredentialRepository>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    services::recreate_application(&repo, &server_repo, &sessions, &local_process_manager, id).await
+    services::recreate_application(&repo, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
 }
 
 #[tauri::command]
@@ -198,10 +236,23 @@ pub async fn get_application_logs(
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    log_capture: State<'_, LogCaptureStore>,
     id: Uuid,
     max_lines: u32,
 ) -> AppResult<Vec<String>> {
-    services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, id, max_lines).await
+    services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, &log_capture, id, max_lines).await
+}
+
+#[tauri::command]
+pub async fn write_application_console(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+    input: String,
+) -> AppResult<()> {
+    services::application_console_write(&repo, &server_repo, &sessions, &local_process_manager, id, &input).await
 }
 
 #[tauri::command]
@@ -231,6 +282,46 @@ pub fn set_application_resource_limits(
     input: SetResourceLimitsInput,
 ) -> AppResult<ApplicationDetail> {
     services::set_application_resource_limits(&repo, id, input)
+}
+
+#[tauri::command]
+pub fn set_application_environment(
+    repo: State<ApplicationRepository>,
+    id: Uuid,
+    environment: Vec<EnvironmentVariable>,
+) -> AppResult<ApplicationDetail> {
+    services::set_application_environment(&repo, id, environment)
+}
+
+#[tauri::command]
+pub fn set_application_image(repo: State<ApplicationRepository>, id: Uuid, image: String) -> AppResult<ApplicationDetail> {
+    services::set_application_image(&repo, id, image)
+}
+
+#[tauri::command]
+pub async fn pull_application_image(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    registry_repo: State<'_, RegistryCredentialRepository>,
+    id: Uuid,
+) -> AppResult<String> {
+    services::pull_application_image(&repo, &server_repo, &sessions, &registry_repo, id).await
+}
+
+#[tauri::command]
+pub fn list_registry_credentials(registry_repo: State<RegistryCredentialRepository>) -> AppResult<Vec<RegistryCredential>> {
+    services::list_registry_credentials(&registry_repo)
+}
+
+#[tauri::command]
+pub fn set_registry_credential(registry_repo: State<RegistryCredentialRepository>, input: SetRegistryCredentialInput) -> AppResult<RegistryCredential> {
+    services::set_registry_credential(&registry_repo, input)
+}
+
+#[tauri::command]
+pub fn remove_registry_credential(registry_repo: State<RegistryCredentialRepository>, id: Uuid) -> AppResult<()> {
+    services::remove_registry_credential(&registry_repo, id)
 }
 
 #[tauri::command]

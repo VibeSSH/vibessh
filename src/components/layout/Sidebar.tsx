@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
 import { sidebarGroups } from "@/config/navigation";
 import { useAuthStore } from "@/stores/authStore";
@@ -61,6 +62,10 @@ function SidebarGroupSection({
   onToggle: () => void;
 }) {
   const { t } = useTranslation();
+  const isSignedIn = useAuthStore((s) => s.status === "signedIn");
+  const visibleItems = group.items.filter((item) => !item.requiresAuth || isSignedIn);
+  if (visibleItems.length === 0) return null;
+
   return (
     <div className="sidebar-group">
       {!collapsed && (
@@ -71,7 +76,7 @@ function SidebarGroupSection({
       )}
       {(collapsed || expanded) && (
         <div className="sidebar-group-items">
-          {group.items.map((item) => (
+          {visibleItems.map((item) => (
             <NavItem key={item.id} item={item} collapsed={collapsed} />
           ))}
         </div>
@@ -95,6 +100,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(() => readStoredBoolean(COLLAPSED_KEY, false));
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => readStoredGroups());
   const navRef = useRef<HTMLElement>(null);
+  const { createRipple, rippleEls } = useRipple();
   const isSignedIn = useAuthStore((s) => s.status === "signedIn");
   const visibleGroups = sidebarGroups.filter((group) => !group.requiresAuth || isSignedIn);
 
@@ -157,14 +163,19 @@ export function Sidebar() {
         ))}
       </div>
 
-      <button
-        className="sidebar-collapse-btn"
-        onClick={() => setCollapsed((c) => !c)}
-        title={collapsed ? t("nav.expand") : t("nav.collapse")}
-        aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
-      >
-        <Icon name={collapsed ? "chevrons-right" : "chevrons-left"} size={15} />
-      </button>
+      <div className="sidebar-footer">
+        <Tooltip label={collapsed ? t("nav.expand") : t("nav.collapse")} placement="right">
+          <button
+            className="sidebar-collapse-btn ripple-host"
+            onClick={() => setCollapsed((c) => !c)}
+            onPointerDown={createRipple}
+            aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
+          >
+            {rippleEls}
+            <Icon name={collapsed ? "chevrons-right" : "chevrons-left"} size={15} />
+          </button>
+        </Tooltip>
+      </div>
     </nav>
   );
 }

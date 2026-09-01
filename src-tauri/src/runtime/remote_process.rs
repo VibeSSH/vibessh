@@ -52,11 +52,19 @@ use crate::ssh::SshSession;
 use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpec, HealthStatus, LogProvider, ResourceUsage, RuntimeContext};
 
 /// What `runtime_config` deserializes into for `RuntimeType::RemoteProcess`.
+/// `cpu_limit_cores` is set through the same `ResourceLimitsCard`/
+/// `set_application_resource_limits` path Docker/systemd use - see
+/// `build_start_script`'s own doc comment for how it's actually enforced
+/// here, since a bare SSH-launched process has no cgroup of its own the way
+/// a Docker container or systemd unit does.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoteProcessConfig {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
+    pub cpu_limit_cores: Option<f32>,
 }
 
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<RemoteProcessConfig> {
@@ -163,15 +171,37 @@ fn build_start_script(ctx: &RuntimeContext<'_>, config: &RemoteProcessConfig) ->
         env_prefix.push(' ');
     }
 
-    Ok(format!(
+    let mut script = format!(
         "cd {working_directory} || exit 1\n\
          mkfifo {fifo} 2>/dev/null\n\
          exec 3<>{fifo}\n\
          {env_prefix}nohup {command_line} <&3 3<&- >{log} 2>&1 &\n\
          echo $! > {pid_file}\n\
-         disown\n\
-         cat {pid_file}\n"
-    ))
+         disown\n"
+    );
+    // A bare SSH-launched process has no cgroup of its own the way a Docker
+    // container or systemd unit does, so a hard CPU cap isn't available -
+    // `cpulimit` (throttling via SIGSTOP/SIGCONT to approximate a
+    // percentage of one core) is the closest equivalent that works over
+    // plain SSH with nothing more than a commonly-packaged CLI tool. Kept
+    // entirely separate from the line above rather than wrapping the
+    // command in it: the main process's PID (captured via `$!` above) must
+    // stay the real process's PID for `stop`/`kill`/`status` to keep
+    // working exactly as they do today - this instead launches a second,
+    // independent background watcher targeting that already-known PID by
+    // `-p`, which cpulimit itself exits once that PID is gone, so there's
+    // nothing here to clean up on stop/kill either. Silently does nothing
+    // if `cpulimit` isn't installed - `set_application_resource_limits`'s
+    // own note in the UI says as much rather than this failing the whole
+    // start over a best-effort feature.
+    if let Some(cores) = config.cpu_limit_cores {
+        let percent = ((cores * 100.0).round() as i64).max(1);
+        script.push_str(&format!(
+            "if command -v cpulimit >/dev/null 2>&1; then nohup cpulimit -p \"$(cat {pid_file})\" -l {percent} >/dev/null 2>&1 & disown; fi\n"
+        ));
+    }
+    script.push_str(&format!("cat {pid_file}\n"));
+    Ok(script)
 }
 
 async fn read_pid_file(connection: &SshSession, ctx: &RuntimeContext<'_>) -> AppResult<Option<u32>> {
@@ -468,8 +498,8 @@ mod tests {
     #[test]
     fn build_start_script_wires_the_fifo_env_and_pidfile() {
         let application = stub_application(Uuid::new_v4());
-        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()] };
-        let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into() }];
+        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()], cpu_limit_cores: None };
+        let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 
@@ -484,9 +514,39 @@ mod tests {
     }
 
     #[test]
+    fn build_start_script_adds_a_cpulimit_watcher_after_the_pidfile_is_written_when_a_cpu_limit_is_set() {
+        let application = stub_application(Uuid::new_v4());
+        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: Some(1.5) };
+        let config_value = serde_json::to_value(&config).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
+
+        let script = build_start_script(&ctx, &config).unwrap();
+
+        let pidfile_write = script.find("echo $! >").unwrap();
+        let cpulimit_line = script.find("cpulimit -p").unwrap();
+        let final_cat = script.rfind("cat ").unwrap();
+        assert!(pidfile_write < cpulimit_line, "the watcher must start after the real PID is already on disk");
+        assert!(cpulimit_line < final_cat, "the watcher must be launched before the script's stdout (the PID) is produced");
+        assert!(script.contains("-l 150"), "1.5 cores should become a 150% cpulimit target");
+        assert!(script.contains("command -v cpulimit"), "must degrade silently rather than fail start() when cpulimit isn't installed");
+    }
+
+    #[test]
+    fn build_start_script_omits_the_cpulimit_watcher_when_no_limit_is_set() {
+        let application = stub_application(Uuid::new_v4());
+        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: None };
+        let config_value = serde_json::to_value(&config).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
+
+        let script = build_start_script(&ctx, &config).unwrap();
+
+        assert!(!script.contains("cpulimit"));
+    }
+
+    #[test]
     fn build_start_script_rejects_a_newline_in_an_argument() {
         let application = stub_application(Uuid::new_v4());
-        let config = RemoteProcessConfig { command: "/bin/sh".into(), args: vec!["-c\ncurl evil.example".into()] };
+        let config = RemoteProcessConfig { command: "/bin/sh".into(), args: vec!["-c\ncurl evil.example".into()], cpu_limit_cores: None };
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
 
@@ -496,8 +556,8 @@ mod tests {
     #[test]
     fn build_start_script_rejects_an_invalid_environment_key() {
         let application = stub_application(Uuid::new_v4());
-        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![] };
-        let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into() }];
+        let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: None };
+        let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
 

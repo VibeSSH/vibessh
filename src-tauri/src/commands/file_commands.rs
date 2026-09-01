@@ -75,3 +75,60 @@ pub async fn upload_remote_file(
 ) -> AppResult<()> {
     services::upload_remote_file(&repo, &sessions, server_id, &local_path, &remote_path).await
 }
+
+/// Covers both "Rename" (same parent, new name) and "Move" (new parent) -
+/// see `ApplicationFileProvider::rename`'s own doc comment for why there's
+/// only one primitive for both; the frontend builds a different `to` for
+/// each.
+#[tauri::command]
+pub async fn rename_remote_path(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    services::rename_remote_path(&repo, &sessions, server_id, &from, &to).await
+}
+
+/// Recursive for a directory.
+#[tauri::command]
+pub async fn delete_remote_path(repo: State<'_, ServerRepository>, sessions: State<'_, SshSessionManager>, server_id: Uuid, path: String) -> AppResult<()> {
+    services::delete_remote_path(&repo, &sessions, server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn set_remote_permissions(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    path: String,
+    mode: u32,
+) -> AppResult<()> {
+    services::set_remote_permissions(&repo, &sessions, server_id, &path, mode).await
+}
+
+/// Extracts an already-uploaded `.zip` at `archive_path` into `destination`
+/// - returns the number of files written.
+#[tauri::command]
+pub async fn extract_remote_archive(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    archive_path: String,
+    destination: String,
+) -> AppResult<u32> {
+    services::extract_remote_archive(&repo, &sessions, server_id, &archive_path, &destination).await
+}
+
+/// Compresses `paths` into a new `.zip` written to `destination_path`.
+#[tauri::command]
+pub async fn compress_remote_paths(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    paths: Vec<String>,
+    destination_path: String,
+) -> AppResult<()> {
+    services::compress_remote_paths(&repo, &sessions, server_id, &paths, &destination_path).await
+}

@@ -4,9 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
+import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
@@ -71,7 +73,8 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
                 <button className="files-entry-name" title={server.name} onClick={() => navigate(`${routePrefix}/${server.id}`)}>
                   {server.name}
                 </button>
-                <span className="server-list-host">{server.host}</span>
+                <HostAddress value={server.host} className="server-list-host" />
+                <span className="server-list-status-dot" style={{ background: STATUS_COLOR[server.status] }} />
               </li>
             ))}
           </ul>

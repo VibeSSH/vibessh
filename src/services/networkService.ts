@@ -1,5 +1,6 @@
 import { callCommand } from "./tauri";
 import type {
+  DnsAliasWithSync,
   DnsRecord,
   DnsSyncResult,
   DnsView,
@@ -16,7 +17,7 @@ export function listNetworkMembers(): Promise<NodeNetworkMember[]> {
   return callCommand<NodeNetworkMember[]>("list_network_members");
 }
 
-/** "Dołącz do Vibe Network" - VibeSSH generates the keypair, allocates the private IP, and syncs every peer's config on both sides. The user never enters a CIDR, a peer, or a WireGuard setting by hand. */
+/** "Dołącz do Vibe Network" - VibeSSH generates the keypair, allocates the private IP, syncs every peer's config on both sides, and best-effort pushes DNS so the new Node's own alias (and every existing service alias) resolves right away. The user never enters a CIDR, a peer, or a WireGuard setting by hand. */
 export function joinVibeNetwork(serverId: string): Promise<NodeNetworkMember> {
   return callCommand<NodeNetworkMember>("join_vibe_network", { serverId });
 }
@@ -46,16 +47,17 @@ export function listDnsRecords(): Promise<DnsRecord[]> {
   return callCommand<DnsRecord[]>("list_dns_records");
 }
 
-export function createDnsAlias(applicationId: string, hostname: string): Promise<DnsRecord> {
-  return callCommand<DnsRecord>("create_dns_alias", { applicationId, hostname });
+/** Saving an alias now automatically pushes it to every mesh member right away - `syncResults` on the return value is that push's real per-Node outcome, not just an assumption it worked. */
+export function createDnsAlias(applicationId: string, hostname: string): Promise<DnsAliasWithSync> {
+  return callCommand<DnsAliasWithSync>("create_dns_alias", { applicationId, hostname });
 }
 
-export function updateDnsAlias(id: string, hostname: string): Promise<DnsRecord> {
-  return callCommand<DnsRecord>("update_dns_alias", { id, hostname });
+export function updateDnsAlias(id: string, hostname: string): Promise<DnsAliasWithSync> {
+  return callCommand<DnsAliasWithSync>("update_dns_alias", { id, hostname });
 }
 
-export function deleteDnsAlias(id: string): Promise<void> {
-  return callCommand<void>("delete_dns_alias", { id });
+export function deleteDnsAlias(id: string): Promise<DnsSyncResult[]> {
+  return callCommand<DnsSyncResult[]>("delete_dns_alias", { id });
 }
 
 export function syncVibeDns(): Promise<DnsSyncResult[]> {
@@ -76,4 +78,15 @@ export function resolveDnsView(): Promise<DnsView[]> {
 /** "Synchronizuj Vibe Network" - WireGuard peers + firewall + DNS, in one action, with a real per-Node OK/OUT OF SYNC result. */
 export function syncVibeNetwork(): Promise<VibeNetworkSyncResult[]> {
   return callCommand<VibeNetworkSyncResult[]>("sync_vibe_network");
+}
+
+// ---- DNS suffix (configurable, per install) ----
+
+export function getDnsSuffix(): Promise<string> {
+  return callCommand<string>("get_dns_suffix");
+}
+
+/** Only affects aliases created from now on - existing DNS records keep whatever suffix they already had. */
+export function setDnsSuffix(suffix: string): Promise<string> {
+  return callCommand<string>("set_dns_suffix", { suffix });
 }

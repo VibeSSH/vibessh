@@ -34,14 +34,28 @@ use crate::ssh::SshSession;
 mod generic;
 mod generic_docker;
 mod generic_java;
+mod mariadb;
+mod nodejs_bot;
 mod paper;
+mod phpmyadmin;
+mod purpur;
+mod python_bot;
+mod redis;
 mod velocity;
+mod waterfall;
 
 pub use generic::GenericBlueprint;
 pub use generic_docker::GenericDockerBlueprint;
 pub use generic_java::GenericJavaBlueprint;
+pub use mariadb::MariaDbBlueprint;
+pub use nodejs_bot::NodejsBotBlueprint;
 pub use paper::PaperBlueprint;
+pub use phpmyadmin::PhpMyAdminBlueprint;
+pub use purpur::PurpurBlueprint;
+pub use python_bot::PythonBotBlueprint;
+pub use redis::RedisBlueprint;
 pub use velocity::VelocityBlueprint;
+pub use waterfall::WaterfallBlueprint;
 
 /// What a blueprint's `provision` step needs to actually reach the host the
 /// application will run on - `None` connection = Local (act on the local
@@ -175,7 +189,7 @@ pub(crate) fn render_java_docker_config(java_version: &str, jvm_args: Vec<String
     command.push("-jar".to_string());
     command.push(jar);
     command.extend(program_args);
-    serde_json::json!({ "image": temurin_image(java_version), "command": command })
+    serde_json::json!({ "image": temurin_image(java_version), "command": command, "runAsDedicatedUser": true })
 }
 
 pub(crate) fn text_list_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<Vec<String>> {
@@ -211,8 +225,22 @@ impl BlueprintRegistry {
         handlers.insert(generic_java.blueprint().id.clone(), Box::new(generic_java));
         let paper = PaperBlueprint::new();
         handlers.insert(paper.blueprint().id.clone(), Box::new(paper));
+        let purpur = PurpurBlueprint::new();
+        handlers.insert(purpur.blueprint().id.clone(), Box::new(purpur));
         let velocity = VelocityBlueprint::new();
         handlers.insert(velocity.blueprint().id.clone(), Box::new(velocity));
+        let waterfall = WaterfallBlueprint::new();
+        handlers.insert(waterfall.blueprint().id.clone(), Box::new(waterfall));
+        let mariadb = MariaDbBlueprint::new();
+        handlers.insert(mariadb.blueprint().id.clone(), Box::new(mariadb));
+        let redis = RedisBlueprint::new();
+        handlers.insert(redis.blueprint().id.clone(), Box::new(redis));
+        let phpmyadmin = PhpMyAdminBlueprint::new();
+        handlers.insert(phpmyadmin.blueprint().id.clone(), Box::new(phpmyadmin));
+        let nodejs_bot = NodejsBotBlueprint::new();
+        handlers.insert(nodejs_bot.blueprint().id.clone(), Box::new(nodejs_bot));
+        let python_bot = PythonBotBlueprint::new();
+        handlers.insert(python_bot.blueprint().id.clone(), Box::new(python_bot));
         Self { handlers }
     }
 
@@ -253,6 +281,7 @@ mod tests {
             features: vec![],
             fields,
             known_files: vec![],
+            default_ports: vec![],
             is_builtin: true,
         }
     }
@@ -292,10 +321,33 @@ mod tests {
         assert!(registry.get("generic-docker").is_some());
         assert!(registry.get("generic-java").is_some());
         assert!(registry.get("paper").is_some());
+        assert!(registry.get("purpur").is_some());
         assert!(registry.get("velocity").is_some());
+        assert!(registry.get("waterfall").is_some());
+        assert!(registry.get("mariadb").is_some());
+        assert!(registry.get("redis").is_some());
+        assert!(registry.get("phpmyadmin").is_some());
+        assert!(registry.get("nodejs-bot").is_some());
+        assert!(registry.get("python-bot").is_some());
         assert!(registry.get("nonexistent").is_none());
 
         let ids: Vec<&str> = registry.list().iter().map(|blueprint| blueprint.id.as_str()).collect();
-        assert_eq!(ids, vec!["generic", "generic-docker", "generic-java", "paper", "velocity"]);
+        assert_eq!(
+            ids,
+            vec![
+                "generic",
+                "generic-docker",
+                "generic-java",
+                "mariadb",
+                "nodejs-bot",
+                "paper",
+                "phpmyadmin",
+                "purpur",
+                "python-bot",
+                "redis",
+                "velocity",
+                "waterfall",
+            ]
+        );
     }
 }

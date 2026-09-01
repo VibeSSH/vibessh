@@ -78,7 +78,18 @@ russh-sftp = "2"
 # HTTP client for the new cloud backend (accounts/teams/roles) - default-tls
 # (native-tls) rather than adding rustls as a second TLS stack, since
 # native-tls is already a dependency here for agent_client's WSS connections.
+# Also what the S3-compatible backup destination client (src/s3) uploads
+# through - same client, no second HTTP stack for that either.
 reqwest = { version = "0.12", features = ["json"] }
+# AWS SigV4 request signing for the S3-compatible backup destination
+# (src/s3) - hand-rolled against these two primitives rather than pulling in
+# aws-sdk-s3 (a very large dependency tree, and its own opinions about
+# credential resolution this app doesn't need - VibeSSH already has exactly
+# one, explicitly-configured destination). Every S3-compatible provider
+# (AWS S3, Cloudflare R2, MinIO, ...) speaks the same SigV4-signed REST API.
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
 
 # Windows-only piece of LocalProcessRuntime's graceful stop (Applications
 # Phase 2). On Unix, sysinfo's own Process::kill_with(Signal::Term) already

@@ -44,6 +44,31 @@ pub fn is_within_root(candidate: &str, root: &str) -> bool {
     candidate == root || candidate.starts_with(&format!("{root}/"))
 }
 
+/// The inverse of joining onto `root`: turns an absolute, already-canonical
+/// `path` (nested under `root`, or `root` itself) back into the
+/// root-relative form `sanitize_relative_path`/each provider's `resolve`
+/// expect on the way *in*. Every `ApplicationFileProvider::list_directory`/
+/// `metadata` result must go through this before reaching the frontend -
+/// otherwise a listed entry's own `.path` (the real absolute host path) fed
+/// straight back into `delete`/`rename`/`download`/etc gets joined onto
+/// `root` a *second* time, producing a nonexistent nested path (this was a
+/// real, previously-shipped bug: deleting a file, or downloading/renaming
+/// one, failed with a misleading "the containing directory doesn't exist" /
+/// "path escapes the application directory" for anything reached through a
+/// real directory listing rather than a blueprint's hardcoded Quick Files
+/// path). Falls back to returning `path` unchanged if it isn't actually
+/// under `root` - defensive only, every real caller's `path` always is.
+pub fn relativize(path: &str, root: &str) -> String {
+    let root = root.trim_end_matches('/');
+    if path == root {
+        return ".".to_string();
+    }
+    match path.strip_prefix(root).and_then(|rest| rest.strip_prefix('/')) {
+        Some(relative) => relative.to_string(),
+        None => path.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +120,24 @@ mod tests {
     #[test]
     fn is_within_root_tolerates_a_trailing_slash_on_root() {
         assert!(is_within_root("/srv/app/plugins", "/srv/app/"));
+    }
+
+    #[test]
+    fn relativize_strips_the_root_prefix_from_a_nested_child() {
+        assert_eq!(relativize("/srv/app/plugins/MyPlugin.jar", "/srv/app"), "plugins/MyPlugin.jar");
+    }
+
+    #[test]
+    fn relativize_maps_root_itself_to_a_dot() {
+        assert_eq!(relativize("/srv/app", "/srv/app"), ".");
+    }
+
+    #[test]
+    fn relativize_round_trips_through_sanitize_and_a_root_join() {
+        let root = "/srv/app";
+        let absolute = "/srv/app/plugins/MyPlugin.jar";
+        let relative = relativize(absolute, root);
+        let rejoined = format!("{root}/{}", sanitize_relative_path(&relative).unwrap());
+        assert_eq!(rejoined, absolute);
     }
 }

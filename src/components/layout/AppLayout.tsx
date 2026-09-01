@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { cloudSessionInfo } from "@/services/cloudService";
 import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
@@ -12,6 +13,7 @@ import "./AppLayout.css";
 
 export function AppLayout() {
   const setUser = useAuthStore((s) => s.setUser);
+  useBackupScheduler();
 
   useEffect(() => {
     // A session from a previous launch may already be restored on the Rust

@@ -1,6 +1,7 @@
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
 import "./TitleBar.css";
 
@@ -36,10 +37,12 @@ interface TitleBarBtnProps {
 function TitleBarBtn({ icon, size, onClick, className, ariaLabel }: TitleBarBtnProps) {
   const { createRipple, rippleEls } = useRipple();
   return (
-    <button className={`titlebar-btn ripple-host ${className ?? ""}`} onPointerDown={createRipple} onClick={onClick} aria-label={ariaLabel}>
-      {rippleEls}
-      <Icon name={icon} size={size} />
-    </button>
+    <Tooltip label={ariaLabel} placement="bottom">
+      <button className={`titlebar-btn ripple-host ${className ?? ""}`} onPointerDown={createRipple} onClick={onClick} aria-label={ariaLabel}>
+        {rippleEls}
+        <Icon name={icon} size={size} />
+      </button>
+    </Tooltip>
   );
 }
 
