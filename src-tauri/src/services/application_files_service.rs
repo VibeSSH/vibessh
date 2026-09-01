@@ -300,7 +300,44 @@ pub async fn upload_file(
         .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_src.display())))?
         .len();
     let mut reporter = throttled_reporter(total, on_progress);
-    provider.upload_file(local_src, path, &mut reporter).await
+
+    // Uploads land on a `.vibessh-partial` sibling and only move to the real
+    // path once the transfer has completed.
+    //
+    // Without this, an upload that failed partway - a dropped connection, a
+    // cancelled transfer - left a *truncated file at the real path*,
+    // silently replacing whatever was there. For the files this feature is
+    // actually used on (a server jar, a world archive, a config read at
+    // boot) that is a broken Application with nothing to indicate why.
+    //
+    // Two limits worth stating plainly rather than implying they are
+    // handled. Cancellation aborts the task, so the future is dropped
+    // rather than returning `Err` - the real path is still protected, but
+    // the `.vibessh-partial` fragment is left behind and shows up in the
+    // Files tab. And an overwrite has to unlink the destination before the
+    // rename (SFTP's rename fails when the target exists), so there is a
+    // brief window where the path does not exist at all. That is a much
+    // better failure than a truncated file: a missing file is obvious
+    // immediately, a half-written jar is not.
+    let partial = format!("{path}.vibessh-partial");
+    match provider.upload_file(local_src, &partial, &mut reporter).await {
+        Ok(()) => {
+            // Only when something is actually there - `delete` on a missing
+            // path is an error on some providers.
+            if provider.metadata(path).await.is_ok() {
+                provider.delete(path).await?;
+            }
+            provider.rename(&partial, path).await
+        }
+        Err(err) => {
+            // Best-effort, and logged rather than discarded: a leftover
+            // fragment is not fatal but it is confusing.
+            if let Err(cleanup_err) = provider.delete(&partial).await {
+                log::warn!("couldn't remove the partial upload at '{partial}': {cleanup_err}");
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Extracts an archive that's already sitting in the Application's own

@@ -1261,7 +1261,9 @@ pub fn remove_registry_credential(repo: &RegistryCredentialRepository, id: Uuid)
     // gone either way, and a leftover keyring entry under a dead id is
     // orphaned but harmless, not a correctness problem worth failing this
     // call over.
-    let _ = credentials::delete_registry_credential_password(id);
+    if let Err(err) = credentials::delete_registry_credential_password(id) {
+        log::warn!("couldn't remove the stored registry password for {id}: {err}");
+    }
     Ok(())
 }
 
@@ -1387,7 +1389,9 @@ pub fn set_application_environment(repo: &ApplicationRepository, id: Uuid, envir
 
     for prev in &previous {
         if prev.is_secret && !resolved.iter().any(|env| env.key == prev.key && env.is_secret) {
-            let _ = credentials::delete_environment_secret(id, &prev.key);
+            if let Err(err) = credentials::delete_environment_secret(id, &prev.key) {
+                log::warn!("couldn't remove the stored '{}' secret for application {id}: {err}", prev.key);
+            }
         }
     }
 

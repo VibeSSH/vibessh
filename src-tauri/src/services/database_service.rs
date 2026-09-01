@@ -115,7 +115,7 @@ pub fn create_database_host(repo: &DatabaseRepository, input: CreateDatabaseHost
 /// `DatabaseRepository::delete_host` itself, nothing extra needed here.
 pub fn delete_database_host(repo: &DatabaseRepository, id: Uuid) -> AppResult<()> {
     repo.delete_host(id)?;
-    let _ = credentials::delete_secret(id, SecretKind::DatabaseHostAdmin);
+    credentials::forget_secret(id, SecretKind::DatabaseHostAdmin);
     Ok(())
 }
 
@@ -222,7 +222,7 @@ pub async fn delete_application_database(
     run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[]).await?;
 
     db_repo.delete_database(id)?;
-    let _ = credentials::delete_secret(id, SecretKind::ApplicationDatabaseUser);
+    credentials::forget_secret(id, SecretKind::ApplicationDatabaseUser);
     Ok(())
 }
 
@@ -290,16 +290,33 @@ pub fn phpmyadmin_url(
 
     let mut url = format!("http://{address}:{port}/");
     if let Some(name) = database_name {
-        // Always machine-generated (alphanumeric + underscore only, see
-        // `generate_identifier`) - safe to embed directly in a query
-        // string, no percent-encoding needed.
+        // Percent-encoded even though `generate_identifier` only ever
+        // produces `[a-z0-9_]`. This value arrives from the frontend as a
+        // free-form string, so "it is always machine-generated" is an
+        // assumption about a caller rather than something this function can
+        // see - and an unencoded `&` or `#` here silently truncates the
+        // parameter rather than failing.
         url.push_str("?db=");
-        url.push_str(name);
+        url.push_str(&percent_encode_query_value(name));
     }
     Ok(url)
 }
 
 // ---- Shared helpers ----
+
+/// Percent-encodes everything outside the unreserved set from RFC 3986.
+/// Deliberately conservative - encoding a character that did not strictly
+/// need it is harmless, missing one is not.
+fn percent_encode_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => encoded.push(byte as char),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
 
 fn load_host(db_repo: &DatabaseRepository, id: Uuid) -> AppResult<DatabaseHost> {
     db_repo.get_host(id)?.ok_or_else(|| AppError::NotFound(format!("database host {id}")))
@@ -957,5 +974,17 @@ mod tests {
             admin_username: "root".to_string(),
             admin_password: "hunter2".to_string(),
         }
+    }
+    /// The value is machine-generated today, but it arrives here as a
+    /// free-form string from the frontend - an unencoded `&` or `#` would
+    /// silently truncate the parameter rather than failing.
+    #[test]
+    fn percent_encode_query_value_escapes_everything_outside_the_unreserved_set() {
+        assert_eq!(percent_encode_query_value("vibessh_app_a1b2c3"), "vibessh_app_a1b2c3");
+        assert_eq!(percent_encode_query_value("a-b.c~d"), "a-b.c~d");
+        assert_eq!(percent_encode_query_value("a&b"), "a%26b");
+        assert_eq!(percent_encode_query_value("a#b"), "a%23b");
+        assert_eq!(percent_encode_query_value("a b"), "a%20b");
+        assert_eq!(percent_encode_query_value("a/b?c=d"), "a%2Fb%3Fc%3Dd");
     }
 }

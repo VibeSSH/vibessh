@@ -46,6 +46,34 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 /// alive instead, and the per-command `COMMAND_TIMEOUT` is what bounds a
 /// command that genuinely never returns.
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How much of a command's output is kept before the rest is discarded.
+///
+/// There was no cap: `execute_command` accumulated stdout and stderr into
+/// unbounded `Vec<u8>`s, so a mistyped `cat` of a large file, a wide `find`,
+/// or a runaway process writing to stderr pulled the whole thing into the
+/// desktop's memory. With `panic = "abort"` in the release profile, running
+/// out of memory there kills the app rather than failing the command.
+///
+/// 8 MiB is far past every command this codebase actually issues - the
+/// largest are `docker logs --tail 5000` and a `find` listing - so hitting
+/// it means something has gone wrong, and the truncation notice says so.
+const MAX_COMMAND_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Appends up to the cap, and reports whether anything had to be dropped.
+fn append_capped(buffer: &mut Vec<u8>, data: &[u8], truncated: &mut bool) {
+    let remaining = MAX_COMMAND_OUTPUT_BYTES.saturating_sub(buffer.len());
+    if remaining == 0 {
+        *truncated = true;
+        return;
+    }
+    if data.len() > remaining {
+        buffer.extend_from_slice(&data[..remaining]);
+        *truncated = true;
+    } else {
+        buffer.extend_from_slice(data);
+    }
+}
 /// SSH's "stderr" extended-data stream id, per RFC 4254 5.2.
 const SSH_EXTENDED_DATA_STDERR: u32 = 1;
 
@@ -201,23 +229,30 @@ impl SshSession {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let mut exit_code = None;
+        let mut truncated = false;
 
         while let Some(msg) = channel.wait().await {
             match msg {
-                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                ChannelMsg::Data { data } => append_capped(&mut stdout, &data, &mut truncated),
                 ChannelMsg::ExtendedData { data, ext } if ext == SSH_EXTENDED_DATA_STDERR => {
-                    stderr.extend_from_slice(&data);
+                    append_capped(&mut stderr, &data, &mut truncated);
                 }
                 ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status as i32),
                 _ => {}
             }
         }
 
-        Ok(CommandOutput {
-            exit_code: exit_code.unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
-        })
+        let mut stderr = String::from_utf8_lossy(&stderr).into_owned();
+        if truncated {
+            // Appended to stderr rather than silently dropped: a caller that
+            // parses stdout would otherwise see a plausible-looking but
+            // incomplete result with nothing to indicate it.
+            stderr.push_str(&format!(
+                "\n[vibessh] output exceeded {} MiB and was truncated",
+                MAX_COMMAND_OUTPUT_BYTES / (1024 * 1024)
+            ));
+        }
+        Ok(CommandOutput { exit_code: exit_code.unwrap_or(-1), stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr })
     }
 
     pub async fn close(&self) {

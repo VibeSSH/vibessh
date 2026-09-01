@@ -34,8 +34,8 @@ pub fn delete_server(repo: &ServerRepository, id: Uuid) -> AppResult<()> {
     // Best-effort: the row is already gone, and delete_secret already treats
     // "nothing to delete" as success, so these can't meaningfully fail in a
     // way the caller should roll back for.
-    let _ = credentials::delete_secret(id, SecretKind::SshPassword);
-    let _ = credentials::delete_secret(id, SecretKind::SshKeyPassphrase);
+    credentials::forget_secret(id, SecretKind::SshPassword);
+    credentials::forget_secret(id, SecretKind::SshKeyPassphrase);
     Ok(())
 }
 
@@ -320,7 +320,7 @@ mod tests {
             Some("hunter2".to_string())
         );
 
-        let _ = credentials::delete_secret(server.id, SecretKind::SshPassword);
+        credentials::forget_secret(server.id, SecretKind::SshPassword);
     }
 
     #[test]
@@ -346,6 +346,6 @@ mod tests {
         let server = create_server(&repo, valid_input()).unwrap();
         let servers = list_servers(&repo).unwrap();
         assert!(servers.iter().any(|s| s.id == server.id));
-        let _ = credentials::delete_secret(server.id, SecretKind::SshPassword);
+        credentials::forget_secret(server.id, SecretKind::SshPassword);
     }
 }

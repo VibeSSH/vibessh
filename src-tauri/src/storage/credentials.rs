@@ -45,6 +45,22 @@ impl SecretKind {
     }
 }
 
+/// Deletes a secret, logging rather than returning on failure.
+///
+/// Every caller is a cleanup step inside a larger operation that has
+/// already succeeded - a Server was deleted, an Application's environment
+/// no longer has that key - so failing the whole operation because the
+/// keyring was momentarily unavailable would be worse than the leftover.
+/// But discarding the result with `let _ =`, which is what these call sites
+/// used to do, means a credential silently outlives the thing it belonged
+/// to with nothing anywhere recording that it happened. This is the middle
+/// ground: never fatal, never invisible.
+pub fn forget_secret(server_id: Uuid, kind: SecretKind) {
+    if let Err(err) = delete_secret(server_id, kind) {
+        log::warn!("couldn't remove the stored {} for {server_id}: {err}", kind.suffix());
+    }
+}
+
 pub fn store_secret(server_id: Uuid, kind: SecretKind, value: &str) -> AppResult<()> {
     entry_for(server_id, kind)?
         .set_password(value)
