@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 52px;
-  min-width: 52px;
+  width: var(--rail-width);
+  min-width: var(--rail-width);
   height: 100%;
   /* Top edge lines up with app-layout-brand's own 48px-tall row (see
      AppLayout.css) so the first instance icon (or the + button, when the

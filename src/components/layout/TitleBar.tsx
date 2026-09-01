@@ -1,5 +1,6 @@
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
+import { EarlyAccessBadge } from "@/components/layout/EarlyAccessBadge";
 import { Icon } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
@@ -86,6 +87,10 @@ export function TitleBar() {
       {/* No app-name label here - NavBar's own brand mark sits directly
           underneath and showing "VibeSSH" in both looked like broken,
           overlapping text rather than two separate rows. */}
+      {/* The badge sits in this bar rather than beside the wordmark: it is a
+          statement about the build, which is what a title bar is for, and it
+          stays visible on every page without competing with the brand. */}
+      <EarlyAccessBadge />
       <div className="titlebar-controls">
         <TitleBarBtn
           icon="minus"

@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -6,7 +7,14 @@ import tailwindcss from "@tailwindcss/vite";
 // Tauri expects a fixed port and will fail if it is already in use.
 const host = process.env.TAURI_DEV_HOST;
 
+// The fallback the Early Access badge shows when it is not running inside a
+// Tauri webview (a plain `npm run dev`, or the browser-based UI checks).
+// Inside Tauri the badge asks `getVersion()` instead, which reads
+// `tauri.conf.json` - the number that actually ships.
+const appVersion = createRequire(import.meta.url)("./package.json").version;
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react(), tailwindcss()],
   optimizeDeps: {
     include: ["@iconify/react/offline"],

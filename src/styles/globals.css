@@ -103,6 +103,13 @@
      need the breakpoint repeat the literal 1100px value in their
      `@media (max-width: 1100px)` query and should stay in sync with this. */
   --bp-compact: 1100px;
+
+  /* The far-left icon strip's width, and the padding the brand row uses
+     beside it. Extracted so the title-bar badge can line its left edge up
+     with the VibeSSH wordmark below it - hardcoding 68px there would drift
+     silently the first time either value changed. */
+  --rail-width: 52px;
+  --brand-padding: 16px;
 }
 
 /*

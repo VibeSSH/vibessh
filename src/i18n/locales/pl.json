@@ -1292,5 +1292,9 @@
     "offline": "Offline",
     "connecting": "Łączenie",
     "unknown": "Nieznany"
+  },
+  "earlyAccess": {
+    "label": "Early Access",
+    "tooltip": "Wersja przedpremierowa. Zarządza prawdziwymi serwerami z uprawnieniami roota, a części nie sprawdzono na każdej konfiguracji - trzymaj kopię zapasową i przeczytaj informacje o wydaniu."
   }
 }

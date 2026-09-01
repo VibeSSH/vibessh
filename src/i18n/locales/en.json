@@ -1292,5 +1292,9 @@
     "offline": "Offline",
     "connecting": "Connecting",
     "unknown": "Unknown"
+  },
+  "earlyAccess": {
+    "label": "Early Access",
+    "tooltip": "A pre-release build. It manages real servers with root, and parts of it have not been exercised against every configuration - keep a backup and read the release notes."
   }
 }

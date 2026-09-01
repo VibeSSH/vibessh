@@ -1,0 +1,57 @@
+/* Two-tone pill in the title bar: the words carry the meaning, the version
+   carries the detail, and the split makes the version readable at a glance
+   without the badge shouting. Borrows the accent rather than introducing a
+   colour of its own. */
+.early-access-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* Lines its left edge up with the VibeSSH wordmark in the row below,
+     rather than with the window edge - the two read as one column that way.
+     Computed from the same variables the rail and the brand row use, so it
+     cannot drift from them. `auto` on the right keeps the window controls in
+     their own corner. */
+  margin: 0 auto 0 calc(var(--rail-width) + var(--brand-padding));
+  /* Keeps pointer events, deliberately. The title bar is the window's drag
+     handle, so the badge does swallow the gesture over its own ~100px - and
+     that is the better trade, because `pointer-events: none` would also
+     suppress the native `title` tooltip, which is where the actual warning
+     about pre-release software lives. Nobody drags a window by its badge.
+     (An earlier version of this file had it the other way round, with a
+     comment claiming the tooltip survived. It does not.) */
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  /* The badge is informative, not interactive - a pointer would promise a
+     click that does nothing. */
+  cursor: default;
+}
+
+.early-access-badge-label {
+  padding: 4px 7px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.early-access-badge-version {
+  padding: 4px 7px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+}
+
+/* The sidebar collapses on narrow windows; the version is the first thing
+   worth dropping, since "Early Access" is the part that matters. */
+@media (max-width: 1100px) {
+  .early-access-badge-version {
+    display: none;
+  }
+}
