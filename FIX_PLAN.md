@@ -252,9 +252,23 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > is left alone on purpose and now says why: it is a liveness probe, not a
 > retry.
 >
+> **E.8 done**, and it turned out not to be only about `down` migrations.
+> The failure an operator actually hits is running a new release and then
+> going back to the old one: `to_latest` refuses a `user_version` it does
+> not recognise, with a message that reads like a corrupt database. That is
+> now a refusal in plain words that says nothing has been lost. A
+> `VACUUM INTO` snapshot is taken before any migration changes the schema,
+> which is a rollback path that works whether or not the `down` SQL was
+> written correctly - 15 of 16 steps have one and it is round-trip tested;
+> migration 3 cannot, and says why. `schema::verify_checksums` closes D-003.
+> Two things fell out of putting this in one place: the nine-way startup
+> migration race is gone (the work runs once per file per process), and
+> `bootstrap_legacy_schema` no longer has to be in whichever repository
+> happens to be constructed first - which is what it silently depended on.
+>
 > **Deliberately not done, with reasons:**
-> - **E.7/E.8** (split `application_service.rs`, add `down` migrations) are
->   mechanical but large, and neither changes behaviour.
+> - **E.7** (split `application_service.rs`) is mechanical but large, and
+>   changes no behaviour.
 
 | # | Item | Finding |
 |---|---|---|
@@ -265,7 +279,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 | E.5 | Unify the two `slugify` implementations | §12 |
 | E.6 | ~~Replace the four copy-pasted connect-retry blocks with the (now-corrected) `retry_on_connection_failure`~~ **Done** | §12 |
 | E.7 | Split `application_service.rs` (1700 lines) along its natural seams: lifecycle / ports / config / registry / logs | A-001 |
-| E.8 | Add `down` migrations and a migration-checksum guard | D-002, D-003 |
+| E.8 | ~~Add `down` migrations and a migration-checksum guard~~ **Done** - plus a pre-migration snapshot and a readable "database from the future" refusal (`storage/schema.rs`) | D-002, D-003 |
 | E.9 | Add a unique constraint on `application_ports (server_id, protocol, external_port)` | D-007 |
 
 ---

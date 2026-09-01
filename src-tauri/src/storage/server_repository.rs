@@ -11,48 +11,11 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{AgentStatus, AuthenticationType, ConnectionMode, NodeCapabilities, Server, ServerInput};
-use crate::storage::migrations::migrations;
 
 pub struct ServerRepository {
     conn: Mutex<Connection>,
 }
 
-/// A database written by a pre-migration-framework build already has the
-/// `servers`/`ssh_known_hosts` tables (created via the old bare
-/// `CREATE TABLE IF NOT EXISTS` calls) but SQLite's `user_version` is still
-/// its default of 0 - indistinguishable, as far as `user_version` alone is
-/// concerned, from a brand new empty database. Running migration 1's
-/// `CREATE TABLE` against it would fail with "table already exists" instead
-/// of recognizing the schema is already there. If `servers` exists and
-/// `user_version` is still 0, this stamps it to 1 directly (no SQL
-/// re-executed - the schema already matches migration 1 verbatim) so
-/// `to_latest` sees a fully-migrated database and does nothing. Runs once
-/// per real upgrade, the very first time an existing user's database is
-/// opened by a build that has the migration framework.
-fn bootstrap_legacy_schema(conn: &Connection) -> AppResult<()> {
-    let user_version: i64 = conn
-        .query_row("PRAGMA user_version", (), |row| row.get(0))
-        .map_err(|err| AppError::Storage(format!("failed to read the database's user_version: {err}")))?;
-    if user_version != 0 {
-        return Ok(());
-    }
-
-    let already_has_servers_table: bool = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'servers'",
-            (),
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|err| AppError::Storage(format!("failed to inspect the database's existing tables: {err}")))?
-        > 0;
-    if !already_has_servers_table {
-        return Ok(());
-    }
-
-    conn.execute_batch("PRAGMA user_version = 1")
-        .map_err(|err| AppError::Storage(format!("failed to stamp the legacy database's schema version: {err}")))?;
-    Ok(())
-}
 
 impl ServerRepository {
     pub fn open(db_path: &Path) -> AppResult<Self> {
@@ -60,7 +23,6 @@ impl ServerRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "server")?;
-        bootstrap_legacy_schema(&conn)?;
 
         // `servers` (server metadata) and `ssh_known_hosts` (Etap 3's TOFU
         // host key store, kept as its own table rather than a column on
@@ -68,9 +30,7 @@ impl ServerRepository {
         // to be absent or to change independently of the server's own
         // fields) are both defined in storage::migrations - see there for
         // how future schema changes get added.
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the server database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "server")?;
 
         Ok(Self { conn: Mutex::new(conn) })
     }

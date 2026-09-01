@@ -18,6 +18,7 @@ pub mod migrations;
 pub mod node_network_repository;
 pub mod node_state_repository;
 pub mod registry_credential_repository;
+pub mod schema;
 pub mod server_repository;
 
 use std::path::Path;
@@ -38,10 +39,13 @@ use crate::errors::{AppError, AppResult};
 /// - **`busy_timeout`.** SQLite's default is `0`: a connection that finds
 ///   the database locked returns `SQLITE_BUSY` immediately rather than
 ///   waiting. Two effects, both of which were reachable in normal use. At
-///   startup, all nine repositories run `migrations().to_latest()` at once
-///   on a fresh database; the losers of that race failed outright and
-///   `lib.rs` propagated the error, so **the app intermittently refused to
-///   launch**. At runtime, any write in one repository concurrent with a
+///   startup, all nine repositories ran the migrations at once on a fresh
+///   database; the losers of that race failed outright and `lib.rs`
+///   propagated the error, so **the app intermittently refused to launch**.
+///   (`schema::migrate` now does the work once per file per process, so that
+///   particular race is gone at the source - but the timeout is still what
+///   makes nine connections on one file safe.) At runtime, any write in one
+///   repository concurrent with a
 ///   write in another surfaced to the user as
 ///   `storage error: database is locked`. A timeout turns both into a short
 ///   wait, which is what SQLite's locking model expects callers to do.

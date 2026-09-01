@@ -17,7 +17,6 @@ use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
     PortInput, PortProtocol, PortVisibility, RuntimeType, UpdateApplicationInput,
 };
-use crate::storage::migrations::migrations;
 
 pub struct ApplicationRepository {
     conn: Mutex<Connection>,
@@ -25,7 +24,7 @@ pub struct ApplicationRepository {
 
 impl ApplicationRepository {
     /// `db_path` is the same `servers.sqlite3` `ServerRepository` opens -
-    /// `migrations().to_latest()` is safe to call from both (it's a no-op
+    /// `schema::migrate` is safe to call from both (it runs once per file
     /// once the file's `user_version` is already current), and each keeps
     /// its own `Connection` to it, same as any two independent SQLite
     /// clients of one file.
@@ -34,9 +33,7 @@ impl ApplicationRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "application")?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the application database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "application")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

@@ -15,7 +15,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
-use crate::storage::migrations::migrations;
 
 pub struct DatabaseRepository {
     conn: Mutex<Connection>,
@@ -23,7 +22,7 @@ pub struct DatabaseRepository {
 
 impl DatabaseRepository {
     /// `db_path` is the same `servers.sqlite3` every other repository
-    /// opens - `migrations().to_latest()` is a no-op once the file's
+    /// opens - `schema::migrate` is a no-op once the file's
     /// `user_version` is already current, so it's safe to call from here
     /// too.
     pub fn open(db_path: &Path) -> AppResult<Self> {
@@ -31,9 +30,7 @@ impl DatabaseRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "database")?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the application database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "database")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

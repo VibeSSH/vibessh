@@ -14,7 +14,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationBackup, BackupKind, BackupSchedule, SetBackupScheduleInput};
-use crate::storage::migrations::migrations;
 
 pub struct ApplicationBackupRepository {
     conn: Mutex<Connection>,
@@ -26,7 +25,7 @@ impl ApplicationBackupRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "application backup")?;
-        migrations().to_latest(&mut conn).map_err(|err| AppError::Storage(format!("failed to migrate the backups database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "backups")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

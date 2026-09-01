@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{FirewallCustomRule, FirewallCustomRuleInput, PortProtocol};
-use crate::storage::migrations::migrations;
 
 pub struct FirewallRuleRepository {
     conn: Mutex<Connection>,
@@ -23,9 +22,7 @@ impl FirewallRuleRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "firewall rule")?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the firewall rule database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "firewall")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

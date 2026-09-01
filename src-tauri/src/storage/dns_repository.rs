@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::DnsRecord;
-use crate::storage::migrations::migrations;
 
 pub struct DnsRepository {
     conn: Mutex<Connection>,
@@ -23,7 +22,7 @@ impl DnsRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "DNS")?;
-        migrations().to_latest(&mut conn).map_err(|err| AppError::Storage(format!("failed to migrate the DNS database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "DNS")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

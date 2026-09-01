@@ -517,7 +517,7 @@ No windowing library is present. File listings, container lists, process lists a
 
 ## 8. Database
 
-**Schema:** 15 migrations under `rusqlite_migration`, forward-only. Foreign keys enabled on every connection. `ON DELETE CASCADE` used consistently. Sensible unique constraints (`dns_records.application_id`, `dns_records.hostname`, `registry_credentials.registry`). Indexes present where queried. **No secrets in any column** — verified across all 15 migrations and all 9 repositories, and enforced by comment convention in the migration file.
+**Schema:** 16 migrations under `rusqlite_migration` (15 at audit time), forward-only. Foreign keys enabled on every connection. `ON DELETE CASCADE` used consistently. Sensible unique constraints (`dns_records.application_id`, `dns_records.hostname`, `registry_credentials.registry`). Indexes present where queried. **No secrets in any column** — verified across all 15 migrations and all 9 repositories, and enforced by comment convention in the migration file.
 
 | ID | Finding | Sev | Pri |
 |---|---|---|---|
@@ -528,6 +528,16 @@ No windowing library is present. File listings, container lists, process lists a
 | D-005 | No transaction boundary spans repositories. `add_application_port` writes the port then syncs the firewall best-effort; a firewall failure leaves the DB claiming a rule that does not exist on the Node | MEDIUM | P1 |
 | D-006 | Orphan rows: deleting a Server cascades Applications, but nothing reconciles the **Node-side** state — see S-007 | HIGH | P0 |
 | D-007 | `application_ports` has no unique constraint on `(server_id, protocol, external_port)`; collision detection is an application-level query with a TOCTOU window against concurrent adds | MEDIUM | P2 |
+
+**D-002 and D-003 — status: fixed** (`storage/schema.rs`).
+
+D-002 asked for `down` migrations. 15 of the 16 steps now have one and a round-trip test walks the whole reversible range down and back up, so they are executed rather than assumed. Migration 3 cannot express one — SQLite refuses `DROP COLUMN` for a column named in a foreign key, and `health_check_port_id` is one — so it carries no `down` and says why, rather than shipping a table rebuild nobody has ever run. The rollback path that does not depend on any of that is a `VACUUM INTO` snapshot written before a migration changes the schema, named for the version it leaves behind.
+
+The failure an operator actually meets was not in the finding at all: run a new release, go back to the old one, and `to_latest` refuses a `user_version` it does not recognise with a message that reads like corruption. That is now a refusal in plain words, saying which way round the mismatch is and that nothing has been lost.
+
+D-003 asked for checksum verification. Every step's SQL is hashed and compared against what the database recorded, so an already-shipped migration edited in place is a loud failure instead of a schema that silently differs between a fresh install and an upgraded one. Whitespace-insensitive, so reformatting cannot trip it. It vouches only for changes made after it shipped; a step edited before that is invisible to it, which the code says outright.
+
+Two things fell out of putting all of this in one place rather than in nine repositories: the startup migration race D-001 describes is gone at the source (the work runs once per file per process, not nine times), and `bootstrap_legacy_schema` no longer depends on `ServerRepository` being constructed first — which is what made a pre-framework database open successfully, undocumented, by the ordering of nine lines in `lib.rs`.
 
 ---
 

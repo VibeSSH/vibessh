@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::NodeNetworkMember;
-use crate::storage::migrations::migrations;
 
 /// `10.77.0.0/16` - a private range with no realistic collision against a
 /// managed Server's own LAN (which is virtually always `10.0.0.0/8`'s more
@@ -38,9 +37,7 @@ impl NodeNetworkRepository {
         // see `storage::open_connection` for why they matter with nine
         // connections open on the same file.
         let mut conn = super::open_connection(db_path, "node network")?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the node network database: {err}")))?;
+        super::schema::migrate(&mut conn, db_path, "network")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
