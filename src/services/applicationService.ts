@@ -46,8 +46,30 @@ export function createApplication(input: CreateApplicationInput): Promise<Applic
   return callCommand<ApplicationDetail>("create_application", { input });
 }
 
-export function deleteApplication(id: string): Promise<void> {
-  return callCommand<void>("delete_application", { id });
+/**
+ * What a delete actually managed to clean up. Deleting an Application is a
+ * real teardown - it destroys the container, drops its databases, revokes
+ * its firewall rules, removes its DNS name and removes its Node-side
+ * account - and any of those can fail if the Node is unreachable partway
+ * through. `warnings` being non-empty means the row is gone but something
+ * on the Node is not: most importantly the container may still be running
+ * and still holding its published port, which is what later makes a
+ * replacement Application fail to start with a raw "port is already
+ * allocated". Surface it rather than reporting a clean success.
+ */
+export interface ApplicationTeardownReport {
+  containerRemoved: boolean;
+  databasesDropped: number;
+  firewallSynced: boolean;
+  dnsSynced: boolean;
+  dedicatedAccountRemoved: boolean;
+  workingDirectoryRemoved: boolean;
+  warnings: string[];
+}
+
+/** `removeFiles` deletes the Application's working directory - a world save, a database volume, whatever the operator put there. Off unless explicitly asked: it is the one step that cannot be undone. */
+export function deleteApplication(id: string, removeFiles = false): Promise<ApplicationTeardownReport> {
+  return callCommand<ApplicationTeardownReport>("delete_application", { id, removeFiles });
 }
 
 /** Re-renders `runtimeConfig` from the blueprint after merging `fieldValues` on top of whatever was stored at creation (or the last edit) - see the Rust `update_application_config`'s own doc comment. A restart is required for a running process to actually pick up the new config, same as an uploaded jar replacement. */

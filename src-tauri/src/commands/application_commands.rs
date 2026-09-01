@@ -12,8 +12,10 @@ use crate::models::{
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
-use crate::state::SshSessionManager;
+use crate::state::{DnsSuffixState, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::database_repository::DatabaseRepository;
+use crate::storage::dns_repository::DnsRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
@@ -142,9 +144,49 @@ pub async fn update_application_config(
     services::update_application_config(&repo, &registry, &server_repo, &sessions, id, field_values).await
 }
 
+/// Deleting an Application is a real teardown, not just a row delete - it
+/// destroys the container, drops the databases, revokes the firewall rules,
+/// removes the DNS name and removes the Node-side account. See
+/// `services::delete_application` for why, and for the order.
+///
+/// Returns a report rather than `()` so the UI can tell a clean removal
+/// apart from a partial one: if the Node was unreachable, the container is
+/// still running and still holding its published port, and the operator
+/// needs to know that rather than being told the delete succeeded.
+///
+/// `removeFiles` is passed explicitly by the caller and defaults to off -
+/// it is the only step that destroys the operator's own data.
 #[tauri::command]
-pub async fn delete_application(repo: State<'_, ApplicationRepository>, log_capture: State<'_, LogCaptureStore>, id: Uuid) -> AppResult<()> {
-    services::delete_application(&repo, &log_capture, id).await
+#[allow(clippy::too_many_arguments)]
+pub async fn delete_application(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    db_repo: State<'_, DatabaseRepository>,
+    network_repo: State<'_, NodeNetworkRepository>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
+    dns_repo: State<'_, DnsRepository>,
+    dns_suffix: State<'_, DnsSuffixState>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    log_capture: State<'_, LogCaptureStore>,
+    id: Uuid,
+    remove_files: Option<bool>,
+) -> AppResult<services::ApplicationTeardownReport> {
+    services::delete_application(
+        &repo,
+        &server_repo,
+        &db_repo,
+        &network_repo,
+        &firewall_rule_repo,
+        &dns_repo,
+        &sessions,
+        &local_process_manager,
+        &log_capture,
+        &dns_suffix.get(),
+        id,
+        services::ApplicationDeleteOptions { drop_databases: true, remove_files: remove_files.unwrap_or(false) },
+    )
+    .await
 }
 
 #[tauri::command]

@@ -33,6 +33,7 @@ use crate::services::firewall_service;
 use crate::services::ssh_service::get_or_connect;
 use crate::state::{MigrationLockManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
@@ -54,6 +55,7 @@ pub async fn migrate_application(
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
     dns_repo: &DnsRepository,
+    db_repo: &DatabaseRepository,
     dns_suffix: &str,
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
@@ -72,6 +74,7 @@ pub async fn migrate_application(
         server_repo,
         network_repo,
         dns_repo,
+        db_repo,
         dns_suffix,
         firewall_rule_repo,
         registry_repo,
@@ -92,6 +95,7 @@ async fn migrate_application_inner(
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
     dns_repo: &DnsRepository,
+    db_repo: &DatabaseRepository,
     dns_suffix: &str,
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
@@ -193,7 +197,30 @@ async fn migrate_application_inner(
     // (and, if this were skipped, its own orphaned capture file) is retired
     // - see `LogCaptureStore::rename`'s own doc comment.
     log_capture.rename(source_application_id, target_application_id).await;
-    application_service::delete_application(app_repo, log_capture, source_application_id).await?;
+    // Retires the source instance: destroys its container, removes its
+    // Node-side identity, and revokes its firewall rules. Deliberately
+    // neither drops databases (migration does not move them, so dropping
+    // would destroy data the operator still has) nor deletes files (they
+    // are the originals this migration just copied from) - see
+    // `ApplicationDeleteOptions`.
+    let teardown = application_service::delete_application(
+        app_repo,
+        server_repo,
+        db_repo,
+        network_repo,
+        firewall_rule_repo,
+        dns_repo,
+        sessions,
+        local_process_manager,
+        log_capture,
+        dns_suffix,
+        source_application_id,
+        application_service::ApplicationDeleteOptions::default(),
+    )
+    .await?;
+    for warning in &teardown.warnings {
+        log::warn!("retiring the migrated source application {source_application_id}: {warning}");
+    }
     if let Some(source_server_id) = source.application.server_id {
         let _ = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, source_server_id).await;
     }

@@ -75,7 +75,7 @@ const SUDOERS_PATH: &str = "/etc/sudoers.d/vibessh-file-helper";
 ///
 /// Both are fixed by the layout in `staging_dir` plus the `sudo rm` in
 /// `discard_staging`, and by the staging files now being mode 0600.
-const STAGING_ROOT: &str = "/run/vibessh/stage";
+pub(crate) const STAGING_ROOT: &str = "/run/vibessh/stage";
 
 /// Per-Application staging directory, owned by that Application's own
 /// dedicated account.
