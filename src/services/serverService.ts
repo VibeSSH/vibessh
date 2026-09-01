@@ -196,18 +196,17 @@ export function pingServer(id: string): Promise<number> {
 
 /** A freshly loaded server starts "unknown" until the first ping resolves - see useServerPinging, which then calls updateStatus with a real online/offline reading. */
 export function serverSummaryToManagedServer(server: ServerSummary): ManagedServer {
-  return {
-    id: server.id,
-    name: server.name,
-    host: server.host,
-    connectionMode: server.connectionMode,
-    status: "unknown",
-    agentId: server.agentId,
-    sshPort: server.sshPort,
-    username: server.username,
-    authenticationType: server.authenticationType,
-    privateKeyPath: server.privateKeyPath,
-    nodeCapabilities: server.nodeCapabilities,
-    createdAt: server.createdAt,
-  };
+  // A spread, not a field-by-field copy, and that is the fix for a real bug
+  // rather than a style preference. The explicit version listed twelve fields
+  // and silently dropped every one added afterwards: node icons vanished from
+  // the rail and the cards the moment any page re-fetched the list, because
+  // `icon` was not in the list. Nothing failed - the field simply was not
+  // carried, which no type error can catch when the target's field is
+  // optional.
+  //
+  // `status` is the one value that is genuinely not the backend's to give:
+  // it is live connectivity, tracked in the store and refreshed by pinging,
+  // so a freshly loaded row starts as "unknown" rather than inheriting
+  // whatever the last render believed.
+  return { ...server, status: "unknown" };
 }

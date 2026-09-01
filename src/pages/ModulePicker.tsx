@@ -68,7 +68,7 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
             {servers.map((server) => (
               <li key={server.id} className="server-list-item">
                 <div className="server-list-icon">
-                  <Icon name={icon} size={16} />
+                  {server.icon ? <img src={server.icon} alt="" className="server-list-icon-image" /> : <Icon name={icon} size={16} />}
                 </div>
                 <button className="files-entry-name" title={server.name} onClick={() => navigate(`${routePrefix}/${server.id}`)}>
                   {server.name}

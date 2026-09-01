@@ -100,7 +100,11 @@ export function NodeMiniCard({ server, metrics, history, syncStatus, selected, o
     >
       <div className="node-mini-card-header">
         <div className={`node-mini-card-avatar glossy-tile ${isAgent ? "node-mini-card-avatar-agent" : ""}`}>
-          <Icon name={isAgent ? "zap" : "server"} size={14} />
+          {server.icon ? (
+            <img src={server.icon} alt="" className="node-mini-card-icon-image" />
+          ) : (
+            <Icon name={isAgent ? "zap" : "server"} size={14} />
+          )}
         </div>
         <div className="node-mini-card-title-col">
           <div className="node-mini-card-title-row">

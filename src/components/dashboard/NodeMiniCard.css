@@ -188,3 +188,13 @@
   font-size: 12px;
   color: var(--text-tertiary);
 }
+
+/* Fills the tile the generic glyph otherwise sits in - see
+   `.rail-instance-icon` for why these are full-bleed rather than glyph-sized. */
+.node-mini-card-icon-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}
