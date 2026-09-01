@@ -442,6 +442,8 @@ Mostly `doc_lazy_continuation` (cosmetic). Two substantive: `clippy::await_holdi
 **F-004 — Dependency vulnerabilities | MEDIUM | P1**
 `npm audit`: **1 high (vite), 3 moderate (esbuild, react-router, react-router-dom)**. `cargo audit` could not be run — `cargo-audit` is not installed. Both must be run and cleared before release.
 
+**Status: cleared.** vite 5 → 8 (not 7 — the advisory range had moved by the time this was worked, and 8 is where the fix landed) and react-router 6 → 7. `npm audit` reports zero advisories at every level, and CI's gate is now `--audit-level=moderate` rather than the `critical` it had been loosened to. `cargo audit` runs in CI and is clean. Vite 8 replaces esbuild with Rolldown/oxc, which is what removed esbuild — and its advisory — from the tree entirely; `build.minify` had to move from `"esbuild"` to `"oxc"` for the same reason.
+
 ---
 
 ## 6. Test Coverage Gaps

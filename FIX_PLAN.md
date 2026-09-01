@@ -206,10 +206,20 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > the Node at all, so the cost only exists for private-registry users and
 > caching it would mean new session state for a modest gain.
 >
-> **Still open:** the vite 5 -> 7 upgrade (F-004, also what would let CI's
-> `npm audit` go back to `--audit-level=high`), and building backup archives
-> on the Node rather than streaming them through the desktop (the remaining
-> half of S-015).
+> **F-004 done, and further than planned.** The item said vite 5 -> 7; by the
+> time it was worked, the advisory range had moved and the fixed version was
+> vite 8, which replaces esbuild with Rolldown/oxc - so `build.minify:
+> "esbuild"` had to go too, and esbuild left the dependency tree along with
+> its own advisory. react-router went 6 -> 7 in the same change: the two
+> remaining moderates were both against it, and this app only uses the
+> declarative subset (`HashRouter`, `Routes`, `Link`, `NavLink`,
+> `useNavigate`, `useParams`, `Outlet`), which v7 takes unchanged. `npm
+> audit` now reports **zero advisories at every level**, so CI's gate went
+> to `--audit-level=moderate` rather than the `high` the old comment
+> promised.
+>
+> **Still open:** building backup archives on the Node rather than streaming
+> them through the desktop (the remaining half of S-015).
 
 | # | Item | Finding |
 |---|---|---|

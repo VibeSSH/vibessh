@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
 
@@ -82,26 +82,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
 
-      # `--audit-level=critical`, deliberately, and worth explaining rather
-      # than leaving as an unexplained loosening.
+      # `--audit-level=moderate`, which is where this should have been all
+      # along. It was loosened to `critical` when this file was written,
+      # because of a standing `high` against vite that needed a major upgrade
+      # to clear (F-004), and a gate nobody can make green gets disabled
+      # rather than fixed.
       #
-      # There is one standing `high` advisory against `vite` (AUDIT_REPORT
-      # F-004). Clearing it needs a major upgrade - vite 5 to 7 - which
-      # changes the Tauri build's own bundling, so it is a change to make
-      # deliberately with a build to test against, not something to slip in
-      # sideways. FIX_PLAN Phase D tracks it.
-      #
-      # Failing the build on it today would mean shipping a pipeline that is
-      # red from its first run, and a gate nobody can make green gets
-      # disabled rather than fixed. Criticals still block, and that is the
-      # line that actually matters. Raise this back to `high` the moment
-      # vite is upgraded.
+      # That upgrade has landed - vite 8 and react-router 7 - and `npm audit`
+      # now reports zero advisories at every level. So this goes to the
+      # strictest setting the tree can actually hold, rather than back to the
+      # `high` the old comment promised: there is no reason to leave room for
+      # a moderate when there are none.
       - name: npm audit
-        run: npm audit --audit-level=critical
+        run: npm audit --audit-level=moderate
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
