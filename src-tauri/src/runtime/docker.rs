@@ -1049,7 +1049,12 @@ mod tests {
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
 
         let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
-        assert!(!script.contains("666"), "{script}");
+        // Match the mode as an argument, not as a bare substring - the
+        // fifo path embeds a random UUID, which will occasionally contain
+        // "666" on its own and make a substring check flake.
+        assert!(!script.contains("chmod 666"), "{script}");
+        assert!(!script.contains("mkfifo -m 666"), "{script}");
+        assert!(script.contains("mkfifo -m 600 "), "{script}");
         assert!(script.contains("chmod 600 "), "{script}");
     }
 
