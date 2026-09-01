@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { getServerMetrics } from "@/services/monitorService";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import type { ServerMetrics } from "@/types/serverEvent";
 
-const POLL_INTERVAL_MS = 6000;
 /** Enough points for a small trend line without the array growing forever. */
 const HISTORY_LENGTH = 20;
 
@@ -25,39 +25,26 @@ export function useServerMetricsPolling(sshServerIds: string[]): Record<string, 
   const [state, setState] = useState<Record<string, ServerMetricsState>>({});
   const key = sshServerIds.join(",");
 
-  useEffect(() => {
-    if (sshServerIds.length === 0) {
-      setState({});
-      return;
-    }
-    let cancelled = false;
-
-    async function pollOnce() {
-      await Promise.all(
-        sshServerIds.map(async (id) => {
-          try {
-            const metrics = await getServerMetrics(id);
-            if (cancelled) return;
-            setState((prev) => ({
-              ...prev,
-              [id]: { latest: metrics, history: [...(prev[id]?.history ?? []), metrics].slice(-HISTORY_LENGTH) },
-            }));
-          } catch {
-            if (cancelled) return;
-            setState((prev) => ({ ...prev, [id]: { latest: null, history: prev[id]?.history ?? [] } }));
-          }
-        }),
-      );
-    }
-
-    pollOnce();
-    const intervalId = window.setInterval(pollOnce, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Keyed on the joined id list rather than the array itself, which is a new
+  // reference on every render of the caller.
+  const poll = useCallback(async () => {
+    const ids = key ? key.split(",") : [];
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const metrics = await getServerMetrics(id);
+          setState((prev) => ({
+            ...prev,
+            [id]: { latest: metrics, history: [...(prev[id]?.history ?? []), metrics].slice(-HISTORY_LENGTH) },
+          }));
+        } catch {
+          setState((prev) => ({ ...prev, [id]: { latest: null, history: prev[id]?.history ?? [] } }));
+        }
+      }),
+    );
   }, [key]);
+
+  usePolling(poll, POLL_INTERVALS.serverMetrics, { enabled: sshServerIds.length > 0 });
 
   return state;
 }

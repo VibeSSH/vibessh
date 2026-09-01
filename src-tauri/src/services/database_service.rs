@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
-use crate::ssh::SshSession;
+use crate::ssh::{write_private_file, SshSession};
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
 use crate::ssh::command::quote as shell_quote;
@@ -656,22 +656,6 @@ fn build_mysql_command(defaults_file: &str, host: &DatabaseHost, sql: &str) -> S
     )
 }
 
-/// Writes `contents` to `path` on the Node, mode 0600 from the moment the
-/// file exists.
-///
-/// `install -m 600 /dev/null` first, then an SFTP write into the
-/// already-created file: SFTP preserves an existing file's mode, so there
-/// is no window in which the file exists with a permissive default. The
-/// content itself never touches a command string.
-async fn write_private_file(connection: &SshSession, path: &str, contents: &[u8]) -> AppResult<()> {
-    let output = connection.execute_command(&format!("install -m 600 /dev/null {}", shell_quote(path))).await?;
-    if output.exit_code != 0 {
-        let detail = output.stderr.trim();
-        let detail = if detail.is_empty() { "couldn't create a private file".to_string() } else { detail.to_string() };
-        return Err(AppError::Connection(detail));
-    }
-    connection.write_file(path, contents).await
-}
 
 
 fn slugify(input: &str) -> String {

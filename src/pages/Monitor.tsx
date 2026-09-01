@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -15,7 +16,6 @@ import type { ProcessSummary, ServerMetrics } from "@/types/serverEvent";
 import "./pages.css";
 import "./Monitor.css";
 
-const POLL_INTERVAL_MS = 5000;
 /** 5 minutes of history at the poll interval above - long enough to see a trend, short enough to stay a lightweight in-memory array. */
 const HISTORY_LENGTH = 60;
 
@@ -50,35 +50,26 @@ export function MonitorPage() {
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Switching Node clears the chart so the new host's history doesn't
+  // continue the previous one's line.
   useEffect(() => {
-    if (!serverId) return;
-    let cancelled = false;
     setHistory([]);
-
-    async function poll() {
-      try {
-        const [nextMetrics, nextProcesses] = await Promise.all([
-          getServerMetrics(serverId!),
-          listServerProcesses(serverId!),
-        ]);
-        if (cancelled) return;
-        setMetrics(nextMetrics);
-        setHistory((prev) => [...prev, nextMetrics].slice(-HISTORY_LENGTH));
-        setProcesses([...nextProcesses].sort((a, b) => b.ramBytes - a.ramBytes));
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : t("monitorPage.couldntReach"));
-      }
-    }
-
-    poll();
-    const id = window.setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
   }, [serverId]);
+
+  const poll = useCallback(async () => {
+    if (!serverId) return;
+    try {
+      const [nextMetrics, nextProcesses] = await Promise.all([getServerMetrics(serverId), listServerProcesses(serverId)]);
+      setMetrics(nextMetrics);
+      setHistory((prev) => [...prev, nextMetrics].slice(-HISTORY_LENGTH));
+      setProcesses([...nextProcesses].sort((a, b) => b.ramBytes - a.ramBytes));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("monitorPage.couldntReach"));
+    }
+  }, [serverId, t]);
+
+  usePolling(poll, POLL_INTERVALS.monitor, { enabled: Boolean(serverId) });
 
   if (!serverId) {
     return <Navigate to="/servers" replace />;
@@ -99,7 +90,7 @@ export function MonitorPage() {
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card title={t("monitorPage.resources")} subtitle={t("monitorPage.refreshesEvery", { seconds: POLL_INTERVAL_MS / 1000 })}>
+      <Card title={t("monitorPage.resources")} subtitle={t("monitorPage.refreshesEvery", { seconds: POLL_INTERVALS.monitor / 1000 })}>
         {metrics ? <MetricsPreview metrics={metrics} /> : <SkeletonRows count={3} height={52} />}
       </Card>
 
@@ -107,7 +98,7 @@ export function MonitorPage() {
         title={t("monitorPage.history")}
         subtitle={
           history.length > 1
-            ? t("monitorPage.lastMinutes", { minutes: Math.round((history.length * POLL_INTERVAL_MS) / 1000 / 60) })
+            ? t("monitorPage.lastMinutes", { minutes: Math.round((history.length * POLL_INTERVALS.monitor) / 1000 / 60) })
             : t("monitorPage.collecting")
         }
       >

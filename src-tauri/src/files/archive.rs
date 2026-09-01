@@ -80,6 +80,8 @@ async fn extract_zip_from<R: std::io::Read + std::io::Seek>(
 
     let mut extracted = 0u32;
     let mut total_bytes = 0u64;
+    // Shared across every entry - see `create_directory_all_cached`.
+    let mut known_directories = std::collections::HashSet::new();
     for index in 0..archive.len() {
         // Everything needed is pulled out into owned values *before* any
         // `.await` below - `ZipFile` (what `archive.by_index` returns)
@@ -132,11 +134,11 @@ async fn extract_zip_from<R: std::io::Read + std::io::Seek>(
             if destination.is_empty() || destination == "." { relative.clone() } else { format!("{}/{}", destination.trim_end_matches('/'), relative) };
 
         if is_dir {
-            create_directory_all(provider, &target).await?;
+            create_directory_all_cached(provider, &target, &mut known_directories).await?;
             continue;
         }
         if let Some(parent) = target.rsplit_once('/').map(|(parent, _)| parent) {
-            create_directory_all(provider, parent).await?;
+            create_directory_all_cached(provider, parent, &mut known_directories).await?;
         }
         // The second Zip Slip layer: `write_file` resolves `target` through
         // the provider's own sandbox/canonicalize jail before touching
@@ -309,14 +311,39 @@ fn write_into_zip<'a, W: std::io::Write + std::io::Seek + Send>(
 /// exact same "build up whatever's missing" need this already solves for
 /// archive extraction.
 pub(crate) async fn create_directory_all(provider: &dyn ApplicationFileProvider, path: &str) -> AppResult<()> {
+    create_directory_all_cached(provider, path, &mut std::collections::HashSet::new()).await
+}
+
+/// `create_directory_all`, but remembering which directories it has already
+/// dealt with during one extraction.
+///
+/// Without the cache this issues one `metadata` round trip **per path
+/// segment, per entry**. For a plugin pack where every file sits under
+/// `plugins/`, that re-checks `plugins` once for each of the thousands of
+/// files in it - and for the `sudo_user` provider each `metadata` is an SFTP
+/// call *plus* a full `sudo` helper invocation on its own SSH channel.
+/// Extracting a large archive spent most of its time re-asking the same
+/// question.
+///
+/// The cache is per-extraction, not global: it is a local optimisation
+/// within one operation, not a claim about the filesystem that outlives it.
+pub(crate) async fn create_directory_all_cached(
+    provider: &dyn ApplicationFileProvider,
+    path: &str,
+    known_directories: &mut std::collections::HashSet<String>,
+) -> AppResult<()> {
     let mut built = String::new();
     for segment in path.split('/').filter(|s| !s.is_empty()) {
         built = if built.is_empty() { segment.to_string() } else { format!("{built}/{segment}") };
+        if known_directories.contains(&built) {
+            continue;
+        }
         match provider.metadata(&built).await {
-            Ok(entry) if entry.is_dir => continue,
+            Ok(entry) if entry.is_dir => {}
             Ok(_) => return Err(AppError::InvalidInput(format!("'{built}' already exists and isn't a directory"))),
             Err(_) => provider.create_directory(&built).await?,
         }
+        known_directories.insert(built.clone());
     }
     Ok(())
 }

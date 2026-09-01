@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { STATUS_TONE } from "@/components/applications/ApplicationCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -26,7 +27,6 @@ import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
 
-const OVERVIEW_POLL_MS = 20000;
 
 type WorkspaceTab = "applications" | "terminal" | "activity";
 
@@ -91,40 +91,26 @@ export function Dashboard() {
       });
   }, []);
 
-  useEffect(() => {
-    reloadOverview();
-    const intervalId = window.setInterval(reloadOverview, OVERVIEW_POLL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [reloadOverview]);
+  usePolling(reloadOverview, POLL_INTERVALS.dashboardOverview);
 
   const agentKey = agentServerIds.join(",");
-  useEffect(() => {
-    if (agentServerIds.length === 0) {
-      setAgentSync({});
-      return;
-    }
-    let cancelled = false;
-    async function poll() {
-      const entries = await Promise.all(
-        agentServerIds.map(async (id) => {
-          try {
-            return [id, await getNodeSyncStatus(id)] as const;
-          } catch {
-            return [id, null] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      setAgentSync(Object.fromEntries(entries.filter((entry): entry is [string, NodeSyncStatus] => entry[1] !== null)));
-    }
-    poll();
-    const intervalId = window.setInterval(poll, OVERVIEW_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Keyed on the joined id list rather than the array itself, which is a new
+  // reference on every render.
+  const pollAgentSync = useCallback(async () => {
+    const ids = agentKey ? agentKey.split(",") : [];
+    const entries = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          return [id, await getNodeSyncStatus(id)] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    setAgentSync(Object.fromEntries(entries.filter((entry): entry is [string, NodeSyncStatus] => entry[1] !== null)));
   }, [agentKey]);
+
+  usePolling(pollAgentSync, POLL_INTERVALS.dashboardOverview, { enabled: agentServerIds.length > 0 });
 
   function serverName(id: string): string {
     return servers.find((s) => s.id === id)?.name ?? id;

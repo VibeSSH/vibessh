@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -40,7 +41,6 @@ import "@/components/applications/CreateApplicationWizard.css";
 import "./pages.css";
 import "./ApplicationDetail.css";
 
-const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
 type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files" | "backups" | "settings";
@@ -101,45 +101,32 @@ export function ApplicationDetail() {
       .catch(() => {});
   }, [application?.blueprintId, i18n.language]);
 
-  useEffect(() => {
+  const poll = useCallback(async () => {
     if (!id) return;
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const nextApplication = await getApplication(id!);
-        if (cancelled) return;
-        setApplication(nextApplication);
-        setLoadError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError"));
-        return;
-      }
-      // A separate try/catch on purpose - resource usage (a Remote Process
-      // over SSH, in particular) can fail on its own (a temporarily
-      // unreachable Node) without that meaning the Application itself
-      // failed to load. Bundling both into one Promise.all used to throw
-      // away an already-successful `getApplication` result and leave the
-      // whole page stuck on a bare id with nothing usable on it.
-      try {
-        const nextUsage = await getApplicationResourceUsage(id!);
-        if (!cancelled) setResourceUsage(nextUsage);
-      } catch {
-        // Leave the last-known usage in place rather than clearing it -
-        // this tab already shows its own errors where it matters (Console,
-        // Logs, ...), no need for a second banner here.
-      }
+    try {
+      const nextApplication = await getApplication(id);
+      setApplication(nextApplication);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError"));
+      return;
     }
+    // A separate try/catch on purpose - resource usage (a Remote Process
+    // over SSH, in particular) can fail on its own (a temporarily
+    // unreachable Node) without that meaning the Application itself failed
+    // to load. Bundling both into one Promise.all used to throw away an
+    // already-successful `getApplication` result and leave the whole page
+    // stuck on a bare id with nothing usable on it.
+    try {
+      setResourceUsage(await getApplicationResourceUsage(id));
+    } catch {
+      // Leave the last-known usage in place rather than clearing it - this
+      // tab already shows its own errors where it matters (Console, Logs,
+      // ...), no need for a second banner here.
+    }
+  }, [id, t]);
 
-    poll();
-    const intervalId = window.setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  usePolling(poll, POLL_INTERVALS.applicationDetail, { enabled: Boolean(id) });
 
   const loadLogs = useCallback(() => {
     if (!id) return;

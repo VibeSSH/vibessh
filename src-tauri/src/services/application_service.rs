@@ -1281,14 +1281,19 @@ fn registry_host(image: &str) -> &str {
     }
 }
 
-/// Best-effort `docker login` before a pull/create that might need one -
-/// a no-op (not an error) when no credential is stored for the image's own
-/// registry host, so every ordinary public-image pull stays exactly as
-/// cheap as before this existed. `--password-stdin` (never `-p` /
-/// `--password`, both deprecated specifically because the value would
-/// otherwise show up in `ps`/shell history on the remote host) - the
-/// password is piped in via `printf`, never interpolated into the command
-/// string itself.
+/// Best-effort `docker login` before a pull/create that might need one - a
+/// no-op (not an error) when no credential is stored for the image's own
+/// registry host, so an ordinary public-image pull costs nothing extra and
+/// does not even reach the Node.
+///
+/// **The password reaches the Node through a mode-0600 file, not the
+/// command string.** `--password-stdin` was already right about not using
+/// `-p`, but the value was still piped in with
+/// `printf '%s' '<password>' | docker login`, and that `printf` argument is
+/// part of the command line - visible in `ps` to every local account for as
+/// long as the login runs. This is the same finding as the MySQL half of
+/// AUDIT S-008; the fix there landed first and this half was missed, so the
+/// doc comment above it claimed a property the code did not have.
 async fn ensure_registry_login(connection: &SshSession, registry_repo: &RegistryCredentialRepository, image: &str) -> AppResult<()> {
     let host = registry_host(image);
     let Some(credential) = registry_repo.find_by_registry(host)? else { return Ok(()) };
@@ -1299,7 +1304,14 @@ async fn ensure_registry_login(connection: &SshSession, registry_repo: &Registry
     // treated the same way, so the sentinel gets the no-argument form
     // instead of just interpolating it in unconditionally.
     let target = if host == "docker.io" { String::new() } else { format!(" {}", shell_quote(host)) };
-    let command = format!("printf '%s' {} | sudo docker login{target} -u {} --password-stdin", shell_quote(&password), shell_quote(&credential.username));
+
+    let password_file = format!(".vibessh-registry-{}", uuid::Uuid::new_v4());
+    crate::ssh::write_private_file(connection, &password_file, password.as_bytes()).await?;
+    let command = format!(
+        "sudo docker login{target} -u {} --password-stdin < {file}; rc=$?; rm -f {file}; exit $rc",
+        shell_quote(&credential.username),
+        file = shell_quote(&password_file),
+    );
     let output = connection.execute_command(&command).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();

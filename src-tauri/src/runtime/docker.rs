@@ -706,16 +706,26 @@ impl ApplicationRuntime for DockerRuntime {
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
 
-        let stats_output = connection
-            .execute_command(&format!("sudo docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null"))
+        // One SSH round trip, not two. This is polled every few seconds per
+        // Application, and each `execute_command` opens its own SSH channel -
+        // so splitting `stats` and `inspect` across two calls doubled the
+        // channel churn for a reading that is always wanted together.
+        //
+        // `stats` is the slow half (Docker samples the container for a
+        // moment), so it runs first and its failure short-circuits: a
+        // container that is not running has no stats and no meaningful
+        // uptime either.
+        let output = connection
+            .execute_command(&format!(
+                "sudo docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null &&                  sudo docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null"
+            ))
             .await?;
-        if stats_output.exit_code != 0 {
+        if output.exit_code != 0 {
             return Ok(empty);
         }
-        let (cpu_percent, ram_bytes) = parse_stats_output(&stats_output.stdout);
-
-        let started_output = connection.execute_command(&format!("sudo docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null")).await?;
-        let uptime_seconds = parse_started_at(&started_output.stdout);
+        let mut lines = output.stdout.lines();
+        let (cpu_percent, ram_bytes) = parse_stats_output(lines.next().unwrap_or(""));
+        let uptime_seconds = lines.next().and_then(parse_started_at);
 
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds })
     }
