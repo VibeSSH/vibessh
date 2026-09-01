@@ -30,6 +30,10 @@ export interface ServerSummary {
   nodeCapabilities?: NodeCapabilities;
   createdAt: string;
   updatedAt: string;
+  /** A base64 PNG data URL, or absent. Set through `setServerIcon`; the
+   * backend refuses anything that is not a PNG data URL, since this value is
+   * rendered straight into an `<img src>`. */
+  icon?: string;
 }
 
 export type ServerConnectionStatus = "unknown" | "online" | "offline" | "connecting";

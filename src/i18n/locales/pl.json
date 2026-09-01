@@ -1301,5 +1301,12 @@
     "title": "Ta maszyna",
     "description": "Aplikacje mogą działać tutaj bezpośrednio, bez węzła i bez SSH. Mniej funkcji niż węzeł - bez Dockera, firewalla i przeglądarki plików - ale nic nie trzeba konfigurować.",
     "action": "Utwórz aplikację lokalną"
+  },
+  "serverIcon": {
+    "title": "Ikona węzła",
+    "hint": "Wybierz obrazek, żeby odróżnić ten węzeł na pasku bocznym. Przycięty do kwadratu i przeskalowany do 64x64.",
+    "choose": "Wybierz obrazek",
+    "clear": "Usuń",
+    "noSvg": "SVG nie jest przyjmowany - może wnieść skrypt na stronę, która go wyświetla. Użyj PNG, JPEG albo WebP."
   }
 }

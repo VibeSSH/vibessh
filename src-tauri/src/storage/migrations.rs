@@ -462,6 +462,23 @@ const STEPS: &[Step] = &[
             CREATE INDEX application_links_peer_idx ON application_links (peer_id);",
             down: Some("DROP TABLE application_links;"),
         },
+        // Migration 17: a per-Node icon, so an operator with several Nodes
+        // can tell them apart in the rail at a glance rather than by reading
+        // four truncated names.
+        //
+        // The image lives in this column, as a `data:image/png;base64,` URL,
+        // rather than as a file beside the database. That is deliberate, and
+        // it is this audit's own lesson: what is stored outside the row does
+        // not get cleaned up. A file would need its own delete on every path
+        // that removes a Server, and S-005 and S-007 were both exactly that
+        // mistake. A column goes when the row goes.
+        //
+        // Affordable because the frontend re-encodes to a 64x64 PNG before
+        // sending - a few kilobytes - and `set_icon` refuses anything larger.
+        Step {
+            up: "ALTER TABLE servers ADD COLUMN icon TEXT;",
+            down: Some("ALTER TABLE servers DROP COLUMN icon;"),
+        },
 ];
 
 #[cfg(test)]

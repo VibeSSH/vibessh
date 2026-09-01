@@ -1,0 +1,62 @@
+.server-icon-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.server-icon-picker-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.server-icon-picker-image {
+  width: 100%;
+  height: 100%;
+  /* `cover`, not `contain`: the source was already cropped to a centred
+     square before it was stored, so there is nothing to letterbox. */
+  object-fit: cover;
+  display: block;
+}
+
+.server-icon-picker-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.server-icon-picker-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.server-icon-picker-hint {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.server-icon-picker-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Hidden, not `display: none` - a display-none input cannot be opened by a
+   programmatic click in every browser, and the button is what the user sees. */
+.server-icon-picker-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

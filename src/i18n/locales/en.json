@@ -1301,5 +1301,12 @@
     "title": "This machine",
     "description": "Applications can run here directly, with no node and no SSH. Fewer features than a node - no Docker, firewall or file browser - but nothing to set up.",
     "action": "Create a local application"
+  },
+  "serverIcon": {
+    "title": "Node icon",
+    "hint": "Pick an image to tell this node apart in the sidebar. Cropped to a square and resized to 64x64.",
+    "choose": "Choose image",
+    "clear": "Remove",
+    "noSvg": "SVG isn't accepted - an SVG can carry script into the page that renders it. Use a PNG, JPEG or WebP."
   }
 }

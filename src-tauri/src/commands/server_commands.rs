@@ -21,6 +21,14 @@ pub fn update_server(repo: State<ServerRepository>, id: Uuid, input: ServerInput
     services::update_server(&repo, id, input)
 }
 
+/// `icon: None` clears it. The value is a base64 PNG data URL - the frontend
+/// re-encodes whatever the user picked through a canvas first, and the
+/// repository re-checks that on the way in.
+#[tauri::command]
+pub fn set_server_icon(repo: State<ServerRepository>, id: Uuid, icon: Option<String>) -> AppResult<Server> {
+    services::set_server_icon(&repo, id, icon)
+}
+
 #[tauri::command]
 pub async fn delete_server(repo: State<'_, ServerRepository>, forwards: State<'_, PortForwardManager>, id: Uuid) -> AppResult<()> {
     services::delete_server(&repo, id)?;

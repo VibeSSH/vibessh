@@ -279,3 +279,13 @@
   color: var(--text-tertiary);
   white-space: nowrap;
 }
+
+/* A custom node icon, in place of the rail's generic glyph. Square, cropped
+   at the source, and rounded to match the button it sits in. */
+.rail-instance-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  object-fit: cover;
+  display: block;
+}

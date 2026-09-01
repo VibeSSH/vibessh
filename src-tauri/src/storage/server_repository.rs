@@ -78,6 +78,9 @@ impl ServerRepository {
             created_at: now,
             updated_at: now,
             agent_certificate_fingerprint: None,
+            // Set later, through `set_icon`, never at creation - the SSH
+            // form has no image field.
+            icon: None,
         };
         self.insert(&server)?;
         Ok(server)
@@ -153,6 +156,9 @@ impl ServerRepository {
             // A brand-new agent row: nothing has connected to it yet, so
             // the first successful handshake is what pins it.
             agent_certificate_fingerprint: None,
+            // Set later, through `set_icon`, never at creation - the SSH
+            // form has no image field.
+            icon: None,
         };
         self.insert(&server)?;
         Ok(server)
@@ -255,6 +261,31 @@ impl ServerRepository {
     /// Full replace, not a partial patch - simplest correct semantics for
     /// a form that always submits the whole record. `id`/`created_at` are
     /// preserved from the existing row; everything else in `input` wins.
+    /// Sets or clears this Node's icon.
+    ///
+    /// Its own method rather than a field on `ServerInput`: the SSH
+    /// connection form has no business carrying an image, and "remove the
+    /// icon" is then simply `None` instead of a sentinel value.
+    ///
+    /// Validation happens here, not only in the frontend. The frontend
+    /// re-encodes the picked file through a canvas, which is what actually
+    /// makes the image safe - but a Tauri command is reachable by anything
+    /// running in the webview, so this cannot take that on trust.
+    pub fn set_icon(&self, id: Uuid, icon: Option<&str>) -> AppResult<Server> {
+        if let Some(icon) = icon {
+            validate_icon(icon)?;
+        }
+        let conn = self.lock();
+        let affected = conn
+            .execute("UPDATE servers SET icon = ?2, updated_at = ?3 WHERE id = ?1", params![id.to_string(), icon, Utc::now().to_rfc3339()])
+            .map_err(|err| AppError::Storage(format!("failed to save the node icon: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("server {id}")));
+        }
+        drop(conn);
+        self.get(id)?.ok_or_else(|| AppError::NotFound(format!("server {id}")))
+    }
+
     pub fn update(&self, id: Uuid, input: &ServerInput) -> AppResult<Server> {
         let existing = self.get(id)?.ok_or_else(|| AppError::NotFound(format!("server {id}")))?;
         let updated = Server {
@@ -277,6 +308,10 @@ impl ServerRepository {
             // on an unrelated edit would make the next connection trust
             // whatever certificate it saw.
             agent_certificate_fingerprint: existing.agent_certificate_fingerprint.clone(),
+            // Carried over for the same reason: the icon is set from a
+            // different affordance entirely, and an edit of the host or the
+            // port must not silently clear it.
+            icon: existing.icon.clone(),
             // Same reasoning - a probe result, not something a manual edit
             // form has any opinion on.
             node_capabilities: existing.node_capabilities,
@@ -394,7 +429,41 @@ impl ServerRepository {
 }
 
 const SELECT_COLUMNS: &str = "SELECT id, name, host, ssh_port, username, authentication_type, \
-     private_key_path, connection_mode, agent_id, agent_status, group_id, node_capabilities_json, created_at, updated_at,      agent_certificate_fingerprint";
+     private_key_path, connection_mode, agent_id, agent_status, group_id, node_capabilities_json, created_at, updated_at,      agent_certificate_fingerprint, icon";
+
+/// A node icon is a base64 PNG data URL, and nothing else.
+///
+/// **PNG only, and that is a security decision rather than a preference.** An
+/// SVG rendered in an `<img>` can carry script, and this value goes straight
+/// into a `src`. The frontend re-encodes whatever the user picked through a
+/// canvas, which strips everything that is not pixels; this is the check that
+/// the re-encoding actually happened, for a caller that skipped the UI.
+const ICON_PREFIX: &str = "data:image/png;base64,";
+
+/// The cap is on the encoded string. A 64x64 PNG is a few kilobytes, so this
+/// leaves room for a larger icon later while staying small enough that no
+/// number of Nodes makes `list_servers` heavy.
+const MAX_ICON_BYTES: usize = 256 * 1024;
+
+fn validate_icon(icon: &str) -> AppResult<()> {
+    if !icon.starts_with(ICON_PREFIX) {
+        return Err(AppError::InvalidInput(
+            "a node icon has to be a base64 PNG data URL - other formats, SVG especially, can carry script into an <img> tag".into(),
+        ));
+    }
+    if icon.len() > MAX_ICON_BYTES {
+        return Err(AppError::InvalidInput(format!(
+            "this icon is {} KB encoded, over the {} KB limit - it should have been resized before saving",
+            icon.len() / 1024,
+            MAX_ICON_BYTES / 1024
+        )));
+    }
+    let payload = &icon[ICON_PREFIX.len()..];
+    if payload.is_empty() || !payload.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=') {
+        return Err(AppError::InvalidInput("this icon's data isn't valid base64".into()));
+    }
+    Ok(())
+}
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
     Ok(Server {
@@ -427,6 +496,7 @@ fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
         created_at: parse_timestamp(row.get::<_, String>(12)?, 12)?,
         updated_at: parse_timestamp(row.get::<_, String>(13)?, 13)?,
         agent_certificate_fingerprint: row.get(14)?,
+        icon: row.get(15)?,
     })
 }
 
@@ -861,4 +931,57 @@ mod tests {
         assert_eq!(loaded.name, "Renamed Node");
         assert_eq!(loaded.agent_certificate_fingerprint, Some("aaaa".to_string()));
     }
+    /// The icon validator is a security boundary, not a formatting rule: its
+    /// value is written into an `<img src>`, and the frontend's canvas
+    /// re-encode - the thing that actually strips script - is not something a
+    /// Tauri command may assume happened.
+    mod icon_validation {
+        use super::*;
+
+        #[test]
+        fn an_svg_data_url_is_refused_however_it_is_spelled() {
+            for candidate in [
+                "data:image/svg+xml;base64,PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+",
+                "data:image/svg+xml,<svg onload=alert(1)>",
+                "data:text/html;base64,PHNjcmlwdD4=",
+                "javascript:alert(1)",
+                "https://example.com/icon.png",
+            ] {
+                let err = validate_icon(candidate).unwrap_err();
+                assert!(matches!(err, AppError::InvalidInput(_)), "accepted {candidate}: {err:?}");
+            }
+        }
+
+        /// The message has to explain *why*, because "invalid icon" invites
+        /// someone to work around it rather than re-encode.
+        #[test]
+        fn the_refusal_names_the_reason() {
+            let err = validate_icon("data:image/svg+xml;base64,PHN2Zz4=").unwrap_err();
+            assert!(err.to_string().contains("SVG"), "{err}");
+        }
+
+        #[test]
+        fn a_png_data_url_is_accepted() {
+            // A real 1x1 PNG, base64-encoded.
+            let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+            validate_icon(png).expect("a plain PNG data URL should be accepted");
+        }
+
+        #[test]
+        fn base64_that_is_not_base64_is_refused() {
+            let err = validate_icon("data:image/png;base64,not valid!!").unwrap_err();
+            assert!(err.to_string().contains("base64"), "{err}");
+        }
+
+        /// An unbounded column is returned by `list_servers` for every Node on
+        /// every load, so the cap is about the app staying responsive as much
+        /// as about the database.
+        #[test]
+        fn an_oversized_icon_is_refused_with_its_size() {
+            let huge = format!("{}{}", "data:image/png;base64,", "A".repeat(MAX_ICON_BYTES));
+            let err = validate_icon(&huge).unwrap_err();
+            assert!(err.to_string().contains("over the"), "{err}");
+        }
+    }
+
 }

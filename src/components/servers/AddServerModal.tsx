@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { useModalDialog } from "@/hooks/useModalDialog";
+import { useServersStore } from "@/stores/serversStore";
+import { ServerIconPicker } from "@/components/servers/ServerIconPicker";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import { NodeSetupWizard } from "./NodeSetupWizard";
@@ -21,6 +23,7 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
+  const upsertServer = useServersStore((s) => s.upsertServer);
   const backdrop = useModalDialog(onClose, { labelledBy: "addservermodal-dialog-title-1" });
   // A freshly created SSH-mode Node still needs Docker/WireGuard/ufw/Vibe
   // Network - the design doc's own "Setup Page" - so a brand new server
@@ -61,6 +64,16 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
         )}
 
         <div className="modal-body">
+          {/* Only when editing: a node has to exist before it can be given an
+              icon, and the picker saves immediately rather than waiting for
+              the form's own Save - it writes a different column through a
+              different command. */}
+          {isEditing && editingServer && (
+            <ServerIconPicker
+              server={editingServer}
+              onChanged={(icon) => upsertServer({ ...editingServer, icon: icon ?? undefined })}
+            />
+          )}
           {isEditing || tab === "ssh" ? (
             <SshServerForm
               editingServer={editingServer}

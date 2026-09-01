@@ -166,6 +166,16 @@ export function createServer(input: ServerFormInput): Promise<ServerSummary> {
   return callCommand<ServerSummary>("create_server", { input });
 }
 
+/** Sets or clears a node's icon. `null` clears it.
+ *
+ * The value must be a base64 PNG data URL. `ServerIconPicker` produces one by
+ * drawing the picked file onto a canvas and exporting PNG - which is what
+ * makes it safe to render, since an SVG in an `<img src>` can carry script -
+ * and the backend re-checks the format rather than trusting this. */
+export function setServerIcon(id: string, icon: string | null): Promise<ServerSummary> {
+  return callCommand<ServerSummary>("set_server_icon", { id, icon });
+}
+
 export function updateServer(id: string, input: ServerFormInput): Promise<ServerSummary> {
   return callCommand<ServerSummary>("update_server", { id, input });
 }

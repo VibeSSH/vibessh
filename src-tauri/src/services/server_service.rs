@@ -29,6 +29,12 @@ pub fn update_server(repo: &ServerRepository, id: Uuid, input: ServerInput) -> A
     Ok(server)
 }
 
+/// Sets or clears a Node's icon. See `ServerRepository::set_icon` for why
+/// this is separate from `update_server` and where the validation lives.
+pub fn set_server_icon(repo: &ServerRepository, id: Uuid, icon: Option<String>) -> AppResult<Server> {
+    repo.set_icon(id, icon.as_deref())
+}
+
 pub fn delete_server(repo: &ServerRepository, id: Uuid) -> AppResult<()> {
     repo.delete(id)?;
     // Best-effort: the row is already gone, and delete_secret already treats

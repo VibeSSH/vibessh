@@ -214,7 +214,15 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
         aria-label={server.name}
       >
         {rippleEls}
-        <Icon name={isAgent ? "zap" : "server"} size={16} />
+        {/* The icon is why this feature exists: at four or five nodes the
+            rail's generic glyphs are indistinguishable, and the name only
+            appears on hover. A custom image replaces the glyph entirely
+            rather than sitting beside it - there is no room for both. */}
+        {server.icon ? (
+          <img src={server.icon} alt="" className="rail-instance-icon" />
+        ) : (
+          <Icon name={isAgent ? "zap" : "server"} size={16} />
+        )}
         {/* No room for the word on a 40px button, so this is the one place
             the dot carries the status on its own - as a shape plus an
             accessible name, not as a colour. */}

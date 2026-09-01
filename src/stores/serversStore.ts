@@ -22,6 +22,8 @@ export interface ManagedServer {
   capabilities?: AgentCapabilities;
   /** Persisted, on-demand-probed capabilities (Etap M1) - the SSH-mode equivalent of `capabilities` above (which only ever exists live, for an agent-mode server, for the duration of one connection). Prefer `capabilities.docker` when present (fresher, agent-mode); fall back to this for SSH-mode servers. */
   nodeCapabilities?: NodeCapabilities;
+  /** A base64 PNG data URL, or absent - see `ServerSummary.icon`. */
+  icon?: string;
   sshPort?: number;
   username?: string;
   authenticationType?: AuthenticationType;

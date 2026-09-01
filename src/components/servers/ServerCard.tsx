@@ -126,7 +126,11 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
       <div className="server-card-body">
         <div className="server-card-header">
           <div className={`server-card-avatar glossy-tile ${isAgent ? "server-card-avatar-agent" : ""}`}>
-            <Icon name={isAgent ? "zap" : "server"} size={16} />
+            {server.icon ? (
+              <img src={server.icon} alt="" className="server-card-icon-image" />
+            ) : (
+              <Icon name={isAgent ? "zap" : "server"} size={16} />
+            )}
           </div>
           <div className="server-card-title-col">
             <div className="server-card-title-row">

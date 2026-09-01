@@ -255,6 +255,7 @@ pub fn run() {
             commands::database_commands::get_phpmyadmin_url,
             commands::server_commands::create_server,
             commands::server_commands::update_server,
+            commands::server_commands::set_server_icon,
             commands::server_commands::delete_server,
             commands::server_commands::get_server,
             commands::server_commands::list_servers,

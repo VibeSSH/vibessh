@@ -86,6 +86,13 @@ pub struct Server {
     pub agent_id: Option<Uuid>,
     pub agent_status: Option<AgentStatus>,
     pub group_id: Option<Uuid>,
+    /// An optional icon for this Node, as a `data:image/png;base64,` URL.
+    ///
+    /// A data URL rather than a path or a file id: it renders directly in an
+    /// `<img>`, it disappears with the row, and it needs no asset-protocol
+    /// configuration. Written only through `ServerRepository::set_icon`,
+    /// which is where the format and size limits are enforced.
+    pub icon: Option<String>,
     /// The SHA-256 fingerprint of the TLS certificate this Agent-mode Node
     /// presented the first time VibeSSH connected to it, and the value
     /// every later connection is checked against.
