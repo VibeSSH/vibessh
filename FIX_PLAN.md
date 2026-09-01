@@ -182,8 +182,31 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > which stopped being true when Phase A made delete a real teardown. Copy
 > corrected in both locales.
 >
-> **Still open:** C.2-C.7 (the security/scenario/property suites, and
-> concurrency tests).
+> **C.7 done.** 18 property tests over the five named functions -
+> `sanitize_relative_path`, `normalize_alias`, `parse_added_rules`,
+> `parse_docker_byte_size`, `parse_ss_output`. These are the pure functions
+> on the boundary between remote output (or user input) and everything that
+> trusts it, which is exactly where an example-based test only ever proves
+> the examples somebody thought of. They found no bug in the production
+> code; the one failure was in a property I had written wrongly. That is
+> worth saying rather than implying a catch: their value here is the
+> regression floor, not a discovery.
+>
+> **C.2 partly done, at its centre.** `tests/shell_injection.rs` runs
+> `command::quote`'s output through a **real shell** and compares. Every
+> other test of that module asserts the shape of the string it produces,
+> which proves the function does what its author meant - not that a shell
+> agrees. A 36-entry hostile corpus plus a property over arbitrary input,
+> checked three ways: the value survives byte-for-byte, no substitution ever
+> executes (asserted by a payload that would create a marker file if one
+> did), and several hostile values in one command line stay separate
+> arguments. Given four of the seven CRITICALs were command injection, this
+> is the property the whole `ssh::command` module exists for.
+>
+> **Still open:** the rest of C.2 (archive/symlink/Unicode cases beyond what
+> `archive.rs` and each builder already cover), C.3 (the full scenario
+> matrix), C.4 (port collision), C.5 (Docker lifecycle) and C.6
+> (concurrency).
 
 | # | Item |
 |---|---|

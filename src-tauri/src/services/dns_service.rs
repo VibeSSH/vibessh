@@ -504,4 +504,56 @@ mod tests {
         assert!(fragment.contains("10.77.0.1 a.vibe"), "{fragment}");
         assert!(fragment.contains("10.77.0.2 b.vibe"), "{fragment}");
     }
+
+    /// `normalize_alias` is what makes "db01", "db01.vibe" and "DB01!!"
+    /// the same stored hostname. Two Applications resolving to the same
+    /// name is a real collision (see `reject_duplicate_hostnames`), so the
+    /// function's stability under repeated application is not cosmetic.
+    mod alias_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// The alias the user sees is stored, then normalized again on
+            /// the next edit. A function that shifted on the second pass
+            /// would silently rename a service.
+            #[test]
+            fn normalizing_is_idempotent(input in "\\PC{0,40}") {
+                let once = normalize_alias(".vibe", &input);
+                let twice = normalize_alias(".vibe", &once);
+                prop_assert_eq!(once, twice);
+            }
+
+            /// Whatever went in, what comes out is something `/etc/hosts`
+            /// and a DNS resolver will both accept: a valid label, the
+            /// suffix, and nothing else.
+            #[test]
+            fn output_is_always_a_valid_hostname(input in "\\PC{0,40}") {
+                let alias = normalize_alias(".vibe", &input);
+                prop_assert!(alias.ends_with(".vibe"), "missing suffix: {alias:?}");
+                let label = alias.strip_suffix(".vibe").unwrap();
+                prop_assert!(!label.is_empty(), "empty label from {input:?}");
+                prop_assert!(label.len() <= 63, "label over the RFC 1123 limit: {label:?}");
+                prop_assert!(
+                    label.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                    "unsafe character in {label:?}"
+                );
+                // A hostname written into /etc/hosts must never contain
+                // whitespace or a newline - that is a second entry, not a
+                // malformed one.
+                prop_assert!(!alias.chars().any(char::is_whitespace), "whitespace in {alias:?}");
+            }
+
+            /// Case and surrounding space are not identity. Someone typing
+            /// " DB01 " must not create a second host entry alongside
+            /// "db01".
+            #[test]
+            fn case_and_padding_do_not_create_a_second_alias(input in "[A-Za-z0-9]{1,20}") {
+                let plain = normalize_alias(".vibe", &input);
+                let padded = normalize_alias(".vibe", &format!("  {}  ", input.to_uppercase()));
+                prop_assert_eq!(plain, padded);
+            }
+        }
+    }
+
 }

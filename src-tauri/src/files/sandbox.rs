@@ -140,4 +140,105 @@ mod tests {
         let rejoined = format!("{root}/{}", sanitize_relative_path(&relative).unwrap());
         assert_eq!(rejoined, absolute);
     }
+
+    /// Property tests, not more examples.
+    ///
+    /// This function is the first of the two layers standing between a
+    /// caller-supplied string and an Application's working directory, and an
+    /// example-based test only ever proves the examples someone thought of.
+    /// The properties below are the guarantees the *second* layer (each
+    /// provider's post-canonicalisation check) is written assuming.
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// Deliberately nasty: separators, traversal, null bytes, spaces and
+        /// arbitrary Unicode, in any order, including empty.
+        fn path_fragments() -> impl Strategy<Value = String> {
+            proptest::collection::vec(
+                prop_oneof![
+                    Just("..".to_string()),
+                    Just(".".to_string()),
+                    Just("/".to_string()),
+                    Just("\\".to_string()),
+                    Just("".to_string()),
+                    Just("\0".to_string()),
+                    "[a-zA-Z0-9 ._-]{0,8}",
+                    "\\PC{0,4}",
+                ],
+                0..12,
+            )
+            .prop_map(|parts| parts.concat())
+        }
+
+        proptest! {
+            /// The whole point of the function: whatever comes out cannot
+            /// walk upwards, cannot be absolute, and carries no null byte
+            /// into a syscall.
+            #[test]
+            fn accepted_output_can_never_escape(input in path_fragments()) {
+                if let Ok(output) = sanitize_relative_path(&input) {
+                    prop_assert!(!output.starts_with('/'), "absolute: {output:?}");
+                    prop_assert!(!output.starts_with('\\'), "absolute: {output:?}");
+                    prop_assert!(!output.contains('\0'), "null byte: {output:?}");
+                    // An empty output is the root itself - the one legitimate
+                    // case with no segments at all, and `""` splits into a
+                    // single empty segment, which is not an escape.
+                    if output.is_empty() {
+                        return Ok(());
+                    }
+                    for segment in output.split('/') {
+                        prop_assert_ne!(segment, "..", "traversal survived: {:?}", output);
+                        prop_assert_ne!(segment, ".", "dot segment survived: {:?}", output);
+                        prop_assert_ne!(segment, "", "empty segment survived: {:?}", output);
+                    }
+                }
+            }
+
+            /// The guarantee every provider's `resolve` is written against:
+            /// joining the output onto the root lands inside the root.
+            #[test]
+            fn accepted_output_joined_onto_a_root_stays_inside_it(input in path_fragments()) {
+                let root = "/srv/app";
+                if let Ok(output) = sanitize_relative_path(&input) {
+                    let joined = if output.is_empty() { root.to_string() } else { format!("{root}/{output}") };
+                    prop_assert!(is_within_root(&joined, root), "escaped: {joined:?}");
+                }
+            }
+
+            /// A path that already went through this must not change if it
+            /// goes through again - several call paths sanitize a value that
+            /// a previous layer already sanitized.
+            #[test]
+            fn sanitizing_is_idempotent(input in path_fragments()) {
+                if let Ok(once) = sanitize_relative_path(&input) {
+                    let twice = sanitize_relative_path(&once).expect("already-sanitized input must stay acceptable");
+                    prop_assert_eq!(once, twice);
+                }
+            }
+
+            /// Rejection is unconditional, not "unless it is spelled oddly".
+            #[test]
+            fn any_traversal_segment_is_rejected(prefix in "[a-z/]{0,10}", suffix in "[a-z/]{0,10}") {
+                let input = format!("{prefix}/../{suffix}");
+                prop_assert!(sanitize_relative_path(&input).is_err(), "accepted {input:?}");
+            }
+
+            /// `relativize` is the inverse of the join above, and the pair
+            /// has to survive a round trip or a listed entry fed back into
+            /// delete/rename resolves somewhere else entirely - which is a
+            /// bug this codebase has already shipped once.
+            #[test]
+            fn relativize_inverts_the_join(input in path_fragments()) {
+                let root = "/srv/app";
+                if let Ok(output) = sanitize_relative_path(&input) {
+                    if output.is_empty() {
+                        return Ok(());
+                    }
+                    let joined = format!("{root}/{output}");
+                    prop_assert_eq!(relativize(&joined, root), output);
+                }
+            }
+        }
+    }
 }

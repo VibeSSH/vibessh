@@ -392,4 +392,54 @@ ufw allow in on docker0 to any port 3306 proto tcp\n";
             assert_eq!(parse_live_ssh_port(bad), None, "{bad:?}");
         }
     }
+
+    /// `parse_added_rules` reads output from a remote command, and what it
+    /// returns is the *only* thing `revoke_obsolete_rules` will delete. A
+    /// parser that invents a rule from a malformed line would delete a rule
+    /// VibeSSH does not own; one that panics takes the firewall sync with it.
+    mod parser_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Arbitrary bytes, including the shapes a hostile or simply
+            /// broken `ufw` might emit.
+            #[test]
+            fn never_panics_on_arbitrary_output(output in "\\PC{0,300}") {
+                let _ = parse_added_rules(&output);
+            }
+
+            /// The safety property `firewall::mod` documents: a line without
+            /// the marker is never returned, so a rule the operator added by
+            /// hand can never be revoked as "obsolete".
+            #[test]
+            fn a_line_without_the_marker_is_never_returned(port in 1u16..=65535, cidr in "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}/[0-9]{1,2}") {
+                let unmarked = format!("ufw allow {port}/tcp\nufw allow from {cidr} to any port {port} proto tcp");
+                prop_assert!(parse_added_rules(&unmarked).is_empty(), "claimed ownership of {unmarked:?}");
+            }
+
+            /// Round trip against the command builder: whatever `allow_command`
+            /// writes, this must read back as the same rule. These two are
+            /// the write and read halves of one format, and nothing else
+            /// checks that they agree.
+            #[test]
+            fn round_trips_with_the_command_this_module_writes(
+                port in 1u16..=65535,
+                udp in any::<bool>(),
+                cidr in prop::option::of("(10|172|192)\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}/[0-9]{1,2}"),
+            ) {
+                let protocol = if udp { PortProtocol::Udp } else { PortProtocol::Tcp };
+                let original = FirewallRule { port, protocol, source_cidr: cidr };
+                // `ufw show added` prints the command that was run, without
+                // the `sudo` the module adds when it runs it.
+                let line = allow_command(&original).replace("sudo ", "");
+                let parsed = parse_added_rules(&line);
+                prop_assert_eq!(parsed.len(), 1, "did not read back: {:?}", line);
+                prop_assert_eq!(parsed[0].port, original.port);
+                prop_assert_eq!(parsed[0].protocol, original.protocol);
+                prop_assert_eq!(&parsed[0].source_cidr, &original.source_cidr);
+            }
+        }
+    }
+
 }

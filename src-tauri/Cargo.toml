@@ -116,3 +116,8 @@ tokio = { version = "1", features = ["net"] }
 # versions in one test build is a hard "multiple candidates" compile error,
 # not just a style choice.
 rand010 = { package = "rand", version = "0.10" }
+# Property tests (FIX_PLAN C.7). The functions worth this treatment are the
+# pure parsers and sanitizers on the boundary between remote output (or user
+# input) and everything that trusts it - the places where an example-based
+# test only ever proves the examples someone thought of.
+proptest = { version = "1", default-features = false, features = ["std"] }

@@ -11,7 +11,12 @@ pub mod client;
 // runtime, files, network, firewall) must reach it, and none of them should
 // keep a private copy. See its own doc comment for why the copies it
 // replaced were a security problem, not just duplication.
-pub(crate) mod command;
+// `pub`, not `pub(crate)`: `tests/shell_injection.rs` runs `quote`'s output
+// through a real `sh` to prove the property the whole module exists for, and
+// an integration test can only reach a public path. Nothing outside this
+// crate is expected to call it - the visibility is for the test, and the
+// test is the reason to trust the module.
+pub mod command;
 // `pub(crate)` (not just `mod`) so `runtime::docker` (Applications) can
 // reuse `validate_container_ref` for its own `docker create`/`inspect`/
 // `stats` calls, not only the calls this module's own methods already

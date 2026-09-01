@@ -5,3 +5,10 @@ src-tauri/gen/
 *.log
 .DS_Store
 .env
+
+# proptest writes a failing case here so it is replayed first on the next run.
+# Committed deliberately when a property test finds a real bug - the file is
+# the regression test. Ignored otherwise so a transient local failure does not
+# arrive in a diff as noise.
+src-tauri/proptest-regressions/
+src-tauri/tests/*.proptest-regressions

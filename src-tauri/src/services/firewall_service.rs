@@ -650,4 +650,52 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
     fn parse_ss_output_on_empty_input_is_empty() {
         assert!(parse_ss_output("").is_empty());
     }
+
+    /// `parse_ss_output` turns remote `ss` output into the list of ports
+    /// something is already listening on, which is what a port-collision
+    /// check consults. A parse that drops a line reports a taken port as
+    /// free; one that panics takes the check down entirely.
+    mod ss_parser_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn never_panics_on_arbitrary_output(output in "\\PC{0,400}") {
+                let _ = parse_ss_output(&output);
+            }
+
+            /// Deliberately close to the real thing - the shapes that break
+            /// a naive split are IPv6 brackets, `*` wildcards and the
+            /// varying column counts `ss` emits.
+            #[test]
+            fn never_panics_on_ss_shaped_output(
+                lines in proptest::collection::vec(
+                    prop_oneof![
+                        Just("tcp   LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*".to_string()),
+                        Just("tcp   LISTEN 0      4096            [::]:22            [::]:*".to_string()),
+                        Just("udp   UNCONN 0      0          127.0.0.1:323        0.0.0.0:*".to_string()),
+                        Just("Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port".to_string()),
+                        Just("tcp".to_string()),
+                        Just(String::new()),
+                        "[a-z0-9:*.\\[\\] ]{0,60}",
+                    ],
+                    0..12,
+                ),
+            ) {
+                let _ = parse_ss_output(&lines.join("\n"));
+            }
+
+            /// Every socket it does return has to carry a usable port -
+            /// a zero would compare equal to nothing and silently never
+            /// collide.
+            #[test]
+            fn every_returned_socket_has_a_real_port(output in "\\PC{0,400}") {
+                for socket in parse_ss_output(&output) {
+                    prop_assert!(socket.port > 0, "returned port 0 from {output:?}");
+                }
+            }
+        }
+    }
+
 }

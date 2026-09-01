@@ -1542,4 +1542,54 @@ mod tests {
         assert!(matches!(runtime.logs(&ctx).await, Err(AppError::Internal(_))));
         assert!(matches!(runtime.destroy(&ctx).await, Err(AppError::Internal(_))));
     }
+
+    /// `parse_docker_byte_size` reads a number out of remote command output
+    /// and it lands in a resource graph. Wrong is bad; panicking on a
+    /// container that printed something unexpected takes the whole stats
+    /// call down with it.
+    mod byte_size_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn never_panics_on_arbitrary_input(value in "\\PC{0,40}") {
+                let _ = parse_docker_byte_size(&value);
+            }
+
+            /// Multi-byte characters are the interesting case: this splits
+            /// the string at a byte index found by searching for the first
+            /// non-digit, which would panic if that index were not a
+            /// character boundary.
+            #[test]
+            fn never_panics_on_multibyte_units(number in "[0-9]{1,6}", unit in "\\PC{0,6}") {
+                let _ = parse_docker_byte_size(&format!("{number}{unit}"));
+            }
+
+            /// Units are ordered, and the parse has to preserve that: 1 GiB
+            /// is more than 1 MiB is more than 1 KiB. A transposed
+            /// multiplier is the kind of bug that reads as plausible in a
+            /// single example.
+            #[test]
+            fn iec_units_are_strictly_increasing(n in 1u32..1000) {
+                let b = parse_docker_byte_size(&format!("{n}B")).unwrap();
+                let kib = parse_docker_byte_size(&format!("{n}KiB")).unwrap();
+                let mib = parse_docker_byte_size(&format!("{n}MiB")).unwrap();
+                let gib = parse_docker_byte_size(&format!("{n}GiB")).unwrap();
+                let tib = parse_docker_byte_size(&format!("{n}TiB")).unwrap();
+                prop_assert!(b < kib && kib < mib && mib < gib && gib < tib);
+                prop_assert_eq!(kib, u64::from(n) * 1024);
+            }
+
+            /// A unit Docker never emits must be rejected rather than
+            /// silently treated as bytes - a value read as 1000x too small
+            /// is worse than no value.
+            #[test]
+            fn an_unknown_unit_is_rejected(n in 1u32..1000, unit in "[a-zA-Z]{1,4}") {
+                prop_assume!(!["B", "KiB", "MiB", "GiB", "TiB", "kB", "MB", "GB"].contains(&unit.as_str()));
+                prop_assert_eq!(parse_docker_byte_size(&format!("{n}{unit}")), None);
+            }
+        }
+    }
+
 }
