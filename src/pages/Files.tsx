@@ -15,7 +15,7 @@ import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
 import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
 import { RenameOrMoveModal } from "@/components/applications/files/RenameOrMoveModal";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   compressRemotePaths,
   createRemoteDirectory,
@@ -78,7 +78,7 @@ export function FilesPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [compressTargets, setCompressTargets] = useState<RemoteFileEntry[] | null>(null);
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingEntries(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntries(null), { labelledBy: "files-dialog-title-1" });
 
   const load = useCallback(
     (targetPath: string) => {
@@ -428,10 +428,10 @@ export function FilesPage() {
       )}
 
       {deletingEntries && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("filesPage.deleteTitle")}</h2>
+              <h2 className="modal-title" id="files-dialog-title-1">{t("filesPage.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingEntries(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -466,7 +466,7 @@ interface CompressModalProps {
 /** Names the archive, then compresses `targets` into it inside the current directory - "spakuj" in the row/selection context menu. */
 function CompressModal({ targets, onClose, onConfirm }: CompressModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "files-dialog-title-2" });
   const defaultName = targets.length === 1 ? targets[0].name.replace(/\.[^./]+$/, "") : "archive";
   const [name, setName] = useState(defaultName);
   const [busy, setBusy] = useState(false);
@@ -489,10 +489,10 @@ function CompressModal({ targets, onClose, onConfirm }: CompressModalProps) {
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("filesPage.compressTitle")}</h2>
+          <h2 className="modal-title" id="files-dialog-title-2">{t("filesPage.compressTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

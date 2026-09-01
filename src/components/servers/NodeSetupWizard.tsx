@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { joinVibeNetwork } from "@/services/networkService";
 import {
   enableServerFirewall,
@@ -58,7 +58,7 @@ function ruleLabel(t: (key: string, opts?: Record<string, unknown>) => string, r
  */
 export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWizardProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "nodesetupwizard-dialog-title-1" });
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
   const alreadyAgentMode = server?.connectionMode === "agent";
 
@@ -178,10 +178,10 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
   const allReady = Boolean(capabilities?.docker && capabilities?.wireguard && capabilities?.ufw);
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("nodeSetup.title", { name: serverName })}</h2>
+          <h2 className="modal-title" id="nodesetupwizard-dialog-title-1">{t("nodeSetup.title", { name: serverName })}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="modal-body">

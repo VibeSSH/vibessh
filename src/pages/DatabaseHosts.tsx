@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { listApplications } from "@/services/applicationService";
 import { createDatabaseHost, deleteDatabaseHost, listDatabaseHosts, setDatabaseHostPhpmyadmin } from "@/services/databaseService";
 import { useServersStore } from "@/stores/serversStore";
@@ -40,7 +40,7 @@ export function DatabaseHosts() {
   const [deletingHost, setDeletingHost] = useState<DatabaseHost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingHost(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingHost(null), { labelledBy: "databasehosts-dialog-title-1" });
 
   const [linkingHost, setLinkingHost] = useState<DatabaseHost | null>(null);
 
@@ -155,10 +155,10 @@ export function DatabaseHosts() {
       )}
 
       {deletingHost && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("databaseHosts.deleteTitle")}</h2>
+              <h2 className="modal-title" id="databasehosts-dialog-title-1">{t("databaseHosts.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingHost(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -187,7 +187,7 @@ interface DatabaseHostFormModalProps {
 
 function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "databasehosts-dialog-title-2" });
   const servers = useServersStore((s) => s.servers);
 
   const [name, setName] = useState("");
@@ -230,10 +230,10 @@ function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps)
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("databaseHosts.addTitle")}</h2>
+          <h2 className="modal-title" id="databasehosts-dialog-title-2">{t("databaseHosts.addTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -303,7 +303,7 @@ interface PhpmyadminLinkModalProps {
 /** No dedicated phpMyAdmin Blueprint needed - any existing Docker application (typically `generic-docker` with image `phpmyadmin/phpmyadmin`) can be linked here (docs/APPLICATIONS_ARCHITECTURE.md Section 12.3, Option A). */
 function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "databasehosts-dialog-title-3" });
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [applicationId, setApplicationId] = useState(host.phpmyadminApplicationId ?? "");
@@ -332,10 +332,10 @@ function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProp
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("databaseHosts.configurePhpmyadminTitle")}</h2>
+          <h2 className="modal-title" id="databasehosts-dialog-title-3">{t("databaseHosts.configurePhpmyadminTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form onSubmit={handleSubmit}>

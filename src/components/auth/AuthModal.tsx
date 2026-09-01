@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { cloudLogin, cloudRegister } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
@@ -38,7 +38,7 @@ export function AuthModal() {
     close();
   }
 
-  const backdrop = useBackdropClose(handleClose);
+  const backdrop = useModalDialog(handleClose, { labelledBy: "authmodal-dialog-title-1" });
 
   if (!isOpen) return null;
 
@@ -60,10 +60,10 @@ export function AuthModal() {
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("auth.modalTitle")}</h2>
+          <h2 className="modal-title" id="authmodal-dialog-title-1">{t("auth.modalTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={handleClose} title={t("common.close")} />
         </div>
 

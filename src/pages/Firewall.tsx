@@ -10,7 +10,7 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   addFirewallCustomRule,
   enableServerFirewall,
@@ -216,25 +216,12 @@ export function FirewallPage() {
       )}
 
       {deletingRule && (
-        <div className="modal-backdrop" {...useBackdropClose(() => !deleting && setDeletingRule(null))}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{t("firewallPage.deleteRuleTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setDeletingRule(null)} title={t("common.close")} disabled={deleting} />
-            </div>
-            <div className="modal-body">
-              <p className="dialog-body-text">{t("firewallPage.deleteRuleBody", { label: deletingRule.label })}</p>
-              <div className="form-actions">
-                <Button variant="secondary" onClick={() => setDeletingRule(null)} disabled={deleting}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="danger" onClick={handleConfirmDelete} disabled={deleting}>
-                  {deleting ? t("common.loading") : t("common.remove")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DeleteFirewallRuleDialog
+          label={deletingRule.label}
+          busy={deleting}
+          onCancel={() => !deleting && setDeletingRule(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </div>
   );
@@ -248,7 +235,7 @@ interface AddCustomRuleModalProps {
 
 function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "firewall-dialog-title-1" });
   const [label, setLabel] = useState("");
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
@@ -287,10 +274,10 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("firewallPage.addCustomRuleTitle")}</h2>
+          <h2 className="modal-title" id="firewall-dialog-title-1">{t("firewallPage.addCustomRuleTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -335,6 +322,49 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
             </div>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Its own component rather than JSX inside a conditional, because
+ * `useModalDialog` has an effect that must run on the dialog's own mount -
+ * see `EnvironmentTab`'s copy of this note.
+ */
+function DeleteFirewallRuleDialog({
+  label,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  label: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  const dialog = useModalDialog(onCancel, { labelledBy: "delete-firewall-rule-title" });
+  return (
+    <div className="modal-backdrop" {...dialog.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...dialog.panelProps}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="delete-firewall-rule-title">
+            {t("firewallPage.deleteRuleTitle")}
+          </h2>
+          <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} disabled={busy} />
+        </div>
+        <div className="modal-body">
+          <p className="dialog-body-text">{t("firewallPage.deleteRuleBody", { label })}</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={onConfirm} disabled={busy}>
+              {busy ? t("common.loading") : t("common.remove")}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { RowPicker, serverRowPickerOption, type RowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { addApplicationPort, listApplications, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
 import {
@@ -67,7 +67,7 @@ export function VibeNetwork() {
   const [leavingMember, setLeavingMember] = useState<NodeNetworkMember | null>(null);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const leaveBackdrop = useBackdropClose(() => !leaveBusy && setLeavingMember(null));
+  const leaveBackdrop = useModalDialog(() => !leaveBusy && setLeavingMember(null), { labelledBy: "vibenetwork-dialog-title-1" });
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -235,10 +235,10 @@ export function VibeNetwork() {
       )}
 
       {leavingMember && (
-        <div className="modal-backdrop" {...leaveBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...leaveBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...leaveBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("vibeNetwork.leaveTitle")}</h2>
+              <h2 className="modal-title" id="vibenetwork-dialog-title-1">{t("vibeNetwork.leaveTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setLeavingMember(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -388,7 +388,7 @@ interface AddNodeModalProps {
  * CIDR, peer, or firewall rule is ever typed here. */
 function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-2" });
   const [serverId, setServerId] = useState(joinableServers[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -413,10 +413,10 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("vibeNetwork.addNodeTitle")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-2">{t("vibeNetwork.addNodeTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="modal-body">
@@ -607,7 +607,7 @@ interface EndpointFormModalProps {
 
 function EndpointFormModal({ applications, editing, onClose, onSaved }: EndpointFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-3" });
   const [applicationId, setApplicationId] = useState(editing?.applicationId ?? applications[0]?.id ?? "");
   const [name, setName] = useState(editing?.name ?? "");
   const [protocol, setProtocol] = useState<"tcp" | "udp">(editing?.protocol ?? "tcp");
@@ -651,10 +651,10 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{editing ? t("portsTab.editTitle") : t("vibeNetwork.addEndpoint")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-3">{editing ? t("portsTab.editTitle") : t("vibeNetwork.addEndpoint")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -906,7 +906,7 @@ interface DnsFormModalProps {
 
 function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-4" });
   const [applicationId, setApplicationId] = useState(editing?.applicationId ?? applications[0]?.id ?? "");
   const [hostname, setHostname] = useState(editing?.hostname.replace(/\.vibe$/, "") ?? "");
   const [busy, setBusy] = useState(false);
@@ -937,10 +937,10 @@ function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalP
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{editing ? t("vibeNetwork.editAlias") : t("vibeNetwork.addAlias")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-4">{editing ? t("vibeNetwork.editAlias") : t("vibeNetwork.addAlias")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

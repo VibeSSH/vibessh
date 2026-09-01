@@ -249,6 +249,14 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE F — Frontend and UI polish
 
+> **Status: F.1 and F.2 done.**
+> F.3 was withdrawn - see the U-003 correction in `AUDIT_REPORT.md`; the
+> auto-recreate it asked for already existed on all five config surfaces.
+>
+> **Still open:** F.4 (the remaining "success on partial failure" paths),
+> F.5 (the visual pass at 1920-800, which needs the packaged app against a
+> live Node), F.6 (contrast, and status conveyed by colour alone).
+
 | # | Item | Finding |
 |---|---|---|
 | F.1 | One accessible `<Modal>` primitive: focus trap, focus restore, `role="dialog" aria-modal="true"`, labelled heading, Escape. Migrate all 20+ modals | U-001 |

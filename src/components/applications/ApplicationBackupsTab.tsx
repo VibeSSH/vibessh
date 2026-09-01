@@ -9,7 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { downloadApplicationFile } from "@/services/applicationFilesService";
 import {
   createApplicationBackup,
@@ -57,12 +57,12 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
   const [restoreTarget, setRestoreTarget] = useState<ApplicationBackup | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const restoreBackdrop = useBackdropClose(() => !restoreBusy && setRestoreTarget(null));
+  const restoreBackdrop = useModalDialog(() => !restoreBusy && setRestoreTarget(null), { labelledBy: "applicationbackupstab-dialog-title-1" });
 
   const [deleteTarget, setDeleteTarget] = useState<ApplicationBackup | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeleteTarget(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeleteTarget(null), { labelledBy: "applicationbackupstab-dialog-title-2" });
 
   const [schedule, setSchedule] = useState<BackupSchedule | null>(null);
   const [scheduleBusy, setScheduleBusy] = useState(false);
@@ -280,10 +280,10 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       </Card>
 
       {restoreTarget && (
-        <div className="modal-backdrop" {...restoreBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...restoreBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...restoreBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationBackups.restoreTitle")}</h2>
+              <h2 className="modal-title" id="applicationbackupstab-dialog-title-1">{t("applicationBackups.restoreTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setRestoreTarget(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -303,10 +303,10 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       )}
 
       {deleteTarget && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationBackups.deleteTitle")}</h2>
+              <h2 className="modal-title" id="applicationbackupstab-dialog-title-2">{t("applicationBackups.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeleteTarget(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">

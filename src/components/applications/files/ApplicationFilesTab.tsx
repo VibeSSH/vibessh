@@ -12,7 +12,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { restartApplication } from "@/services/applicationService";
 import {
   copyApplicationFile,
@@ -88,7 +88,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
   const [jarWarning, setJarWarning] = useState<{ fileName: string; localSrc: string; targetPath: string } | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingEntry(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntry(null), { labelledBy: "applicationfilestab-dialog-title-1" });
   const contextMenu = useContextMenu();
 
   // Same reasoning as the Node Files page: a directory can hold tens of
@@ -445,10 +445,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       )}
 
       {deletingEntry && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationFilesTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="applicationfilestab-dialog-title-1">{t("applicationFilesTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingEntry(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">

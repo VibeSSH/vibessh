@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   createApplicationDatabase,
   deleteApplicationDatabase,
@@ -46,12 +46,12 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
-  const revealBackdrop = useBackdropClose(() => setRevealingDatabase(null));
+  const revealBackdrop = useModalDialog(() => setRevealingDatabase(null), { labelledBy: "databasestab-dialog-title-1" });
 
   const [deletingDatabase, setDeletingDatabase] = useState<ApplicationDatabase | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingDatabase(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingDatabase(null), { labelledBy: "databasestab-dialog-title-2" });
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -246,10 +246,10 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {deletingDatabase && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("databasesTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="databasestab-dialog-title-1">{t("databasesTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingDatabase(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -269,10 +269,10 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {revealingDatabase && (
-        <div className="modal-backdrop" {...revealBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...revealBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...revealBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("databasesTab.credentialsTitle", { name: revealingDatabase.databaseName })}</h2>
+              <h2 className="modal-title" id="databasestab-dialog-title-2">{t("databasesTab.credentialsTitle", { name: revealingDatabase.databaseName })}</h2>
               <IconButton icon="x" size="sm" onClick={() => setRevealingDatabase(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">

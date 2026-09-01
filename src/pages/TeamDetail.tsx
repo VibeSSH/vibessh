@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { AuditLogSection } from "@/components/teams/AuditLogSection";
 import { InvitationsSection } from "@/components/teams/InvitationsSection";
 import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
@@ -39,7 +39,7 @@ export function TeamDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const confirmDeleteBackdrop = useBackdropClose(() => !deleteBusy && setConfirmingDelete(false));
+  const confirmDeleteBackdrop = useModalDialog(() => !deleteBusy && setConfirmingDelete(false), { labelledBy: "teamdetail-dialog-title-1" });
 
   function loadOverview() {
     if (!teamId) return;
@@ -187,10 +187,10 @@ export function TeamDetail() {
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
 
       {confirmingDelete && (
-        <div className="modal-backdrop" {...confirmDeleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...confirmDeleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...confirmDeleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("teams.deleteTeamTitle")}</h2>
+              <h2 className="modal-title" id="teamdetail-dialog-title-1">{t("teams.deleteTeamTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setConfirmingDelete(false)} title={t("common.close")} />
             </div>
             <div className="modal-body">

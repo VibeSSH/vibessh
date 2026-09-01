@@ -9,7 +9,7 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { listPortForwards, startPortForward, stopPortForward } from "@/services/portForwardService";
 import { useServersStore } from "@/stores/serversStore";
 import type { PortForwardKind, PortForwardStatus, StartPortForwardInput } from "@/types/portForward";
@@ -154,7 +154,7 @@ interface AddForwardModalProps {
 
 function AddForwardModal({ serverId, onClose, onAdded }: AddForwardModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "portforwarding-dialog-title-1" });
   const [kind, setKind] = useState<PortForwardKind>("local");
   const [bindAddress, setBindAddress] = useState("127.0.0.1");
   const [bindPort, setBindPort] = useState("");
@@ -199,10 +199,10 @@ function AddForwardModal({ serverId, onClose, onAdded }: AddForwardModalProps) {
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("portForwardingPage.addForwardTitle")}</h2>
+          <h2 className="modal-title" id="portforwarding-dialog-title-1">{t("portForwardingPage.addForwardTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

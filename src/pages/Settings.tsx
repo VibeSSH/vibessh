@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { getAppInfo } from "@/services/appService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
@@ -374,7 +374,7 @@ interface AddRegistryCredentialModalProps {
 
 function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "settings-dialog-title-1" });
   const [registry, setRegistry] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -400,10 +400,10 @@ function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialM
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("settings.registryAddTitle")}</h2>
+          <h2 className="modal-title" id="settings-dialog-title-1">{t("settings.registryAddTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

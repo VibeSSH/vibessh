@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   addApplicationPort,
   listApplicationPorts,
@@ -61,7 +61,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
   const [deletingPort, setDeletingPort] = useState<ApplicationPort | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingPort(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingPort(null), { labelledBy: "portstab-dialog-title-1" });
 
   const [firewallSyncing, setFirewallSyncing] = useState(false);
   // `undefined` = never synced this session yet; `null` = synced, but this
@@ -214,10 +214,10 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
       )}
 
       {deletingPort && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("portsTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="portstab-dialog-title-1">{t("portsTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingPort(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -249,7 +249,7 @@ interface PortFormModalProps {
 
 function PortFormModal({ applicationId, application, editingPort, onClose, onSaved }: PortFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "portstab-dialog-title-2" });
   const isEditing = Boolean(editingPort);
 
   const [name, setName] = useState(editingPort?.name ?? "");
@@ -297,10 +297,10 @@ function PortFormModal({ applicationId, application, editingPort, onClose, onSav
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEditing ? t("portsTab.editTitle") : t("portsTab.addTitle")}</h2>
+          <h2 className="modal-title" id="portstab-dialog-title-2">{isEditing ? t("portsTab.editTitle") : t("portsTab.addTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

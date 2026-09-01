@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
@@ -26,7 +26,7 @@ function toSymbolic(mode: number): string {
 /** design brief section 118 - a raw octal input (how anyone who'd reach for "chmod" already thinks about it) with a live rwxrwxrwx preview, not a checkbox grid. Only offered where the provider actually has a POSIX permission concept (LocalApplicationFileProvider on Windows rejects set_permissions outright - see that provider's own doc comment). */
 export function ChmodModal({ fileName, currentMode, onClose, onConfirm }: ChmodModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "chmodmodal-dialog-title-1" });
   const [octal, setOctal] = useState(currentMode !== undefined ? toOctal(currentMode) : "755");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,10 +49,10 @@ export function ChmodModal({ fileName, currentMode, onClose, onConfirm }: ChmodM
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("applicationFilesTab.chmodTitle", { name: fileName })}</h2>
+          <h2 className="modal-title" id="chmodmodal-dialog-title-1">{t("applicationFilesTab.chmodTitle", { name: fileName })}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { ApplicationConsoleCard } from "@/components/applications/ApplicationConsoleCard";
@@ -74,7 +74,7 @@ export function ApplicationDetail() {
   const [confirming, setConfirming] = useState<Verb | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const confirmBackdrop = useBackdropClose(() => !actionBusy && setConfirming(null));
+  const confirmBackdrop = useModalDialog(() => !actionBusy && setConfirming(null), { labelledBy: "applicationdetail-dialog-title-1" });
 
   const [logs, setLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -84,7 +84,7 @@ export function ApplicationDetail() {
   const [migrateTargetServerId, setMigrateTargetServerId] = useState("");
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
-  const migrateBackdrop = useBackdropClose(() => !migrateBusy && setMigrateOpen(false));
+  const migrateBackdrop = useModalDialog(() => !migrateBusy && setMigrateOpen(false), { labelledBy: "applicationdetail-dialog-title-2" });
 
   const reload = useCallback(() => {
     if (!id) return;
@@ -384,10 +384,10 @@ export function ApplicationDetail() {
       )}
 
       {confirming && (
-        <div className="modal-backdrop" {...confirmBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...confirmBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...confirmBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationDetail.confirmTitle", { verb: t(`applicationDetail.verb.${confirming}`) })}</h2>
+              <h2 className="modal-title" id="applicationdetail-dialog-title-1">{t("applicationDetail.confirmTitle", { verb: t(`applicationDetail.verb.${confirming}`) })}</h2>
               <IconButton icon="x" size="sm" onClick={() => setConfirming(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -409,10 +409,10 @@ export function ApplicationDetail() {
       )}
 
       {migrateOpen && (
-        <div className="modal-backdrop" {...migrateBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...migrateBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...migrateBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationDetail.migrateTitle")}</h2>
+              <h2 className="modal-title" id="applicationdetail-dialog-title-2">{t("applicationDetail.migrateTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setMigrateOpen(false)} title={t("common.close")} />
             </div>
             <div className="modal-body">
