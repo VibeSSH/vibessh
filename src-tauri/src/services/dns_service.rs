@@ -149,10 +149,6 @@ pub fn resolve_dns_view(
     Ok(views)
 }
 
-/// A raw newline or the heredoc's own delimiter smuggled into a hostname
-/// could inject extra `/etc/hosts` lines or shell statements - rejected
-/// outright, same stance `network::wireguard::reject_unsafe` already takes
-/// for the same reason.
 /// The `/etc/hosts` fragment is written through a *quoted* heredoc, so
 /// nothing here is shell-expanded today - but a value still must not be
 /// able to introduce a new line into a line-oriented config file, or
@@ -174,7 +170,46 @@ fn reject_unsafe(value: &str) -> AppResult<()> {
 /// Pure rendering, separated from the actual SSH push - same split every
 /// other real-server-mutating module here uses so the shape can be unit
 /// tested without a live connection.
+/// Rejects a fragment that would put the same hostname on two different
+/// addresses.
+///
+/// `/etc/hosts` resolves to the *first* match, so two lines for
+/// `web-server.vibe` pointing at different Nodes do not fail - they
+/// silently send every lookup to whichever one happens to be written first.
+/// That is reachable without anyone doing anything strange: a Node alias is
+/// derived from the Node's name by slugifying it, so "Web Server" and
+/// "Web-Server!" both become `web-server`, and renaming a Node is enough to
+/// create the collision after the fact.
+///
+/// `dns_repository::create` already rejects a collision between two
+/// *service* aliases, but it cannot see Node aliases at all - those are
+/// derived at render time and never stored. This is the one place both are
+/// visible, so it is where the check belongs. Failing the sync loudly is
+/// the right outcome: a Node that keeps its previous, correct `/etc/hosts`
+/// is far better than one silently routing to the wrong host.
+fn reject_duplicate_hostnames(views: &[DnsView]) -> AppResult<()> {
+    let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for view in views {
+        match seen.get(view.hostname.as_str()) {
+            Some(existing_ip) if *existing_ip != view.ip.as_str() => {
+                return Err(AppError::InvalidInput(format!(
+                    "'{}' resolves to two different Nodes ({} and {}) - rename one of them so each name is unique, then sync again",
+                    view.hostname, existing_ip, view.ip
+                )));
+            }
+            // The same name for the same address is harmless duplication -
+            // a Node alias and a service alias can legitimately coincide.
+            Some(_) => continue,
+            None => {
+                seen.insert(&view.hostname, &view.ip);
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn render_hosts_fragment(views: &[DnsView]) -> AppResult<String> {
+    reject_duplicate_hostnames(views)?;
     for view in views {
         reject_unsafe(&view.hostname)?;
         reject_unsafe(&view.ip)?;
@@ -192,14 +227,71 @@ pub fn render_hosts_fragment(views: &[DnsView]) -> AppResult<String> {
 /// use) rather than diffing - `sed` deletes the old block (a no-op if this
 /// is the first sync and it doesn't exist yet), then the fresh one is
 /// appended.
+/// Replaces this Node's managed block in `/etc/hosts`, atomically and under
+/// a lock.
+///
+/// The previous implementation ran `sed -i` to delete the old block and
+/// then `tee -a` to append the new one - two separate mutations of a file
+/// the whole system reads, with three problems. There was a window between
+/// them in which the Node had *no* VibeSSH DNS at all. If `tee` failed
+/// after `sed` succeeded, that window became permanent. And nothing
+/// serialized two concurrent syncs (a manual "Sync" while a port change
+/// triggers one), so their `sed`/`tee` pairs could interleave into
+/// duplicated or lost blocks.
+///
+/// This writes the whole new file to a temp file in `/etc` - the same
+/// filesystem, so the `mv` is a real atomic rename - and takes an `flock`
+/// for the duration. A reader either sees the old file or the new one,
+/// never a half-written state, and a failure anywhere leaves the previous
+/// file untouched.
 async fn push_fragment(connection: &crate::ssh::SshSession, fragment: &str) -> AppResult<()> {
-    let script = format!(
-        "set -e\nsudo sed -i '/{BEGIN_MARKER}/,/{END_MARKER}/d' /etc/hosts\nsudo tee -a /etc/hosts >/dev/null <<'VIBESSH_DNS_EOF'\n{fragment}VIBESSH_DNS_EOF\n"
+    let fragment_path = format!("{}/dns-fragment", crate::node_paths::BASE);
+    let lock_path = format!("{}/dns.lock", crate::node_paths::BASE);
+
+    // Staged first, through a quoted heredoc, so the assembling script below
+    // needs no interpolation of caller data at all.
+    let stage = format!(
+        "set -e\n{ensure_dirs}\nsudo tee {fragment_path} >/dev/null <<'VIBESSH_DNS_EOF'\n{fragment}VIBESSH_DNS_EOF\nsudo chmod 644 {fragment_path}\n",
+        ensure_dirs = crate::node_paths::ensure_runtime_dirs_command(),
+        fragment_path = command::quote(&fragment_path),
     );
-    let output = connection.execute_command(&script).await?;
+    let output = connection.execute_command(&stage).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
-        return Err(AppError::Connection(format!("couldn't update /etc/hosts: {}", if detail.is_empty() { "sed/tee failed" } else { detail })));
+        return Err(AppError::Connection(format!(
+            "couldn't stage the DNS entries: {}",
+            if detail.is_empty() { "writing the fragment failed" } else { detail }
+        )));
+    }
+
+    // Written as a raw string with `%LOCK%`/`%FRAGMENT%` placeholders rather
+    // than a `format!` template: the script is dense with `$`, `"` and `{}`,
+    // all of which `format!` would need escaped, and the escaping is exactly
+    // where shell bugs hide. Both substituted values are constants derived
+    // from `node_paths`, never caller data.
+    const ASSEMBLE: &str = r#"sudo sh -c '
+set -e
+exec 9>"%LOCK%"
+flock 9
+tmp=$(mktemp /etc/hosts.vibessh.XXXXXX)
+sed "/%BEGIN%/,/%END%/d" /etc/hosts > "$tmp"
+cat "%FRAGMENT%" >> "$tmp"
+chown root:root "$tmp"
+chmod 644 "$tmp"
+mv "$tmp" /etc/hosts
+'"#;
+    let assemble = ASSEMBLE
+        .replace("%LOCK%", &lock_path)
+        .replace("%FRAGMENT%", &fragment_path)
+        .replace("%BEGIN%", BEGIN_MARKER)
+        .replace("%END%", END_MARKER);
+    let output = connection.execute_command(&assemble).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        return Err(AppError::Connection(format!(
+            "couldn't update /etc/hosts: {}",
+            if detail.is_empty() { "assembling the new file failed" } else { detail }
+        )));
     }
     Ok(())
 }
@@ -399,5 +491,51 @@ mod tests {
     fn render_hosts_fragment_rejects_a_newline_smuggled_into_a_hostname() {
         let views = vec![DnsView { hostname: "evil.vibe\nrm -rf /".into(), ip: "10.77.0.1".into(), kind: DnsViewKind::Node, server_id: Uuid::new_v4() }];
         assert!(render_hosts_fragment(&views).is_err());
+    }
+    fn view(hostname: &str, ip: &str) -> DnsView {
+        DnsView { hostname: hostname.to_string(), ip: ip.to_string(), kind: DnsViewKind::Node, server_id: Uuid::new_v4() }
+    }
+
+    /// The regression test for the silent-wrong-Node finding. `/etc/hosts`
+    /// resolves to the first match, so two lines for the same name on
+    /// different addresses do not fail - they quietly route every lookup to
+    /// whichever was written first.
+    #[test]
+    fn render_refuses_a_hostname_that_points_at_two_different_nodes() {
+        let views = vec![view("web-server.vibe", "10.77.0.1"), view("web-server.vibe", "10.77.0.2")];
+        let err = render_hosts_fragment(&views).unwrap_err();
+        assert!(err.to_string().contains("web-server.vibe"), "{err}");
+        assert!(err.to_string().contains("10.77.0.1") && err.to_string().contains("10.77.0.2"), "{err}");
+    }
+
+    /// This is reachable without anyone doing anything strange: a Node
+    /// alias is the slugified Node name, so these two names collide.
+    #[test]
+    fn two_node_names_that_slugify_the_same_are_caught() {
+        assert_eq!(node_alias(".vibe", "Web Server"), node_alias(".vibe", "Web-Server!"));
+        let views = vec![
+            view(&node_alias(".vibe", "Web Server"), "10.77.0.1"),
+            view(&node_alias(".vibe", "Web-Server!"), "10.77.0.2"),
+        ];
+        assert!(render_hosts_fragment(&views).is_err());
+    }
+
+    /// The same name for the same address is harmless - a Node alias and a
+    /// service alias on that Node can legitimately coincide.
+    #[test]
+    fn the_same_hostname_on_the_same_address_is_allowed() {
+        let views = vec![view("db01.vibe", "10.77.0.1"), view("db01.vibe", "10.77.0.1")];
+        let fragment = render_hosts_fragment(&views).unwrap();
+        assert!(fragment.contains("10.77.0.1 db01.vibe"), "{fragment}");
+    }
+
+    #[test]
+    fn distinct_hostnames_render_one_line_each() {
+        let views = vec![view("a.vibe", "10.77.0.1"), view("b.vibe", "10.77.0.2")];
+        let fragment = render_hosts_fragment(&views).unwrap();
+        assert!(fragment.starts_with(BEGIN_MARKER));
+        assert!(fragment.trim_end().ends_with(END_MARKER));
+        assert!(fragment.contains("10.77.0.1 a.vibe"), "{fragment}");
+        assert!(fragment.contains("10.77.0.2 b.vibe"), "{fragment}");
     }
 }

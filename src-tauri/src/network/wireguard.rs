@@ -300,8 +300,31 @@ pub async fn show_peers(connection: &SshSession) -> AppResult<Vec<PeerStatus>> {
 /// no longer a member. Deliberately does NOT remove the keypair - a Node
 /// that rejoins later should get the same public key back, not a new
 /// identity every time.
+/// Brings the interface down and removes its config.
+///
+/// **Reports failure.** This used to discard its own result and always
+/// return `Ok`, which made `network_service::leave_node`'s error handling
+/// meaningless: a Node whose interface could not be brought down was still
+/// removed from the mesh, leaving it running the old config with nothing
+/// left pointing at it.
+///
+/// An interface that is already down is not a failure - `wg-quick down`
+/// exits non-zero for that, and it is exactly the state teardown is trying
+/// to reach - so that case is treated as success by checking the interface
+/// is gone afterwards rather than by trusting the exit code.
 pub async fn teardown(connection: &SshSession) -> AppResult<()> {
-    let _ = connection.execute_command(&format!("sudo wg-quick down {INTERFACE} 2>/dev/null; sudo rm -f {CONFIG_PATH}")).await;
+    let output = connection
+        .execute_command(&format!(
+            "sudo wg-quick down {INTERFACE} >/dev/null 2>&1; sudo rm -f {CONFIG_PATH}; \
+             if sudo ip link show {INTERFACE} >/dev/null 2>&1; then echo up; else echo down; fi"
+        ))
+        .await?;
+    if output.stdout.trim() != "down" {
+        return Err(AppError::Connection(format!(
+            "the {INTERFACE} interface is still up on this Node, so it hasn't really left the Vibe Network - \
+             bring it down manually (`wg-quick down {INTERFACE}`) and try again"
+        )));
+    }
     Ok(())
 }
 

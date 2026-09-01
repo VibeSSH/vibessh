@@ -78,9 +78,18 @@ pub async fn leave_node(
     sessions: &SshSessionManager,
     server_id: Uuid,
 ) -> AppResult<()> {
-    if let Ok(connection) = get_or_connect(server_repo, sessions, server_id).await {
-        let _ = wireguard::teardown(&connection).await;
-    }
+    // The row is only removed once the Node has actually been torn down.
+    //
+    // Previously the teardown result was discarded and the row removed
+    // regardless, which produced the worst possible half-state: every other
+    // member drops the departed Node from its peer list, while the departed
+    // Node keeps its `wg-vibessh0` interface up with the *old* config -
+    // still holding mesh addresses, still trying to reach peers that no
+    // longer know it, and with nothing in VibeSSH left pointing at it to
+    // clean it up. `wireguard::teardown` swallowed its own errors too, so
+    // even checking the result would not have helped until it stopped.
+    let connection = get_or_connect(server_repo, sessions, server_id).await?;
+    wireguard::teardown(&connection).await?;
     network_repo.leave(server_id)?;
     reconcile_mesh(network_repo, server_repo, sessions).await?;
     Ok(())
