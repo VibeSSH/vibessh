@@ -19,6 +19,7 @@ export type ErrorCode =
   | "permission_denied"
   | "port_in_use"
   | "docker_unavailable"
+  | "database_server_unavailable"
   | "timeout"
   | "host_key_mismatch";
 

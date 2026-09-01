@@ -631,7 +631,10 @@
     "newDatabase": "Nowa baza danych",
     "generatedNote": "Nazwa bazy, login i hasło są generowane automatycznie - „przeznaczenie” tylko wpływa na wygenerowaną nazwę, żeby była rozpoznawalna.",
     "deleteTitle": "Usuń bazę danych",
-    "deleteBody": "Usunąć „{{name}}”? To trwale usuwa rzeczywistą bazę danych i jej użytkownika na serwerze bazy danych - wszystkie dane w niej zostaną bezpowrotnie skasowane. Tej operacji nie można cofnąć."
+    "deleteBody": "Usunąć „{{name}}”? To trwale usuwa rzeczywistą bazę danych i jej użytkownika na serwerze bazy danych - wszystkie dane w niej zostaną bezpowrotnie skasowane. Tej operacji nie można cofnąć.",
+    "installServerOffer": "Host \"{{name}}\" wskazuje na ten węzeł, a nie działa na nim jeszcze żaden serwer bazy danych. Instalacja MariaDB dodaje usługę systemową i konto administratora.",
+    "installServer": "Zainstaluj MariaDB",
+    "installingServer": "Instalowanie…"
   },
   "applicationFilesTab": {
     "loadError": "Nie udało się wczytać plików.",
@@ -1274,7 +1277,8 @@
     "docker_unavailable": "Docker nie jest zainstalowany albo nie działa na tym Node. Zainstaluj go ze strony Node i spróbuj ponownie.",
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
-    "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port."
+    "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
+    "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora."
   },
   "connections": {
     "title": "Połączenia",

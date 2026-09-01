@@ -366,7 +366,14 @@ async fn run_mysql_with_retry(
     retry_on_connection_failure(sessions, host.server_id, || async {
         let connection = connect_to_host(server_repo, sessions, host).await?;
         ensure_mysql_client_installed(&connection).await;
-        ensure_mysql_server_installed(&connection, host, admin_password).await;
+        // Was: silently `apt-get install mariadb-server`, enable it, and
+        // grant this host's admin user `ALL PRIVILEGES ... WITH GRANT
+        // OPTION` - on any operation that happened to touch a loopback
+        // host, with every error discarded (S-006/S-033). Installing a
+        // database server and creating a superuser on it is not a
+        // reasonable side effect of asking for an application database. Now
+        // it is refused with a code the UI turns into an offer.
+        require_database_server(&connection, host).await?;
         run_mysql(&connection, host, admin_password, sql, redact).await
     })
     .await
@@ -472,23 +479,84 @@ fn sql_quote(value: &str) -> String {
 /// installed *before* this function knew to fix the `localhost` account
 /// still gets self-healed on its very next provisioning attempt, not only
 /// on a fresh install.
-async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseHost, admin_password: &str) {
+/// Whether a database server is actually running on this Node.
+///
+/// Only ever asked of a loopback host - a remote host's server is somebody
+/// else's business and this Node's `systemctl` says nothing about it.
+async fn database_server_running(connection: &SshSession) -> AppResult<bool> {
+    let active = connection.execute_command("systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql").await?;
+    Ok(active.exit_code == 0)
+}
+
+/// Refuses the operation, with an actionable code, when a loopback Database
+/// Host has no server behind it.
+///
+/// Deliberately a refusal rather than an install: see the call site. A
+/// remote host is left alone entirely - if it is unreachable, `run_mysql`'s
+/// own error says so far better than a guess from here would.
+async fn require_database_server(connection: &SshSession, host: &DatabaseHost) -> AppResult<()> {
     if !is_loopback_host(&host.host) {
-        return;
+        return Ok(());
     }
-    let active = connection.execute_command("systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql").await;
-    if !matches!(active, Ok(ref output) if output.exit_code == 0) {
+    if database_server_running(connection).await? {
+        return Ok(());
+    }
+    Err(AppError::DatabaseServerUnavailable { host: host.name.clone() })
+}
+
+/// Installs MariaDB on the Node behind a loopback Database Host, and gives
+/// that host's configured admin user the privileges VibeSSH then relies on.
+///
+/// **Explicit and consented** - this is the whole of A.4.3. It used to run
+/// as an unannounced side effect of creating an application database, which
+/// meant an `apt-get install`, an enabled system service, a new superuser
+/// with `WITH GRANT OPTION`, and a rewritten bind address all appearing on
+/// somebody's machine because they clicked "New database". Every step's
+/// error was discarded, so when any of it failed the operator saw an
+/// "access denied" from a later query instead.
+///
+/// Every step now propagates. A half-installed database server is worth
+/// stopping on: the next step's failure would otherwise be reported against
+/// whatever the operator does next, hours later.
+pub async fn install_database_server(
+    repo: &DatabaseRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    host_id: Uuid,
+) -> AppResult<()> {
+    let host = repo.get_host(host_id)?.ok_or_else(|| AppError::NotFound(format!("database host {host_id}")))?;
+    if !is_loopback_host(&host.host) {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' points at {}, not at this node itself - VibeSSH only installs a database server on a node it manages",
+            host.name, host.host
+        )));
+    }
+    let admin_password = load_host_admin_password(&host)?;
+    let connection = connect_to_host(server_repo, sessions, &host).await?;
+
+    if !database_server_running(&connection).await? {
         let install = connection
             .execute_command(
                 "sudo apt-get update -qq \
                  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server \
                  && sudo systemctl enable --now mariadb",
             )
-            .await;
-        if !matches!(install, Ok(ref output) if output.exit_code == 0) {
-            return;
+            .await?;
+        if install.exit_code != 0 {
+            let detail = install.stderr.trim();
+            let detail = if detail.is_empty() { "the install command failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't install a database server on this node: {detail}")));
         }
     }
+    grant_admin_user(&connection, &host, &admin_password).await?;
+    ensure_mysql_reachable_from_containers(&connection, host.port).await;
+    Ok(())
+}
+
+/// Creates (or re-points) the Database Host's configured admin user on a
+/// freshly installed server, so the credentials the operator typed when they
+/// linked the host actually work against it.
+async fn grant_admin_user(connection: &SshSession, host: &DatabaseHost, admin_password: &str) -> AppResult<()> {
     let user = sql_quote(&host.admin_username);
     let addr = sql_quote(&host.host);
     let local = sql_quote("localhost");
@@ -506,24 +574,18 @@ async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseH
     // in plaintext, and a command string is visible in `ps` to every local
     // account on the Node while it runs.
     let sql_file = format!(".vibessh-grant-{}.sql", Uuid::new_v4());
-    match write_private_file(connection, &sql_file, grant_sql.as_bytes()).await {
-        // Every later `mysql` call authenticates as this user, so when the
-        // grant does not land, the failure surfaces as "access denied" on
-        // whatever the operator was actually doing. This is the only place
-        // that knows why.
-        Err(err) => log::warn!("couldn't stage the admin grant for the newly installed database server: {err}"),
-        Ok(()) => {
-            let applied = connection.execute_command(&format!("sudo mysql < {file}; rm -f {file}", file = shell_quote(&sql_file))).await;
-            match applied {
-                Ok(output) if output.exit_code != 0 => {
-                    log::warn!("the admin grant on the newly installed database server failed: {}", output.stderr.trim())
-                }
-                Err(err) => log::warn!("couldn't apply the admin grant on the newly installed database server: {err}"),
-                Ok(_) => {}
-            }
-        }
+    write_private_file(connection, &sql_file, grant_sql.as_bytes()).await?;
+    // Propagates, unlike before. Every later `mysql` call authenticates as
+    // this user, so a grant that quietly did not land turns into "access
+    // denied" against whatever the operator does next - an error that names
+    // neither this step nor the install that triggered it.
+    let applied = connection.execute_command(&format!("sudo mysql < {file}; rm -f {file}", file = shell_quote(&sql_file))).await?;
+    if applied.exit_code != 0 {
+        let detail = applied.stderr.trim().replace(admin_password, "[redacted]");
+        let detail = if detail.is_empty() { "the grant statement failed".to_string() } else { detail };
+        return Err(AppError::Connection(format!("the database server was installed but its admin user couldn't be created: {detail}")));
     }
-    ensure_mysql_reachable_from_containers(connection, host.port).await;
+    Ok(())
 }
 
 /// Makes a self-hosted MariaDB reachable from an Application's container

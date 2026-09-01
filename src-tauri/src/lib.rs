@@ -224,6 +224,7 @@ pub fn run() {
             commands::database_commands::create_database_host,
             commands::database_commands::delete_database_host,
             commands::database_commands::set_database_host_phpmyadmin,
+            commands::database_commands::install_database_server,
             commands::database_commands::list_application_databases,
             commands::database_commands::create_application_database,
             commands::database_commands::delete_application_database,

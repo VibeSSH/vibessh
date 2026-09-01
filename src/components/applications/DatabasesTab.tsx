@@ -14,6 +14,7 @@ import {
   deleteApplicationDatabase,
   getPhpmyadminUrl,
   listApplicationDatabases,
+  installDatabaseServer,
   listDatabaseHosts,
   resetApplicationDatabasePassword,
   revealApplicationDatabasePassword,
@@ -21,7 +22,7 @@ import {
 import type { ApplicationDatabase, DatabaseHost } from "@/types/database";
 import "@/components/servers/forms.css";
 import "./DatabasesTab.css";
-import { errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage } from "@/services/tauri";
 
 interface DatabasesTabProps {
   applicationId: string;
@@ -34,6 +35,11 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [hosts, setHosts] = useState<DatabaseHost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Set when a database operation failed only because the node has no
+   * database server yet. Installing one is a real change to the machine, so
+   * the offer is a button rather than something that already happened. */
+  const [installHostId, setInstallHostId] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const [databaseHostId, setDatabaseHostId] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -85,11 +91,32 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     try {
       await createApplicationDatabase(applicationId, databaseHostId, purpose.trim() || undefined);
       setPurpose("");
+      setInstallHostId(null);
       reload();
     } catch (err) {
       setError(errorMessage(err, t));
+      if (err instanceof CommandError && err.code === "database_server_unavailable") {
+        setInstallHostId(databaseHostId);
+      }
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleInstallServer() {
+    if (!installHostId) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      await installDatabaseServer(installHostId);
+      setInstallHostId(null);
+      // Not retried automatically: the operator asked for an install, and
+      // silently performing the original request on the back of it is the
+      // habit this whole change exists to break.
+    } catch (err) {
+      setError(errorMessage(err, t));
+    } finally {
+      setInstalling(false);
     }
   }
 
@@ -215,6 +242,16 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {rowError && <p className="form-note form-note-danger form-note-spaced">{rowError}</p>}
+
+      {installHostId && (
+        <div className="application-detail-header-row">
+          <p className="form-note">{t("databasesTab.installServerOffer", { name: hostFor(installHostId)?.name ?? "" })}</p>
+          <Button variant="secondary" size="sm" onClick={handleInstallServer} disabled={installing}>
+            <Icon name="download" size={14} />
+            {installing ? t("databasesTab.installingServer") : t("databasesTab.installServer")}
+          </Button>
+        </div>
+      )}
 
       {hosts.length === 0 ? (
         <p className="form-note">

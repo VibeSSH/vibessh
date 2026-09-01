@@ -56,7 +56,7 @@ pub use network_service::{
 };
 pub use node_state_service::{reconcile_node, sync_status as node_sync_status};
 pub use database_service::{
-    create_application_database, create_database_host, delete_application_database, delete_database_host,
+    create_application_database, create_database_host, delete_application_database, delete_database_host, install_database_server,
     list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
     reveal_application_database_password, set_database_host_phpmyadmin,
 };

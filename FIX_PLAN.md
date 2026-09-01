@@ -5,11 +5,14 @@
 > tests. `cargo test --workspace` 516 pass / 0 fail, clippy 0 errors,
 > `tsc --noEmit` clean, i18n 1122/1122.
 >
-> **One Phase A item was deliberately deferred to Phase B:** A.4.3, making
-> database-server installation an explicit, consented, progress-reported
-> action. The security half of S-006 (the `%` grants and the forced
-> `0.0.0.0` bind) is fixed; what remains is the UX consent flow, which is a
-> frontend change rather than a security control.
+> **One Phase A item was deferred and has since landed:** A.4.3, making
+> database-server installation explicit and consented. It turned out to be
+> more than a UX flow: the install ran as an unannounced side effect of any
+> database operation touching a loopback host, and along with `apt-get
+> install mariadb-server` it enabled a system service, created a superuser
+> with `WITH GRANT OPTION` and rewrote the bind address - discarding every
+> error on the way. It is now a refusal carrying its own error code, and an
+> offer the operator accepts.
 
 Companion to `AUDIT_REPORT.md` (commit `bb04132`). Phases are ordered by risk, not by convenience. Phase A must land before any release build is cut.
 
@@ -75,7 +78,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 |---|---|---|---|
 | A.4.1 | Delete `ensure_mysql_listens_on_all_interfaces` entirely. Reach MariaDB over `127.0.0.1` or the Docker gateway | **S-006** | `services/database_service.rs` |
 | A.4.2 | Replace `CONNECTIONS_FROM = "%"` with the Docker subnet or `localhost`; make it explicit per database host | **S-006** | `services/database_service.rs` |
-| A.4.3 | Make DB-server installation an explicit, consented, progress-reported action; stop discarding its errors | S-006, S-033 | `services/database_service.rs`, new UI step |
+| A.4.3 | ~~Make DB-server installation an explicit, consented, progress-reported action; stop discarding its errors~~ **Done** - `AppError::DatabaseServerUnavailable` + `install_database_server` | S-006, S-033 | `services/database_service.rs`, `DatabasesTab` |
 | A.4.4 | Escape backslashes in `sql_quote` (or switch to parameterised statements) and restrict `admin_username`/`host` at input validation | **S-009** | `services/database_service.rs` |
 | A.4.5 | Stop embedding secrets in command strings: `--defaults-extra-file` for mysql, stdin for `docker login` | **S-008** | `database_service.rs::build_mysql_command`, `application_service.rs::ensure_registry_login` |
 
@@ -130,7 +133,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 >
 > **Was still open:** B.17 (decide the shared-Docker-network trust boundary -
 > a design decision, not a fix), and A.4.3 carried over from Phase A
-> (consented database-server install).
+> (consented database-server install). Both are now closed.
 >
 > B.12 is closed for the desktop's own memory use: archives are built and
 > extracted through a local scratch file, one entry at a time. Every byte

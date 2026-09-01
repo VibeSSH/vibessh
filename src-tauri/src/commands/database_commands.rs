@@ -24,6 +24,23 @@ pub fn delete_database_host(repo: State<DatabaseRepository>, id: Uuid) -> AppRes
     services::delete_database_host(&repo, id)
 }
 
+/// Installs MariaDB on the Node behind a loopback Database Host.
+///
+/// A separate, explicitly invoked command rather than something the create
+/// path does on its own: it apt-installs a server, enables a system service
+/// and creates a superuser, which is the operator's decision to make. Offered
+/// by the UI when a database operation comes back with
+/// `database_server_unavailable`.
+#[tauri::command]
+pub async fn install_database_server(
+    repo: State<'_, DatabaseRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+) -> AppResult<()> {
+    services::install_database_server(&repo, &server_repo, &sessions, id).await
+}
+
 #[tauri::command]
 pub fn set_database_host_phpmyadmin(repo: State<DatabaseRepository>, id: Uuid, application_id: Option<Uuid>) -> AppResult<DatabaseHost> {
     services::set_database_host_phpmyadmin(&repo, id, application_id)

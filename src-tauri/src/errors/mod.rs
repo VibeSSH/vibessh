@@ -44,6 +44,13 @@ pub enum ErrorCode {
     /// The Node has no usable Docker daemon. The fix is installing it, which
     /// the app can offer to do.
     DockerUnavailable,
+    /// A Database Host points at this Node's own loopback address and no
+    /// database server is running there. Its own code for the same reason
+    /// `DockerUnavailable` has one: the fix is an install, and installing a
+    /// database server is a big enough thing to happen to somebody's machine
+    /// that it has to be their decision rather than a side effect of asking
+    /// for a database.
+    DatabaseServerUnavailable,
     /// The operation ran too long and was given up on - always worth
     /// offering a retry, never worth showing as a hard failure.
     Timeout,
@@ -98,6 +105,9 @@ pub enum AppError {
     #[error("Docker isn't available on this Node")]
     DockerUnavailable,
 
+    #[error("no database server is running on {host}")]
+    DatabaseServerUnavailable { host: String },
+
     #[error("{operation} didn't finish within {seconds} seconds")]
     Timeout { operation: &'static str, seconds: u64 },
 
@@ -119,6 +129,7 @@ impl AppError {
             AppError::PermissionDenied { .. } => ErrorCode::PermissionDenied,
             AppError::PortInUse { .. } => ErrorCode::PortInUse,
             AppError::DockerUnavailable => ErrorCode::DockerUnavailable,
+            AppError::DatabaseServerUnavailable { .. } => ErrorCode::DatabaseServerUnavailable,
             AppError::Timeout { .. } => ErrorCode::Timeout,
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
         }
@@ -171,7 +182,9 @@ impl Serialize for AppError {
             // The specific codes did not exist when `kind` was the only
             // discriminator, so each maps onto the coarse bucket a reader
             // of `kind` would previously have seen.
-            ErrorCode::PermissionDenied | ErrorCode::PortInUse | ErrorCode::DockerUnavailable => "invalid_input",
+            ErrorCode::PermissionDenied | ErrorCode::PortInUse | ErrorCode::DockerUnavailable | ErrorCode::DatabaseServerUnavailable => {
+                "invalid_input"
+            }
             ErrorCode::Timeout | ErrorCode::HostKeyMismatch => "connection",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;

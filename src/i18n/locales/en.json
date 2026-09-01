@@ -631,7 +631,10 @@
     "newDatabase": "New database",
     "generatedNote": "The database name, username, and password are generated automatically - \"purpose\" only seeds the generated name so it's recognizable.",
     "deleteTitle": "Remove database",
-    "deleteBody": "Remove \"{{name}}\"? This drops the actual database and its user on the database server - all data in it is permanently deleted. This can't be undone."
+    "deleteBody": "Remove \"{{name}}\"? This drops the actual database and its user on the database server - all data in it is permanently deleted. This can't be undone.",
+    "installServerOffer": "\"{{name}}\" points at this node itself, and no database server is running on it yet. Installing MariaDB adds a system service and an administrator account.",
+    "installServer": "Install MariaDB",
+    "installingServer": "Installing…"
   },
   "applicationFilesTab": {
     "loadError": "Couldn't load files.",
@@ -1274,7 +1277,8 @@
     "docker_unavailable": "Docker isn't installed or isn't running on this Node. Install it from the Node's page, then try again.",
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
-    "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port."
+    "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
+    "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account."
   },
   "connections": {
     "title": "Connections",
