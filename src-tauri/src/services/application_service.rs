@@ -56,12 +56,82 @@ pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid
 /// rule `services::firewall_service::desired_rules` derives from this same
 /// `visibility`, not a different bind address - see that function's own
 /// doc comment.
-fn resolve_bind_address(port: &PortInput) -> String {
+/// Turns a port's declared *visibility* into the address it actually binds
+/// to. This is the only thing standing between "Vibe Network only" meaning
+/// what it says and the port being reachable from the public internet.
+///
+/// **`VibeNetwork` binds the Node's own mesh address, not `0.0.0.0`.** It
+/// used to bind `0.0.0.0` and rely on a UFW rule scoped to the mesh CIDR to
+/// keep the rest of the internet out. That does not work for a Docker
+/// Application, which is most of them: Docker installs its own DNAT and
+/// FORWARD-chain ACCEPT rules that are evaluated *before* UFW's
+/// `ufw-user-input` chain, so a published container port is reachable
+/// regardless of what `ufw status` shows. The operator saw a correct-looking
+/// firewall rule and an exposed database.
+///
+/// Binding the mesh address instead moves the restriction from a filter
+/// rule into the socket itself: the kernel will not accept a connection
+/// that did not arrive on the WireGuard interface, and there is nothing for
+/// Docker's iptables rules to bypass. It also fails *loudly* and early -
+/// a Node that has not joined the mesh gets a clear error here rather than
+/// a silently public port.
+fn resolve_bind_address(network_repo: &NodeNetworkRepository, server_id: Option<Uuid>, port: &PortInput) -> AppResult<String> {
     match port.visibility {
-        crate::models::PortVisibility::Public | crate::models::PortVisibility::VibeNetwork => "0.0.0.0".to_string(),
-        crate::models::PortVisibility::Localhost => "127.0.0.1".to_string(),
-        crate::models::PortVisibility::Custom => port.bind_address.clone(),
+        PortVisibility::Public => Ok("0.0.0.0".to_string()),
+        PortVisibility::Localhost => Ok("127.0.0.1".to_string()),
+        PortVisibility::Custom => Ok(port.bind_address.clone()),
+        PortVisibility::VibeNetwork => {
+            let server_id = server_id.ok_or_else(|| {
+                AppError::InvalidInput("a local application has no Vibe Network address - use 'Localhost' or 'Public' instead".into())
+            })?;
+            let member = network_repo.get(server_id)?.ok_or_else(|| {
+                AppError::InvalidInput(
+                    "this Node hasn't joined the Vibe Network yet, so it has no private address to bind to - join it from the Vibe Network page first, or pick a different visibility".into(),
+                )
+            })?;
+            Ok(member.wireguard_ip)
+        }
     }
+}
+
+/// Re-resolves the bind address of every `VibeNetwork` port on a Node.
+///
+/// A Node's mesh address is allocated on join and released on leave, so
+/// rejoining can hand out a different one. Without this, ports saved under
+/// the old address would keep trying to bind an address the Node no longer
+/// holds - the container would fail to start with a bare "cannot assign
+/// requested address". Called after any mesh membership change.
+pub async fn refresh_vibe_network_bind_addresses(
+    repo: &ApplicationRepository,
+    network_repo: &NodeNetworkRepository,
+    server_id: Uuid,
+) -> AppResult<usize> {
+    let mut updated = 0;
+    for application in repo.list_by_server(server_id)? {
+        for port in repo.list_ports(application.id)? {
+            if port.visibility != PortVisibility::VibeNetwork {
+                continue;
+            }
+            let input = PortInput {
+                name: port.name.clone(),
+                protocol: port.protocol,
+                bind_address: port.bind_address.clone(),
+                internal_port: port.internal_port,
+                external_port: port.external_port,
+                visibility: port.visibility,
+                required: port.required,
+            };
+            // A Node that just left the mesh has no address to resolve to;
+            // leave the stored value alone rather than failing the whole
+            // pass, and let the next start surface it.
+            let Ok(resolved) = resolve_bind_address(network_repo, Some(server_id), &input) else { continue };
+            if resolved != port.bind_address {
+                repo.update_port(application.id, port.id, &PortInput { bind_address: resolved, ..input })?;
+                updated += 1;
+            }
+        }
+    }
+    Ok(updated)
 }
 
 /// Blocks a port save that would collide with something else, before any
@@ -136,7 +206,8 @@ pub async fn add_application_port(
     application_id: Uuid,
     port: &PortInput,
 ) -> AppResult<ApplicationPort> {
-    let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    let server_id = get_application(repo, application_id)?.application.server_id;
+    let port = PortInput { bind_address: resolve_bind_address(network_repo, server_id, port)?, ..port.clone() };
     check_external_port_available(repo, server_repo, sessions, application_id, None, &port).await?;
     let created = repo.add_port(application_id, &port)?;
     sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
@@ -153,7 +224,8 @@ pub async fn update_application_port(
     port_id: Uuid,
     port: &PortInput,
 ) -> AppResult<ApplicationPort> {
-    let port = PortInput { bind_address: resolve_bind_address(port), ..port.clone() };
+    let server_id = get_application(repo, application_id)?.application.server_id;
+    let port = PortInput { bind_address: resolve_bind_address(network_repo, server_id, port)?, ..port.clone() };
     check_external_port_available(repo, server_repo, sessions, application_id, Some(port_id), &port).await?;
     let updated = repo.update_port(application_id, port_id, &port)?;
     sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
@@ -1349,6 +1421,83 @@ mod tests {
             let result = create_application(&app_repo, &registry, &server_repo, &sessions, input).await;
             assert!(result.is_err(), "should have refused {hostile:?}");
         }
+    }
+
+    fn port_input(visibility: PortVisibility, bind_address: &str) -> PortInput {
+        PortInput {
+            name: "game".to_string(),
+            protocol: crate::models::PortProtocol::Tcp,
+            bind_address: bind_address.to_string(),
+            internal_port: 25565,
+            external_port: Some(25565),
+            visibility,
+            required: false,
+        }
+    }
+
+    /// The regression test for the finding that "Vibe Network only" ports
+    /// were publicly reachable. `VibeNetwork` must never resolve to
+    /// `0.0.0.0` - a UFW source-CIDR rule cannot restrict a published
+    /// Docker port, because Docker's own iptables rules are evaluated
+    /// first. Binding the mesh address is what makes the kernel enforce it.
+    #[tokio::test]
+    async fn a_vibe_network_port_binds_the_mesh_address_never_all_interfaces() {
+        let (app_repo, server_repo, network_repo, ..) = temp_setup();
+        let _ = &app_repo;
+        let server = server_repo
+            .create(&crate::models::ServerInput {
+                name: "Node".to_string(),
+                host: "203.0.113.10".to_string(),
+                ssh_port: 22,
+                username: "root".to_string(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("unused".to_string()),
+                key_passphrase: None,
+            })
+            .unwrap();
+        let member = network_repo.join(server.id, "K4hV1cB0mQ2sT7nZ9xY3lJ6pR8dW5gA0fE1uI2oC3vM=").unwrap();
+
+        let resolved = resolve_bind_address(&network_repo, Some(server.id), &port_input(PortVisibility::VibeNetwork, "")).unwrap();
+        assert_eq!(resolved, member.wireguard_ip);
+        assert_ne!(resolved, "0.0.0.0");
+    }
+
+    /// ...and when the Node has no mesh address to bind, that must be a
+    /// loud error rather than a silent fallback to `0.0.0.0`.
+    #[tokio::test]
+    async fn a_vibe_network_port_is_refused_when_the_node_isnt_on_the_mesh() {
+        let (_app_repo, server_repo, network_repo, ..) = temp_setup();
+        let server = server_repo
+            .create(&crate::models::ServerInput {
+                name: "Node".to_string(),
+                host: "203.0.113.11".to_string(),
+                ssh_port: 22,
+                username: "root".to_string(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("unused".to_string()),
+                key_passphrase: None,
+            })
+            .unwrap();
+
+        let result = resolve_bind_address(&network_repo, Some(server.id), &port_input(PortVisibility::VibeNetwork, ""));
+        assert!(result.is_err());
+        // A local Application has no mesh address at all.
+        assert!(resolve_bind_address(&network_repo, None, &port_input(PortVisibility::VibeNetwork, "")).is_err());
+    }
+
+    #[tokio::test]
+    async fn the_other_visibilities_are_unchanged() {
+        let (_app_repo, _server_repo, network_repo, ..) = temp_setup();
+        assert_eq!(resolve_bind_address(&network_repo, None, &port_input(PortVisibility::Public, "")).unwrap(), "0.0.0.0");
+        assert_eq!(resolve_bind_address(&network_repo, None, &port_input(PortVisibility::Localhost, "")).unwrap(), "127.0.0.1");
+        assert_eq!(
+            resolve_bind_address(&network_repo, None, &port_input(PortVisibility::Custom, "10.1.2.3")).unwrap(),
+            "10.1.2.3"
+        );
     }
 
     /// The mirror of the test above: the same check must not reject a

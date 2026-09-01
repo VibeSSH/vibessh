@@ -75,6 +75,28 @@ pub struct FirewallSyncResult {
     /// for why this can only ever remove a rule the same backend can prove
     /// it added itself.
     pub rules_removed: usize,
+    /// `true` when nothing on this Node is actually enforcing these rules -
+    /// either there is no firewall backend VibeSSH can drive, or there is
+    /// one and it is switched off.
+    ///
+    /// This used to be indistinguishable from success. `provider_for`
+    /// returning `None` produced `FirewallSyncResult { active: false,
+    /// rules_applied: 0 }` wrapped in `Ok`, which the frontend rendered as
+    /// a success toast - so on a Node without `ufw`, publishing a port
+    /// reported "synced" while nothing whatsoever restricted it. The caller
+    /// needs to tell "your rules are enforced" apart from "there is nothing
+    /// enforcing your rules", so it gets an explicit flag rather than every
+    /// call site having to infer it from `backend.is_none() || !active`.
+    pub unenforced: bool,
+}
+
+impl FirewallSyncResult {
+    /// The result for a Node with no firewall backend at all. Deliberately
+    /// not a `Default` impl - constructing one should always be a conscious
+    /// choice, never what you get by forgetting a field.
+    fn unenforced() -> Self {
+        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true }
+    }
 }
 
 /// Every port this Node's Applications have asked to be reachable from
@@ -169,7 +191,7 @@ pub async fn reconcile_node(
     async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult { backend: None, active: false, rules_applied: 0, rules_removed: 0 });
+            return Ok(FirewallSyncResult::unenforced());
         };
         // Desired first, unconditionally - the SSH port (always first in
         // `rules`) must never go missing even for a moment, including the
@@ -177,8 +199,20 @@ pub async fn reconcile_node(
         // and the old one is about to be revoked below.
         provider.apply_rules(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
+        // Published Docker ports bypass ufw entirely, so a source-scoped
+        // rule only actually restricts container traffic once it also
+        // exists in `DOCKER-USER` - see that module's own doc comment.
+        // Best-effort: a Node with no Docker has nothing to reconcile, and
+        // an iptables failure must not make an otherwise-successful ufw
+        // sync look like a total failure.
+        if let Err(err) = firewall::docker_user::reconcile(&connection, rules).await {
+            log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
+        }
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed })
+        // A backend that exists but is switched off enforces nothing
+        // either: the rules are recorded and take effect the moment it
+        // is enabled, but right now the ports are open.
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
     // Same dead-cached-session recovery as `network_service::reconcile_mesh`
@@ -215,12 +249,12 @@ pub async fn enable_node_firewall(
     async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult { backend: None, active: false, rules_applied: 0, rules_removed: 0 });
+            return Ok(FirewallSyncResult::unenforced());
         };
         provider.enable(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed })
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
     // Same dead-cached-session recovery `reconcile_node` already uses.

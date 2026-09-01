@@ -32,6 +32,7 @@ pub use application_files_service::{
 };
 pub use application_service::{
     add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,
+    refresh_vibe_network_bind_addresses,
     create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
     list_blueprints, list_registry_credentials, recreate_application, refresh_application_status, remove_application_port,
     remove_registry_credential, restart_application,

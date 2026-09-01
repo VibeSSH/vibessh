@@ -27,6 +27,14 @@ pub async fn join_vibe_network(
     server_id: Uuid,
 ) -> AppResult<NodeNetworkMember> {
     let member = services::join_node(&network_repo, &server_repo, &sessions, server_id).await?;
+    // A Node's mesh address is allocated here, so any port already declared
+    // "Vibe Network only" has to be re-pointed at it - see
+    // `application_service::refresh_vibe_network_bind_addresses`. Reported
+    // rather than silently swallowed: a port left on a stale address fails
+    // to start with an unhelpful "cannot assign requested address".
+    if let Err(err) = services::refresh_vibe_network_bind_addresses(&app_repo, &network_repo, server_id).await {
+        log::warn!("couldn't re-point this Node's Vibe Network ports after joining: {err}");
+    }
     // Best-effort: the new Node's own `<name><suffix>` alias (and every
     // existing service alias) becomes reachable to/from it right away,
     // without a separate manual "Synchronizuj" click - a DNS push failing
@@ -48,6 +56,9 @@ pub async fn leave_vibe_network(
     server_id: Uuid,
 ) -> AppResult<()> {
     services::leave_node(&network_repo, &server_repo, &sessions, server_id).await?;
+    if let Err(err) = services::refresh_vibe_network_bind_addresses(&app_repo, &network_repo, server_id).await {
+        log::warn!("couldn't re-point this Node's Vibe Network ports after leaving: {err}");
+    }
     // Best-effort, same reasoning as `join_vibe_network` - cleans the
     // departed Node's alias out of every remaining member's view.
     let _ = services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await;

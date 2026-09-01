@@ -440,12 +440,13 @@
     "syncFirewall": "Zsynchronizuj firewall",
     "firewallSyncNote": "Opublikowanie portu otwiera go automatycznie - użyj tego, jeśli port jeszcze nie jest dostępny.",
     "firewallSyncLocal": "Ta aplikacja działa lokalnie - nie ma firewalla Node'a do zsynchronizowania.",
-    "firewallSyncNoBackend": "Nie wykryto obsługiwanego firewalla na tym Node.",
+    "firewallSyncNoBackend": "Na tym Node nie wykryto obsługiwanego firewalla, więc nic nie ogranicza tych portów. Zainstaluj ufw, aby je egzekwować.",
     "firewallSyncSummary": "{{backend}} - {{status}}, zastosowano {{count}} reguł(y).",
     "firewallSyncSummaryWithRemoved": "{{backend}} - {{status}}, zastosowano {{count}} reguł(y), usunięto {{removed}} nieaktualnych.",
     "firewallActive": "egzekwuje reguły",
     "firewallInactive": "zainstalowany, ale nieaktywny",
-    "firewallSyncError": "Nie udało się zsynchronizować firewalla."
+    "firewallSyncError": "Nie udało się zsynchronizować firewalla.",
+    "firewallUnenforced": "Reguły są zapisane, ale w tej chwili nic ich nie egzekwuje - porty są otwarte."
   },
   "healthCheck": {
     "title": "Health check",

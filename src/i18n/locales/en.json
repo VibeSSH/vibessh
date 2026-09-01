@@ -440,12 +440,13 @@
     "syncFirewall": "Sync Firewall",
     "firewallSyncNote": "Publishing a port opens it automatically - use this if a port isn't reachable yet.",
     "firewallSyncLocal": "This application runs locally - there's no Node firewall to sync.",
-    "firewallSyncNoBackend": "No supported firewall was detected on this Node.",
+    "firewallSyncNoBackend": "No supported firewall was detected on this Node, so nothing is restricting these ports. Install ufw to enforce them.",
     "firewallSyncSummary": "{{backend}} - {{status}}, {{count}} rule(s) applied.",
     "firewallSyncSummaryWithRemoved": "{{backend}} - {{status}}, {{count}} rule(s) applied, {{removed}} stale rule(s) removed.",
     "firewallActive": "enforcing",
     "firewallInactive": "installed but not enabled",
-    "firewallSyncError": "Couldn't sync the firewall."
+    "firewallSyncError": "Couldn't sync the firewall.",
+    "firewallUnenforced": "These rules are saved but nothing is enforcing them right now - the ports are open."
   },
   "healthCheck": {
     "title": "Health check",

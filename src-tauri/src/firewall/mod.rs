@@ -41,6 +41,10 @@
 //! of the same call, not as a separate step a caller could accidentally
 //! reorder.
 
+// Source restrictions for published Docker ports, which `ufw` alone
+// cannot enforce - Docker's own iptables rules are evaluated before ufw's
+// chain ever sees the packet. See the module's own doc comment.
+pub mod docker_user;
 pub mod ufw;
 
 use crate::errors::AppResult;

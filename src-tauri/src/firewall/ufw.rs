@@ -125,6 +125,30 @@ impl FirewallProvider for UfwProvider {
     /// `Proceed with operation (y|n)?` prompt, which would otherwise hang
     /// forever with no terminal attached to answer it.
     async fn enable(&self, connection: &SshSession, desired: &[FirewallRule]) -> AppResult<()> {
+        // Turning on a default-deny firewall over the very SSH session that
+        // manages the Node is the one operation here that can end with
+        // nobody able to reach the machine again. The desired rule set
+        // always contains a rule for `Server::ssh_port` - but that is
+        // VibeSSH's *stored* value, and it goes stale: an operator who
+        // moved sshd to another port, or who reaches the Node through a
+        // jump host or a forwarded port, has a live connection on a port
+        // the rule set doesn't mention. Enabling then locks them out
+        // permanently, with no undo and no way back in.
+        //
+        // So ask the Node which port this session actually arrived on and
+        // refuse if nothing covers it. `$SSH_CONNECTION`'s fourth field is
+        // the server-side port; when it is unset (an exec channel that
+        // didn't inherit it), we refuse rather than guess.
+        let live_port = live_ssh_port(connection).await?;
+        let covered = desired
+            .iter()
+            .any(|rule| rule.port == live_port && rule.protocol == PortProtocol::Tcp && rule.source_cidr.is_none());
+        if !covered {
+            return Err(AppError::InvalidInput(format!(
+                "refusing to enable the firewall: this SSH session is connected on port {live_port}, and no rule allows it.                  Enabling now would lock VibeSSH out of this Node. Update the Node's SSH port, or add a custom rule for {live_port}/tcp first."
+            )));
+        }
+
         self.apply_rules(connection, desired).await?;
         let output = connection.execute_command("sudo ufw --force enable").await?;
         if output.exit_code != 0 {
@@ -138,6 +162,27 @@ impl FirewallProvider for UfwProvider {
 
 /// `ufw status`'s first line is `Status: active` or `Status: inactive` -
 /// nothing else in the output starts with `Status:`.
+/// The server-side port this SSH session actually arrived on, straight
+/// from the Node rather than from anything VibeSSH stored.
+///
+/// `$SSH_CONNECTION` is `<client ip> <client port> <server ip> <server
+/// port>`. Erroring on an unparseable/absent value is deliberate: this only
+/// feeds a safety check, and a check that silently degrades to "allow" is
+/// worse than no check.
+async fn live_ssh_port(connection: &SshSession) -> AppResult<u16> {
+    let output = connection.execute_command("printf '%s' \"$SSH_CONNECTION\"").await?;
+    parse_live_ssh_port(&output.stdout).ok_or_else(|| {
+        AppError::Connection(
+            "couldn't determine which port this SSH session is connected on, so enabling the firewall can't be done safely -              enable it manually on the Node once you've confirmed your SSH port is allowed"
+                .into(),
+        )
+    })
+}
+
+fn parse_live_ssh_port(ssh_connection: &str) -> Option<u16> {
+    ssh_connection.split_whitespace().nth(3)?.parse().ok()
+}
+
 fn parse_is_active(output: &str) -> bool {
     output.lines().next().map(str::trim) == Some("Status: active")
 }
@@ -305,5 +350,27 @@ ufw allow in on docker0 to any port 3306 proto tcp\n";
     fn parse_added_rules_on_an_empty_listing_is_empty() {
         assert!(parse_added_rules("Added user rules (see 'ufw status' for running firewall):\n").is_empty());
         assert!(parse_added_rules("").is_empty());
+    }
+
+    /// `$SSH_CONNECTION`'s fourth field is the server-side port. Getting
+    /// this wrong in either direction is dangerous: a false negative blocks
+    /// a legitimate enable, a false positive locks the operator out.
+    #[test]
+    fn parse_live_ssh_port_reads_the_server_side_port() {
+        assert_eq!(parse_live_ssh_port("203.0.113.5 51234 10.0.0.7 22"), Some(22));
+        assert_eq!(parse_live_ssh_port("203.0.113.5 51234 10.0.0.7 2222
+"), Some(2222));
+        // IPv6 endpoints keep the same four-field shape.
+        assert_eq!(parse_live_ssh_port("2001:db8::1 51234 2001:db8::2 22"), Some(22));
+    }
+
+    /// Anything it can't read must come back `None` so `live_ssh_port`
+    /// errors - a safety check that silently degrades to "allow" is worse
+    /// than no check.
+    #[test]
+    fn parse_live_ssh_port_refuses_to_guess() {
+        for bad in ["", "   ", "203.0.113.5 51234 10.0.0.7", "203.0.113.5 51234 10.0.0.7 notaport", "203.0.113.5 51234 10.0.0.7 99999"] {
+            assert_eq!(parse_live_ssh_port(bad), None, "{bad:?}");
+        }
     }
 }

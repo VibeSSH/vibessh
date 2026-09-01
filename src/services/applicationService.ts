@@ -133,12 +133,13 @@ export function updateApplicationPort(id: string, portId: string, port: PortInpu
   return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
 }
 
-/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. */
+/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. `unenforced` is `true` when nothing is actually restricting these ports - either no backend at all, or one that's installed but switched off. It must be surfaced as a warning: a sync that reports success while leaving ports open is exactly what made "Vibe Network only" ports publicly reachable. */
 export interface FirewallSyncResult {
   backend: string | null;
   active: boolean;
   rulesApplied: number;
   rulesRemoved: number;
+  unenforced: boolean;
 }
 
 /** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically, best-effort, after every `addApplicationPort`/`updateApplicationPort` - this is for a port declared before the feature existed, or retrying after a failed sync. */

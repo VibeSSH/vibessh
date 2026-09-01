@@ -129,7 +129,9 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
         <p className="form-note">
           {firewallResult === undefined && t("portsTab.firewallSyncNote")}
           {firewallResult === null && t("portsTab.firewallSyncLocal")}
-          {firewallResult && firewallResult.backend === null && t("portsTab.firewallSyncNoBackend")}
+          {firewallResult && firewallResult.backend === null && (
+            <span className="form-note-danger">{t("portsTab.firewallSyncNoBackend")}</span>
+          )}
           {firewallResult &&
             firewallResult.backend !== null &&
             t(firewallResult.rulesRemoved > 0 ? "portsTab.firewallSyncSummaryWithRemoved" : "portsTab.firewallSyncSummary", {
@@ -138,6 +140,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
               count: firewallResult.rulesApplied,
               removed: firewallResult.rulesRemoved,
             })}
+          {/* A sync that "succeeded" while nothing enforces the rules is the
+              case that made "Vibe Network only" ports publicly reachable -
+              it has to read as a warning, not as part of the summary. */}
+          {firewallResult && firewallResult.backend !== null && firewallResult.unenforced && (
+            <span className="form-note-danger"> {t("portsTab.firewallUnenforced")}</span>
+          )}
           {firewallError && <span className="form-note-danger"> {firewallError}</span>}
         </p>
         <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
