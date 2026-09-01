@@ -115,6 +115,14 @@ pub(crate) async fn resolve_provider(
 /// of its own) and reconnect fresh, same "dead session, drop and retry
 /// once" recovery `ssh_service::execute_command` already does for plain
 /// commands.
+/// Deliberately *not* `ssh_service::retry_on_connection_failure`, unlike the
+/// four blocks that were folded into it: this is a liveness probe, not a
+/// retry. It runs a cheap `REALPATH "."` to find out whether the cached
+/// session is dead *before* handing it to a caller, because the failure it
+/// prevents is not an error the caller could retry - it is `resolve()`
+/// caching a wrong answer in a `OnceCell` nothing ever resets. The shared
+/// helper retries an operation that already failed; this one makes sure the
+/// operation never runs against a dead session in the first place.
 async fn connect_with_live_sftp(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
     if connection.canonicalize_path(".").await.is_ok() {

@@ -13,7 +13,7 @@ use crate::errors::{AppError, AppResult};
 use crate::firewall::{self, FirewallRule};
 use crate::models::{FirewallCustomRuleInput, PortProtocol, PortVisibility};
 use crate::network::wireguard;
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
@@ -215,17 +215,13 @@ pub async fn reconcile_node(
         Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
-    // Same dead-cached-session recovery as `network_service::reconcile_mesh`
-    // - this runs several sequential SSH round-trips against the connection,
-    // any of which surfaces the same raw channel error if the cache handed
-    // back a session whose underlying transport already died.
-    match attempt(server_repo, sessions, server_id, &rules).await {
-        Ok(result) => Ok(result),
-        Err(first_err) => {
-            sessions.remove(server_id).await;
-            attempt(server_repo, sessions, server_id, &rules).await.map_err(|_| first_err)
-        }
-    }
+    // This runs several sequential SSH round-trips against one connection,
+    // any of which surfaces a raw channel error if the cache handed back a
+    // session whose transport had already died - so it needs the same
+    // drop-and-retry-once recovery `ssh_service::execute_command` gives a
+    // single command. Through the shared helper rather than a local copy:
+    // the copy retried on *every* error and threw away the second one.
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
 }
 
 /// Turns firewall *enforcement* on for a Node - the explicit, user-triggered
@@ -257,14 +253,8 @@ pub async fn enable_node_firewall(
         Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
-    // Same dead-cached-session recovery `reconcile_node` already uses.
-    match attempt(server_repo, sessions, server_id, &rules).await {
-        Ok(result) => Ok(result),
-        Err(first_err) => {
-            sessions.remove(server_id).await;
-            attempt(server_repo, sessions, server_id, &rules).await.map_err(|_| first_err)
-        }
-    }
+    // Same recovery `reconcile_node` uses, and for the same reason.
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
 }
 
 /// Diffs `desired` against whatever this backend can prove it already

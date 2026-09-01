@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{DnsRecord, DnsView, DnsViewKind};
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::ssh::command;
 use crate::state::SshSessionManager;
 // The one shared implementation - every module that builds a remote
@@ -295,22 +295,15 @@ pub async fn sync_dns(
 
     let mut results = Vec::with_capacity(members.len());
     for member in &members {
-        // Same dead-cached-session recovery as `network_service::reconcile_mesh`
-        // - see that call site's comment for why this can't just rely on
-        // `get_or_connect` alone.
-        let outcome = match get_or_connect(server_repo, sessions, member.server_id).await {
-            Ok(connection) => match push_fragment(&connection, &fragment).await {
-                Ok(()) => Ok(()),
-                Err(first_err) => {
-                    sessions.remove(member.server_id).await;
-                    match get_or_connect(server_repo, sessions, member.server_id).await {
-                        Ok(connection) => push_fragment(&connection, &fragment).await.map_err(|_| first_err),
-                        Err(_) => Err(first_err),
-                    }
-                }
-            },
-            Err(err) => Err(err),
-        };
+        // `get_or_connect` alone is not enough here: it hands back a cached
+        // session without proving the transport under it is still alive, and
+        // `push_fragment` is what then fails with a raw channel error. The
+        // shared helper is what drops that session and tries once more.
+        let outcome = retry_on_connection_failure(sessions, Some(member.server_id), || async {
+            let connection = get_or_connect(server_repo, sessions, member.server_id).await?;
+            push_fragment(&connection, &fragment).await
+        })
+        .await;
         results.push(match outcome {
             Ok(()) => DnsSyncResult { server_id: member.server_id, ok: true, error: None },
             Err(err) => DnsSyncResult { server_id: member.server_id, ok: false, error: Some(err.to_string()) },

@@ -241,9 +241,20 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 >   a duplicate, which would brick startup - precisely the failure mode
 >   A-005 was about. It needs a dedupe step in the same migration, designed
 >   against real data.
-> - **E.6/E.7/E.8** (dedupe the connect-retry blocks, split
->   `application_service.rs`, add `down` migrations) are mechanical but
->   large, and none of them changes behaviour.
+> **E.6 done, and it was not cosmetic.** The four hand-written copies each
+> carried both of the bugs the shared helper had already been fixed for:
+> they retried on *any* error rather than only a transport one, and they
+> threw the second error away in favour of the first. So a peer value
+> `wireguard::apply` rejects used to tear down a healthy session, reconnect,
+> and re-run the apply to be rejected again - on every mesh member, on every
+> reconcile - while reporting the stale first error rather than whatever the
+> reconnect actually said. `application_files_service::connect_with_live_sftp`
+> is left alone on purpose and now says why: it is a liveness probe, not a
+> retry.
+>
+> **Deliberately not done, with reasons:**
+> - **E.7/E.8** (split `application_service.rs`, add `down` migrations) are
+>   mechanical but large, and neither changes behaviour.
 
 | # | Item | Finding |
 |---|---|---|
@@ -252,7 +263,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 | E.3 | Decide `ServerConnection`: delete it, or make it the real seam and implement `AgentTransport` | A-001, A-002 |
 | E.4 | Remove the confirmed dead code (`backend/tests/common` helpers, `constants/permissions.ts`, `current_rules` if still unused after E.3) | §12 |
 | E.5 | Unify the two `slugify` implementations | §12 |
-| E.6 | Replace the four copy-pasted connect-retry blocks with the (now-corrected) `retry_on_connection_failure` | §12 |
+| E.6 | ~~Replace the four copy-pasted connect-retry blocks with the (now-corrected) `retry_on_connection_failure`~~ **Done** | §12 |
 | E.7 | Split `application_service.rs` (1700 lines) along its natural seams: lifecycle / ports / config / registry / logs | A-001 |
 | E.8 | Add `down` migrations and a migration-checksum guard | D-002, D-003 |
 | E.9 | Add a unique constraint on `application_ports (server_id, protocol, external_port)` | D-007 |
