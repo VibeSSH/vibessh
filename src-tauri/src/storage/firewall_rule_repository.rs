@@ -19,14 +19,10 @@ pub struct FirewallRuleRepository {
 
 impl FirewallRuleRepository {
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| AppError::Storage(format!("failed to create the firewall rule database directory: {err}")))?;
-        }
-        let mut conn =
-            Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the firewall rule database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "firewall rule")?;
         migrations()
             .to_latest(&mut conn)
             .map_err(|err| AppError::Storage(format!("failed to migrate the firewall rule database: {err}")))?;

@@ -56,21 +56,10 @@ fn bootstrap_legacy_schema(conn: &Connection) -> AppResult<()> {
 
 impl ServerRepository {
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| {
-                AppError::Storage(format!("failed to create the server database directory: {err}"))
-            })?;
-        }
-        let mut conn = Connection::open(db_path)
-            .map_err(|err| AppError::Storage(format!("failed to open the server database: {err}")))?;
-        // Off by default in SQLite, per-connection - without this, the
-        // `applications` table's `ON DELETE RESTRICT`/`CASCADE` clauses
-        // (see storage::migrations, Applications feature) would be inert
-        // documentation rather than an actually enforced constraint, and a
-        // server with applications attached could be deleted right out
-        // from under them through this exact connection.
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "server")?;
         bootstrap_legacy_schema(&conn)?;
 
         // `servers` (server metadata) and `ssh_known_hosts` (Etap 3's TOFU
@@ -410,7 +399,7 @@ const SELECT_COLUMNS: &str = "SELECT id, name, host, ssh_port, username, authent
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
     Ok(Server {
-        id: parse_uuid(row.get::<_, String>(0)?),
+        id: parse_uuid(row.get::<_, String>(0)?, 0)?,
         name: row.get(1)?,
         host: row.get(2)?,
         ssh_port: row.get(3)?,
@@ -418,14 +407,26 @@ fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
         authentication_type: auth_type_from_str(&row.get::<_, String>(5)?),
         private_key_path: row.get(6)?,
         connection_mode: connection_mode_from_str(&row.get::<_, String>(7)?),
-        agent_id: row.get::<_, Option<String>>(8)?.map(parse_uuid),
+        agent_id: row.get::<_, Option<String>>(8)?.map(|value| parse_uuid(value, 8)).transpose()?,
         agent_status: row.get::<_, Option<String>>(9)?.as_deref().map(agent_status_from_str),
-        group_id: row.get::<_, Option<String>>(10)?.map(parse_uuid),
-        node_capabilities: row
-            .get::<_, Option<String>>(11)?
-            .map(|json| serde_json::from_str(&json).expect("stored NodeCapabilities column is always well-formed")),
-        created_at: parse_timestamp(row.get::<_, String>(12)?),
-        updated_at: parse_timestamp(row.get::<_, String>(13)?),
+        group_id: row.get::<_, Option<String>>(10)?.map(|value| parse_uuid(value, 10)).transpose()?,
+        // Deliberately *not* an error: unlike an id or a timestamp, this
+        // column is a cache of what a Node reported about itself over the
+        // network, and it is `Option` already. A blob this build cannot
+        // parse - most likely because a newer build wrote a field this one
+        // does not know - degrades to "capabilities unknown", which the UI
+        // already handles, and the next capability probe overwrites it.
+        // Failing the whole row here would make a routine version skew
+        // stop the Node from loading at all.
+        node_capabilities: row.get::<_, Option<String>>(11)?.and_then(|json| match serde_json::from_str(&json) {
+            Ok(capabilities) => Some(capabilities),
+            Err(err) => {
+                log::warn!("ignoring an unreadable node_capabilities_json value: {err}");
+                None
+            }
+        }),
+        created_at: parse_timestamp(row.get::<_, String>(12)?, 12)?,
+        updated_at: parse_timestamp(row.get::<_, String>(13)?, 13)?,
     })
 }
 
@@ -450,14 +451,28 @@ fn is_foreign_key_violation(err: &rusqlite::Error) -> bool {
     )
 }
 
-fn parse_uuid(value: String) -> Uuid {
-    Uuid::parse_str(&value).expect("stored UUID column is always well-formed")
+/// Both of these used to `expect()`, on the reasoning that VibeSSH is the
+/// only writer of this database so the values are always well-formed.
+///
+/// That reasoning does not survive contact with a release build. The release
+/// profile sets `panic = "abort"`, so a single malformed value - a
+/// half-written row after a power cut, a hand-edited database, a file
+/// restored from a partial backup - does not surface as a handled error or
+/// even a catchable panic: **the whole desktop app aborts, with no dialog,
+/// no log line and no way to get back in**, on every launch, because these
+/// run on the read path every list view uses.
+///
+/// Returning `rusqlite::Error` instead means one bad row fails one query
+/// with a message naming the column, which `AppError::Storage` then
+/// surfaces normally.
+fn parse_uuid(value: String, column: usize) -> rusqlite::Result<Uuid> {
+    Uuid::parse_str(&value).map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
-fn parse_timestamp(value: String) -> chrono::DateTime<Utc> {
+fn parse_timestamp(value: String, column: usize) -> rusqlite::Result<chrono::DateTime<Utc>> {
     chrono::DateTime::parse_from_rfc3339(&value)
-        .expect("stored timestamp column is always well-formed")
-        .with_timezone(&Utc)
+        .map(|parsed| parsed.with_timezone(&Utc))
+        .map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
 fn auth_type_to_str(value: AuthenticationType) -> &'static str {
@@ -735,6 +750,57 @@ mod tests {
         let repo = ServerRepository::open(&path).unwrap();
         let loaded = repo.get(id).unwrap().unwrap();
         assert_eq!(loaded.node_capabilities, Some(NodeCapabilities { docker: true, wireguard: false, ufw: false }));
+    }
+
+    /// The general form of the crash above. `#[serde(default)]` fixed the
+    /// one blob shape that had actually been written; it does nothing for a
+    /// blob this build simply cannot parse - a newer build's field, a
+    /// truncated write, a restored partial backup. Since the release
+    /// profile sets `panic = "abort"`, `expect()` there took the whole app
+    /// down on every launch. Unknown capabilities must degrade to "not
+    /// probed yet", which the UI already renders, and leave the Node
+    /// loadable.
+    #[test]
+    fn an_unreadable_node_capabilities_blob_degrades_instead_of_failing_the_row() {
+        let path = std::env::temp_dir().join(format!("vibessh-capabilities-corrupt-test-{}.sqlite3", Uuid::new_v4()));
+        let id = {
+            let repo = ServerRepository::open(&path).unwrap();
+            repo.create(&test_input("Corrupted Box")).unwrap().id
+        };
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute("UPDATE servers SET node_capabilities_json = 'not json at all' WHERE id = ?1", params![id.to_string()]).unwrap();
+        }
+
+        let repo = ServerRepository::open(&path).unwrap();
+        let loaded = repo.get(id).unwrap().unwrap();
+        assert_eq!(loaded.node_capabilities, None);
+        assert_eq!(loaded.name, "Corrupted Box");
+        // The rest of the list still loads too - one bad blob must not take
+        // every other Node with it.
+        assert_eq!(repo.list().unwrap().len(), 1);
+    }
+
+    /// An id or a timestamp is not optional, so a malformed one cannot
+    /// degrade - but it must fail *this query* with a real error rather
+    /// than aborting the process.
+    #[test]
+    fn a_corrupted_id_or_timestamp_is_an_error_not_an_abort() {
+        for (column, bogus) in [("id", "not-a-uuid"), ("created_at", "not-a-timestamp")] {
+            let path = std::env::temp_dir().join(format!("vibessh-corrupt-{column}-test-{}.sqlite3", Uuid::new_v4()));
+            let id = {
+                let repo = ServerRepository::open(&path).unwrap();
+                repo.create(&test_input("Box")).unwrap().id
+            };
+            {
+                let conn = Connection::open(&path).unwrap();
+                conn.execute(&format!("UPDATE servers SET {column} = ?1 WHERE id = ?2"), params![bogus, id.to_string()]).unwrap();
+            }
+
+            let repo = ServerRepository::open(&path).unwrap();
+            let result = repo.list();
+            assert!(matches!(result, Err(AppError::Storage(_))), "{column} should surface as a storage error, got {result:?}");
+        }
     }
 
     #[test]

@@ -22,12 +22,10 @@ pub struct ApplicationBackupRepository {
 
 impl ApplicationBackupRepository {
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| AppError::Storage(format!("failed to create the backups database directory: {err}")))?;
-        }
-        let mut conn = Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the backups database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "application backup")?;
         migrations().to_latest(&mut conn).map_err(|err| AppError::Storage(format!("failed to migrate the backups database: {err}")))?;
         Ok(Self { conn: Mutex::new(conn) })
     }

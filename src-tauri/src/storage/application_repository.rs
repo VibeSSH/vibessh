@@ -30,14 +30,10 @@ impl ApplicationRepository {
     /// its own `Connection` to it, same as any two independent SQLite
     /// clients of one file.
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| AppError::Storage(format!("failed to create the application database directory: {err}")))?;
-        }
-        let mut conn =
-            Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the application database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "application")?;
         migrations()
             .to_latest(&mut conn)
             .map_err(|err| AppError::Storage(format!("failed to migrate the application database: {err}")))?;
@@ -510,8 +506,8 @@ const APPLICATION_COLUMNS: &str = "SELECT id, server_id, name, description, blue
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     Ok(Application {
-        id: parse_uuid(row.get::<_, String>(0)?),
-        server_id: row.get::<_, Option<String>>(1)?.map(parse_uuid),
+        id: parse_uuid(row.get::<_, String>(0)?, 0)?,
+        server_id: row.get::<_, Option<String>>(1)?.map(|v| parse_uuid(v, 1)).transpose()?,
         name: row.get(2)?,
         description: row.get(3)?,
         blueprint_id: row.get(4)?,
@@ -519,12 +515,12 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         runtime_type: runtime_type_from_str(&row.get::<_, String>(6)?),
         working_directory: row.get(7)?,
         status: status_from_str(&row.get::<_, String>(8)?),
-        last_status_check_at: row.get::<_, Option<String>>(9)?.map(|v| parse_timestamp(v)),
+        last_status_check_at: row.get::<_, Option<String>>(9)?.map(|v| parse_timestamp(v, 9)).transpose()?,
         health_check_type: health_check_type_from_str(&row.get::<_, String>(10)?),
-        health_check_port_id: row.get::<_, Option<String>>(11)?.map(parse_uuid),
+        health_check_port_id: row.get::<_, Option<String>>(11)?.map(|v| parse_uuid(v, 11)).transpose()?,
         health_check_http_path: row.get(12)?,
-        created_at: parse_timestamp(row.get::<_, String>(13)?),
-        updated_at: parse_timestamp(row.get::<_, String>(14)?),
+        created_at: parse_timestamp(row.get::<_, String>(13)?, 13)?,
+        updated_at: parse_timestamp(row.get::<_, String>(14)?, 14)?,
     })
 }
 
@@ -533,8 +529,8 @@ const PORT_COLUMNS: &str = "SELECT id, application_id, name, protocol, bind_addr
 
 fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
     Ok(ApplicationPort {
-        id: parse_uuid(row.get::<_, String>(0)?),
-        application_id: parse_uuid(row.get::<_, String>(1)?),
+        id: parse_uuid(row.get::<_, String>(0)?, 0)?,
+        application_id: parse_uuid(row.get::<_, String>(1)?, 1)?,
         name: row.get(2)?,
         protocol: protocol_from_str(&row.get::<_, String>(3)?),
         bind_address: row.get(4)?,
@@ -542,8 +538,8 @@ fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
         external_port: row.get(6)?,
         visibility: visibility_from_str(&row.get::<_, String>(7)?),
         required: row.get(8)?,
-        created_at: parse_timestamp(row.get::<_, String>(9)?),
-        updated_at: parse_timestamp(row.get::<_, String>(10)?),
+        created_at: parse_timestamp(row.get::<_, String>(9)?, 9)?,
+        updated_at: parse_timestamp(row.get::<_, String>(10)?, 10)?,
     })
 }
 
@@ -565,12 +561,22 @@ fn visibility_from_str(value: &str) -> PortVisibility {
     }
 }
 
-fn parse_uuid(value: String) -> Uuid {
-    Uuid::parse_str(&value).expect("stored UUID column is always well-formed")
+/// Both of these used to `expect()`, on the reasoning that VibeSSH is the
+/// only writer of this database. That does not survive contact with a
+/// release build: the release profile sets `panic = "abort"`, so a single
+/// malformed value - a half-written row after a power cut, a hand-edited
+/// database, a file restored from a partial backup - aborts the entire
+/// desktop app with no dialog and no log, on every launch, because these
+/// run on the read path every list view uses. See
+/// `server_repository::parse_uuid` for the same change and reasoning.
+fn parse_uuid(value: String, column: usize) -> rusqlite::Result<Uuid> {
+    Uuid::parse_str(&value).map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
-fn parse_timestamp(value: String) -> chrono::DateTime<Utc> {
-    chrono::DateTime::parse_from_rfc3339(&value).expect("stored timestamp column is always well-formed").with_timezone(&Utc)
+fn parse_timestamp(value: String, column: usize) -> rusqlite::Result<chrono::DateTime<Utc>> {
+    chrono::DateTime::parse_from_rfc3339(&value)
+        .map(|parsed| parsed.with_timezone(&Utc))
+        .map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
 fn runtime_type_to_str(value: RuntimeType) -> &'static str {

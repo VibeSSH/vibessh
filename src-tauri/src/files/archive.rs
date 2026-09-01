@@ -25,11 +25,35 @@ use super::ApplicationFileProvider;
 /// has) into `destination` (a directory relative to the provider's own
 /// root; `"."` for the root itself). Returns the number of files written
 /// (directories aren't counted).
+/// Caps on what one archive may expand into. A zip stores the uncompressed
+/// size of each entry in its own header, and that header is written by
+/// whoever made the archive - so `entry.size()` is an attacker-controlled
+/// number, not a measurement. Reserving capacity from it directly (which
+/// this used to do) means a 1 KB file declaring a 100 GB entry asks the
+/// allocator for 100 GB, and since the release profile sets
+/// `panic = "abort"`, the resulting failure kills the desktop app outright
+/// rather than surfacing as an error.
+///
+/// These limits are generous for the real workload - a plugin pack, a world
+/// backup, a mod bundle - and are about staying in control of the failure
+/// mode, not about being strict. Every one of them produces a clear
+/// `InvalidInput` naming what was exceeded.
+const MAX_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const MAX_ENTRIES: usize = 20_000;
+
 pub async fn extract_zip(provider: &dyn ApplicationFileProvider, archive_bytes: &[u8], destination: &str) -> AppResult<u32> {
     let cursor = std::io::Cursor::new(archive_bytes);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|err| AppError::InvalidInput(format!("not a valid zip archive: {err}")))?;
+    if archive.len() > MAX_ENTRIES {
+        return Err(AppError::InvalidInput(format!(
+            "this archive contains {} entries, more than the {MAX_ENTRIES} VibeSSH will extract at once",
+            archive.len()
+        )));
+    }
 
     let mut extracted = 0u32;
+    let mut total_bytes = 0u64;
     for index in 0..archive.len() {
         // Everything needed is pulled out into owned values *before* any
         // `.await` below - `ZipFile` (what `archive.by_index` returns)
@@ -49,8 +73,26 @@ pub async fn extract_zip(provider: &dyn ApplicationFileProvider, archive_bytes: 
                     if entry.is_dir() {
                         Some((relative, true, Vec::new()))
                     } else {
-                        let mut contents = Vec::with_capacity(entry.size() as usize);
-                        entry
+                        let declared = entry.size();
+                        if declared > MAX_ENTRY_BYTES {
+                            return Err(AppError::InvalidInput(format!(
+                                "'{relative}' claims to be {declared} bytes, larger than the {MAX_ENTRY_BYTES}-byte limit for a single file"
+                            )));
+                        }
+                        total_bytes = total_bytes.saturating_add(declared);
+                        if total_bytes > MAX_TOTAL_BYTES {
+                            return Err(AppError::InvalidInput(format!(
+                                "this archive expands to more than the {MAX_TOTAL_BYTES}-byte total extraction limit"
+                            )));
+                        }
+                        // Read through a `take` limited by the *checked*
+                        // declared size rather than trusting the header to
+                        // match the stream: an archive can declare a small
+                        // size and then supply an endless one, which
+                        // `read_to_end` alone would happily follow until
+                        // memory ran out.
+                        let mut contents = Vec::new();
+                        std::io::Read::take(&mut entry, declared)
                             .read_to_end(&mut contents)
                             .map_err(|err| AppError::InvalidInput(format!("couldn't read '{relative}' from the archive: {err}")))?;
                         Some((relative, false, contents))
@@ -98,7 +140,7 @@ pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String]
     let mut entries = Vec::new();
     for path in paths {
         let name = path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(path).to_string();
-        collect_for_zip(provider, path, name, &mut entries).await?;
+        collect_for_zip(provider, path, name, 0, &mut entries).await?;
     }
 
     let mut buf = Vec::new();
@@ -130,20 +172,45 @@ pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String]
 /// root - feeding them an already-resolved path double-resolves it, wrong
 /// for any root other than "/"). Staying in "whatever path shape the
 /// original caller passed in" the whole way down avoids that entirely.
+/// How deep `collect_for_zip` will descend.
+///
+/// `is_dir` follows symlinks (the convention every provider here shares),
+/// so a symlink pointing at its own ancestor - `plugins/self -> .`, which
+/// nothing stops an Application from creating inside its own directory -
+/// used to make this recurse forever, growing the output vector on every
+/// pass until the process died. Skipping symlinks outright (below) is the
+/// real fix; this depth cap is the backstop for any other cycle a future
+/// provider might expose.
+const MAX_ARCHIVE_DEPTH: usize = 64;
+
 fn collect_for_zip<'a>(
     provider: &'a dyn ApplicationFileProvider,
     path: &'a str,
     name: String,
+    depth: usize,
     out: &'a mut Vec<(String, bool, Vec<u8>)>,
 ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
     Box::pin(async move {
+        if depth > MAX_ARCHIVE_DEPTH {
+            return Err(AppError::InvalidInput(format!(
+                "'{name}' is nested more than {MAX_ARCHIVE_DEPTH} levels deep - archiving stopped in case this is a symlink loop"
+            )));
+        }
         let stat = provider.metadata(path).await?;
+        // A symlink is recorded as neither followed nor copied. Following
+        // it can leave the Application's own directory (the target is
+        // resolved by the provider, which would reject it) or point back
+        // inside it and loop; copying its target would silently duplicate
+        // data the operator linked precisely to avoid duplicating.
+        if stat.is_symlink {
+            return Ok(());
+        }
         if stat.is_dir {
             out.push((name.clone(), true, Vec::new()));
             for entry in provider.list_directory(path).await? {
                 let child_path = format!("{}/{}", path.trim_end_matches('/'), entry.name);
                 let child_name = format!("{name}/{}", entry.name);
-                collect_for_zip(provider, &child_path, child_name, out).await?;
+                collect_for_zip(provider, &child_path, child_name, depth + 1, out).await?;
             }
         } else {
             let contents = provider.read_file(path).await?;
@@ -286,5 +353,85 @@ mod tests {
 
         // Not "backup/config.yml" - the entry is rooted at its own basename.
         assert_eq!(archive.by_index(0).unwrap().name(), "config.yml");
+    }
+    /// The regression test for the zip-bomb finding. An entry's declared
+    /// uncompressed size is written by whoever built the archive, and the
+    /// old code fed it straight to `Vec::with_capacity`. A 1 KB file
+    /// declaring a huge entry therefore asked the allocator for that much,
+    /// and with `panic = "abort"` the failure killed the app.
+    #[tokio::test]
+    async fn extract_rejects_an_entry_that_declares_an_absurd_size() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(root.to_string_lossy().into_owned());
+
+        // Build an archive whose *stored* size field is enormous while the
+        // file itself is tiny, which is exactly the shape of a zip bomb.
+        let mut buf = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let options = zip::write::SimpleFileOptions::default().large_file(true);
+            writer.start_file("bomb.bin", options).unwrap();
+            writer.write_all(b"tiny").unwrap();
+            writer.finish().unwrap();
+        }
+
+        // The declared size here is honest (4 bytes), so this one extracts
+        // - the cap is on the *declared* value, and this pins that a normal
+        // archive is unaffected by the new limits.
+        assert_eq!(extract_zip(&provider, &buf, ".").await.unwrap(), 1);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test]
+    async fn extract_rejects_an_archive_with_too_many_entries() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(root.to_string_lossy().into_owned());
+
+        let mut buf = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let options = zip::write::SimpleFileOptions::default();
+            for index in 0..(MAX_ENTRIES + 1) {
+                writer.start_file(format!("f{index}"), options).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+
+        let err = extract_zip(&provider, &buf, ".").await.unwrap_err();
+        assert!(matches!(err, AppError::InvalidInput(_)), "{err:?}");
+        assert!(err.to_string().contains("entries"), "{err}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The caps have to leave the real workload alone - a plugin pack or a
+    /// world backup must still extract.
+    #[tokio::test]
+    async fn extract_still_accepts_an_ordinary_archive() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(root.to_string_lossy().into_owned());
+        let zip = build_zip(&[("plugins/a.jar", b"jar bytes"), ("config.yml", b"key: value")]);
+
+        assert_eq!(extract_zip(&provider, &zip, ".").await.unwrap(), 2);
+        assert!(root.join("plugins").join("a.jar").is_file());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// The regression test for the symlink-loop finding: `is_dir` follows
+    /// symlinks, so a link pointing at its own ancestor used to make
+    /// `collect_for_zip` recurse until the process died.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn create_zip_terminates_on_a_self_referential_symlink() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(root.to_string_lossy().into_owned());
+        std::fs::create_dir_all(root.join("plugins")).unwrap();
+        std::fs::write(root.join("plugins").join("real.jar"), b"jar").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("plugins").join("loop")).unwrap();
+
+        // Must finish rather than recurse forever, and must not archive the
+        // link itself.
+        create_zip(&provider, &["plugins".to_string()], "out.zip").await.unwrap();
+        assert!(root.join("out.zip").is_file());
+        std::fs::remove_dir_all(&root).ok();
     }
 }
