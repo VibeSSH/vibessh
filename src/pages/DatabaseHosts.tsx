@@ -18,6 +18,7 @@ import type { CreateDatabaseHostInput, DatabaseEngine, DatabaseHost } from "@/ty
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./pages.css";
+import { errorMessage } from "@/services/tauri";
 
 /**
  * Global admin list of MySQL/MariaDB engines VibeSSH can provision
@@ -48,7 +49,7 @@ export function DatabaseHosts() {
     setError(null);
     listDatabaseHosts()
       .then(setHosts)
-      .catch((err) => setError(err instanceof Error ? err.message : t("databaseHosts.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -64,7 +65,7 @@ export function DatabaseHosts() {
       setDeletingHost(null);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("databaseHosts.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -222,7 +223,7 @@ function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps)
       toastSuccess(t("databaseHosts.addedToast", { name: input.name }));
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("databaseHosts.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -324,7 +325,7 @@ function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProp
       await setDatabaseHostPhpmyadmin(host.id, applicationId || undefined);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("databaseHosts.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

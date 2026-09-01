@@ -1264,5 +1264,14 @@
       "localhost": "Reachable only from the node itself - never published externally.",
       "custom": "Bind to a specific address you provide."
     }
+  },
+  "errors": {
+    "unknown": "Something went wrong.",
+    "permission_denied": "VibeSSH doesn't have permission to do that on this Node. Check that the account it connects as can reach the path, or has sudo.",
+    "port_in_use": "Port {{port}}/{{protocol}} is already taken on this Node. Pick a different port.",
+    "docker_unavailable": "Docker isn't installed or isn't running on this Node. Install it from the Node's page, then try again.",
+    "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
+    "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
+    "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port."
   }
 }

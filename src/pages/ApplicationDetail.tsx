@@ -40,6 +40,7 @@ import "@/components/servers/forms.css";
 import "@/components/applications/CreateApplicationWizard.css";
 import "./pages.css";
 import "./ApplicationDetail.css";
+import { errorMessage } from "@/services/tauri";
 
 const LOG_TAIL_LINES = 500;
 
@@ -89,7 +90,7 @@ export function ApplicationDetail() {
     if (!id) return;
     getApplication(id)
       .then(setApplication)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError")));
+      .catch((err) => setLoadError(errorMessage(err, t)));
   }, [id, t]);
 
   useEffect(() => {
@@ -108,7 +109,7 @@ export function ApplicationDetail() {
       setApplication(nextApplication);
       setLoadError(null);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError"));
+      setLoadError(errorMessage(err, t));
       return;
     }
     // A separate try/catch on purpose - resource usage (a Remote Process
@@ -134,7 +135,7 @@ export function ApplicationDetail() {
     setLogsError(null);
     getApplicationLogs(id, LOG_TAIL_LINES)
       .then(setLogs)
-      .catch((err) => setLogsError(err instanceof Error ? err.message : t("applicationDetail.logsError")))
+      .catch((err) => setLogsError(errorMessage(err, t)))
       .finally(() => setLogsLoading(false));
   }, [id, t]);
 
@@ -175,7 +176,7 @@ export function ApplicationDetail() {
       setMigrateOpen(false);
       navigate(`/applications/${result.application.id}`);
     } catch (err) {
-      setMigrateError(err instanceof Error ? err.message : t("applicationDetail.migrateError"));
+      setMigrateError(errorMessage(err, t));
     } finally {
       setMigrateBusy(false);
     }

@@ -22,6 +22,7 @@ import "./Servers.css";
 import "./Teams.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "members" | "roles" | "servers" | "invitations" | "audit";
 
@@ -50,7 +51,7 @@ export function TeamDetail() {
         setMembers(loadedMembers);
         setPermissions(new Set(loadedPermissions));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("teams.couldntLoad")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -74,7 +75,7 @@ export function TeamDetail() {
       toastSuccess(t("teams.removedMemberToast", { name: member.displayName }));
       loadOverview();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("teams.couldntRemoveMember"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -86,7 +87,7 @@ export function TeamDetail() {
       toastSuccess(t("teams.deletedToast", { name: team?.name ?? "" }));
       navigate("/teams");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("teams.couldntDeleteTeam"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }

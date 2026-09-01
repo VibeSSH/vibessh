@@ -1264,5 +1264,14 @@
       "localhost": "Dostępny tylko z poziomu samego node'a - nigdy nie publikowany na zewnątrz.",
       "custom": "Powiąż z konkretnym adresem, który podasz."
     }
+  },
+  "errors": {
+    "unknown": "Coś poszło nie tak.",
+    "permission_denied": "VibeSSH nie ma uprawnień, aby to zrobić na tym Node. Sprawdź, czy konto, którym się łączy, ma dostęp do tej ścieżki albo uprawnienia sudo.",
+    "port_in_use": "Port {{port}}/{{protocol}} jest już zajęty na tym Node. Wybierz inny port.",
+    "docker_unavailable": "Docker nie jest zainstalowany albo nie działa na tym Node. Zainstaluj go ze strony Node i spróbuj ponownie.",
+    "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
+    "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
+    "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port."
   }
 }

@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/Icon";
 import { recreateApplication, refreshApplicationStatus, setApplicationResourceLimits } from "@/services/applicationService";
 import type { ApplicationDetail, ResourceLimitsConfig } from "@/types/application";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ResourceLimitsCardProps {
   applicationId: string;
@@ -63,7 +64,7 @@ export function ResourceLimitsCard({ applicationId, application, onSaved }: Reso
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("resourceLimits.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

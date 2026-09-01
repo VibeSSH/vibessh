@@ -16,6 +16,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
 import "./Servers.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 export function Servers() {
   const { t } = useTranslation();
@@ -59,7 +60,7 @@ export function Servers() {
       toastSuccess(t("servers.removedToast", { name: deletingServer.name }));
       setDeletingServer(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("servers.couldntRemove"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }

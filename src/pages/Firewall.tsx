@@ -26,6 +26,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 function originLabel(t: (key: string, opts?: Record<string, unknown>) => string, origin: FirewallRuleOrigin): string {
   switch (origin.kind) {
@@ -62,7 +63,7 @@ export function FirewallPage() {
     setLoadError(null);
     getNodeFirewallOverview(serverId)
       .then(setOverview)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("firewallPage.loadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [serverId, t]);
 
@@ -79,7 +80,7 @@ export function FirewallPage() {
       await syncNodeFirewall(serverId!);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.syncError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -97,7 +98,7 @@ export function FirewallPage() {
       toastSuccess(t("firewallPage.securedToast"));
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.enableError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setEnabling(false);
     }
@@ -111,7 +112,7 @@ export function FirewallPage() {
       setDeletingRule(null);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.deleteRuleError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setDeleting(false);
     }
@@ -279,7 +280,7 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
       await addFirewallCustomRule(serverId, input);
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("firewallPage.addRuleError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

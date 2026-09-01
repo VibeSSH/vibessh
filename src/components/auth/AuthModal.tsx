@@ -9,6 +9,7 @@ import { cloudLogin, cloudRegister } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "login" | "register";
 
@@ -52,7 +53,7 @@ export function AuthModal() {
       reset();
       close();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.genericError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

@@ -30,6 +30,7 @@ import "./pages.css";
 import "./Actions.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const MAX_ROWS_SHOWN = 200;
 
@@ -77,7 +78,7 @@ export function ActionsPage() {
     setServicesError(null);
     listServerServices(serverId)
       .then((loaded) => setServices([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setServicesError(err instanceof Error ? err.message : t("actionsPage.couldntListServices")))
+      .catch((err) => setServicesError(errorMessage(err, t)))
       .finally(() => setServicesLoading(false));
   }, [serverId]);
 
@@ -87,7 +88,7 @@ export function ActionsPage() {
     setContainersError(null);
     listServerContainers(serverId)
       .then((loaded) => setContainers([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setContainersError(err instanceof Error ? err.message : t("actionsPage.couldntListContainers")))
+      .catch((err) => setContainersError(errorMessage(err, t)))
       .finally(() => setContainersLoading(false));
   }, [serverId]);
 

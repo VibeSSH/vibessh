@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { getApplicationLogs, writeApplicationConsole } from "@/services/applicationService";
 import "@/components/servers/forms.css";
 import "./ApplicationConsoleCard.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ApplicationConsoleCardProps {
   applicationId: string;
@@ -71,7 +72,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       const next = await getApplicationLogs(applicationId, TAIL_LINES);
       setLines(next);
     } catch (err) {
-      setUnsupported(err instanceof Error ? err.message : t("applicationConsole.writeError"));
+      setUnsupported(errorMessage(err, t));
     } finally {
       setSending(false);
     }

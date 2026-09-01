@@ -23,6 +23,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import type { ApplicationBackup, ApplicationStatus, BackupSchedule } from "@/types/application";
 import "@/components/servers/forms.css";
 import "./ApplicationBackupsTab.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ApplicationBackupsTabProps {
   applicationId: string;
@@ -72,7 +73,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     setError(null);
     listApplicationBackups(applicationId)
       .then(setBackups)
-      .catch((err) => setError(err instanceof Error ? err.message : t("applicationBackups.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, t]);
 
@@ -89,7 +90,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       toastSuccess(t("applicationBackups.createdToast"));
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationBackups.createError"));
+      setError(errorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -103,7 +104,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       await downloadApplicationFile(applicationId, backupPath(backup), localDest, crypto.randomUUID());
       toastSuccess(t("applicationBackups.downloadedToast"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationBackups.downloadError"));
+      setError(errorMessage(err, t));
     } finally {
       setDownloadingId(null);
     }
@@ -118,7 +119,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       toastSuccess(t("applicationBackups.restoredToast"));
       setRestoreTarget(null);
     } catch (err) {
-      setRestoreError(err instanceof Error ? err.message : t("applicationBackups.restoreError"));
+      setRestoreError(errorMessage(err, t));
     } finally {
       setRestoreBusy(false);
     }
@@ -133,7 +134,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       setDeleteTarget(null);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("applicationBackups.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -148,7 +149,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       setSchedule(await setApplicationBackupSchedule(applicationId, schedule));
       toastSuccess(t("applicationBackups.scheduleSavedToast"));
     } catch (err) {
-      setScheduleError(err instanceof Error ? err.message : t("applicationBackups.scheduleSaveError"));
+      setScheduleError(errorMessage(err, t));
     } finally {
       setScheduleBusy(false);
     }

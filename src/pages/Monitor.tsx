@@ -15,6 +15,7 @@ import { useServersStore } from "@/stores/serversStore";
 import type { ProcessSummary, ServerMetrics } from "@/types/serverEvent";
 import "./pages.css";
 import "./Monitor.css";
+import { errorMessage } from "@/services/tauri";
 
 /** 5 minutes of history at the poll interval above - long enough to see a trend, short enough to stay a lightweight in-memory array. */
 const HISTORY_LENGTH = 60;
@@ -65,7 +66,7 @@ export function MonitorPage() {
       setProcesses([...nextProcesses].sort((a, b) => b.ramBytes - a.ramBytes));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("monitorPage.couldntReach"));
+      setError(errorMessage(err, t));
     }
   }, [serverId, t]);
 

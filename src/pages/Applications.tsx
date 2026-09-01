@@ -25,6 +25,7 @@ import type { Application, Blueprint, RuntimeType } from "@/types/application";
 import "./pages.css";
 import "./Applications.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 /**
  * Grouping is a pure display concern - which existing field partitions the
@@ -161,7 +162,7 @@ export function Applications() {
       await action();
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("applications.actionError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setBusyId(null);
     }
@@ -185,7 +186,7 @@ export function Applications() {
       }
       setDeletingApplication(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("applications.couldntRemove"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }

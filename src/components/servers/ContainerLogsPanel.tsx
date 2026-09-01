@@ -7,6 +7,7 @@ import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { getServerContainerLogs } from "@/services/actionsService";
 import "./AddServerModal.css";
 import "./forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const TAIL_LINES = 500;
 
@@ -27,7 +28,7 @@ export function ContainerLogsPanel({ serverId, containerName, onClose }: Contain
     setError(null);
     getServerContainerLogs(serverId, containerName, TAIL_LINES)
       .then(setLogs)
-      .catch((err) => setError(err instanceof Error ? err.message : t("containerLogs.couldntRead")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, containerName]);

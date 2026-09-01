@@ -5,6 +5,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ChmodModalProps {
   fileName: string;
@@ -41,7 +42,7 @@ export function ChmodModal({ fileName, currentMode, onClose, onConfirm }: ChmodM
       await onConfirm(parsed);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFilesTab.chmodError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

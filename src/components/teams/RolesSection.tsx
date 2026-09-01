@@ -18,6 +18,7 @@ import {
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudRoleWithPermissions } from "@/types/cloud";
 import "./RolesSection.css";
+import { errorMessage } from "@/services/tauri";
 
 interface RoleFormState {
   id: string | null; // null = creating
@@ -52,7 +53,7 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
         setRoles(loadedRoles);
         setAllPermissions(loadedPermissions);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("roles.couldntList")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -88,7 +89,7 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
       setForm(null);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("roles.couldntSave"));
+      setError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -101,7 +102,7 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
       toastSuccess(t("roles.deletedToast", { name: role.name }));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("roles.couldntDelete"));
+      setError(errorMessage(err, t));
     }
   }
 

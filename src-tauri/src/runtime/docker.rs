@@ -610,7 +610,10 @@ impl ApplicationRuntime for DockerRuntime {
 
         let output = connection.execute_command("sudo docker version --format '{{.Server.Version}}' 2>&1").await?;
         if output.exit_code != 0 {
-            return Err(AppError::InvalidInput("Docker doesn't seem to be available on this host".into()));
+            // Its own code, not a generic invalid-input: the UI can offer
+            // to install Docker, which is a real next step rather than a
+            // sentence.
+            return Err(AppError::DockerUnavailable);
         }
         Ok(())
     }

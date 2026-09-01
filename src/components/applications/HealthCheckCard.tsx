@@ -10,6 +10,7 @@ import { getApplicationHealth, setApplicationHealthCheck } from "@/services/appl
 import type { ApplicationDetail, HealthCheckType, HealthStatus } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const HEALTH_TONE: Record<HealthStatus["status"], "neutral" | "success" | "danger"> = {
   healthy: "success",
@@ -36,7 +37,7 @@ export function HealthCheckCard({ applicationId, application, onConfigChanged }:
     setCheckError(null);
     getApplicationHealth(applicationId)
       .then(setStatus)
-      .catch((err) => setCheckError(err instanceof Error ? err.message : t("healthCheck.checkError")))
+      .catch((err) => setCheckError(errorMessage(err, t)))
       .finally(() => setChecking(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId, application.healthCheckType, application.healthCheckPortId, application.healthCheckHttpPath, t]);
@@ -143,7 +144,7 @@ function HealthCheckFormModal({ applicationId, application, onClose, onSaved }: 
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("healthCheck.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

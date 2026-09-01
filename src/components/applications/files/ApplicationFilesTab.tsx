@@ -40,6 +40,7 @@ import { TransferQueuePanel } from "./TransferQueuePanel";
 import "@/components/servers/forms.css";
 import "@/pages/Files.css";
 import "./ApplicationFiles.css";
+import { errorMessage } from "@/services/tauri";
 
 /// Matches the Node Files page and the Actions page.
 const MAX_ROWS_SHOWN = 200;
@@ -115,7 +116,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           setEntries(loaded);
           setPath(targetPath);
         })
-        .catch((err) => setError(err instanceof Error ? err.message : t("applicationFilesTab.loadError")))
+        .catch((err) => setError(errorMessage(err, t)))
         .finally(() => setLoading(false));
     },
     [applicationId, t],
@@ -138,7 +139,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       markDone(transferId);
       load(path);
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.uploadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -154,7 +155,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       await downloadApplicationFile(applicationId, entry.path, localDest, transferId);
       markDone(transferId);
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.downloadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -203,7 +204,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       await restartApplication(applicationId);
       toastSuccess(t("applicationFilesTab.restartedToast"));
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.uploadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -232,7 +233,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       setDeletingEntry(null);
       load(path);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("applicationFilesTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -246,7 +247,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       toastSuccess(t("applicationFilesTab.extractedToast", { count }));
       load(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFilesTab.extractError"));
+      setError(errorMessage(err, t));
     } finally {
       setExtractingPath(null);
     }
@@ -258,7 +259,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       const entry = await getApplicationFileMetadata(applicationId, quickFile.path);
       setOpenFile(entry);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFilesTab.loadError"));
+      setError(errorMessage(err, t));
     }
   }
 

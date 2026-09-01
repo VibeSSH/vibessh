@@ -21,6 +21,7 @@ import {
 import type { ApplicationDatabase, DatabaseHost } from "@/types/database";
 import "@/components/servers/forms.css";
 import "./DatabasesTab.css";
+import { errorMessage } from "@/services/tauri";
 
 interface DatabasesTabProps {
   applicationId: string;
@@ -57,7 +58,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     setError(null);
     listApplicationDatabases(applicationId)
       .then(setDatabases)
-      .catch((err) => setError(err instanceof Error ? err.message : t("databasesTab.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, t]);
 
@@ -86,7 +87,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       setPurpose("");
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("databasesTab.createError"));
+      setError(errorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -100,7 +101,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     try {
       setRevealedPassword(await revealApplicationDatabasePassword(database.id));
     } catch (err) {
-      setRevealError(err instanceof Error ? err.message : t("databasesTab.revealError"));
+      setRevealError(errorMessage(err, t));
     } finally {
       setRevealBusy(false);
     }
@@ -115,7 +116,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       setRevealedPassword(password);
       setRevealError(null);
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : t("databasesTab.resetError"));
+      setRowError(errorMessage(err, t));
     } finally {
       setBusyRowId(null);
     }
@@ -128,7 +129,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       const url = await getPhpmyadminUrl(database.databaseHostId, database.databaseName);
       await open(url);
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : t("databasesTab.phpmyadminError"));
+      setRowError(errorMessage(err, t));
     } finally {
       setBusyRowId(null);
     }
@@ -143,7 +144,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       setDeletingDatabase(null);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("databasesTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }

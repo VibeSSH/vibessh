@@ -33,6 +33,7 @@ import type { RemoteFileEntry } from "@/types/files";
 import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
+import { errorMessage } from "@/services/tauri";
 
 /** The real filesystem root, not the SFTP login user's home directory - every OpenSSH server understands an absolute path here the same way, so this is what a plain SFTP client would show first (var/lib/root/... siblings visible immediately, not just reachable by navigating up from wherever the account happens to land). */
 /// Matches the cap the Actions page already uses. Large enough that an
@@ -93,7 +94,7 @@ export function FilesPage() {
           setPath(targetPath);
           setSelectedPaths(new Set());
         })
-        .catch((err) => setError(err instanceof Error ? err.message : t("filesPage.couldntList")))
+        .catch((err) => setError(errorMessage(err, t)))
         .finally(() => setLoading(false));
     },
     [serverId],
@@ -198,7 +199,7 @@ export function FilesPage() {
       toastSuccess(t("filesPage.extractedToast", { count }));
       load(path);
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("filesPage.extractError"));
+      toastError(errorMessage(err, t));
     } finally {
       setExtractingPath(null);
     }
@@ -215,7 +216,7 @@ export function FilesPage() {
       setDeletingEntries(null);
       load(path);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("filesPage.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -481,7 +482,7 @@ function CompressModal({ targets, onClose, onConfirm }: CompressModalProps) {
       await onConfirm(trimmed.toLowerCase().endsWith(".zip") ? trimmed : `${trimmed}.zip`);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("filesPage.compressError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

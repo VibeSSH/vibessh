@@ -16,6 +16,7 @@ import type { PortForwardKind, PortForwardStatus, StartPortForwardInput } from "
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 function kindLabel(t: (key: string) => string, kind: PortForwardKind): string {
   switch (kind) {
@@ -46,7 +47,7 @@ export function PortForwardingPage() {
     setLoadError(null);
     listPortForwards()
       .then(setForwards)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("portForwardingPage.loadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -65,7 +66,7 @@ export function PortForwardingPage() {
       await stopPortForward(id);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("portForwardingPage.stopError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setStoppingId(null);
     }
@@ -191,7 +192,7 @@ function AddForwardModal({ serverId, onClose, onAdded }: AddForwardModalProps) {
       await startPortForward(input);
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portForwardingPage.startError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

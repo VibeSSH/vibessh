@@ -154,8 +154,8 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
     let addr = (credentials.host.as_str(), credentials.port);
     let mut handle = tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler))
         .await
-        .map_err(|_| AppError::Connection(format!("timed out connecting to {}:{}", credentials.host, credentials.port)))?
-        .map_err(|err| classify_connect_error(&err, &seen))?;
+        .map_err(|_| AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() })?
+        .map_err(|err| classify_connect_error(&err, &seen, &credentials.host))?;
 
     let auth_result = match &credentials.auth {
         SshAuth::Password(password) => handle
@@ -207,12 +207,7 @@ impl SshSession {
     pub async fn execute_command(&self, command: &str) -> AppResult<CommandOutput> {
         tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command))
             .await
-            .unwrap_or_else(|_| {
-                Err(AppError::Connection(format!(
-                    "the command didn't finish within {} seconds and was given up on - the Node may be overloaded, or the command may be waiting on something that will never arrive",
-                    COMMAND_TIMEOUT.as_secs()
-                )))
-            })
+            .unwrap_or_else(|_| Err(AppError::Timeout { operation: "the command", seconds: COMMAND_TIMEOUT.as_secs() }))
     }
 
     async fn execute_command_inner(&self, command: &str) -> AppResult<CommandOutput> {
@@ -498,14 +493,15 @@ impl client::Handler for TofuHandler {
     }
 }
 
-fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>) -> AppError {
+fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>, host: &str) -> AppError {
     if seen.lock().expect("host key mutex poisoned").mismatched {
-        AppError::Connection(
-            "the server's SSH host key doesn't match the one VibeSSH saw before - this can mean the \
-             server was reinstalled, but it can also mean someone is intercepting the connection. \
-             Verify the server before trusting it again."
-                .to_string(),
-        )
+        // Its own code rather than a generic connection error: this is the
+        // one failure here where the right UI is a warning the user has to
+        // read and decide about, not a retry button. The full explanation
+        // ("reinstalled, or someone is intercepting") now lives in the
+        // frontend's own translated copy, where it can be phrased properly
+        // in the user's language instead of assembled in Rust.
+        AppError::HostKeyMismatch { host: host.to_string() }
     } else {
         AppError::Connection(format!("SSH connection failed: {err}"))
     }

@@ -8,6 +8,7 @@ import { getNodeSyncStatus, reconcileAgentNode, type NodeSyncStatus } from "@/se
 import type { ManagedServer } from "@/stores/serversStore";
 import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./ServerCard.css";
+import { errorMessage } from "@/services/tauri";
 
 /**
  * Etap M3 - only meaningful for an Agent-mode Node (SSH-mode has no
@@ -45,7 +46,7 @@ function NodeSyncBadge({ serverId, name }: { serverId: string; name: string }) {
         setError(outcome.error ?? t("serverCard.reconcileFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("serverCard.reconcileFailed"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
       reload();

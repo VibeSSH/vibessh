@@ -15,6 +15,7 @@ import type { RemoteFileEntry } from "@/types/files";
 import "@/components/servers/FileEditorPanel.css";
 import "@/components/servers/forms.css";
 import "./ApplicationFiles.css";
+import { errorMessage } from "@/services/tauri";
 
 /** Matches services::application_files_service::MAX_EDITABLE_FILE_SIZE - the server enforces this too (the actual trust boundary), this is just so the UI doesn't even try. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
@@ -61,7 +62,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         setContent(text);
         setSavedContent(text);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("applicationFileEditor.couldntRead")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, entry.path, tooLarge, t]);
 
@@ -77,7 +78,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
       toastSuccess(t("applicationFileEditor.savedToast", { name: entry.name }));
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFileEditor.couldntSave"));
+      setError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }

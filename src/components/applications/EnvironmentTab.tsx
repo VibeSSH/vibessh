@@ -12,6 +12,7 @@ import { recreateApplication, refreshApplicationStatus, setApplicationEnvironmen
 import type { ApplicationDetail, EnvironmentVariable } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 /** A Docker container's environment is baked in at `docker create` time
  * (see `runtime::docker`'s own doc comment) - a plain restart reuses the
@@ -56,7 +57,7 @@ export function EnvironmentTab({ application, onSaved }: EnvironmentTabProps) {
       await recreateIfRunningDocker(application);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationDetail.envSaveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -223,7 +224,7 @@ function EnvVarFormModal({ editing, existingKeys, onClose, onSubmit }: EnvVarFor
     try {
       await onSubmit(trimmedKey, value, isSecret);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationDetail.envSaveError"));
+      setError(errorMessage(err, t));
       setBusy(false);
     }
   }

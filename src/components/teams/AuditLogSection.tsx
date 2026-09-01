@@ -7,6 +7,7 @@ import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { cloudListAuditEvents } from "@/services/cloudService";
 import type { CloudAuditEvent } from "@/types/cloud";
 import "./AuditLogSection.css";
+import { errorMessage } from "@/services/tauri";
 
 const PAGE_SIZE = 50;
 
@@ -30,7 +31,7 @@ export function AuditLogSection({ teamId }: AuditLogSectionProps) {
         setEvents((prev) => (replace ? page : [...prev, ...page]));
         setHasMore(page.length === PAGE_SIZE);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("auditLog.couldntList")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => (replace ? setLoading : setLoadingMore)(false));
   }
 

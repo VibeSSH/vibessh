@@ -26,6 +26,7 @@ import "./pages.css";
 import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
+import { errorMessage } from "@/services/tauri";
 
 
 type WorkspaceTab = "applications" | "terminal" | "activity";
@@ -126,7 +127,7 @@ export function Dashboard() {
         toastSuccess(t("dashboard.taskReconcileSuccess", { name: serverName(id) }));
       }
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("serverCard.reconcileFailed"));
+      toastError(errorMessage(err, t));
     } finally {
       setReconcilingId(null);
       getNodeSyncStatus(id)
@@ -142,7 +143,7 @@ export function Dashboard() {
       toastSuccess(t("dashboard.quickSyncSuccess"));
       reloadOverview();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      toastError(errorMessage(err, t));
     } finally {
       setSyncingNetwork(false);
     }

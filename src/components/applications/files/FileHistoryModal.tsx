@@ -10,6 +10,7 @@ import { clearApplicationFileHistory, listApplicationFileHistory, restoreApplica
 import type { FileHistoryVersion } from "@/types/applicationFiles";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface FileHistoryModalProps {
   applicationId: string;
@@ -34,7 +35,7 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
   useEffect(() => {
     listApplicationFileHistory(applicationId, path)
       .then(setVersions)
-      .catch((err) => setError(err instanceof Error ? err.message : t("fileHistory.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, path, t]);
 
@@ -45,7 +46,7 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
       await restoreApplicationFileHistory(applicationId, path, timestamp);
       onRestored();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("fileHistory.restoreError"));
+      setError(errorMessage(err, t));
     } finally {
       setRestoringTimestamp(null);
     }
@@ -59,7 +60,7 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
       setVersions([]);
       setConfirmingClear(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("fileHistory.clearError"));
+      setError(errorMessage(err, t));
     } finally {
       setClearing(false);
     }

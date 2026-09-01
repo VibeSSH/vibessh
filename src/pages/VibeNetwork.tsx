@@ -42,6 +42,7 @@ import "./ApplicationDetail.css";
 import "./Servers.css";
 import "./pages.css";
 import "./VibeNetwork.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "nodes" | "endpoints" | "dns";
 
@@ -78,7 +79,7 @@ export function VibeNetwork() {
         setDnsView(d);
         setApplications(apps);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -97,7 +98,7 @@ export function VibeNetwork() {
       }
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      setError(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -113,7 +114,7 @@ export function VibeNetwork() {
       setLeavingMember(null);
       reload();
     } catch (err) {
-      setLeaveError(err instanceof Error ? err.message : t("vibeNetwork.leaveError"));
+      setLeaveError(errorMessage(err, t));
     } finally {
       setLeaveBusy(false);
     }
@@ -405,7 +406,7 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
       onJoined();
     } catch (err) {
       setStep("idle");
-      setError(err instanceof Error ? err.message : t("vibeNetwork.joinError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -488,7 +489,7 @@ function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPan
         setEndpoints(eps);
         setApplications(apps.filter((a) => a.serverId === serverId));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [serverId, t]);
 
@@ -503,7 +504,7 @@ function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPan
       await removeApplicationPort(endpoint.applicationId, endpoint.id);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.deleteError"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -643,7 +644,7 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -762,7 +763,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
         setRecords(r);
         setApplications(a);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -777,7 +778,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
       setSyncNote(failed.length === 0 ? t("vibeNetwork.dnsSyncOk", { count: results.length }) : t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: results.length }));
       onChanged();
     } catch (err) {
-      setSyncNote(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      setSyncNote(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -804,7 +805,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
       setSyncNote(failed.length === 0 ? t("vibeNetwork.dnsSyncOk", { count: results.length }) : t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: results.length }));
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.dnsDeleteError"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -929,7 +930,7 @@ function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalP
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.dnsSaveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

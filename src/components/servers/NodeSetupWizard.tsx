@@ -22,6 +22,7 @@ import type { NodeCapabilities } from "@/types/server";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import "./AddServerModal.css";
 import "./forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface NodeSetupWizardProps {
   serverId: string;
@@ -81,7 +82,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
     try {
       setCapabilities(await probeServerCapabilities(serverId));
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("nodeSetup.probeError"));
+      setLoadError(errorMessage(err, t));
     } finally {
       setLoading(false);
     }
@@ -115,7 +116,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
         }
       })
       .catch((err) => {
-        if (!cancelled) setFirewallLoadError(err instanceof Error ? err.message : t("secureFirewallModal.loadError"));
+        if (!cancelled) setFirewallLoadError(errorMessage(err, t));
       });
     return () => {
       cancelled = true;
@@ -134,7 +135,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setFirewallActive(true);
       toastSuccess(t("secureFirewallModal.securedToast", { name: serverName, backend: result.backend }));
     } catch (err) {
-      setSecuringError(err instanceof Error ? err.message : t("secureFirewallModal.enableError"));
+      setSecuringError(errorMessage(err, t));
     } finally {
       setSecuring(false);
     }
@@ -147,7 +148,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setCapabilities(await INSTALLERS[requirement](serverId));
       toastSuccess(t(`nodeSetup.installedToast.${requirement}`));
     } catch (err) {
-      setInstallError(err instanceof Error ? err.message : t("nodeSetup.installError"));
+      setInstallError(errorMessage(err, t));
     } finally {
       setInstalling(null);
     }
@@ -161,7 +162,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setNetworkJoined(true);
       toastSuccess(t("nodeSetup.joinedNetworkToast"));
     } catch (err) {
-      setNetworkError(err instanceof Error ? err.message : t("nodeSetup.joinNetworkError"));
+      setNetworkError(errorMessage(err, t));
     } finally {
       setJoiningNetwork(false);
     }

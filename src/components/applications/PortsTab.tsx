@@ -20,6 +20,7 @@ import {
 import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface PortsTabProps {
   applicationId: string;
@@ -74,7 +75,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     try {
       setFirewallResult(await syncApplicationNodeFirewall(applicationId));
     } catch (err) {
-      setFirewallError(err instanceof Error ? err.message : t("portsTab.firewallSyncError"));
+      setFirewallError(errorMessage(err, t));
     } finally {
       setFirewallSyncing(false);
     }
@@ -85,7 +86,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     setError(null);
     listApplicationPorts(applicationId)
       .then(setPorts)
-      .catch((err) => setError(err instanceof Error ? err.message : t("portsTab.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, t]);
 
@@ -101,7 +102,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
       await recreateIfRunningDocker(application);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("portsTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -289,7 +290,7 @@ function PortFormModal({ applicationId, application, editingPort, onClose, onSav
       await recreateIfRunningDocker(application);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

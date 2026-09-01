@@ -75,6 +75,16 @@ pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid
 /// Docker's iptables rules to bypass. It also fails *loudly* and early -
 /// a Node that has not joined the mesh gets a clear error here rather than
 /// a silently public port.
+/// The wire name for a protocol, for an error's `params` - the frontend
+/// renders "25565/tcp", and building that string in Rust would make it
+/// untranslatable prose again.
+fn protocol_name(protocol: crate::models::PortProtocol) -> &'static str {
+    match protocol {
+        crate::models::PortProtocol::Tcp => "tcp",
+        crate::models::PortProtocol::Udp => "udp",
+    }
+}
+
 fn resolve_bind_address(network_repo: &NodeNetworkRepository, server_id: Option<Uuid>, port: &PortInput) -> AppResult<String> {
     match port.visibility {
         PortVisibility::Public => Ok("0.0.0.0".to_string()),
@@ -178,12 +188,12 @@ async fn check_external_port_available(
     }
 
     if let Some(owner) = repo.find_external_port_owner(server_id, excluding_port_id, port.protocol, external_port)? {
-        return Err(AppError::InvalidInput(format!("port {external_port} is already published by '{owner}' on this Node")));
+        return Err(AppError::PortInUse { port: external_port, protocol: protocol_name(port.protocol), owner: Some(owner) });
     }
 
     if let Ok(connection) = crate::services::ssh_service::get_or_connect(server_repo, sessions, server_id).await {
         if let Some(process) = crate::services::firewall_service::listening_process(&connection, port.protocol, external_port).await.ok().flatten() {
-            return Err(AppError::InvalidInput(format!("port {external_port} is already in use on this Node (by {process})")));
+            return Err(AppError::PortInUse { port: external_port, protocol: protocol_name(port.protocol), owner: Some(process) });
         }
     }
     Ok(())
@@ -1958,7 +1968,13 @@ mod tests {
 
         let colliding_from_b = crate::models::PortInput { internal_port: 25566, ..published_by_a.clone() };
         let err = add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, app_b.application.id, &colliding_from_b).await.unwrap_err();
-        assert!(matches!(err, AppError::InvalidInput(_)));
+        // Its own code, not a generic invalid-input: the UI renders a
+        // translated sentence naming the port and what holds it, rather
+        // than echoing a Rust string.
+        assert!(
+            matches!(err, AppError::PortInUse { port: 25565, protocol: "tcp", owner: Some(_) }),
+            "{err:?}"
+        );
         assert!(list_application_ports(&app_repo, app_b.application.id).unwrap().is_empty(), "the colliding port must never have been saved");
 
         // A different protocol on the same port number is not a collision.

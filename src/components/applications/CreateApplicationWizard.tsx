@@ -17,6 +17,7 @@ import { listBlueprints } from "@/services/applicationService";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./CreateApplicationWizard.css";
+import { errorMessage } from "@/services/tauri";
 
 interface CreateApplicationWizardProps {
   onClose: () => void;
@@ -225,7 +226,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
         setDockerInstallError(t("createApplicationWizard.dockerInstallError"));
       }
     } catch (err) {
-      setDockerInstallError(err instanceof Error ? err.message : t("createApplicationWizard.dockerInstallError"));
+      setDockerInstallError(errorMessage(err, t));
     } finally {
       setInstallingDocker(false);
     }
@@ -247,7 +248,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("createApplicationWizard.createError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

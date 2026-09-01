@@ -9,6 +9,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import type { ApplicationDetail, Blueprint } from "@/types/application";
 import "@/components/servers/forms.css";
 import "@/components/applications/CreateApplicationWizard.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ApplicationConfigCardProps {
   applicationId: string;
@@ -103,7 +104,7 @@ export function ApplicationConfigCard({ applicationId, application, blueprint, o
       onSaved();
       toastSuccess(t("applicationConfig.savedToast"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationConfig.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
