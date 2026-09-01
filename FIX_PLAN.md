@@ -113,6 +113,16 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE B — HIGH bugs and correctness
 
+> **Status: mostly done** (commits `01c61c0`, `b6903db`, `621f143`).
+> Closed: B.1, B.2, B.3, B.4, B.5, B.6, B.7, B.8, B.9, B.13, B.14, B.15, B.16.
+> B.11 turned out not to be a real finding - see the S-016 correction in
+> `AUDIT_REPORT.md`; what is left of it is a narrower MEDIUM.
+>
+> **Still open:** B.10 (partial firewall application has no rollback),
+> B.12 (streaming backups - S-015, the largest remaining item and a real
+> redesign), B.17 (decide the shared-Docker-network trust boundary), and
+> A.4.3 carried over from Phase A (consented database-server install).
+
 | # | Item | Finding |
 |---|---|---|
 | B.1 | Narrow `retry_on_connection_failure` to `AppError::Connection` only; surface the second error when both attempts fail; rename it accurately | A-003 |

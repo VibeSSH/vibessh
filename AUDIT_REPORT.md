@@ -324,10 +324,13 @@ let _ = connection.execute_command(&format!("sudo chown -R {} {}", user, workdir
 **Fix:** stream. Build the archive on the Node (`tar`/`zip` over SSH) and stream it to S3 or local disk; never materialise it in the desktop process.
 **Test required:** backup of a directory larger than available RAM completes; peak memory stays bounded.
 
-**S-016 — Restore extracts over a running Application | HIGH | P1**
-`application_backup_service::restore_backup` calls `extract_zip(provider, &bytes, ".")` directly into the live working directory. Nothing stops the Application first, nothing takes a pre-restore snapshot, nothing is atomic. Restoring while a game server or database is running produces a torn dataset — the classic way to lose a world save.
-**Fix:** stop the Application (with confirmation), snapshot current state, extract to staging, swap atomically, restart.
-**Test required:** restore refuses (or explicitly stops) when status is `Running`.
+**S-016 — Restore is not atomic | MEDIUM | P2**
+
+> **Correction (verified while working through Phase B).** This was first written as "restore extracts over a running Application". That was wrong. `restore_backup` refreshes the status and returns `InvalidInput("stop the application before restoring a backup")` for `Running`/`Starting`/`Stopping` before it touches anything. Severity reduced accordingly, and the original "test required" line was already satisfied by that guard.
+
+What remains is narrower but real: the extraction itself is file-by-file over the live directory, with no staging and no pre-restore snapshot. A restore that fails partway — a dropped connection, a full disk, an entry the provider rejects — leaves a half-old, half-new mix with no way back, and the backup being restored *from* is by then the only remaining copy of the old state.
+**Fix:** extract into a staging directory beside the working directory and swap, or snapshot the current contents first so a failed restore can be undone.
+**Test required:** a restore that fails partway leaves the previous contents intact.
 
 **S-017 — Symlink loop causes unbounded recursion in `create_zip` | HIGH | P1**
 `archive.rs::collect_for_zip` branches on `stat.is_dir`, which **follows symlinks**. It never checks `is_symlink` and keeps no visited set. A symlink `plugins/self -> .` inside the Application directory causes infinite recursion — unbounded heap growth until the process dies.
