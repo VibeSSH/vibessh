@@ -1040,28 +1040,51 @@ pub async fn application_logs(
     .await;
 
     if let Ok(live_lines) = live_fetch {
-        let previous_last_line = log_capture.tail(id, 1).await?;
-        let new_lines = merge_new_log_lines(previous_last_line.first().map(String::as_str), live_lines);
+        let previous_tail = log_capture.tail(id, LOG_OVERLAP_ANCHOR_LINES).await?;
+        let new_lines = merge_new_log_lines(&previous_tail, live_lines);
         log_capture.append(id, &new_lines).await?;
     }
 
     log_capture.tail(id, max_lines).await
 }
 
-/// Finds where genuinely new output starts in a fresh live fetch, using the
-/// single most-recently-captured line as the anchor - the *rightmost*
-/// match (not the first), so a line that happens to repeat further back in
-/// the live batch doesn't fool this into re-appending everything after an
-/// earlier, spurious match. No anchor at all (first capture ever, or the
-/// container was just recreated and its brand new buffer shares nothing
-/// with the old one) means the whole live batch is "new" - appended after
-/// whatever's already stored, so a Recreate only ever adds to history, it
-/// never loses what came before.
-fn merge_new_log_lines(previous_last_line: Option<&str>, live_lines: Vec<String>) -> Vec<String> {
-    match previous_last_line.and_then(|anchor| live_lines.iter().rposition(|line| line == anchor)) {
-        Some(index) => live_lines[index + 1..].to_vec(),
-        None => live_lines,
+/// How many already-captured lines are used to locate the overlap.
+///
+/// One line is not enough, which is what the previous implementation used.
+/// Application logs repeat themselves constantly - a Minecraft server's
+/// "Can't keep up!", a bot's reconnect notice, any periodic health line -
+/// and matching a single repeated line against the *rightmost* occurrence
+/// silently discarded every line between the true position and that last
+/// occurrence. Matching a whole block of recent lines makes an accidental
+/// match effectively impossible: it would take the same 32 consecutive
+/// lines appearing twice.
+const LOG_OVERLAP_ANCHOR_LINES: u32 = 32;
+
+/// Finds where genuinely new output starts in a fresh live fetch.
+///
+/// Both inputs are *windows* onto the same stream: `previous_tail` is the
+/// end of what has already been captured, `live_lines` is whatever
+/// `docker logs --tail N` (or the equivalent) just returned. The new lines
+/// are the part of `live_lines` that comes after wherever the two windows
+/// overlap.
+///
+/// The overlap is found by matching the longest possible suffix of
+/// `previous_tail` against a prefix of `live_lines`. Longest-first matters:
+/// a shorter match can be a coincidence, the longest one is where the
+/// windows genuinely line up.
+///
+/// No overlap at all - the first capture ever, or a container that was just
+/// recreated and whose brand new buffer shares nothing with the old one -
+/// means the whole live batch is new. It is appended after whatever is
+/// already stored, so a Recreate only ever adds to history.
+fn merge_new_log_lines(previous_tail: &[String], live_lines: Vec<String>) -> Vec<String> {
+    let max_overlap = previous_tail.len().min(live_lines.len());
+    for overlap in (1..=max_overlap).rev() {
+        if previous_tail[previous_tail.len() - overlap..] == live_lines[..overlap] {
+            return live_lines[overlap..].to_vec();
+        }
     }
+    live_lines
 }
 
 /// Sends one line of input to the application's stdin/console (a Minecraft
@@ -1430,37 +1453,61 @@ pub async fn application_health_check(
 mod tests {
     use super::*;
 
-    #[test]
-    fn merge_new_log_lines_with_no_anchor_treats_the_whole_batch_as_new() {
-        let live = vec!["a".to_string(), "b".to_string()];
-        assert_eq!(merge_new_log_lines(None, live.clone()), live);
+    fn lines(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
     }
 
     #[test]
-    fn merge_new_log_lines_returns_only_what_comes_after_the_anchor() {
-        let live = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
-        assert_eq!(merge_new_log_lines(Some("b"), live), vec!["c".to_string(), "d".to_string()]);
+    fn merge_new_log_lines_with_nothing_captured_yet_treats_the_whole_batch_as_new() {
+        let live = lines(&["a", "b"]);
+        assert_eq!(merge_new_log_lines(&[], live.clone()), live);
     }
 
     #[test]
-    fn merge_new_log_lines_returns_nothing_new_when_the_anchor_is_the_last_line() {
-        let live = vec!["a".to_string(), "b".to_string()];
-        assert!(merge_new_log_lines(Some("b"), live).is_empty());
+    fn merge_new_log_lines_returns_only_what_comes_after_the_overlap() {
+        assert_eq!(merge_new_log_lines(&lines(&["a", "b"]), lines(&["a", "b", "c", "d"])), lines(&["c", "d"]));
     }
 
     #[test]
-    fn merge_new_log_lines_uses_the_rightmost_match_when_a_line_repeats() {
-        let live = vec!["retry".to_string(), "ok".to_string(), "retry".to_string(), "done".to_string()];
-        assert_eq!(merge_new_log_lines(Some("retry"), live), vec!["done".to_string()]);
+    fn merge_new_log_lines_returns_nothing_when_the_live_window_is_entirely_already_captured() {
+        assert!(merge_new_log_lines(&lines(&["a", "b"]), lines(&["a", "b"])).is_empty());
+    }
+
+    /// The regression test for the log-loss finding. With a single-line
+    /// anchor and a *rightmost* match, the previous implementation returned
+    /// only `["done"]` here - silently discarding `ok`, which had genuinely
+    /// not been captured yet. Application logs repeat constantly ("Can't
+    /// keep up!", reconnect notices), so this was routine, not exotic.
+    #[test]
+    fn merge_new_log_lines_does_not_lose_lines_around_a_repeated_line() {
+        let previous = lines(&["start", "retry"]);
+        let live = lines(&["start", "retry", "ok", "retry", "done"]);
+        assert_eq!(merge_new_log_lines(&previous, live), lines(&["ok", "retry", "done"]));
+    }
+
+    /// The longest overlap wins: a shorter suffix match can be coincidence,
+    /// the longest is where the two windows genuinely line up.
+    #[test]
+    fn merge_new_log_lines_prefers_the_longest_overlap() {
+        let previous = lines(&["x", "a", "b", "c"]);
+        let live = lines(&["a", "b", "c", "d"]);
+        assert_eq!(merge_new_log_lines(&previous, live), lines(&["d"]));
     }
 
     #[test]
-    fn merge_new_log_lines_treats_a_missing_anchor_as_a_fresh_container_and_keeps_everything() {
-        // The anchor line isn't in the live batch at all - a Recreate gave
-        // the container a brand new buffer with nothing in common with what
-        // was captured before. Everything live is new, not dropped.
-        let live = vec!["fresh start".to_string(), "line two".to_string()];
-        assert_eq!(merge_new_log_lines(Some("something from the old container"), live.clone()), live);
+    fn merge_new_log_lines_treats_no_overlap_as_a_fresh_container_and_keeps_everything() {
+        // Nothing in common - a Recreate gave the container a brand new
+        // buffer. Everything live is new, not dropped.
+        let live = lines(&["fresh start", "line two"]);
+        assert_eq!(merge_new_log_lines(&lines(&["something from the old container"]), live.clone()), live);
+    }
+
+    /// The live window can start *before* what was captured (a larger
+    /// `--tail` than last time), in which case the overlap is bounded by
+    /// the captured side rather than the live one.
+    #[test]
+    fn merge_new_log_lines_handles_a_live_window_longer_than_the_captured_tail() {
+        assert_eq!(merge_new_log_lines(&lines(&["c"]), lines(&["c", "d", "e"])), lines(&["d", "e"]));
     }
 
     #[test]

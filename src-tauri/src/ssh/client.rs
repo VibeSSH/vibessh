@@ -18,6 +18,34 @@ use crate::errors::{AppError, AppResult};
 use vibessh_protocol::CommandOutput;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long a single `execute_command` may run before it is given up on.
+///
+/// There was no command timeout at all: `CONNECT_TIMEOUT` covered only the
+/// initial connect, so a command that never finished - a hung `apt-get`
+/// waiting on a lock, a `docker pull` against an unreachable registry -
+/// blocked the calling Tauri command forever, with no cancellation and no
+/// way for the UI to recover.
+///
+/// Generous on purpose. This codebase legitimately runs slow commands over
+/// this channel (`apt-get install mariadb-server`, `docker pull` of a
+/// multi-gigabyte image), so the value has to be "something is wrong", not
+/// "this is taking a while". Ten minutes is well past any of them and still
+/// far short of forever.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Keepalive, not a deadline.
+///
+/// This used to be a 60-second `inactivity_timeout`, which tore down the
+/// whole session - every channel on it - after a minute of silence on the
+/// wire. That directly contradicted the long-running commands above: a real
+/// `apt-get install` routinely produces no output for longer than a minute
+/// while it unpacks, and the session died underneath it.
+///
+/// Sending a keepalive every 30 seconds keeps the connection demonstrably
+/// alive instead, and the per-command `COMMAND_TIMEOUT` is what bounds a
+/// command that genuinely never returns.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// SSH's "stderr" extended-data stream id, per RFC 4254 5.2.
 const SSH_EXTENDED_DATA_STDERR: u32 = 1;
 
@@ -90,7 +118,8 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
     };
 
     let config = Arc::new(client::Config {
-        inactivity_timeout: Some(Duration::from_secs(60)),
+        keepalive_interval: Some(KEEPALIVE_INTERVAL),
+        inactivity_timeout: None,
         ..Default::default()
     });
 
@@ -145,7 +174,20 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
 }
 
 impl SshSession {
+    /// Bounded by `COMMAND_TIMEOUT` - see that constant for why there is a
+    /// bound at all, and why it is as generous as it is.
     pub async fn execute_command(&self, command: &str) -> AppResult<CommandOutput> {
+        tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command))
+            .await
+            .unwrap_or_else(|_| {
+                Err(AppError::Connection(format!(
+                    "the command didn't finish within {} seconds and was given up on - the Node may be overloaded, or the command may be waiting on something that will never arrive",
+                    COMMAND_TIMEOUT.as_secs()
+                )))
+            })
+    }
+
+    async fn execute_command_inner(&self, command: &str) -> AppResult<CommandOutput> {
         let mut channel = self
             .handle
             .channel_open_session()
