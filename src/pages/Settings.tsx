@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { getAppInfo } from "@/services/appService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
@@ -20,6 +20,7 @@ import "./pages.css";
 import "./Settings.css";
 import "@/components/servers/forms.css";
 import "@/components/servers/AddServerModal.css";
+import { errorMessage } from "@/services/tauri";
 
 const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
   en: "settings.languageEnglish",
@@ -117,7 +118,7 @@ function BackupDestinationCard() {
         setPathPrefix(loaded.pathPrefix);
         setPathStyle(loaded.pathStyle);
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.backupDestinationLoadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -132,7 +133,7 @@ function BackupDestinationCard() {
       setSecretAccessKey("");
       toastSuccess(t("settings.backupDestinationSavedToast"));
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : t("settings.backupDestinationSaveError"));
+      setSaveError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -146,7 +147,7 @@ function BackupDestinationCard() {
       await testBackupDestination();
       setTestOk(true);
     } catch (err) {
-      setTestError(err instanceof Error ? err.message : t("settings.backupDestinationTestError"));
+      setTestError(errorMessage(err, t));
     } finally {
       setTesting(false);
     }
@@ -237,7 +238,7 @@ function DnsSuffixCard() {
         setCurrent(loaded);
         setSuffixValue(loaded);
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.dnsSuffixLoadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -251,7 +252,7 @@ function DnsSuffixCard() {
       setSuffixValue(saved);
       toastSuccess(t("settings.dnsSuffixSavedToast"));
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : t("settings.dnsSuffixSaveError"));
+      setSaveError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -297,7 +298,7 @@ function RegistryCredentialsCard() {
     setLoadError(null);
     listRegistryCredentials()
       .then(setCredentials)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("settings.registryLoadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -310,7 +311,7 @@ function RegistryCredentialsCard() {
       await removeRegistryCredential(id);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("settings.registryDeleteError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setDeletingId(null);
     }
@@ -373,7 +374,7 @@ interface AddRegistryCredentialModalProps {
 
 function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "settings-dialog-title-1" });
   const [registry, setRegistry] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -392,17 +393,17 @@ function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialM
       await setRegistryCredential({ registry: registry.trim(), username: username.trim(), password });
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("settings.registrySaveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("settings.registryAddTitle")}</h2>
+          <h2 className="modal-title" id="settings-dialog-title-1">{t("settings.registryAddTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

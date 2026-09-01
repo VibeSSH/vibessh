@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { ApplicationConsoleCard } from "@/components/applications/ApplicationConsoleCard";
@@ -31,7 +32,7 @@ import {
   stopApplication,
 } from "@/services/applicationService";
 import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { ApplicationDetail as ApplicationDetailData, ApplicationStatus, Blueprint, ResourceUsage } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
@@ -39,8 +40,8 @@ import "@/components/servers/forms.css";
 import "@/components/applications/CreateApplicationWizard.css";
 import "./pages.css";
 import "./ApplicationDetail.css";
+import { errorMessage } from "@/services/tauri";
 
-const POLL_INTERVAL_MS = 5000;
 const LOG_TAIL_LINES = 500;
 
 type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files" | "backups" | "settings";
@@ -73,7 +74,7 @@ export function ApplicationDetail() {
   const [confirming, setConfirming] = useState<Verb | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const confirmBackdrop = useBackdropClose(() => !actionBusy && setConfirming(null));
+  const confirmBackdrop = useModalDialog(() => !actionBusy && setConfirming(null), { labelledBy: "applicationdetail-dialog-title-1" });
 
   const [logs, setLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -83,13 +84,13 @@ export function ApplicationDetail() {
   const [migrateTargetServerId, setMigrateTargetServerId] = useState("");
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
-  const migrateBackdrop = useBackdropClose(() => !migrateBusy && setMigrateOpen(false));
+  const migrateBackdrop = useModalDialog(() => !migrateBusy && setMigrateOpen(false), { labelledBy: "applicationdetail-dialog-title-2" });
 
   const reload = useCallback(() => {
     if (!id) return;
     getApplication(id)
       .then(setApplication)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError")));
+      .catch((err) => setLoadError(errorMessage(err, t)));
   }, [id, t]);
 
   useEffect(() => {
@@ -101,45 +102,32 @@ export function ApplicationDetail() {
       .catch(() => {});
   }, [application?.blueprintId, i18n.language]);
 
-  useEffect(() => {
+  const poll = useCallback(async () => {
     if (!id) return;
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const nextApplication = await getApplication(id!);
-        if (cancelled) return;
-        setApplication(nextApplication);
-        setLoadError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : t("applicationDetail.loadError"));
-        return;
-      }
-      // A separate try/catch on purpose - resource usage (a Remote Process
-      // over SSH, in particular) can fail on its own (a temporarily
-      // unreachable Node) without that meaning the Application itself
-      // failed to load. Bundling both into one Promise.all used to throw
-      // away an already-successful `getApplication` result and leave the
-      // whole page stuck on a bare id with nothing usable on it.
-      try {
-        const nextUsage = await getApplicationResourceUsage(id!);
-        if (!cancelled) setResourceUsage(nextUsage);
-      } catch {
-        // Leave the last-known usage in place rather than clearing it -
-        // this tab already shows its own errors where it matters (Console,
-        // Logs, ...), no need for a second banner here.
-      }
+    try {
+      const nextApplication = await getApplication(id);
+      setApplication(nextApplication);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(errorMessage(err, t));
+      return;
     }
+    // A separate try/catch on purpose - resource usage (a Remote Process
+    // over SSH, in particular) can fail on its own (a temporarily
+    // unreachable Node) without that meaning the Application itself failed
+    // to load. Bundling both into one Promise.all used to throw away an
+    // already-successful `getApplication` result and leave the whole page
+    // stuck on a bare id with nothing usable on it.
+    try {
+      setResourceUsage(await getApplicationResourceUsage(id));
+    } catch {
+      // Leave the last-known usage in place rather than clearing it - this
+      // tab already shows its own errors where it matters (Console, Logs,
+      // ...), no need for a second banner here.
+    }
+  }, [id, t]);
 
-    poll();
-    const intervalId = window.setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  usePolling(poll, POLL_INTERVALS.applicationDetail, { enabled: Boolean(id) });
 
   const loadLogs = useCallback(() => {
     if (!id) return;
@@ -147,7 +135,7 @@ export function ApplicationDetail() {
     setLogsError(null);
     getApplicationLogs(id, LOG_TAIL_LINES)
       .then(setLogs)
-      .catch((err) => setLogsError(err instanceof Error ? err.message : t("applicationDetail.logsError")))
+      .catch((err) => setLogsError(errorMessage(err, t)))
       .finally(() => setLogsLoading(false));
   }, [id, t]);
 
@@ -184,11 +172,20 @@ export function ApplicationDetail() {
     setMigrateError(null);
     try {
       const result = await migrateApplication(id, migrateTargetServerId);
-      toastSuccess(t("applicationDetail.migrateSuccessToast", { name: result.application.name }));
+      // A migration that copied the data but left the old container running,
+      // or left the DNS name pointing at it, is not a plain success - and it
+      // is the operator, not VibeSSH, who has to finish it.
+      if (result.warnings.length > 0) {
+        toastError(t("applicationDetail.migrateWarningsToast", { name: result.application.name, warning: result.warnings[0] }));
+      } else if (!result.started) {
+        toastError(t("applicationDetail.migrateNotStartedToast", { name: result.application.name }));
+      } else {
+        toastSuccess(t("applicationDetail.migrateSuccessToast", { name: result.application.name }));
+      }
       setMigrateOpen(false);
       navigate(`/applications/${result.application.id}`);
     } catch (err) {
-      setMigrateError(err instanceof Error ? err.message : t("applicationDetail.migrateError"));
+      setMigrateError(errorMessage(err, t));
     } finally {
       setMigrateBusy(false);
     }
@@ -396,10 +393,10 @@ export function ApplicationDetail() {
       )}
 
       {confirming && (
-        <div className="modal-backdrop" {...confirmBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...confirmBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...confirmBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationDetail.confirmTitle", { verb: t(`applicationDetail.verb.${confirming}`) })}</h2>
+              <h2 className="modal-title" id="applicationdetail-dialog-title-1">{t("applicationDetail.confirmTitle", { verb: t(`applicationDetail.verb.${confirming}`) })}</h2>
               <IconButton icon="x" size="sm" onClick={() => setConfirming(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -421,10 +418,10 @@ export function ApplicationDetail() {
       )}
 
       {migrateOpen && (
-        <div className="modal-backdrop" {...migrateBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...migrateBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...migrateBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationDetail.migrateTitle")}</h2>
+              <h2 className="modal-title" id="applicationdetail-dialog-title-2">{t("applicationDetail.migrateTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setMigrateOpen(false)} title={t("common.close")} />
             </div>
             <div className="modal-body">

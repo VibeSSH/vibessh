@@ -20,11 +20,12 @@ import {
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useApplicationsStore } from "@/stores/applicationsStore";
 import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application, Blueprint, RuntimeType } from "@/types/application";
 import "./pages.css";
 import "./Applications.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 /**
  * Grouping is a pure display concern - which existing field partitions the
@@ -161,7 +162,7 @@ export function Applications() {
       await action();
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("applications.actionError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setBusyId(null);
     }
@@ -172,12 +173,20 @@ export function Applications() {
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await deleteApplication(deletingApplication.id);
+      const report = await deleteApplication(deletingApplication.id);
       removeApplication(deletingApplication.id);
-      toastSuccess(t("applications.removedToast", { name: deletingApplication.name }));
+      // The row is gone either way, but a partial teardown leaves the
+      // container running and still holding its published port - reporting
+      // that as a plain success is what made a replacement Application fail
+      // later with an unexplained "port is already allocated".
+      if (report.warnings.length > 0) {
+        toastError(t("applications.removedWithWarningsToast", { name: deletingApplication.name, warning: report.warnings[0] }));
+      } else {
+        toastSuccess(t("applications.removedToast", { name: deletingApplication.name }));
+      }
       setDeletingApplication(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("applications.couldntRemove"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }

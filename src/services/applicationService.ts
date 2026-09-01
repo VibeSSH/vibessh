@@ -46,8 +46,30 @@ export function createApplication(input: CreateApplicationInput): Promise<Applic
   return callCommand<ApplicationDetail>("create_application", { input });
 }
 
-export function deleteApplication(id: string): Promise<void> {
-  return callCommand<void>("delete_application", { id });
+/**
+ * What a delete actually managed to clean up. Deleting an Application is a
+ * real teardown - it destroys the container, drops its databases, revokes
+ * its firewall rules, removes its DNS name and removes its Node-side
+ * account - and any of those can fail if the Node is unreachable partway
+ * through. `warnings` being non-empty means the row is gone but something
+ * on the Node is not: most importantly the container may still be running
+ * and still holding its published port, which is what later makes a
+ * replacement Application fail to start with a raw "port is already
+ * allocated". Surface it rather than reporting a clean success.
+ */
+export interface ApplicationTeardownReport {
+  containerRemoved: boolean;
+  databasesDropped: number;
+  firewallSynced: boolean;
+  dnsSynced: boolean;
+  dedicatedAccountRemoved: boolean;
+  workingDirectoryRemoved: boolean;
+  warnings: string[];
+}
+
+/** `removeFiles` deletes the Application's working directory - a world save, a database volume, whatever the operator put there. Off unless explicitly asked: it is the one step that cannot be undone. */
+export function deleteApplication(id: string, removeFiles = false): Promise<ApplicationTeardownReport> {
+  return callCommand<ApplicationTeardownReport>("delete_application", { id, removeFiles });
 }
 
 /** Re-renders `runtimeConfig` from the blueprint after merging `fieldValues` on top of whatever was stored at creation (or the last edit) - see the Rust `update_application_config`'s own doc comment. A restart is required for a running process to actually pick up the new config, same as an uploaded jar replacement. */
@@ -133,17 +155,43 @@ export function updateApplicationPort(id: string, portId: string, port: PortInpu
   return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
 }
 
-/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. */
+/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. `unenforced` is `true` when nothing is actually restricting these ports - either no backend at all, or one that's installed but switched off. It must be surfaced as a warning: a sync that reports success while leaving ports open is exactly what made "Vibe Network only" ports publicly reachable. */
 export interface FirewallSyncResult {
   backend: string | null;
   active: boolean;
   rulesApplied: number;
   rulesRemoved: number;
+  unenforced: boolean;
 }
 
 /** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically, best-effort, after every `addApplicationPort`/`updateApplicationPort` - this is for a port declared before the feature existed, or retrying after a failed sync. */
 export function syncApplicationNodeFirewall(id: string): Promise<FirewallSyncResult | null> {
   return callCommand<FirewallSyncResult | null>("sync_application_node_firewall", { id });
+}
+
+/** The other applications this one is allowed to reach over its node's
+ * internal Docker networking. Ids, resolved against `listApplications` by the
+ * caller - which needs that list anyway, to offer the ones not yet connected.
+ *
+ * Reachability is default-deny: an application that has never been connected
+ * to anything cannot open a socket to any other application on the node, not
+ * even to a port that application declared but never published. It used to be
+ * the opposite, silently - see `ConnectionsCard`'s own doc comment. */
+export function listApplicationLinks(id: string): Promise<string[]> {
+  return callCommand<string[]>("list_application_links", { id });
+}
+
+/** Lets two Docker applications on the same node reach each other's ports.
+ *
+ * Symmetric: this is implemented as a private Docker network shared by
+ * exactly those two containers, and a bridge network has no direction. Takes
+ * effect immediately on running containers - no restart, no recreate. */
+export function connectApplications(id: string, peerId: string): Promise<void> {
+  return callCommand<void>("connect_applications", { id, peerId });
+}
+
+export function disconnectApplications(id: string, peerId: string): Promise<void> {
+  return callCommand<void>("disconnect_applications", { id, peerId });
 }
 
 export function removeApplicationPort(id: string, portId: string): Promise<void> {
@@ -193,11 +241,18 @@ export function removeRegistryCredential(id: string): Promise<void> {
   return callCommand<void>("remove_registry_credential", { id });
 }
 
-/** Mirrors the Rust `MigrationResult` DTO. */
+/** Mirrors the Rust `MigrationResult` DTO. `warnings` being non-empty means
+ * the migration itself succeeded - the new application exists with the old
+ * one's data - but a step after the point of no return didn't: the DNS name
+ * may still resolve to the old instance, the old container may still be
+ * running and holding its port, or a node's firewall may be out of date.
+ * `started` false means the application was migrated but isn't running. */
 export interface MigrationResult {
   application: ApplicationDetail;
   filesCopied: number;
   dnsRepointed: boolean;
+  started: boolean;
+  warnings: string[];
 }
 
 /** "Migrate to another Node" - provisions an identical Docker application on `targetServerId`, copies its working directory over, cuts its DNS alias (if it has one) to the new instance, then retires the old one. A single blocking call - see the Rust `services::migration_service`'s own doc comment for the full step order. Docker-only; rejected server-side for any other runtime type. */

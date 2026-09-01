@@ -1,0 +1,145 @@
+# The repository had no CI at all until this file. Every check here is one
+# that was already meant to hold and had silently stopped holding: the
+# workspace test suite did not compile, 77 backend tests failed on any
+# machine without Postgres, and `npm audit` reported a high-severity
+# advisory - none of which anything would have caught before a release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref - CI feedback on
+  # a commit that has already been replaced is just queue time.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri's own Linux build dependencies. Needed even for `cargo test`,
+      # because the `vibessh` crate links against webkit2gtk.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+          # A Secret Service implementation. Twelve tests deliberately use the
+          # *real* OS keyring rather than a fake - that is the point of them,
+          # since the property they check is that a secret reaches the
+          # platform store and never SQLite. A headless runner has no
+          # `org.freedesktop.secrets`, so without this they fail with a DBus
+          # error and the obvious "fix" is to stop running them, which would
+          # leave the one automated check of that property switched off.
+          sudo apt-get install -y gnome-keyring dbus-x11
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      # Warnings are denied rather than merely reported. The audit found 72
+      # standing warnings, including a `MutexGuard` held across four await
+      # points; a warning nobody is required to look at is not a signal.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # `--workspace` specifically: the break that hid for months was in an
+      # integration test target, which a bare `cargo test` in one crate would
+      # not have compiled.
+      #
+      # Wrapped in a session with an unlocked keyring, for the tests described
+      # at the install step above. `--components=secrets` is the only part of
+      # gnome-keyring needed here; the password is arbitrary, since the
+      # keyring lives and dies with this one process.
+      - name: Test
+        run: |
+          dbus-run-session -- sh -c '
+            echo "ci" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            cargo test --workspace
+          '
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # tsconfig already has `strict`, `noUnusedLocals` and
+      # `noUnusedParameters` on and the codebase already passes - this is
+      # what keeps it that way.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # ~18k lines of TypeScript had no tests at all before this workflow -
+      # see FIX_PLAN Phase C.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # `--audit-level=moderate`, which is where this should have been all
+      # along. It was loosened to `critical` when this file was written,
+      # because of a standing `high` against vite that needed a major upgrade
+      # to clear (F-004), and a gate nobody can make green gets disabled
+      # rather than fixed.
+      #
+      # That upgrade has landed - vite 8 and react-router 7 - and `npm audit`
+      # now reports zero advisories at every level. So this goes to the
+      # strictest setting the tree can actually hold, rather than back to the
+      # `high` the old comment promised: there is no reason to leave room for
+      # a moderate when there are none.
+      - name: npm audit
+        run: npm audit --audit-level=moderate
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      # One advisory is ignored, and this is the whole justification for it.
+      #
+      # RUSTSEC-2023-0071 (Marvin Attack, 5.9 medium) is against the `rsa`
+      # crate, which cargo-audit itself reports as "No fixed upgrade is
+      # available!" - the constant-time fix has never shipped. It arrives
+      # here transitively down two independent paths this repository does not
+      # control: `russh` -> rsa 0.10.0-rc, and `sqlx-mysql` -> rsa 0.9. There
+      # is nothing to upgrade to and nothing to pin.
+      #
+      # The alternatives were leaving this job red forever - which is how a
+      # gate gets deleted rather than fixed, the same reasoning the npm audit
+      # level above records - or dropping MySQL support and SSH RSA keys,
+      # which is not proportionate to a medium-severity timing sidechannel
+      # against a code path neither library uses for private-key decryption.
+      # See docs/threat-model.md for the exposure and for what would remove
+      # this line.
+      #
+      # It is a deliberately narrow ignore: one advisory id, not a severity
+      # threshold. Anything else, at any severity, still fails this job.
+      - name: cargo audit
+        run: cargo audit --ignore RUSTSEC-2023-0071

@@ -13,11 +13,11 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
+use crate::models::protocol_name;
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
     PortInput, PortProtocol, PortVisibility, RuntimeType, UpdateApplicationInput,
 };
-use crate::storage::migrations::migrations;
 
 pub struct ApplicationRepository {
     conn: Mutex<Connection>,
@@ -25,22 +25,16 @@ pub struct ApplicationRepository {
 
 impl ApplicationRepository {
     /// `db_path` is the same `servers.sqlite3` `ServerRepository` opens -
-    /// `migrations().to_latest()` is safe to call from both (it's a no-op
+    /// `schema::migrate` is safe to call from both (it runs once per file
     /// once the file's `user_version` is already current), and each keeps
     /// its own `Connection` to it, same as any two independent SQLite
     /// clients of one file.
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| AppError::Storage(format!("failed to create the application database directory: {err}")))?;
-        }
-        let mut conn =
-            Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the application database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the application database: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "application")?;
+        super::schema::migrate(&mut conn, db_path, "application")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -233,6 +227,7 @@ impl ApplicationRepository {
 
         let environment = self.list_environment_locked(&conn, id)?;
         let ports = self.list_ports_locked(&conn, id)?;
+        let links = list_links_locked(&conn, id)?;
         let runtime_config = conn
             .query_row("SELECT config_json FROM application_runtime_config WHERE application_id = ?1", params![id.to_string()], |row| {
                 row.get::<_, String>(0)
@@ -250,6 +245,7 @@ impl ApplicationRepository {
             ports,
             runtime_config: serde_json::from_str(&runtime_config).unwrap_or_default(),
             metadata: serde_json::from_str(&metadata).unwrap_or_default(),
+            links,
         }))
     }
 
@@ -296,6 +292,50 @@ impl ApplicationRepository {
             .map_err(|err| AppError::Storage(format!("failed to insert environment variable: {err}")))?;
         }
         tx.commit().map_err(|err| AppError::Storage(format!("failed to commit transaction: {err}")))
+    }
+
+    /// The Applications `application_id` may reach over the Node's internal
+    /// Docker networking. See `ApplicationDetail::links`.
+    pub fn list_links(&self, application_id: Uuid) -> AppResult<Vec<Uuid>> {
+        let conn = self.lock();
+        list_links_locked(&conn, application_id)
+    }
+
+    /// Idempotent - granting a connection that already exists is a no-op
+    /// rather than a constraint failure, so a retry after a failed *apply*
+    /// (the Docker half, which is the half that can fail against a live
+    /// Node) does not first have to undo the stored half.
+    ///
+    /// Rejects a self-link: a container is trivially able to reach itself,
+    /// so storing one would only produce a Docker network with a single
+    /// member and a row the UI would have to special-case.
+    pub fn add_link(&self, a: Uuid, b: Uuid) -> AppResult<()> {
+        if a == b {
+            return Err(AppError::InvalidInput("an application can't be connected to itself".into()));
+        }
+        let (lo, hi) = ordered_pair(a, b);
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO application_links (application_id, peer_id, created_at) VALUES (?1, ?2, ?3)",
+            params![lo.to_string(), hi.to_string(), Utc::now().to_rfc3339()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to store the connection: {err}")))?;
+        Ok(())
+    }
+
+    /// Also idempotent, and for a sharper reason than `add_link`: revoking
+    /// is the direction that closes an exposure, so "it was already gone"
+    /// has to be a success or a partially-applied revoke could never be
+    /// retried to completion.
+    pub fn remove_link(&self, a: Uuid, b: Uuid) -> AppResult<()> {
+        let (lo, hi) = ordered_pair(a, b);
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM application_links WHERE application_id = ?1 AND peer_id = ?2",
+            params![lo.to_string(), hi.to_string()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to remove the connection: {err}")))?;
+        Ok(())
     }
 
     pub fn list_ports(&self, application_id: Uuid) -> AppResult<Vec<ApplicationPort>> {
@@ -415,21 +455,64 @@ impl ApplicationRepository {
         external_port: u16,
     ) -> AppResult<Option<String>> {
         let conn = self.lock();
-        conn.query_row(
-            "SELECT a.name FROM application_ports p
-             JOIN applications a ON a.id = p.application_id
-             WHERE a.server_id = ?1 AND p.protocol = ?2 AND p.external_port = ?3
-             AND p.id != ?4",
-            params![
-                server_id.to_string(),
-                protocol_to_str(protocol),
-                external_port,
-                excluding_port_id.map(|id| id.to_string()).unwrap_or_default(),
-            ],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| AppError::Storage(format!("failed to check for an external port collision: {err}")))
+        find_external_port_owner_locked(&conn, server_id, excluding_port_id, protocol, external_port)
+    }
+
+    /// Checks for a collision and inserts the port in **one** transaction.
+    ///
+    /// `add_port` checks only against this same Application's other ports,
+    /// and the cross-Application check on a published `external_port` lived
+    /// in the service layer as a separate query before a separate insert.
+    /// Between those two statements is a window where two concurrent adds -
+    /// which is what a double-clicked button produces, since each Tauri
+    /// command runs on the same async runtime - both see the port free and
+    /// both write it (`AUDIT_REPORT.md` D-007).
+    ///
+    /// Double-booking a published port is not cosmetic: `docker create`
+    /// fails on the second one, and because the collision check consults the
+    /// database, the row that should never have been written then makes the
+    /// *next* check report the port as taken by an Application that could
+    /// not start.
+    ///
+    /// `TransactionBehavior::Immediate` rather than the default deferred
+    /// one, and that is the whole fix. A deferred transaction lets both
+    /// racers take a read lock, see the port free, and only then fight over
+    /// the write - the loser gets a busy/snapshot error, having already
+    /// decided the port was available. Taking the write lock up front makes
+    /// the loser wait (`busy_timeout`), re-read, and correctly find the
+    /// collision, so it returns `PortInUse` naming the winner rather than a
+    /// storage error naming nothing.
+    ///
+    /// D-007 asked for a unique index instead. That is not expressible here:
+    /// the uniqueness that matters is `(server_id, protocol, external_port)`
+    /// and `server_id` lives on `applications`, across a join SQLite cannot
+    /// constrain - see `FIX_PLAN.md` E.9. This closes the same window inside
+    /// one process, which is where it is actually reachable.
+    pub fn claim_external_port(&self, application_id: Uuid, server_id: Uuid, port: &PortInput) -> AppResult<ApplicationPort> {
+        let Some(external_port) = port.external_port else {
+            // Nothing published, so nothing to claim against another
+            // Application - `add_port`'s own per-Application check is the
+            // whole requirement.
+            return self.add_port(application_id, port);
+        };
+        let mut conn = self.lock();
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|err| AppError::Storage(format!("failed to start the port transaction: {err}")))?;
+
+        if let Some(collision) = self.find_port_collision_locked(&tx, application_id, None, port)? {
+            return Err(AppError::InvalidInput(format!("port {} is already used by '{collision}' on this application", port.internal_port)));
+        }
+        if let Some(owner) = find_external_port_owner_locked(&tx, server_id, None, port.protocol, external_port)? {
+            return Err(AppError::PortInUse { port: external_port, protocol: protocol_name(port.protocol), owner: Some(owner) });
+        }
+        let id = insert_port(&tx, application_id, port)?;
+        tx.commit().map_err(|err| AppError::Storage(format!("failed to commit the port: {err}")))?;
+
+        self.list_ports_locked(&conn, application_id)?
+            .into_iter()
+            .find(|existing| existing.id == id)
+            .ok_or_else(|| AppError::Internal(format!("port {id} vanished immediately after being created")))
     }
 
     fn find_port_collision_locked(
@@ -459,6 +542,35 @@ impl ApplicationRepository {
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("application database mutex poisoned")
     }
+}
+
+/// Which other Application on `server_id` has already published
+/// `external_port` on this protocol, if any. Takes a `&Connection` so
+/// `claim_external_port` can run it inside its own transaction rather than
+/// re-locking - the point of that transaction is that this check and the
+/// insert cannot be separated.
+fn find_external_port_owner_locked(
+    conn: &Connection,
+    server_id: Uuid,
+    excluding_port_id: Option<Uuid>,
+    protocol: PortProtocol,
+    external_port: u16,
+) -> AppResult<Option<String>> {
+    conn.query_row(
+        "SELECT a.name FROM application_ports p
+         JOIN applications a ON a.id = p.application_id
+         WHERE a.server_id = ?1 AND p.protocol = ?2 AND p.external_port = ?3
+         AND p.id != ?4",
+        params![
+            server_id.to_string(),
+            protocol_to_str(protocol),
+            external_port,
+            excluding_port_id.map(|id| id.to_string()).unwrap_or_default(),
+        ],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|err| AppError::Storage(format!("failed to check for an external port collision: {err}")))
 }
 
 fn insert_port(conn: &Connection, application_id: Uuid, port: &PortInput) -> AppResult<Uuid> {
@@ -508,10 +620,51 @@ const APPLICATION_COLUMNS: &str = "SELECT id, server_id, name, description, blue
      runtime_type, working_directory, status, last_status_check_at, health_check_type, health_check_port_id, \
      health_check_http_path, created_at, updated_at";
 
+/// `application_links` stores one row per unordered pair with
+/// `application_id < peer_id` (a CHECK constraint enforces it), so every
+/// read and write normalises the pair the same way first.
+fn ordered_pair(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
+
+/// Both columns, because the pair is normalised on write: an Application is
+/// as often the higher id as the lower one, and which side it landed on says
+/// nothing about the relationship.
+fn list_links_locked(conn: &Connection, application_id: Uuid) -> AppResult<Vec<Uuid>> {
+    let id = application_id.to_string();
+    let mut stmt = conn
+        .prepare(
+            "SELECT peer_id FROM application_links WHERE application_id = ?1
+             UNION
+             SELECT application_id FROM application_links WHERE peer_id = ?1",
+        )
+        .map_err(|err| AppError::Storage(format!("failed to prepare the connection query: {err}")))?;
+    let rows = stmt
+        .query_map(params![id], |row| row.get::<_, String>(0))
+        .map_err(|err| AppError::Storage(format!("failed to list connections: {err}")))?;
+    let mut links = Vec::new();
+    for row in rows {
+        let raw = row.map_err(|err| AppError::Storage(format!("failed to read a connection row: {err}")))?;
+        // A row whose id no longer parses is a corrupted row, not a reason to
+        // fail the whole Application load - but it must not silently become
+        // "no connection", because a dropped link reads as *more* isolation
+        // than there is. Log it and keep the rest.
+        match Uuid::parse_str(&raw) {
+            Ok(id) => links.push(id),
+            Err(err) => log::warn!("ignoring an unparseable application_links row '{raw}': {err}"),
+        }
+    }
+    Ok(links)
+}
+
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     Ok(Application {
-        id: parse_uuid(row.get::<_, String>(0)?),
-        server_id: row.get::<_, Option<String>>(1)?.map(parse_uuid),
+        id: parse_uuid(row.get::<_, String>(0)?, 0)?,
+        server_id: row.get::<_, Option<String>>(1)?.map(|v| parse_uuid(v, 1)).transpose()?,
         name: row.get(2)?,
         description: row.get(3)?,
         blueprint_id: row.get(4)?,
@@ -519,12 +672,12 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         runtime_type: runtime_type_from_str(&row.get::<_, String>(6)?),
         working_directory: row.get(7)?,
         status: status_from_str(&row.get::<_, String>(8)?),
-        last_status_check_at: row.get::<_, Option<String>>(9)?.map(|v| parse_timestamp(v)),
+        last_status_check_at: row.get::<_, Option<String>>(9)?.map(|v| parse_timestamp(v, 9)).transpose()?,
         health_check_type: health_check_type_from_str(&row.get::<_, String>(10)?),
-        health_check_port_id: row.get::<_, Option<String>>(11)?.map(parse_uuid),
+        health_check_port_id: row.get::<_, Option<String>>(11)?.map(|v| parse_uuid(v, 11)).transpose()?,
         health_check_http_path: row.get(12)?,
-        created_at: parse_timestamp(row.get::<_, String>(13)?),
-        updated_at: parse_timestamp(row.get::<_, String>(14)?),
+        created_at: parse_timestamp(row.get::<_, String>(13)?, 13)?,
+        updated_at: parse_timestamp(row.get::<_, String>(14)?, 14)?,
     })
 }
 
@@ -533,8 +686,8 @@ const PORT_COLUMNS: &str = "SELECT id, application_id, name, protocol, bind_addr
 
 fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
     Ok(ApplicationPort {
-        id: parse_uuid(row.get::<_, String>(0)?),
-        application_id: parse_uuid(row.get::<_, String>(1)?),
+        id: parse_uuid(row.get::<_, String>(0)?, 0)?,
+        application_id: parse_uuid(row.get::<_, String>(1)?, 1)?,
         name: row.get(2)?,
         protocol: protocol_from_str(&row.get::<_, String>(3)?),
         bind_address: row.get(4)?,
@@ -542,8 +695,8 @@ fn row_to_port(row: &rusqlite::Row) -> rusqlite::Result<ApplicationPort> {
         external_port: row.get(6)?,
         visibility: visibility_from_str(&row.get::<_, String>(7)?),
         required: row.get(8)?,
-        created_at: parse_timestamp(row.get::<_, String>(9)?),
-        updated_at: parse_timestamp(row.get::<_, String>(10)?),
+        created_at: parse_timestamp(row.get::<_, String>(9)?, 9)?,
+        updated_at: parse_timestamp(row.get::<_, String>(10)?, 10)?,
     })
 }
 
@@ -565,12 +718,22 @@ fn visibility_from_str(value: &str) -> PortVisibility {
     }
 }
 
-fn parse_uuid(value: String) -> Uuid {
-    Uuid::parse_str(&value).expect("stored UUID column is always well-formed")
+/// Both of these used to `expect()`, on the reasoning that VibeSSH is the
+/// only writer of this database. That does not survive contact with a
+/// release build: the release profile sets `panic = "abort"`, so a single
+/// malformed value - a half-written row after a power cut, a hand-edited
+/// database, a file restored from a partial backup - aborts the entire
+/// desktop app with no dialog and no log, on every launch, because these
+/// run on the read path every list view uses. See
+/// `server_repository::parse_uuid` for the same change and reasoning.
+fn parse_uuid(value: String, column: usize) -> rusqlite::Result<Uuid> {
+    Uuid::parse_str(&value).map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
-fn parse_timestamp(value: String) -> chrono::DateTime<Utc> {
-    chrono::DateTime::parse_from_rfc3339(&value).expect("stored timestamp column is always well-formed").with_timezone(&Utc)
+fn parse_timestamp(value: String, column: usize) -> rusqlite::Result<chrono::DateTime<Utc>> {
+    chrono::DateTime::parse_from_rfc3339(&value)
+        .map(|parsed| parsed.with_timezone(&Utc))
+        .map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(err)))
 }
 
 fn runtime_type_to_str(value: RuntimeType) -> &'static str {

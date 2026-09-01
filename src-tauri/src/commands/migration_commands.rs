@@ -8,6 +8,7 @@ use crate::runtime::local_process::LocalProcessManager;
 use crate::services::{self, MigrationResult};
 use crate::state::{DnsSuffixState, MigrationLockManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
@@ -21,11 +22,19 @@ use crate::storage::server_repository::ServerRepository;
 /// DNS alias (if any) to the new instance, then retires the old one. See
 /// `services::migration_service`'s own doc comment for the full step order.
 #[tauri::command]
+// Fourteen managed dependencies, because migrating an Application touches
+// almost every subsystem at once: both Nodes, the applications/servers/DNS/
+// database/firewall/registry repositories, the session and lock managers,
+// and the log store. Tauri has no way to inject these other than as
+// parameters. Narrowing this is FIX_PLAN Phase E (E.7), not something to
+// paper over by bundling unrelated dependencies into a context struct.
+#[allow(clippy::too_many_arguments)]
 pub async fn migrate_application(
     app_repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     network_repo: State<'_, NodeNetworkRepository>,
     dns_repo: State<'_, DnsRepository>,
+    db_repo: State<'_, DatabaseRepository>,
     dns_suffix: State<'_, DnsSuffixState>,
     firewall_rule_repo: State<'_, FirewallRuleRepository>,
     registry_repo: State<'_, RegistryCredentialRepository>,
@@ -41,6 +50,7 @@ pub async fn migrate_application(
         &server_repo,
         &network_repo,
         &dns_repo,
+        &db_repo,
         &dns_suffix.get(),
         &firewall_rule_repo,
         &registry_repo,

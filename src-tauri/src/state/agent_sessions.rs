@@ -88,6 +88,21 @@ impl AgentSessionManager {
         sessions.insert(server_id, Session { command_tx, state_rx, applied_rx, handle });
     }
 
+    /// A receiver for this session's connection-state changes, so a caller
+    /// can react to a transition rather than poll `state_of`.
+    ///
+    /// Added for certificate pinning: the fingerprint an agent presented is
+    /// only known once the handshake has succeeded, which is after
+    /// `ensure_connected` has already returned. The caller
+    /// (`commands::agent_session_commands`) owns the `ServerRepository`, so
+    /// it watches for the first `Connected` and records the pin - keeping
+    /// this module free of any dependency on `storage`, the same way
+    /// `agent_client` is.
+    pub async fn state_updates(&self, server_id: Uuid) -> Option<watch::Receiver<AgentConnectionState>> {
+        let sessions = self.sessions.lock().await;
+        sessions.get(&server_id).map(|session| session.state_rx.clone())
+    }
+
     pub async fn state_of(&self, server_id: Uuid) -> Option<AgentConnectionState> {
         let sessions = self.sessions.lock().await;
         sessions.get(&server_id).map(|session| session.state_rx.borrow().clone())
@@ -200,7 +215,7 @@ mod tests {
         let url = spawn_mock_agent().await;
         let manager = AgentSessionManager::new();
         let server_id = Uuid::new_v4();
-        let config = AgentClientConfig { url, client_name: "test".into(), client_version: "0.0.0".into(), auth_token: Some("code".into()) };
+        let config = AgentClientConfig { url, client_name: "test".into(), client_version: "0.0.0".into(), auth_token: Some("code".into()), known_fingerprint: None };
 
         manager.ensure_connected(server_id, config).await;
 
@@ -210,7 +225,7 @@ mod tests {
         // against a session no one ever handshakes, and the test would
         // time out.
         manager
-            .ensure_connected(server_id, AgentClientConfig { url: "ws://127.0.0.1:1".into(), client_name: "x".into(), client_version: "x".into(), auth_token: None })
+            .ensure_connected(server_id, AgentClientConfig { url: "ws://127.0.0.1:1".into(), client_name: "x".into(), client_version: "x".into(), auth_token: None, known_fingerprint: None })
             .await;
 
         let sent = manager.send_command(server_id, DesktopCommand::ApplyDesiredState { revision: 5, state: NodeDesiredState::default() }).await;

@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{ConnectionMode, NodeNetworkMember, Server};
 use crate::network::wireguard::{self, Peer};
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::state::SshSessionManager;
 use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
@@ -78,9 +78,18 @@ pub async fn leave_node(
     sessions: &SshSessionManager,
     server_id: Uuid,
 ) -> AppResult<()> {
-    if let Ok(connection) = get_or_connect(server_repo, sessions, server_id).await {
-        let _ = wireguard::teardown(&connection).await;
-    }
+    // The row is only removed once the Node has actually been torn down.
+    //
+    // Previously the teardown result was discarded and the row removed
+    // regardless, which produced the worst possible half-state: every other
+    // member drops the departed Node from its peer list, while the departed
+    // Node keeps its `wg-vibessh0` interface up with the *old* config -
+    // still holding mesh addresses, still trying to reach peers that no
+    // longer know it, and with nothing in VibeSSH left pointing at it to
+    // clean it up. `wireguard::teardown` swallowed its own errors too, so
+    // even checking the result would not have helped until it stopped.
+    let connection = get_or_connect(server_repo, sessions, server_id).await?;
+    wireguard::teardown(&connection).await?;
     network_repo.leave(server_id)?;
     reconcile_mesh(network_repo, server_repo, sessions).await?;
     Ok(())
@@ -120,25 +129,21 @@ pub async fn reconcile_mesh(
             })
             .collect();
 
-        // A cached session that's gone stale (idle timeout, network blip,
-        // Node reboot) fails here with a raw "couldn't open an SSH channel"
-        // error instead of reconnecting - `ssh_service::execute_command`
-        // already handles this for a single command by dropping the dead
-        // session and retrying once, so mirror that here since `apply` runs
-        // its own multi-line script over the connection directly.
-        let outcome = match get_or_connect(server_repo, sessions, member.server_id).await {
-            Ok(connection) => match wireguard::apply(&connection, &member.wireguard_ip, &peers).await {
-                Ok(()) => Ok(()),
-                Err(first_err) => {
-                    sessions.remove(member.server_id).await;
-                    match get_or_connect(server_repo, sessions, member.server_id).await {
-                        Ok(connection) => wireguard::apply(&connection, &member.wireguard_ip, &peers).await.map_err(|_| first_err),
-                        Err(_) => Err(first_err),
-                    }
-                }
-            },
-            Err(err) => Err(err),
-        };
+        // A cached session gone stale (idle timeout, network blip, Node
+        // reboot) fails here with a raw "couldn't open an SSH channel"
+        // rather than reconnecting, and `apply` runs a whole script over the
+        // connection directly - so it gets the same drop-and-retry-once
+        // recovery `ssh_service::execute_command` gives a single command.
+        //
+        // Notably *not* retried any more: a peer value `wireguard::apply`
+        // rejects. The local copy this replaced retried on every error, so a
+        // rejected public key tore down a healthy session and re-ran the
+        // apply to be rejected again, on every member, on every reconcile.
+        let outcome = retry_on_connection_failure(sessions, Some(member.server_id), || async {
+            let connection = get_or_connect(server_repo, sessions, member.server_id).await?;
+            wireguard::apply(&connection, &member.wireguard_ip, &peers).await
+        })
+        .await;
         results.push(match outcome {
             Ok(()) => MeshReconcileResult { server_id: member.server_id, ok: true, error: None },
             Err(err) => MeshReconcileResult { server_id: member.server_id, ok: false, error: Some(err.to_string()) },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -15,6 +16,7 @@ import type { RemoteFileEntry } from "@/types/files";
 import "@/components/servers/FileEditorPanel.css";
 import "@/components/servers/forms.css";
 import "./ApplicationFiles.css";
+import { errorMessage } from "@/services/tauri";
 
 /** Matches services::application_files_service::MAX_EDITABLE_FILE_SIZE - the server enforces this too (the actual trust boundary), this is just so the UI doesn't even try. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
@@ -61,7 +63,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         setContent(text);
         setSavedContent(text);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("applicationFileEditor.couldntRead")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, entry.path, tooLarge, t]);
 
@@ -77,7 +79,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
       toastSuccess(t("applicationFileEditor.savedToast", { name: entry.name }));
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFileEditor.couldntSave"));
+      setError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -170,26 +172,44 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
       )}
 
       {confirmDiscard && (
-        <div className="modal-backdrop" onClick={() => setConfirmDiscard(false)}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{t("applicationFileEditor.discardTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setConfirmDiscard(false)} title={t("common.close")} />
-            </div>
-            <div className="modal-body">
-              <p className="dialog-body-text">{t("applicationFileEditor.discardBody", { name: entry.name })}</p>
-              <div className="form-actions">
-                <Button variant="secondary" onClick={() => setConfirmDiscard(false)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="danger" onClick={onClose}>
-                  {t("applicationFileEditor.discard")}
-                </Button>
-              </div>
-            </div>
+        <DiscardChangesDialog fileName={entry.name} onCancel={() => setConfirmDiscard(false)} onDiscard={onClose} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Its own component so `useModalDialog`'s focus effect runs on the dialog's
+ * own mount - see `EnvironmentTab`'s copy of this note. This one also gains
+ * a working Escape and a focus trap it never had: it is the confirmation
+ * standing between the user and discarding their unsaved edits, so being
+ * unable to reach its Cancel button by keyboard was the worst place in the
+ * app for that gap.
+ */
+function DiscardChangesDialog({ fileName, onCancel, onDiscard }: { fileName: string; onCancel: () => void; onDiscard: () => void }) {
+  const { t } = useTranslation();
+  const dialog = useModalDialog(onCancel, { labelledBy: "discard-changes-title" });
+  return (
+    <div className="modal-backdrop" {...dialog.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...dialog.panelProps}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="discard-changes-title">
+            {t("applicationFileEditor.discardTitle")}
+          </h2>
+          <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} />
+        </div>
+        <div className="modal-body">
+          <p className="dialog-body-text">{t("applicationFileEditor.discardBody", { name: fileName })}</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={onDiscard}>
+              {t("applicationFileEditor.discard")}
+            </Button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

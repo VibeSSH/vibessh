@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { getApplicationLogs, writeApplicationConsole } from "@/services/applicationService";
 import "@/components/servers/forms.css";
 import "./ApplicationConsoleCard.css";
+import { errorMessage } from "@/services/tauri";
 
 interface ApplicationConsoleCardProps {
   applicationId: string;
   isRunning: boolean;
 }
 
-const POLL_INTERVAL_MS = 2000;
 const TAIL_LINES = 200;
 
 /**
@@ -35,25 +36,17 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
   const outputRef = useRef<HTMLPreElement>(null);
   const stickToBottom = useRef(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function poll() {
-      try {
-        const next = await getApplicationLogs(applicationId, TAIL_LINES);
-        if (!cancelled) setLines(next);
-      } catch {
-        // The Overview tab already surfaces the application's own load
-        // error elsewhere - a failed poll here just leaves the last-known
-        // output in place rather than piling on a second error banner.
-      }
+  const poll = useCallback(async () => {
+    try {
+      setLines(await getApplicationLogs(applicationId, TAIL_LINES));
+    } catch {
+      // The Overview tab already surfaces the application's own load error
+      // elsewhere - a failed poll here just leaves the last-known output in
+      // place rather than piling on a second error banner.
     }
-    poll();
-    const intervalId = window.setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
   }, [applicationId]);
+
+  usePolling(poll, POLL_INTERVALS.console);
 
   useEffect(() => {
     if (stickToBottom.current && outputRef.current) {
@@ -79,7 +72,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       const next = await getApplicationLogs(applicationId, TAIL_LINES);
       setLines(next);
     } catch (err) {
-      setUnsupported(err instanceof Error ? err.message : t("applicationConsole.writeError"));
+      setUnsupported(errorMessage(err, t));
     } finally {
       setSending(false);
     }

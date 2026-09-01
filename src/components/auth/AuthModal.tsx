@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { cloudLogin, cloudRegister } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "login" | "register";
 
@@ -37,7 +38,7 @@ export function AuthModal() {
     close();
   }
 
-  const backdrop = useBackdropClose(handleClose);
+  const backdrop = useModalDialog(handleClose, { labelledBy: "authmodal-dialog-title-1" });
 
   if (!isOpen) return null;
 
@@ -52,17 +53,17 @@ export function AuthModal() {
       reset();
       close();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.genericError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("auth.modalTitle")}</h2>
+          <h2 className="modal-title" id="authmodal-dialog-title-1">{t("auth.modalTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={handleClose} title={t("common.close")} />
         </div>
 

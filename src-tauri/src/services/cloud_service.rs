@@ -69,12 +69,11 @@ async fn ensure_valid_access_token(state: &CloudState) -> AppResult<String> {
 
     let refresh_token = credentials::load_cloud_refresh_token()?
         .ok_or_else(|| AppError::Unauthorized("not signed in to the VibeSSH cloud backend".to_string()))?;
-    let auth = inner.client.refresh(&refresh_token).await.map_err(|err| {
+    let auth = inner.client.refresh(&refresh_token).await.inspect_err(|_err| {
         // A rejected refresh token means the session is really over (it was
         // revoked, or expired) - clear the now-useless stored token instead
         // of leaving it around to fail the same way on every future call.
         let _ = credentials::delete_cloud_refresh_token();
-        err
     })?;
     credentials::store_cloud_refresh_token(&auth.refresh_token)?;
     let access_token = auth.access_token.clone();

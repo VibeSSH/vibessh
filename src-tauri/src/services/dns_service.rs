@@ -37,8 +37,12 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{DnsRecord, DnsView, DnsViewKind};
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
+use crate::ssh::command;
 use crate::state::SshSessionManager;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::dns_repository::DnsRepository;
 use crate::storage::node_network_repository::NodeNetworkRepository;
@@ -66,39 +70,12 @@ pub fn validate_dns_suffix(suffix: &str) -> AppResult<()> {
 const BEGIN_MARKER: &str = "# BEGIN VIBESSH-MANAGED-DNS";
 const END_MARKER: &str = "# END VIBESSH-MANAGED-DNS";
 
-/// Lowercases, replaces anything that isn't `[a-z0-9-]` with `-`, collapses
-/// repeats, and trims leading/trailing `-` - the same treatment a Node's
-/// own name (arbitrary user text) and a user-typed alias both need before
-/// either is safe to use as a hostname or to interpolate into a shell
-/// heredoc. Never empty: an all-symbol input becomes `"node"`. Capped at 63
-/// characters - RFC 1123's own limit for a single DNS label - so a long
-/// Node/Application name can't produce a hostname real DNS/`/etc/hosts`
-/// rejects; every char actually pushed here is single-byte ASCII
-/// (alphanumeric or `-`), so `result.len()` is a safe stand-in for a char
-/// count when checking the cap.
+/// The shared RFC 1123 label conversion, with this module's own fallback
+/// for input that contains nothing usable: an all-symbol Node name still
+/// has to resolve to *something*. See `crate::naming::dns_label` for why
+/// the fallback lives here rather than there.
 fn slugify(input: &str) -> String {
-    let mut result = String::with_capacity(input.len().min(63));
-    let mut last_was_dash = false;
-    for ch in input.chars().flat_map(char::to_lowercase) {
-        if result.len() >= 63 {
-            break;
-        }
-        if ch.is_ascii_alphanumeric() {
-            result.push(ch);
-            last_was_dash = false;
-        } else if !last_was_dash && !result.is_empty() {
-            result.push('-');
-            last_was_dash = true;
-        }
-    }
-    while result.ends_with('-') {
-        result.pop();
-    }
-    if result.is_empty() {
-        "node".to_string()
-    } else {
-        result
-    }
+    crate::naming::dns_label(input).unwrap_or_else(|| "node".to_string())
 }
 
 /// Slugifies and appends `suffix` if not already present - `"db01"` and
@@ -145,21 +122,67 @@ pub fn resolve_dns_view(
     Ok(views)
 }
 
-/// A raw newline or the heredoc's own delimiter smuggled into a hostname
-/// could inject extra `/etc/hosts` lines or shell statements - rejected
-/// outright, same stance `network::wireguard::reject_unsafe` already takes
-/// for the same reason.
+/// The `/etc/hosts` fragment is written through a *quoted* heredoc, so
+/// nothing here is shell-expanded today - but a value still must not be
+/// able to introduce a new line into a line-oriented config file, or
+/// terminate the heredoc early by containing its delimiter.
+///
+/// `reject_shell_metacharacters` on top of that is defense in depth. It
+/// costs nothing for values that are supposed to be hostnames and IPs, and
+/// it keeps this safe if the heredoc ever loses its quotes the way
+/// `network::wireguard`'s had - which is exactly the bug that turned a
+/// peer's public key into remote code execution across the whole mesh.
 fn reject_unsafe(value: &str) -> AppResult<()> {
-    if value.contains('\n') || value.contains('\r') || value.contains("VIBESSH_DNS_EOF") {
+    if value.contains("VIBESSH_DNS_EOF") {
         return Err(AppError::InvalidInput("that value contains characters that aren't allowed in a DNS alias".into()));
     }
-    Ok(())
+    command::reject_newlines(value, "a DNS alias")?;
+    command::reject_shell_metacharacters(value, "a DNS alias")
 }
 
 /// Pure rendering, separated from the actual SSH push - same split every
 /// other real-server-mutating module here uses so the shape can be unit
 /// tested without a live connection.
+/// Rejects a fragment that would put the same hostname on two different
+/// addresses.
+///
+/// `/etc/hosts` resolves to the *first* match, so two lines for
+/// `web-server.vibe` pointing at different Nodes do not fail - they
+/// silently send every lookup to whichever one happens to be written first.
+/// That is reachable without anyone doing anything strange: a Node alias is
+/// derived from the Node's name by slugifying it, so "Web Server" and
+/// "Web-Server!" both become `web-server`, and renaming a Node is enough to
+/// create the collision after the fact.
+///
+/// `dns_repository::create` already rejects a collision between two
+/// *service* aliases, but it cannot see Node aliases at all - those are
+/// derived at render time and never stored. This is the one place both are
+/// visible, so it is where the check belongs. Failing the sync loudly is
+/// the right outcome: a Node that keeps its previous, correct `/etc/hosts`
+/// is far better than one silently routing to the wrong host.
+fn reject_duplicate_hostnames(views: &[DnsView]) -> AppResult<()> {
+    let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for view in views {
+        match seen.get(view.hostname.as_str()) {
+            Some(existing_ip) if *existing_ip != view.ip.as_str() => {
+                return Err(AppError::InvalidInput(format!(
+                    "'{}' resolves to two different Nodes ({} and {}) - rename one of them so each name is unique, then sync again",
+                    view.hostname, existing_ip, view.ip
+                )));
+            }
+            // The same name for the same address is harmless duplication -
+            // a Node alias and a service alias can legitimately coincide.
+            Some(_) => continue,
+            None => {
+                seen.insert(&view.hostname, &view.ip);
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn render_hosts_fragment(views: &[DnsView]) -> AppResult<String> {
+    reject_duplicate_hostnames(views)?;
     for view in views {
         reject_unsafe(&view.hostname)?;
         reject_unsafe(&view.ip)?;
@@ -177,14 +200,71 @@ pub fn render_hosts_fragment(views: &[DnsView]) -> AppResult<String> {
 /// use) rather than diffing - `sed` deletes the old block (a no-op if this
 /// is the first sync and it doesn't exist yet), then the fresh one is
 /// appended.
+/// Replaces this Node's managed block in `/etc/hosts`, atomically and under
+/// a lock.
+///
+/// The previous implementation ran `sed -i` to delete the old block and
+/// then `tee -a` to append the new one - two separate mutations of a file
+/// the whole system reads, with three problems. There was a window between
+/// them in which the Node had *no* VibeSSH DNS at all. If `tee` failed
+/// after `sed` succeeded, that window became permanent. And nothing
+/// serialized two concurrent syncs (a manual "Sync" while a port change
+/// triggers one), so their `sed`/`tee` pairs could interleave into
+/// duplicated or lost blocks.
+///
+/// This writes the whole new file to a temp file in `/etc` - the same
+/// filesystem, so the `mv` is a real atomic rename - and takes an `flock`
+/// for the duration. A reader either sees the old file or the new one,
+/// never a half-written state, and a failure anywhere leaves the previous
+/// file untouched.
 async fn push_fragment(connection: &crate::ssh::SshSession, fragment: &str) -> AppResult<()> {
-    let script = format!(
-        "set -e\nsudo sed -i '/{BEGIN_MARKER}/,/{END_MARKER}/d' /etc/hosts\nsudo tee -a /etc/hosts >/dev/null <<'VIBESSH_DNS_EOF'\n{fragment}VIBESSH_DNS_EOF\n"
+    let fragment_path = format!("{}/dns-fragment", crate::node_paths::BASE);
+    let lock_path = format!("{}/dns.lock", crate::node_paths::BASE);
+
+    // Staged first, through a quoted heredoc, so the assembling script below
+    // needs no interpolation of caller data at all.
+    let stage = format!(
+        "set -e\n{ensure_dirs}\nsudo tee {fragment_path} >/dev/null <<'VIBESSH_DNS_EOF'\n{fragment}VIBESSH_DNS_EOF\nsudo chmod 644 {fragment_path}\n",
+        ensure_dirs = crate::node_paths::ensure_runtime_dirs_command(),
+        fragment_path = command::quote(&fragment_path),
     );
-    let output = connection.execute_command(&script).await?;
+    let output = connection.execute_command(&stage).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
-        return Err(AppError::Connection(format!("couldn't update /etc/hosts: {}", if detail.is_empty() { "sed/tee failed" } else { detail })));
+        return Err(AppError::Connection(format!(
+            "couldn't stage the DNS entries: {}",
+            if detail.is_empty() { "writing the fragment failed" } else { detail }
+        )));
+    }
+
+    // Written as a raw string with `%LOCK%`/`%FRAGMENT%` placeholders rather
+    // than a `format!` template: the script is dense with `$`, `"` and `{}`,
+    // all of which `format!` would need escaped, and the escaping is exactly
+    // where shell bugs hide. Both substituted values are constants derived
+    // from `node_paths`, never caller data.
+    const ASSEMBLE: &str = r#"sudo sh -c '
+set -e
+exec 9>"%LOCK%"
+flock 9
+tmp=$(mktemp /etc/hosts.vibessh.XXXXXX)
+sed "/%BEGIN%/,/%END%/d" /etc/hosts > "$tmp"
+cat "%FRAGMENT%" >> "$tmp"
+chown root:root "$tmp"
+chmod 644 "$tmp"
+mv "$tmp" /etc/hosts
+'"#;
+    let assemble = ASSEMBLE
+        .replace("%LOCK%", &lock_path)
+        .replace("%FRAGMENT%", &fragment_path)
+        .replace("%BEGIN%", BEGIN_MARKER)
+        .replace("%END%", END_MARKER);
+    let output = connection.execute_command(&assemble).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        return Err(AppError::Connection(format!(
+            "couldn't update /etc/hosts: {}",
+            if detail.is_empty() { "assembling the new file failed" } else { detail }
+        )));
     }
     Ok(())
 }
@@ -215,22 +295,15 @@ pub async fn sync_dns(
 
     let mut results = Vec::with_capacity(members.len());
     for member in &members {
-        // Same dead-cached-session recovery as `network_service::reconcile_mesh`
-        // - see that call site's comment for why this can't just rely on
-        // `get_or_connect` alone.
-        let outcome = match get_or_connect(server_repo, sessions, member.server_id).await {
-            Ok(connection) => match push_fragment(&connection, &fragment).await {
-                Ok(()) => Ok(()),
-                Err(first_err) => {
-                    sessions.remove(member.server_id).await;
-                    match get_or_connect(server_repo, sessions, member.server_id).await {
-                        Ok(connection) => push_fragment(&connection, &fragment).await.map_err(|_| first_err),
-                        Err(_) => Err(first_err),
-                    }
-                }
-            },
-            Err(err) => Err(err),
-        };
+        // `get_or_connect` alone is not enough here: it hands back a cached
+        // session without proving the transport under it is still alive, and
+        // `push_fragment` is what then fails with a raw channel error. The
+        // shared helper is what drops that session and tries once more.
+        let outcome = retry_on_connection_failure(sessions, Some(member.server_id), || async {
+            let connection = get_or_connect(server_repo, sessions, member.server_id).await?;
+            push_fragment(&connection, &fragment).await
+        })
+        .await;
         results.push(match outcome {
             Ok(()) => DnsSyncResult { server_id: member.server_id, ok: true, error: None },
             Err(err) => DnsSyncResult { server_id: member.server_id, ok: false, error: Some(err.to_string()) },
@@ -260,19 +333,6 @@ pub async fn verify_alias(
     Ok(output.exit_code == 0 && output.stdout.split_whitespace().next() == Some(expected_ip))
 }
 
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// What every alias-mutating Tauri command actually returns - the mutated
 /// alias itself (`None` for a delete, nothing left to describe) plus the
@@ -398,4 +458,102 @@ mod tests {
         let views = vec![DnsView { hostname: "evil.vibe\nrm -rf /".into(), ip: "10.77.0.1".into(), kind: DnsViewKind::Node, server_id: Uuid::new_v4() }];
         assert!(render_hosts_fragment(&views).is_err());
     }
+    fn view(hostname: &str, ip: &str) -> DnsView {
+        DnsView { hostname: hostname.to_string(), ip: ip.to_string(), kind: DnsViewKind::Node, server_id: Uuid::new_v4() }
+    }
+
+    /// The regression test for the silent-wrong-Node finding. `/etc/hosts`
+    /// resolves to the first match, so two lines for the same name on
+    /// different addresses do not fail - they quietly route every lookup to
+    /// whichever was written first.
+    #[test]
+    fn render_refuses_a_hostname_that_points_at_two_different_nodes() {
+        let views = vec![view("web-server.vibe", "10.77.0.1"), view("web-server.vibe", "10.77.0.2")];
+        let err = render_hosts_fragment(&views).unwrap_err();
+        assert!(err.to_string().contains("web-server.vibe"), "{err}");
+        assert!(err.to_string().contains("10.77.0.1") && err.to_string().contains("10.77.0.2"), "{err}");
+    }
+
+    /// This is reachable without anyone doing anything strange: a Node
+    /// alias is the slugified Node name, so these two names collide.
+    #[test]
+    fn two_node_names_that_slugify_the_same_are_caught() {
+        assert_eq!(node_alias(".vibe", "Web Server"), node_alias(".vibe", "Web-Server!"));
+        let views = vec![
+            view(&node_alias(".vibe", "Web Server"), "10.77.0.1"),
+            view(&node_alias(".vibe", "Web-Server!"), "10.77.0.2"),
+        ];
+        assert!(render_hosts_fragment(&views).is_err());
+    }
+
+    /// The same name for the same address is harmless - a Node alias and a
+    /// service alias on that Node can legitimately coincide.
+    #[test]
+    fn the_same_hostname_on_the_same_address_is_allowed() {
+        let views = vec![view("db01.vibe", "10.77.0.1"), view("db01.vibe", "10.77.0.1")];
+        let fragment = render_hosts_fragment(&views).unwrap();
+        assert!(fragment.contains("10.77.0.1 db01.vibe"), "{fragment}");
+    }
+
+    #[test]
+    fn distinct_hostnames_render_one_line_each() {
+        let views = vec![view("a.vibe", "10.77.0.1"), view("b.vibe", "10.77.0.2")];
+        let fragment = render_hosts_fragment(&views).unwrap();
+        assert!(fragment.starts_with(BEGIN_MARKER));
+        assert!(fragment.trim_end().ends_with(END_MARKER));
+        assert!(fragment.contains("10.77.0.1 a.vibe"), "{fragment}");
+        assert!(fragment.contains("10.77.0.2 b.vibe"), "{fragment}");
+    }
+
+    /// `normalize_alias` is what makes "db01", "db01.vibe" and "DB01!!"
+    /// the same stored hostname. Two Applications resolving to the same
+    /// name is a real collision (see `reject_duplicate_hostnames`), so the
+    /// function's stability under repeated application is not cosmetic.
+    mod alias_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// The alias the user sees is stored, then normalized again on
+            /// the next edit. A function that shifted on the second pass
+            /// would silently rename a service.
+            #[test]
+            fn normalizing_is_idempotent(input in "\\PC{0,40}") {
+                let once = normalize_alias(".vibe", &input);
+                let twice = normalize_alias(".vibe", &once);
+                prop_assert_eq!(once, twice);
+            }
+
+            /// Whatever went in, what comes out is something `/etc/hosts`
+            /// and a DNS resolver will both accept: a valid label, the
+            /// suffix, and nothing else.
+            #[test]
+            fn output_is_always_a_valid_hostname(input in "\\PC{0,40}") {
+                let alias = normalize_alias(".vibe", &input);
+                prop_assert!(alias.ends_with(".vibe"), "missing suffix: {alias:?}");
+                let label = alias.strip_suffix(".vibe").unwrap();
+                prop_assert!(!label.is_empty(), "empty label from {input:?}");
+                prop_assert!(label.len() <= 63, "label over the RFC 1123 limit: {label:?}");
+                prop_assert!(
+                    label.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                    "unsafe character in {label:?}"
+                );
+                // A hostname written into /etc/hosts must never contain
+                // whitespace or a newline - that is a second entry, not a
+                // malformed one.
+                prop_assert!(!alias.chars().any(char::is_whitespace), "whitespace in {alias:?}");
+            }
+
+            /// Case and surrounding space are not identity. Someone typing
+            /// " DB01 " must not create a second host entry alongside
+            /// "db01".
+            #[test]
+            fn case_and_padding_do_not_create_a_second_alias(input in "[A-Za-z0-9]{1,20}") {
+                let plain = normalize_alias(".vibe", &input);
+                let padded = normalize_alias(".vibe", &format!("  {}  ", input.to_uppercase()));
+                prop_assert_eq!(plain, padded);
+            }
+        }
+    }
+
 }

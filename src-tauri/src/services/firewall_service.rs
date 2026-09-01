@@ -13,7 +13,7 @@ use crate::errors::{AppError, AppResult};
 use crate::firewall::{self, FirewallRule};
 use crate::models::{FirewallCustomRuleInput, PortProtocol, PortVisibility};
 use crate::network::wireguard;
-use crate::services::ssh_service::get_or_connect;
+use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
@@ -75,6 +75,28 @@ pub struct FirewallSyncResult {
     /// for why this can only ever remove a rule the same backend can prove
     /// it added itself.
     pub rules_removed: usize,
+    /// `true` when nothing on this Node is actually enforcing these rules -
+    /// either there is no firewall backend VibeSSH can drive, or there is
+    /// one and it is switched off.
+    ///
+    /// This used to be indistinguishable from success. `provider_for`
+    /// returning `None` produced `FirewallSyncResult { active: false,
+    /// rules_applied: 0 }` wrapped in `Ok`, which the frontend rendered as
+    /// a success toast - so on a Node without `ufw`, publishing a port
+    /// reported "synced" while nothing whatsoever restricted it. The caller
+    /// needs to tell "your rules are enforced" apart from "there is nothing
+    /// enforcing your rules", so it gets an explicit flag rather than every
+    /// call site having to infer it from `backend.is_none() || !active`.
+    pub unenforced: bool,
+}
+
+impl FirewallSyncResult {
+    /// The result for a Node with no firewall backend at all. Deliberately
+    /// not a `Default` impl - constructing one should always be a conscious
+    /// choice, never what you get by forgetting a field.
+    fn unenforced() -> Self {
+        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true }
+    }
 }
 
 /// Every port this Node's Applications have asked to be reachable from
@@ -169,7 +191,7 @@ pub async fn reconcile_node(
     async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult { backend: None, active: false, rules_applied: 0, rules_removed: 0 });
+            return Ok(FirewallSyncResult::unenforced());
         };
         // Desired first, unconditionally - the SSH port (always first in
         // `rules`) must never go missing even for a moment, including the
@@ -177,21 +199,29 @@ pub async fn reconcile_node(
         // and the old one is about to be revoked below.
         provider.apply_rules(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
+        // Published Docker ports bypass ufw entirely, so a source-scoped
+        // rule only actually restricts container traffic once it also
+        // exists in `DOCKER-USER` - see that module's own doc comment.
+        // Best-effort: a Node with no Docker has nothing to reconcile, and
+        // an iptables failure must not make an otherwise-successful ufw
+        // sync look like a total failure.
+        if let Err(err) = firewall::docker_user::reconcile(&connection, rules).await {
+            log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
+        }
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed })
+        // A backend that exists but is switched off enforces nothing
+        // either: the rules are recorded and take effect the moment it
+        // is enabled, but right now the ports are open.
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
-    // Same dead-cached-session recovery as `network_service::reconcile_mesh`
-    // - this runs several sequential SSH round-trips against the connection,
-    // any of which surfaces the same raw channel error if the cache handed
-    // back a session whose underlying transport already died.
-    match attempt(server_repo, sessions, server_id, &rules).await {
-        Ok(result) => Ok(result),
-        Err(first_err) => {
-            sessions.remove(server_id).await;
-            attempt(server_repo, sessions, server_id, &rules).await.map_err(|_| first_err)
-        }
-    }
+    // This runs several sequential SSH round-trips against one connection,
+    // any of which surfaces a raw channel error if the cache handed back a
+    // session whose transport had already died - so it needs the same
+    // drop-and-retry-once recovery `ssh_service::execute_command` gives a
+    // single command. Through the shared helper rather than a local copy:
+    // the copy retried on *every* error and threw away the second one.
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
 }
 
 /// Turns firewall *enforcement* on for a Node - the explicit, user-triggered
@@ -215,22 +245,16 @@ pub async fn enable_node_firewall(
     async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult { backend: None, active: false, rules_applied: 0, rules_removed: 0 });
+            return Ok(FirewallSyncResult::unenforced());
         };
         provider.enable(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed })
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
     }
 
-    // Same dead-cached-session recovery `reconcile_node` already uses.
-    match attempt(server_repo, sessions, server_id, &rules).await {
-        Ok(result) => Ok(result),
-        Err(first_err) => {
-            sessions.remove(server_id).await;
-            attempt(server_repo, sessions, server_id, &rules).await.map_err(|_| first_err)
-        }
-    }
+    // Same recovery `reconcile_node` uses, and for the same reason.
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
 }
 
 /// Diffs `desired` against whatever this backend can prove it already
@@ -626,4 +650,52 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
     fn parse_ss_output_on_empty_input_is_empty() {
         assert!(parse_ss_output("").is_empty());
     }
+
+    /// `parse_ss_output` turns remote `ss` output into the list of ports
+    /// something is already listening on, which is what a port-collision
+    /// check consults. A parse that drops a line reports a taken port as
+    /// free; one that panics takes the check down entirely.
+    mod ss_parser_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn never_panics_on_arbitrary_output(output in "\\PC{0,400}") {
+                let _ = parse_ss_output(&output);
+            }
+
+            /// Deliberately close to the real thing - the shapes that break
+            /// a naive split are IPv6 brackets, `*` wildcards and the
+            /// varying column counts `ss` emits.
+            #[test]
+            fn never_panics_on_ss_shaped_output(
+                lines in proptest::collection::vec(
+                    prop_oneof![
+                        Just("tcp   LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*".to_string()),
+                        Just("tcp   LISTEN 0      4096            [::]:22            [::]:*".to_string()),
+                        Just("udp   UNCONN 0      0          127.0.0.1:323        0.0.0.0:*".to_string()),
+                        Just("Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port".to_string()),
+                        Just("tcp".to_string()),
+                        Just(String::new()),
+                        "[a-z0-9:*.\\[\\] ]{0,60}",
+                    ],
+                    0..12,
+                ),
+            ) {
+                let _ = parse_ss_output(&lines.join("\n"));
+            }
+
+            /// Every socket it does return has to carry a usable port -
+            /// a zero would compare equal to nothing and silently never
+            /// collide.
+            #[test]
+            fn every_returned_socket_has_a_real_port(output in "\\PC{0,400}") {
+                for socket in parse_ss_output(&output) {
+                    prop_assert!(socket.port > 0, "returned port 0 from {output:?}");
+                }
+            }
+        }
+    }
+
 }

@@ -1,55 +1,77 @@
-//! A small local, append-only capture of each Application's own log output -
-//! plain text files under one directory, not SQLite (this is exactly the
-//! "temp dir or UI cache" shape the design doc itself suggested, not a
-//! queryable record). Exists because every `LogProvider::tail` this crate
-//! has is a live pull from the runtime's own buffer (`docker logs`,
-//! `journalctl`, ...), which is only ever as deep as that buffer currently
-//! holds - `services::application_service::recreate_application` in
-//! particular gives a Docker container a *brand new*, empty log buffer, so
-//! without this, every Recreate would silently erase log history the user
-//! might have opened the Logs tab specifically to go read. Capturing here
-//! means history survives a recreate, a restart, and even the desktop app
-//! itself closing and reopening - `services::application_service::
-//! application_logs` is the only caller, see its own doc comment for how
-//! the live fetch and this stored file get merged.
+//! Durable, per-Application log history.
+//!
+//! An Application's runtime only ever offers a *tail*: `docker logs --tail N`
+//! shows the last N lines of the container that exists right now, and a
+//! recreated container starts empty. This store is what makes the Logs tab
+//! show more than that - each poll appends whatever is new to a file that
+//! survives restarts, recreates and reconnections.
+//!
+//! **Append-only, with occasional compaction.** The previous implementation
+//! read the entire file, parsed it into a `Vec<String>`, extended it, joined
+//! it back together and rewrote the whole thing - on every poll. With the
+//! console polling every two seconds and a 5000-line cap, that was a
+//! ~500 KB read plus a ~500 KB write every two seconds per open Application,
+//! forever. Appending costs the size of the new lines instead, and the file
+//! is only rewritten when it has grown past `COMPACT_ABOVE_BYTES`.
+//!
+//! **Writes are serialized per Application, and are atomic.** The old
+//! read-modify-write had no lock, so two concurrent `application_logs` calls
+//! for the same Application - a console poll and a manual refresh, which the
+//! UI issues independently - could interleave and silently lose whichever
+//! batch finished writing first. And `tokio::fs::write` truncates before it
+//! writes, so a crash mid-write left a truncated log rather than the
+//! previous one. Compaction now writes a sibling temp file and renames it
+//! into place, which is atomic on every platform this runs on.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 
-/// Caps each Application's own capture file - a rolling window of recent
-/// history, not an unbounded archive. Generous enough that "what happened
-/// right before it crashed" is still there days later for anything that
-/// isn't extremely chatty, small enough that this never becomes a real disk
-/// consumer nobody asked for.
+/// How many lines a compaction keeps.
+///
+/// Note this is what compaction trims *to*, not a hard ceiling the file
+/// never exceeds: compaction is triggered by size (see
+/// `COMPACT_ABOVE_BYTES`), so between two compactions the file can hold
+/// somewhat more than this. What is guaranteed is that the file stays
+/// bounded and that the newest lines are the ones kept.
 const MAX_STORED_LINES: usize = 5000;
+
+/// Compact once the file grows past this. Deliberately a byte threshold
+/// rather than a line count: checking size is a single `metadata` call,
+/// while counting lines would mean reading the whole file on every append -
+/// exactly the cost this design exists to avoid.
+///
+/// Sized so that a file at the 5000-line cap (a few hundred KB of typical
+/// log lines) compacts occasionally rather than constantly.
+const COMPACT_ABOVE_BYTES: u64 = 2 * 1024 * 1024;
 
 pub struct LogCaptureStore {
     dir: PathBuf,
+    /// One lock per Application. Held across an append or a compaction so
+    /// two concurrent polls cannot interleave - see the module doc.
+    locks: Mutex<HashMap<Uuid, Arc<Mutex<()>>>>,
 }
 
 impl LogCaptureStore {
-    /// Sync (not `tokio::fs`) deliberately - this only ever runs once, in
-    /// Tauri's own sync `setup()` hook alongside every other directory this
-    /// app creates at startup, and a one-time `create_dir_all` is cheap
-    /// enough that reaching for `block_on` just to keep it async wouldn't
-    /// buy anything. Every per-request method below (`tail`/`append`/
-    /// `delete`/`rename`) is real async I/O, since those run on the hot
-    /// path of an actual command.
     pub fn new(dir: PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(&dir).map_err(|err| AppError::Storage(format!("failed to create the log capture directory: {err}")))?;
-        Ok(Self { dir })
+        Ok(Self { dir, locks: Mutex::new(HashMap::new()) })
     }
 
     fn path_for(&self, application_id: Uuid) -> PathBuf {
         self.dir.join(format!("{application_id}.log"))
     }
 
-    /// Whatever's captured so far, oldest first - `[]` if nothing has ever
-    /// been captured for this Application (a brand new Application, or one
-    /// whose runtime has never actually produced any output yet).
+    async fn lock_for(&self, application_id: Uuid) -> Arc<Mutex<()>> {
+        self.locks.lock().await.entry(application_id).or_default().clone()
+    }
+
     async fn read_all(&self, application_id: Uuid) -> AppResult<Vec<String>> {
         match tokio::fs::read_to_string(self.path_for(application_id)).await {
             Ok(contents) => Ok(contents.lines().map(str::to_string).collect()),
@@ -58,53 +80,84 @@ impl LogCaptureStore {
         }
     }
 
-    /// The last `max_lines` of whatever's captured - the read half of the
-    /// merge `application_logs` does around every live fetch.
     pub async fn tail(&self, application_id: Uuid, max_lines: u32) -> AppResult<Vec<String>> {
         let all = self.read_all(application_id).await?;
         let skip = all.len().saturating_sub(max_lines as usize);
         Ok(all[skip..].to_vec())
     }
 
-    /// Appends `new_lines` (already the caller's job to have deduplicated
-    /// against what's already stored - see `application_service::
-    /// merge_new_log_lines`) and prunes from the front if the result grows
-    /// past `MAX_STORED_LINES`. A no-op write when `new_lines` is empty,
-    /// rather than touching the file (and its mtime) for nothing.
     pub async fn append(&self, application_id: Uuid, new_lines: &[String]) -> AppResult<()> {
         if new_lines.is_empty() {
             return Ok(());
         }
-        let mut all = self.read_all(application_id).await?;
-        all.extend_from_slice(new_lines);
-        if all.len() > MAX_STORED_LINES {
-            let drop = all.len() - MAX_STORED_LINES;
-            all.drain(..drop);
+        let lock = self.lock_for(application_id).await;
+        let _guard = lock.lock().await;
+
+        let path = self.path_for(application_id);
+        let mut buffer = String::with_capacity(new_lines.iter().map(|line| line.len() + 1).sum());
+        for line in new_lines {
+            buffer.push_str(line);
+            buffer.push('\n');
         }
-        let mut contents = all.join("\n");
-        contents.push('\n');
-        tokio::fs::write(self.path_for(application_id), contents)
+
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
             .await
-            .map_err(|err| AppError::Storage(format!("failed to save captured logs: {err}")))
+            .map_err(|err| AppError::Storage(format!("failed to open the captured log: {err}")))?;
+        file.write_all(buffer.as_bytes())
+            .await
+            .map_err(|err| AppError::Storage(format!("failed to save captured logs: {err}")))?;
+        // Flushed before the size check so compaction sees the real size and
+        // the lines are durable even if compaction then fails.
+        file.flush().await.map_err(|err| AppError::Storage(format!("failed to save captured logs: {err}")))?;
+        drop(file);
+
+        let too_big = tokio::fs::metadata(&path).await.map(|meta| meta.len() > COMPACT_ABOVE_BYTES).unwrap_or(false);
+        if too_big {
+            self.compact(application_id).await?;
+        }
+        Ok(())
     }
 
-    /// Best-effort - called when the Application itself is deleted, same
-    /// "the row/file is what actually matters, cleanup can't fail the
-    /// caller" reasoning `services::application_service::delete_application`
-    /// already applies to the OS keyring secrets it cleans up alongside a
-    /// deleted row.
+    /// Trims the file back to its last `MAX_STORED_LINES` lines.
+    ///
+    /// Writes a temp file and renames it over the original, so a crash
+    /// partway through leaves the previous complete log rather than a
+    /// truncated one. Called with the per-Application lock already held.
+    async fn compact(&self, application_id: Uuid) -> AppResult<()> {
+        let all = self.read_all(application_id).await?;
+        if all.len() <= MAX_STORED_LINES {
+            return Ok(());
+        }
+        let kept = &all[all.len() - MAX_STORED_LINES..];
+        let mut contents = kept.join("\n");
+        contents.push('\n');
+
+        let path = self.path_for(application_id);
+        // A sibling of the real file, so the rename below stays on one
+        // filesystem - a rename across filesystems is not atomic and on some
+        // platforms is not even permitted.
+        let temp = path.with_extension("log.compacting");
+        tokio::fs::write(&temp, contents)
+            .await
+            .map_err(|err| AppError::Storage(format!("failed to compact captured logs: {err}")))?;
+        tokio::fs::rename(&temp, &path)
+            .await
+            .map_err(|err| AppError::Storage(format!("failed to compact captured logs: {err}")))?;
+        Ok(())
+    }
+
     pub async fn delete(&self, application_id: Uuid) {
+        let lock = self.lock_for(application_id).await;
+        let _guard = lock.lock().await;
         let _ = tokio::fs::remove_file(self.path_for(application_id)).await;
     }
 
-    /// Carries a capture file over to a new Application id - used by
-    /// `services::migration_service` so a migrated Application's log
-    /// history survives the move instead of the old id's file just being
-    /// orphaned (deleted along with the retired source row otherwise, same
-    /// as any other Application). Best-effort and silent when there's
-    /// nothing to carry over (a source Application whose runtime never
-    /// produced any output yet) - not every migration has history to move.
     pub async fn rename(&self, old_application_id: Uuid, new_application_id: Uuid) {
+        let lock = self.lock_for(old_application_id).await;
+        let _guard = lock.lock().await;
         let _ = tokio::fs::rename(self.path_for(old_application_id), self.path_for(new_application_id)).await;
     }
 }
@@ -114,92 +167,117 @@ mod tests {
     use super::*;
 
     fn temp_store() -> LogCaptureStore {
-        let dir = std::env::temp_dir().join(format!("vibessh-log-capture-test-{}", Uuid::new_v4()));
-        LogCaptureStore::new(dir).unwrap()
+        LogCaptureStore::new(std::env::temp_dir().join(format!("vibessh-log-capture-test-{}", Uuid::new_v4()))).unwrap()
+    }
+
+    fn lines(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
     }
 
     #[tokio::test]
-    async fn tail_of_an_uncaptured_application_is_empty() {
-        let store = temp_store();
-        assert!(store.tail(Uuid::new_v4(), 50).await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn append_then_tail_round_trips_the_lines() {
+    async fn appended_lines_read_back_in_order() {
         let store = temp_store();
         let id = Uuid::new_v4();
-        store.append(id, &["line one".to_string(), "line two".to_string()]).await.unwrap();
-        assert_eq!(store.tail(id, 50).await.unwrap(), vec!["line one", "line two"]);
+
+        store.append(id, &lines(&["first", "second"])).await.unwrap();
+        store.append(id, &lines(&["third"])).await.unwrap();
+
+        assert_eq!(store.tail(id, 10).await.unwrap(), lines(&["first", "second", "third"]));
     }
 
     #[tokio::test]
-    async fn repeated_appends_accumulate_in_order() {
+    async fn tail_returns_only_the_last_n_lines() {
         let store = temp_store();
         let id = Uuid::new_v4();
-        store.append(id, &["a".to_string()]).await.unwrap();
-        store.append(id, &["b".to_string(), "c".to_string()]).await.unwrap();
-        assert_eq!(store.tail(id, 50).await.unwrap(), vec!["a", "b", "c"]);
+        store.append(id, &lines(&["a", "b", "c", "d"])).await.unwrap();
+
+        assert_eq!(store.tail(id, 2).await.unwrap(), lines(&["c", "d"]));
     }
 
     #[tokio::test]
-    async fn tail_only_returns_the_most_recent_lines() {
+    async fn tail_of_an_application_with_no_captured_logs_is_empty() {
+        assert!(temp_store().tail(Uuid::new_v4(), 10).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn appending_nothing_does_not_create_a_file() {
         let store = temp_store();
         let id = Uuid::new_v4();
-        store.append(id, &["a".to_string(), "b".to_string(), "c".to_string()]).await.unwrap();
-        assert_eq!(store.tail(id, 2).await.unwrap(), vec!["b", "c"]);
+        store.append(id, &[]).await.unwrap();
+        assert!(!store.path_for(id).exists());
     }
 
+    /// The regression test for the interleaving finding: the old
+    /// read-modify-write had no lock, so two concurrent polls for the same
+    /// Application could each read the same starting state and one batch
+    /// would be lost.
     #[tokio::test]
-    async fn appending_past_the_cap_drops_the_oldest_lines() {
+    async fn concurrent_appends_do_not_lose_lines() {
+        let store = Arc::new(temp_store());
+        let id = Uuid::new_v4();
+
+        let mut tasks = Vec::new();
+        for batch in 0..20 {
+            let store = store.clone();
+            tasks.push(tokio::spawn(async move {
+                store.append(id, &lines(&[&format!("line-{batch}")])).await.unwrap();
+            }));
+        }
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        let captured = store.tail(id, 100).await.unwrap();
+        assert_eq!(captured.len(), 20, "every concurrent append must survive: {captured:?}");
+        for batch in 0..20 {
+            assert!(captured.contains(&format!("line-{batch}")), "lost line-{batch}");
+        }
+    }
+
+    /// Compaction is triggered by file *size*, so the guarantee is that the
+    /// file stays bounded and keeps the newest lines - not that the line
+    /// count never exceeds `MAX_STORED_LINES` at any instant.
+    #[tokio::test]
+    async fn compaction_bounds_the_file_and_keeps_the_most_recent_lines() {
         let store = temp_store();
         let id = Uuid::new_v4();
-        let first_batch: Vec<String> = (0..MAX_STORED_LINES).map(|i| format!("line-{i}")).collect();
-        store.append(id, &first_batch).await.unwrap();
-        store.append(id, &["overflow".to_string()]).await.unwrap();
 
-        let all = store.tail(id, MAX_STORED_LINES as u32 + 10).await.unwrap();
-        assert_eq!(all.len(), MAX_STORED_LINES);
-        assert_eq!(all.last().unwrap(), "overflow");
-        assert_eq!(all.first().unwrap(), "line-1", "the very oldest line should have been dropped to make room");
+        // Padded so the file crosses COMPACT_ABOVE_BYTES more than once.
+        let padding = "x".repeat(400);
+        let total = MAX_STORED_LINES * 2;
+        for batch in 0..total {
+            store.append(id, &lines(&[&format!("{batch}-{padding}")])).await.unwrap();
+        }
+
+        let size = tokio::fs::metadata(store.path_for(id)).await.unwrap().len();
+        assert!(size <= COMPACT_ABOVE_BYTES * 2, "the file must stay bounded, got {size} bytes");
+
+        let captured = store.tail(id, total as u32).await.unwrap();
+        assert!(captured.len() < total, "the oldest lines must have been dropped");
+        // The newest line survives; the very oldest does not.
+        assert!(captured.last().unwrap().starts_with(&format!("{}-", total - 1)));
+        assert!(!captured.iter().any(|line| line.starts_with("0-")));
     }
 
     #[tokio::test]
-    async fn different_applications_dont_share_a_capture_file() {
-        let store = temp_store();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        store.append(a, &["from a".to_string()]).await.unwrap();
-        store.append(b, &["from b".to_string()]).await.unwrap();
-
-        assert_eq!(store.tail(a, 50).await.unwrap(), vec!["from a"]);
-        assert_eq!(store.tail(b, 50).await.unwrap(), vec!["from b"]);
-    }
-
-    #[tokio::test]
-    async fn rename_carries_captured_history_over_to_the_new_id() {
-        let store = temp_store();
-        let old_id = Uuid::new_v4();
-        let new_id = Uuid::new_v4();
-        store.append(old_id, &["from before the migration".to_string()]).await.unwrap();
-
-        store.rename(old_id, new_id).await;
-
-        assert!(store.tail(old_id, 50).await.unwrap().is_empty());
-        assert_eq!(store.tail(new_id, 50).await.unwrap(), vec!["from before the migration"]);
-    }
-
-    #[tokio::test]
-    async fn rename_of_a_never_captured_application_is_a_silent_no_op() {
-        let store = temp_store();
-        store.rename(Uuid::new_v4(), Uuid::new_v4()).await;
-    }
-
-    #[tokio::test]
-    async fn delete_removes_the_capture_file() {
+    async fn delete_removes_the_captured_history() {
         let store = temp_store();
         let id = Uuid::new_v4();
-        store.append(id, &["something".to_string()]).await.unwrap();
+        store.append(id, &lines(&["a"])).await.unwrap();
+
         store.delete(id).await;
-        assert!(store.tail(id, 50).await.unwrap().is_empty());
+        assert!(store.tail(id, 10).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rename_carries_history_to_a_new_application_id() {
+        let store = temp_store();
+        let old = Uuid::new_v4();
+        let new = Uuid::new_v4();
+        store.append(old, &lines(&["carried over"])).await.unwrap();
+
+        store.rename(old, new).await;
+        assert!(store.tail(old, 10).await.unwrap().is_empty());
+        assert_eq!(store.tail(new, 10).await.unwrap(), lines(&["carried over"]));
     }
 }

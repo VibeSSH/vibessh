@@ -1,9 +1,8 @@
-import { useEffect } from "react";
+import { useCallback } from "react";
 import i18n from "@/i18n";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { runDueApplicationBackups } from "@/services/applicationBackupService";
 import { toastSuccess } from "@/stores/toastStore";
-
-const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
  * Mounted once at the app shell (`AppLayout`), not per-screen - a scheduled
@@ -15,20 +14,20 @@ const CHECK_INTERVAL_MS = 15 * 60 * 1000;
  * just the trigger.
  */
 export function useBackupScheduler() {
-  useEffect(() => {
-    function check() {
-      runDueApplicationBackups()
-        .then((created) => {
-          if (created > 0) toastSuccess(i18n.t("applicationBackups.scheduledToast", { count: created }));
-        })
-        .catch(() => {
-          // Best-effort - a transient failure here (no applications yet, a
-          // Node briefly unreachable) just means the next tick tries again,
-          // never worth interrupting the user over.
-        });
+  const check = useCallback(async () => {
+    try {
+      const created = await runDueApplicationBackups();
+      if (created > 0) toastSuccess(i18n.t("applicationBackups.scheduledToast", { count: created }));
+    } catch {
+      // Best-effort - a transient failure here (no applications yet, a Node
+      // briefly unreachable) just means the next tick tries again, never
+      // worth interrupting the user over.
     }
-    check();
-    const intervalId = window.setInterval(check, CHECK_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
   }, []);
+
+  // The one poller that keeps running while the window is hidden. Every
+  // other one exists to update something on screen and is pointless when
+  // nothing is on screen; a scheduled backup has to happen whether or not
+  // anyone is looking, which is the whole point of scheduling it.
+  usePolling(check, POLL_INTERVALS.backupScheduler, { pauseWhenHidden: false });
 }

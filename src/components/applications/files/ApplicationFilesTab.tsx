@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
@@ -12,7 +12,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { restartApplication } from "@/services/applicationService";
 import {
   copyApplicationFile,
@@ -40,6 +40,10 @@ import { TransferQueuePanel } from "./TransferQueuePanel";
 import "@/components/servers/forms.css";
 import "@/pages/Files.css";
 import "./ApplicationFiles.css";
+import { errorMessage } from "@/services/tauri";
+
+/// Matches the Node Files page and the Actions page.
+const MAX_ROWS_SHOWN = 200;
 
 const ROOT_PATH = ".";
 
@@ -71,6 +75,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const isRunning = application.status === "running";
 
   const [path, setPath] = useState(ROOT_PATH);
+  const [filter, setFilter] = useState("");
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,8 +88,19 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
   const [jarWarning, setJarWarning] = useState<{ fileName: string; localSrc: string; targetPath: string } | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingEntry(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntry(null), { labelledBy: "applicationfilestab-dialog-title-1" });
   const contextMenu = useContextMenu();
+
+  // Same reasoning as the Node Files page: a directory can hold tens of
+  // thousands of entries and rendering a row each locks the window up, but
+  // a bare cap would make distant entries unreachable. Cap plus filter.
+  const matchingEntries = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return entries;
+    return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
+  }, [entries, filter]);
+  const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
+  const truncated = matchingEntries.length > visibleEntries.length;
 
   const addTransfer = useFileTransferStore((s) => s.addTransfer);
   const updateProgress = useFileTransferStore((s) => s.updateProgress);
@@ -100,7 +116,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           setEntries(loaded);
           setPath(targetPath);
         })
-        .catch((err) => setError(err instanceof Error ? err.message : t("applicationFilesTab.loadError")))
+        .catch((err) => setError(errorMessage(err, t)))
         .finally(() => setLoading(false));
     },
     [applicationId, t],
@@ -123,7 +139,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       markDone(transferId);
       load(path);
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.uploadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -139,7 +155,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       await downloadApplicationFile(applicationId, entry.path, localDest, transferId);
       markDone(transferId);
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.downloadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -188,7 +204,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       await restartApplication(applicationId);
       toastSuccess(t("applicationFilesTab.restartedToast"));
     } catch (err) {
-      markError(transferId, err instanceof Error ? err.message : t("applicationFilesTab.uploadError"));
+      markError(transferId, errorMessage(err, t));
     } finally {
       unlisten();
     }
@@ -217,7 +233,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       setDeletingEntry(null);
       load(path);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("applicationFilesTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -231,7 +247,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       toastSuccess(t("applicationFilesTab.extractedToast", { count }));
       load(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFilesTab.extractError"));
+      setError(errorMessage(err, t));
     } finally {
       setExtractingPath(null);
     }
@@ -243,7 +259,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       const entry = await getApplicationFileMetadata(applicationId, quickFile.path);
       setOpenFile(entry);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationFilesTab.loadError"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -324,8 +340,22 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         ) : entries.length === 0 ? (
           <EmptyState icon="folder" title={t("applicationFilesTab.emptyTitle")} description={t("applicationFilesTab.emptyDescription")} />
         ) : (
+          <>
+          <div className="files-selection-bar">
+            <input
+              className="files-filter-input"
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t("filesPage.filterPlaceholder")}
+              aria-label={t("filesPage.filterPlaceholder")}
+            />
+          </div>
+          {visibleEntries.length === 0 ? (
+            <EmptyState icon="search" title={t("filesPage.noMatchesTitle")} description={t("filesPage.noMatchesDescription")} />
+          ) : (
           <ul className="server-list">
-            {entries.map((entry) => (
+            {visibleEntries.map((entry) => (
               <li key={entry.path} className="server-list-item" onContextMenu={(e) => contextMenu.open(e, buildMenuItems(entry))}>
                 <div className="server-list-icon">
                   <Icon name={entry.isDir ? "folder" : "file"} size={16} />
@@ -355,6 +385,11 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               </li>
             ))}
           </ul>
+          )}
+          {truncated && (
+            <p className="form-note">{t("filesPage.showingFirst", { shown: visibleEntries.length, total: matchingEntries.length })}</p>
+          )}
+          </>
         )}
       </Card>
 
@@ -410,10 +445,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       )}
 
       {deletingEntry && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("applicationFilesTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="applicationfilestab-dialog-title-1">{t("applicationFilesTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingEntry(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">

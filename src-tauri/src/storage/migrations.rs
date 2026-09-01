@@ -3,23 +3,67 @@
 //! (via the `rusqlite_migration` crate). Before this, `ServerRepository::open`
 //! ran bare `CREATE TABLE IF NOT EXISTS` statements on every launch - that
 //! only ever works for a schema that never changes shape. Every future
-//! schema change (new columns, new tables) is a new `M::up(...)` appended to
-//! the end of this list - never edit an already-shipped migration, since a
-//! user's existing database has already recorded it as applied.
+//! schema change (new columns, new tables) is a new `Step` appended to the
+//! end of `STEPS` - never edit an already-shipped one, since a user's
+//! existing database has already recorded it as applied and will never
+//! re-run it. That is no longer only a convention: `schema::verify_checksums`
+//! hashes every step and fails loudly if one changes underneath an install
+//! that already applied it.
 use rusqlite_migration::{Migrations, M};
 
+/// One schema step: the SQL that applies it, and the SQL that undoes it.
+///
+/// A single table rather than a list of `M::up(...)` calls, because two
+/// things now need the same SQL and must not be able to disagree about it:
+/// `migrations()` builds the migration list from it, and `schema::checksums`
+/// hashes it so an already-shipped step edited in place is caught instead of
+/// silently skipped (`AUDIT_REPORT.md` D-003).
+///
+/// `down` is `Option` and honestly so. Most steps undo cleanly with a
+/// `DROP TABLE` or a `DROP COLUMN`; one does not, and says why at its own
+/// entry rather than shipping a table-rebuild nobody has ever run
+/// (`AUDIT_REPORT.md` D-002).
+struct Step {
+    up: &'static str,
+    down: Option<&'static str>,
+}
+
+/// The number of migrations this build knows about, which is also the
+/// `user_version` a fully-migrated database carries. `schema::refuse_if_ahead`
+/// compares against it to tell "this database is newer than this build" apart
+/// from every other reason a migration can fail.
+pub fn latest_version() -> usize {
+    STEPS.len()
+}
+
+/// The SQL of every step, in order, for `schema::checksums`.
+pub(crate) fn step_sql() -> impl Iterator<Item = &'static str> {
+    STEPS.iter().map(|step| step.up)
+}
+
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![
+    Migrations::new(
+        STEPS
+            .iter()
+            .map(|step| match step.down {
+                Some(down) => M::up(step.up).down(down),
+                None => M::up(step.up),
+            })
+            .collect(),
+    )
+}
+
+const STEPS: &[Step] = &[
         // Migration 1: the schema as it already shipped (servers +
         // ssh_known_hosts) - captured as-is, not redesigned, so every
         // existing user's database applies it as a no-op structural match
         // and simply gets its user_version stamped to 1. Both tables are one
         // migration, not two - they shipped together as a single existing
-        // baseline schema (see bootstrap_legacy_schema in
-        // server_repository.rs, which stamps a pre-framework database
-        // straight to this version without re-running the SQL).
-        M::up(
-            "CREATE TABLE servers (
+        // baseline schema (see `schema::stamp_legacy_schema`, which stamps a
+        // pre-framework database straight to this version without re-running
+        // the SQL).
+        Step {
+            up: "CREATE TABLE servers (
                 id                   TEXT PRIMARY KEY,
                 name                 TEXT NOT NULL,
                 host                 TEXT NOT NULL,
@@ -38,7 +82,8 @@ pub fn migrations() -> Migrations<'static> {
                 server_id    TEXT PRIMARY KEY,
                 fingerprint  TEXT NOT NULL
             );",
-        ),
+            down: Some("DROP TABLE ssh_known_hosts; DROP TABLE servers;"),
+        },
         // Migration 2: Applications (see docs/APPLICATIONS_ARCHITECTURE.md).
         // `server_id` is nullable (NULL = a Local application, running on
         // this device rather than a VibeSSH-managed remote server) and
@@ -60,8 +105,8 @@ pub fn migrations() -> Migrations<'static> {
         // `application_metadata` stay JSON deliberately - their field set
         // genuinely varies per runtime_type/blueprint, so there's no fixed
         // column set to design against.
-        M::up(
-            "CREATE TABLE applications (
+        Step {
+            up: "CREATE TABLE applications (
                 id                   TEXT PRIMARY KEY,
                 server_id            TEXT REFERENCES servers(id) ON DELETE RESTRICT,
                 name                 TEXT NOT NULL,
@@ -107,7 +152,12 @@ pub fn migrations() -> Migrations<'static> {
                 application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
                 metadata_json  TEXT NOT NULL
             );",
-        ),
+            down: Some("DROP TABLE application_metadata;
+            DROP TABLE application_runtime_config;
+            DROP TABLE application_ports;
+            DROP TABLE application_environment;
+            DROP TABLE applications;"),
+        },
         // Migration 3: health check configuration, straight on `applications`
         // rather than a new table - it's 1-3 scalar fields per application,
         // not a real per-row CRUD/collision concern the way ports are.
@@ -118,11 +168,19 @@ pub fn migrations() -> Migrations<'static> {
         // `ON DELETE SET NULL` so removing the port a health check pointed
         // at doesn't fail, it just leaves the check unable to run (treated
         // as Unknown, not an error) until reconfigured.
-        M::up(
-            "ALTER TABLE applications ADD COLUMN health_check_type TEXT NOT NULL DEFAULT 'process';
+        Step {
+            up: "ALTER TABLE applications ADD COLUMN health_check_type TEXT NOT NULL DEFAULT 'process';
             ALTER TABLE applications ADD COLUMN health_check_port_id TEXT REFERENCES application_ports(id) ON DELETE SET NULL;
             ALTER TABLE applications ADD COLUMN health_check_http_path TEXT;",
-        ),
+            // No `down`. SQLite refuses `DROP COLUMN` for a column named in a
+            // foreign key, and `health_check_port_id` references
+            // `application_ports`. Undoing this means rebuilding the whole
+            // `applications` table by hand, which is exactly the kind of
+            // never-run, never-tested SQL that turns a rollback into a
+            // second outage. `to_version` refuses to go below 3 and says so,
+            // which is a better answer than a rollback that half-works.
+            down: None,
+        },
         // Migration 4: Application Databases - Phase 11 *foundation only*
         // (docs/APPLICATIONS_ARCHITECTURE.md Section 12 / Section 10 phase
         // list). Schema + types land here; the actual provisioning
@@ -140,8 +198,8 @@ pub fn migrations() -> Migrations<'static> {
         // SecretKind::ApplicationDatabaseUser), keyed by each row's own id -
         // never a column here, same rule every other secret in this
         // codebase follows.
-        M::up(
-            "CREATE TABLE database_hosts (
+        Step {
+            up: "CREATE TABLE database_hosts (
                 id                         TEXT PRIMARY KEY,
                 server_id                  TEXT REFERENCES servers(id) ON DELETE RESTRICT,
                 name                       TEXT NOT NULL,
@@ -166,7 +224,8 @@ pub fn migrations() -> Migrations<'static> {
                 UNIQUE(database_host_id, database_name)
             );
             CREATE INDEX application_databases_application_id_idx ON application_databases (application_id);",
-        ),
+            down: Some("DROP TABLE application_databases; DROP TABLE database_hosts;"),
+        },
         // Migration 5 (Etap M1): persisted Node capability detection.
         // `node_capabilities_json` mirrors `NodeCapabilities` (currently just
         // `{"docker": bool}`) - NULL means "never probed", not "no
@@ -178,7 +237,10 @@ pub fn migrations() -> Migrations<'static> {
         // per-row-varying capability set - this shape is expected to grow
         // (a `firewall` flag once Etap M2 needs it) without another
         // migration.
-        M::up("ALTER TABLE servers ADD COLUMN node_capabilities_json TEXT;"),
+        Step {
+            up: "ALTER TABLE servers ADD COLUMN node_capabilities_json TEXT;",
+            down: Some("ALTER TABLE servers DROP COLUMN node_capabilities_json;"),
+        },
         // Migration 6 (Etap M3): desired/applied state revisioning.
         // `desired_revision`/`applied_revision` are compared as plain
         // integers to answer "is this Node in sync" - see
@@ -192,8 +254,8 @@ pub fn migrations() -> Migrations<'static> {
         // Agent sent - keeping them separate means "what we asked for" and
         // "what's actually confirmed running" can never accidentally be
         // conflated into one write.
-        M::up(
-            "CREATE TABLE node_desired_state (
+        Step {
+            up: "CREATE TABLE node_desired_state (
                 server_id           TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
                 desired_revision    INTEGER NOT NULL DEFAULT 0,
                 desired_state_json  TEXT NOT NULL,
@@ -206,7 +268,8 @@ pub fn migrations() -> Migrations<'static> {
                 last_reconcile_status TEXT,
                 last_error            TEXT
             );",
-        ),
+            down: Some("DROP TABLE node_applied_state; DROP TABLE node_desired_state;"),
+        },
         // Migration 7 (Etap M4): Vibe Network (WireGuard mesh) membership.
         // Desktop is the sole IPAM authority - `wireguard_ip` is allocated
         // sequentially in a fixed CIDR (see `network::wireguard`'s own doc
@@ -215,33 +278,38 @@ pub fn migrations() -> Migrations<'static> {
         // here - the private key never leaves the Node itself, see
         // `services::network_service`'s own doc comment for the full
         // reasoning.
-        M::up(
-            "CREATE TABLE node_network_members (
+        Step {
+            up: "CREATE TABLE node_network_members (
                 server_id            TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
                 wireguard_ip         TEXT NOT NULL UNIQUE,
                 wireguard_public_key TEXT NOT NULL,
                 joined_at            TEXT NOT NULL
             );",
-        ),
+            down: Some("DROP TABLE node_network_members;"),
+        },
         // Migration 8 (Etap M4): the user-facing "Application Network"
         // intent behind a port - see `models::PortVisibility`'s own doc
         // comment. Existing ports default to `'public'`, matching their
         // actual behavior today (unconditional `-p` publishing).
-        M::up("ALTER TABLE application_ports ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';"),
+        Step {
+            up: "ALTER TABLE application_ports ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';",
+            down: Some("ALTER TABLE application_ports DROP COLUMN visibility;"),
+        },
         // Migration 9 (Etap M4): Private DNS. `application_id` is UNIQUE -
         // one alias per service. The IP a Node renders for `hostname` is
         // resolved at render time via `applications.server_id ->
         // node_network_members.wireguard_ip`, never baked into this row -
         // see `services::dns_service`'s own doc comment for why that's
         // what makes a service's DNS name survive moving to another Node.
-        M::up(
-            "CREATE TABLE dns_records (
+        Step {
+            up: "CREATE TABLE dns_records (
                 id              TEXT PRIMARY KEY,
                 application_id  TEXT NOT NULL UNIQUE REFERENCES applications(id) ON DELETE CASCADE,
                 hostname        TEXT NOT NULL UNIQUE,
                 created_at      TEXT NOT NULL
             );",
-        ),
+            down: Some("DROP TABLE dns_records;"),
+        },
         // Migration 10: Application backups. Two tables, not columns bolted
         // onto `applications` - same reasoning `node_desired_state`/
         // `node_applied_state` already established for keeping a growable,
@@ -261,8 +329,8 @@ pub fn migrations() -> Migrations<'static> {
         // constraint - same policy every other free-text enum-shaped column
         // in this schema (e.g. `application_databases.engine`) already
         // follows, validated in Rust instead.
-        M::up(
-            "CREATE TABLE application_backups (
+        Step {
+            up: "CREATE TABLE application_backups (
                 id              TEXT PRIMARY KEY,
                 application_id  TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
                 file_name       TEXT NOT NULL,
@@ -279,7 +347,8 @@ pub fn migrations() -> Migrations<'static> {
                 retention_count  INTEGER NOT NULL DEFAULT 5,
                 updated_at       TEXT NOT NULL
             );",
-        ),
+            down: Some("DROP TABLE application_backup_schedules; DROP TABLE application_backups;"),
+        },
         // Migration 11: marks an environment variable as a secret. A
         // secret row's `value` column is never the real value - the real
         // value lives in the OS credential store, keyed by
@@ -289,7 +358,10 @@ pub fn migrations() -> Migrations<'static> {
         // passwords. Existing rows default to `0` (not secret) - they were
         // already plaintext in this same column, so nothing changes for
         // them.
-        M::up("ALTER TABLE application_environment ADD COLUMN is_secret INTEGER NOT NULL DEFAULT 0;"),
+        Step {
+            up: "ALTER TABLE application_environment ADD COLUMN is_secret INTEGER NOT NULL DEFAULT 0;",
+            down: Some("ALTER TABLE application_environment DROP COLUMN is_secret;"),
+        },
         // Migration 12: manual firewall rules - a port a user wants open on
         // a Node for a reason that isn't tied to any Application's own
         // published port (the design doc's own "full configuration" ask).
@@ -301,8 +373,8 @@ pub fn migrations() -> Migrations<'static> {
         // client-side first. `source_cidr` nullable (`NULL` = open to
         // anywhere) mirrors `FirewallRule::source_cidr`'s own shape exactly,
         // no translation needed between the stored row and the applied rule.
-        M::up(
-            "CREATE TABLE firewall_custom_rules (
+        Step {
+            up: "CREATE TABLE firewall_custom_rules (
                 id          TEXT PRIMARY KEY,
                 server_id   TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
                 label       TEXT,
@@ -312,7 +384,8 @@ pub fn migrations() -> Migrations<'static> {
                 created_at  TEXT NOT NULL
             );
             CREATE INDEX firewall_custom_rules_server_id_idx ON firewall_custom_rules (server_id);",
-        ),
+            down: Some("DROP TABLE firewall_custom_rules;"),
+        },
         // Migration 13: S3-compatible backup destination support. `s3_key`
         // records which backups actually made it to the configured
         // destination (`NULL` = local-only, either because no destination
@@ -322,11 +395,14 @@ pub fn migrations() -> Migrations<'static> {
         // nullable the same way `application_ports.external_port` already
         // is: `NULL` means "this rule is off," not zero - see
         // `models::SetBackupScheduleInput`'s own doc comment.
-        M::up(
-            "ALTER TABLE application_backups ADD COLUMN s3_key TEXT;
+        Step {
+            up: "ALTER TABLE application_backups ADD COLUMN s3_key TEXT;
             ALTER TABLE application_backup_schedules ADD COLUMN retention_max_age_days INTEGER;
             ALTER TABLE application_backup_schedules ADD COLUMN retention_max_total_bytes INTEGER;",
-        ),
+            down: Some("ALTER TABLE application_backup_schedules DROP COLUMN retention_max_total_bytes;
+            ALTER TABLE application_backup_schedules DROP COLUMN retention_max_age_days;
+            ALTER TABLE application_backups DROP COLUMN s3_key;"),
+        },
         // Migration 14: private Docker registry credentials - so an
         // Application's image can come from a private Docker Hub repo,
         // ghcr.io, or any other authenticated registry, not just public
@@ -337,17 +413,56 @@ pub fn migrations() -> Migrations<'static> {
         // One row per registry host, not per Application: the same
         // credential is reused by every Application that pulls from that
         // registry.
-        M::up(
-            "CREATE TABLE registry_credentials (
+        Step {
+            up: "CREATE TABLE registry_credentials (
                 id         TEXT PRIMARY KEY,
                 registry   TEXT NOT NULL,
                 username   TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
             CREATE UNIQUE INDEX registry_credentials_registry_idx ON registry_credentials (registry);",
-        ),
-    ])
-}
+            down: Some("DROP TABLE registry_credentials;"),
+        },
+        // Migration 15: trust-on-first-use pin for an Agent-mode Node's
+        // TLS certificate. The agent generates a self-signed certificate on
+        // the Node and persists it, so chain validation can never apply -
+        // identity has to come from remembering what we saw the first time,
+        // exactly as `ssh_known_hosts` already does for SSH host keys.
+        // NULL means "not pinned yet"; the first successful handshake
+        // fills it in. Not a secret (a certificate fingerprint is public by
+        // construction), so unlike credentials this belongs in the database
+        // rather than the OS keyring.
+        Step {
+            up: "ALTER TABLE servers ADD COLUMN agent_certificate_fingerprint TEXT;",
+            down: Some("ALTER TABLE servers DROP COLUMN agent_certificate_fingerprint;"),
+        },
+        // Migration 16: explicit Application-to-Application connections.
+        // Until this existed every container joined one shared
+        // `vibessh-net` bridge with a resolvable alias, so any Application
+        // could reach any other Application's *unpublished* ports by name -
+        // the one isolation guarantee the architecture claims that was not
+        // actually enforced (`AUDIT_REPORT.md` S-018). Reachability is now
+        // default-deny and this table is the allow-list.
+        //
+        // A row is an unordered pair, not an arrow: `runtime::docker`
+        // implements a connection by putting both containers on a private
+        // two-member Docker network, and a bridge network is inherently
+        // bidirectional. The CHECK is what stops a caller storing a
+        // one-way link the network layer would silently make two-way -
+        // better to be unable to express it than to display a direction
+        // that isn't real.
+        Step {
+            up: "CREATE TABLE application_links (
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                peer_id        TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                created_at     TEXT NOT NULL,
+                PRIMARY KEY (application_id, peer_id),
+                CHECK (application_id < peer_id)
+            );
+            CREATE INDEX application_links_peer_idx ON application_links (peer_id);",
+            down: Some("DROP TABLE application_links;"),
+        },
+];
 
 #[cfg(test)]
 mod tests {
@@ -356,6 +471,57 @@ mod tests {
     #[test]
     fn migrations_are_internally_consistent() {
         migrations().validate().expect("migration list should validate");
+    }
+
+    /// The `down` migrations are only worth having if they actually run, and
+    /// a rollback path nobody has executed is a guess. This walks the whole
+    /// reversible range down and back up again.
+    ///
+    /// Stops at 3 rather than 0 because migration 3 has no `down` - see its
+    /// own entry for why. That is the real floor of what can be rolled back,
+    /// and asserting it here means the floor cannot move without someone
+    /// noticing.
+    #[test]
+    fn every_reversible_migration_actually_reverses() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        migrations().to_version(&mut conn, 3).expect("rolling back to the last irreversible step should work");
+        let version: i64 = conn.query_row("PRAGMA user_version", (), |row| row.get(0)).unwrap();
+        assert_eq!(version, 3);
+        // The tables the rolled-back steps created are gone, not merely
+        // unrecorded.
+        let leftover: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN
+                 ('application_links', 'registry_credentials', 'firewall_custom_rules', 'dns_records', 'node_network_members')",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftover, 0);
+
+        migrations().to_latest(&mut conn).expect("re-applying after a rollback should work");
+        let version: i64 = conn.query_row("PRAGMA user_version", (), |row| row.get(0)).unwrap();
+        assert_eq!(version, latest_version() as i64);
+    }
+
+    /// Migration 3 cannot express a `down`, so anything below it must fail
+    /// rather than half-apply. Pinned as a test because the failure is the
+    /// designed behaviour, not an accident to be fixed later.
+    #[test]
+    fn rolling_back_past_the_irreversible_step_is_refused() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        assert!(migrations().to_version(&mut conn, 2).is_err());
+    }
+
+    #[test]
+    fn latest_version_matches_what_a_migrated_database_reports() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        let version: i64 = conn.query_row("PRAGMA user_version", (), |row| row.get(0)).unwrap();
+        assert_eq!(version, latest_version() as i64);
     }
 
     #[test]

@@ -11,6 +11,7 @@ import { cloudCreateServer, cloudDeleteServer, cloudListServers } from "@/servic
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudServer } from "@/types/cloud";
 import "./ServersSection.css";
+import { errorMessage } from "@/services/tauri";
 
 export function ServersSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
   const { t } = useTranslation();
@@ -28,7 +29,7 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     setError(null);
     cloudListServers(teamId)
       .then(setServers)
-      .catch((err) => setError(err instanceof Error ? err.message : t("teamServers.couldntList")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -48,7 +49,7 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
       toastSuccess(t("teamServers.addedToast", { name: name.trim() }));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("teamServers.couldntAdd"));
+      setError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }
@@ -61,7 +62,7 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
       toastSuccess(t("teamServers.removedToast", { name: server.name }));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("teamServers.couldntRemove"));
+      setError(errorMessage(err, t));
     }
   }
 

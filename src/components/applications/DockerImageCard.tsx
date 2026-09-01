@@ -7,6 +7,7 @@ import { pullApplicationImage, recreateApplication, refreshApplicationStatus, se
 import { toastSuccess } from "@/stores/toastStore";
 import type { ApplicationDetail, DockerImageConfig } from "@/types/application";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface DockerImageCardProps {
   applicationId: string;
@@ -57,7 +58,7 @@ export function DockerImageCard({ applicationId, application, onSaved }: DockerI
       await recreateIfRunning();
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("dockerImage.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -72,7 +73,7 @@ export function DockerImageCard({ applicationId, application, onSaved }: DockerI
       toastSuccess(t("dockerImage.updateSuccessToast", { image: currentImage }));
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("dockerImage.updateError"));
+      setError(errorMessage(err, t));
     } finally {
       setUpdating(false);
     }

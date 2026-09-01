@@ -2,6 +2,14 @@
 //! real Postgres (see common::test_router). Every test uses a fresh random
 //! email (common::unique_email) so re-running the suite against the same
 //! persistent dev database never collides with a previous run's rows.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::body::Body;
@@ -11,6 +19,7 @@ use serde_json::json;
 use common::{get_with_bearer, post, test_router, unique_email};
 
 #[tokio::test]
+#[ignore]
 async fn register_then_login_round_trips_the_same_account() {
     let email = unique_email();
     let (status, body) = post(
@@ -30,6 +39,7 @@ async fn register_then_login_round_trips_the_same_account() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn registering_the_same_email_twice_is_a_conflict_not_a_silent_overwrite() {
     let email = unique_email();
     let register = || json!({ "email": email, "password": "correct horse battery staple", "displayName": "Test User" });
@@ -41,6 +51,7 @@ async fn registering_the_same_email_twice_is_a_conflict_not_a_silent_overwrite()
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_weak_password_is_rejected_at_registration() {
     let (status, body) = post(
         test_router().await,
@@ -52,6 +63,7 @@ async fn a_weak_password_is_rejected_at_registration() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn an_invalid_email_is_rejected_at_registration() {
     let (status, body) = post(
         test_router().await,
@@ -63,6 +75,7 @@ async fn an_invalid_email_is_rejected_at_registration() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn login_with_the_wrong_password_is_rejected_with_a_generic_message() {
     let email = unique_email();
     post(
@@ -78,6 +91,7 @@ async fn login_with_the_wrong_password_is_rejected_with_a_generic_message() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn login_with_a_nonexistent_email_gets_the_same_generic_message_as_a_wrong_password() {
     // Same response either way - a different message would let a caller
     // enumerate which emails have accounts.
@@ -87,6 +101,7 @@ async fn login_with_a_nonexistent_email_gets_the_same_generic_message_as_a_wrong
 }
 
 #[tokio::test]
+#[ignore]
 async fn me_returns_the_authenticated_users_profile() {
     let (email, access_token) = common::register_user().await;
 
@@ -96,6 +111,7 @@ async fn me_returns_the_authenticated_users_profile() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn me_without_a_token_is_unauthorized() {
     use tower::ServiceExt;
     let response = test_router().await.oneshot(Request::builder().uri("/auth/me").body(Body::empty()).unwrap()).await.unwrap();
@@ -103,12 +119,14 @@ async fn me_without_a_token_is_unauthorized() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn me_with_a_garbage_token_is_unauthorized_not_a_panic() {
     let (status, _) = get_with_bearer(test_router().await, "/auth/me", "not.a.real.jwt").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
+#[ignore]
 async fn refresh_rotates_the_token_and_invalidates_the_one_it_was_given() {
     let (_, register_body) = post(
         test_router().await,
@@ -129,12 +147,14 @@ async fn refresh_rotates_the_token_and_invalidates_the_one_it_was_given() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn an_unknown_refresh_token_is_rejected() {
     let (status, _) = post(test_router().await, "/auth/refresh", json!({ "refreshToken": "not-a-real-token" })).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
+#[ignore]
 async fn logout_revokes_the_refresh_token_so_it_can_no_longer_be_used() {
     let (_, register_body) = post(
         test_router().await,

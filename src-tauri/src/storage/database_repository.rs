@@ -15,7 +15,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
-use crate::storage::migrations::migrations;
 
 pub struct DatabaseRepository {
     conn: Mutex<Connection>,
@@ -23,21 +22,15 @@ pub struct DatabaseRepository {
 
 impl DatabaseRepository {
     /// `db_path` is the same `servers.sqlite3` every other repository
-    /// opens - `migrations().to_latest()` is a no-op once the file's
+    /// opens - `schema::migrate` is a no-op once the file's
     /// `user_version` is already current, so it's safe to call from here
     /// too.
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| AppError::Storage(format!("failed to create the application database directory: {err}")))?;
-        }
-        let mut conn =
-            Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the application database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the application database: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "database")?;
+        super::schema::migrate(&mut conn, db_path, "database")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

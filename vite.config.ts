@@ -28,7 +28,12 @@ export default defineConfig({
   envPrefix: ["VITE_", "TAURI_"],
   build: {
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    // `oxc`, not `esbuild`: Vite 8 replaced its bundler with Rolldown and no
+    // longer ships esbuild at all, so naming it here fails the build with a
+    // module-not-found rather than falling back. This is also what removes
+    // esbuild from the dependency tree, and with it the advisory that came
+    // through it.
+    minify: !process.env.TAURI_ENV_DEBUG ? "oxc" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
 });

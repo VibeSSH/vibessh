@@ -15,8 +15,8 @@ import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import { useToastStore } from "@/stores/toastStore";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
-import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./Rail.css";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface RailButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon: string;
@@ -163,13 +163,6 @@ function sortableTimestamp(server: ManagedServer): number {
   return server.createdAt ? new Date(server.createdAt).getTime() : Date.now();
 }
 
-const STATUS_LABEL_KEY: Record<ManagedServer["status"], string> = {
-  online: "rail.statusOnline",
-  offline: "rail.statusOffline",
-  connecting: "rail.statusConnecting",
-  unknown: "rail.statusUnknown",
-};
-
 /**
  * A custom-styled popover rather than the native `title` tooltip this used
  * to be - two reasons: the OS tooltip rendered as a plain light-mode box
@@ -181,12 +174,10 @@ const STATUS_LABEL_KEY: Record<ManagedServer["status"], string> = {
  * next hover.
  */
 function RailInstanceButton({ server }: { server: ManagedServer }) {
-  const { t } = useTranslation();
   const { createRipple, rippleEls } = useRipple();
   const navigate = useNavigate();
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
   const isAgent = server.connectionMode === "agent";
-  const statusColor = STATUS_COLOR[server.status];
   const btnRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | undefined>(undefined);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
@@ -224,7 +215,10 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
       >
         {rippleEls}
         <Icon name={isAgent ? "zap" : "server"} size={16} />
-        <span className="rail-instance-status-dot" style={{ background: statusColor }} />
+        {/* No room for the word on a 40px button, so this is the one place
+            the dot carries the status on its own - as a shape plus an
+            accessible name, not as a colour. */}
+        <StatusDot status={server.status} className="rail-instance-status-slot" />
       </button>
 
       {tooltipPos &&
@@ -238,8 +232,7 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
             <div className="rail-instance-tooltip-header">
               <span className="rail-instance-tooltip-name" title={server.name}>{server.name}</span>
               <span className="rail-instance-tooltip-status">
-                <span className="rail-instance-tooltip-status-dot" style={{ background: statusColor }} />
-                {t(STATUS_LABEL_KEY[server.status])}
+                <StatusDot status={server.status} withLabel />
               </span>
             </div>
             <HostAddress value={server.host} className="rail-instance-tooltip-host" />

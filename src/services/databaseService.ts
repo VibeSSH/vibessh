@@ -15,6 +15,18 @@ export function deleteDatabaseHost(id: string): Promise<void> {
 }
 
 /** `applicationId: undefined` unlinks - see `DatabaseHost.phpmyadminApplicationId`'s own doc comment. */
+/** Installs MariaDB on the node behind a loopback database host, and grants
+ * that host's configured admin user the privileges VibeSSH needs.
+ *
+ * Explicit on purpose. This used to happen by itself the first time anyone
+ * created a database on such a host - an apt install, an enabled service and
+ * a new superuser appearing on someone's machine as a side effect of a
+ * different request, with every error along the way discarded. Offered by the
+ * UI only when an operation comes back with `database_server_unavailable`. */
+export function installDatabaseServer(id: string): Promise<void> {
+  return callCommand<void>("install_database_server", { id });
+}
+
 export function setDatabaseHostPhpmyadmin(id: string, applicationId?: string): Promise<DatabaseHost> {
   return callCommand<DatabaseHost>("set_database_host_phpmyadmin", { id, applicationId });
 }

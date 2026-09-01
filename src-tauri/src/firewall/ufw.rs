@@ -71,18 +71,37 @@ impl FirewallProvider for UfwProvider {
         "ufw"
     }
 
+    /// Applies every rule, then reports whatever failed.
+    ///
+    /// **Deliberately does not stop at the first failure.** It used to, and
+    /// that was the wrong shape twice over: every rule after the failing
+    /// one was silently never applied, and the caller only ever saw the
+    /// first error, so an operator fixing one problem at a time had no idea
+    /// how many remained.
+    ///
+    /// Continuing is safe here specifically because every rule is an
+    /// `allow`. Failing to apply one leaves the Node *more* restricted, not
+    /// less - the opposite of the usual partial-application hazard - so
+    /// there is nothing to roll back, and getting the rest applied is
+    /// strictly better than abandoning them.
     async fn apply_rules(&self, connection: &SshSession, desired: &[FirewallRule]) -> AppResult<()> {
+        let mut failures = Vec::new();
         for rule in desired {
-            let output = connection.execute_command(&allow_command(rule)).await?;
-            if output.exit_code != 0 {
-                let detail = output.stderr.trim();
-                let detail = if detail.is_empty() { "ufw allow failed".to_string() } else { detail.to_string() };
-                return Err(AppError::Connection(format!(
-                    "couldn't allow {}/{} through ufw: {detail}",
-                    rule.port,
-                    protocol_str(rule.protocol)
-                )));
+            match connection.execute_command(&allow_command(rule)).await {
+                Ok(output) if output.exit_code == 0 => {}
+                Ok(output) => {
+                    let detail = output.stderr.trim();
+                    let detail = if detail.is_empty() { "ufw allow failed".to_string() } else { detail.to_string() };
+                    failures.push(format!("{}/{}: {detail}", rule.port, protocol_str(rule.protocol)));
+                }
+                // A transport failure means the remaining rules cannot be
+                // attempted either - unlike a rejected rule, there is no
+                // point continuing.
+                Err(err) => return Err(err),
             }
+        }
+        if !failures.is_empty() {
+            return Err(AppError::Connection(format!("couldn't apply {} firewall rule(s) - {}", failures.len(), failures.join("; "))));
         }
         Ok(())
     }
@@ -125,6 +144,30 @@ impl FirewallProvider for UfwProvider {
     /// `Proceed with operation (y|n)?` prompt, which would otherwise hang
     /// forever with no terminal attached to answer it.
     async fn enable(&self, connection: &SshSession, desired: &[FirewallRule]) -> AppResult<()> {
+        // Turning on a default-deny firewall over the very SSH session that
+        // manages the Node is the one operation here that can end with
+        // nobody able to reach the machine again. The desired rule set
+        // always contains a rule for `Server::ssh_port` - but that is
+        // VibeSSH's *stored* value, and it goes stale: an operator who
+        // moved sshd to another port, or who reaches the Node through a
+        // jump host or a forwarded port, has a live connection on a port
+        // the rule set doesn't mention. Enabling then locks them out
+        // permanently, with no undo and no way back in.
+        //
+        // So ask the Node which port this session actually arrived on and
+        // refuse if nothing covers it. `$SSH_CONNECTION`'s fourth field is
+        // the server-side port; when it is unset (an exec channel that
+        // didn't inherit it), we refuse rather than guess.
+        let live_port = live_ssh_port(connection).await?;
+        let covered = desired
+            .iter()
+            .any(|rule| rule.port == live_port && rule.protocol == PortProtocol::Tcp && rule.source_cidr.is_none());
+        if !covered {
+            return Err(AppError::InvalidInput(format!(
+                "refusing to enable the firewall: this SSH session is connected on port {live_port}, and no rule allows it.                  Enabling now would lock VibeSSH out of this Node. Update the Node's SSH port, or add a custom rule for {live_port}/tcp first."
+            )));
+        }
+
         self.apply_rules(connection, desired).await?;
         let output = connection.execute_command("sudo ufw --force enable").await?;
         if output.exit_code != 0 {
@@ -138,6 +181,27 @@ impl FirewallProvider for UfwProvider {
 
 /// `ufw status`'s first line is `Status: active` or `Status: inactive` -
 /// nothing else in the output starts with `Status:`.
+/// The server-side port this SSH session actually arrived on, straight
+/// from the Node rather than from anything VibeSSH stored.
+///
+/// `$SSH_CONNECTION` is `<client ip> <client port> <server ip> <server
+/// port>`. Erroring on an unparseable/absent value is deliberate: this only
+/// feeds a safety check, and a check that silently degrades to "allow" is
+/// worse than no check.
+async fn live_ssh_port(connection: &SshSession) -> AppResult<u16> {
+    let output = connection.execute_command("printf '%s' \"$SSH_CONNECTION\"").await?;
+    parse_live_ssh_port(&output.stdout).ok_or_else(|| {
+        AppError::Connection(
+            "couldn't determine which port this SSH session is connected on, so enabling the firewall can't be done safely -              enable it manually on the Node once you've confirmed your SSH port is allowed"
+                .into(),
+        )
+    })
+}
+
+fn parse_live_ssh_port(ssh_connection: &str) -> Option<u16> {
+    ssh_connection.split_whitespace().nth(3)?.parse().ok()
+}
+
 fn parse_is_active(output: &str) -> bool {
     output.lines().next().map(str::trim) == Some("Status: active")
 }
@@ -306,4 +370,76 @@ ufw allow in on docker0 to any port 3306 proto tcp\n";
         assert!(parse_added_rules("Added user rules (see 'ufw status' for running firewall):\n").is_empty());
         assert!(parse_added_rules("").is_empty());
     }
+
+    /// `$SSH_CONNECTION`'s fourth field is the server-side port. Getting
+    /// this wrong in either direction is dangerous: a false negative blocks
+    /// a legitimate enable, a false positive locks the operator out.
+    #[test]
+    fn parse_live_ssh_port_reads_the_server_side_port() {
+        assert_eq!(parse_live_ssh_port("203.0.113.5 51234 10.0.0.7 22"), Some(22));
+        assert_eq!(parse_live_ssh_port("203.0.113.5 51234 10.0.0.7 2222
+"), Some(2222));
+        // IPv6 endpoints keep the same four-field shape.
+        assert_eq!(parse_live_ssh_port("2001:db8::1 51234 2001:db8::2 22"), Some(22));
+    }
+
+    /// Anything it can't read must come back `None` so `live_ssh_port`
+    /// errors - a safety check that silently degrades to "allow" is worse
+    /// than no check.
+    #[test]
+    fn parse_live_ssh_port_refuses_to_guess() {
+        for bad in ["", "   ", "203.0.113.5 51234 10.0.0.7", "203.0.113.5 51234 10.0.0.7 notaport", "203.0.113.5 51234 10.0.0.7 99999"] {
+            assert_eq!(parse_live_ssh_port(bad), None, "{bad:?}");
+        }
+    }
+
+    /// `parse_added_rules` reads output from a remote command, and what it
+    /// returns is the *only* thing `revoke_obsolete_rules` will delete. A
+    /// parser that invents a rule from a malformed line would delete a rule
+    /// VibeSSH does not own; one that panics takes the firewall sync with it.
+    mod parser_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Arbitrary bytes, including the shapes a hostile or simply
+            /// broken `ufw` might emit.
+            #[test]
+            fn never_panics_on_arbitrary_output(output in "\\PC{0,300}") {
+                let _ = parse_added_rules(&output);
+            }
+
+            /// The safety property `firewall::mod` documents: a line without
+            /// the marker is never returned, so a rule the operator added by
+            /// hand can never be revoked as "obsolete".
+            #[test]
+            fn a_line_without_the_marker_is_never_returned(port in 1u16..=65535, cidr in "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}/[0-9]{1,2}") {
+                let unmarked = format!("ufw allow {port}/tcp\nufw allow from {cidr} to any port {port} proto tcp");
+                prop_assert!(parse_added_rules(&unmarked).is_empty(), "claimed ownership of {unmarked:?}");
+            }
+
+            /// Round trip against the command builder: whatever `allow_command`
+            /// writes, this must read back as the same rule. These two are
+            /// the write and read halves of one format, and nothing else
+            /// checks that they agree.
+            #[test]
+            fn round_trips_with_the_command_this_module_writes(
+                port in 1u16..=65535,
+                udp in any::<bool>(),
+                cidr in prop::option::of("(10|172|192)\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}/[0-9]{1,2}"),
+            ) {
+                let protocol = if udp { PortProtocol::Udp } else { PortProtocol::Tcp };
+                let original = FirewallRule { port, protocol, source_cidr: cidr };
+                // `ufw show added` prints the command that was run, without
+                // the `sudo` the module adds when it runs it.
+                let line = allow_command(&original).replace("sudo ", "");
+                let parsed = parse_added_rules(&line);
+                prop_assert_eq!(parsed.len(), 1, "did not read back: {:?}", line);
+                prop_assert_eq!(parsed[0].port, original.port);
+                prop_assert_eq!(parsed[0].protocol, original.protocol);
+                prop_assert_eq!(&parsed[0].source_cidr, &original.source_cidr);
+            }
+        }
+    }
+
 }

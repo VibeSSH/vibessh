@@ -5,11 +5,12 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { clearApplicationFileHistory, listApplicationFileHistory, restoreApplicationFileHistory } from "@/services/applicationFilesService";
 import type { FileHistoryVersion } from "@/types/applicationFiles";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface FileHistoryModalProps {
   applicationId: string;
@@ -22,19 +23,19 @@ interface FileHistoryModalProps {
 /** Backup-before-save version history (design brief section 115) - List + Restore only. Preview/Diff are explicitly deferred by the brief itself ("może być Pro feature później") - the backend keeps every version's full content, so nothing here blocks adding those later. */
 export function FileHistoryModal({ applicationId, path, fileName, onClose, onRestored }: FileHistoryModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "filehistorymodal-dialog-title-1" });
   const [versions, setVersions] = useState<FileHistoryVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [restoringTimestamp, setRestoringTimestamp] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const clearBackdrop = useBackdropClose(() => !clearing && setConfirmingClear(false));
+  const clearBackdrop = useModalDialog(() => !clearing && setConfirmingClear(false), { labelledBy: "filehistorymodal-dialog-title-2" });
 
   useEffect(() => {
     listApplicationFileHistory(applicationId, path)
       .then(setVersions)
-      .catch((err) => setError(err instanceof Error ? err.message : t("fileHistory.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, path, t]);
 
@@ -45,7 +46,7 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
       await restoreApplicationFileHistory(applicationId, path, timestamp);
       onRestored();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("fileHistory.restoreError"));
+      setError(errorMessage(err, t));
     } finally {
       setRestoringTimestamp(null);
     }
@@ -59,17 +60,17 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
       setVersions([]);
       setConfirmingClear(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("fileHistory.clearError"));
+      setError(errorMessage(err, t));
     } finally {
       setClearing(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("fileHistory.title", { name: fileName })}</h2>
+          <h2 className="modal-title" id="filehistorymodal-dialog-title-1">{t("fileHistory.title", { name: fileName })}</h2>
           <div className="modal-header-actions">
             {versions.length > 0 && (
               <IconButton icon="trash" size="sm" danger onClick={() => setConfirmingClear(true)} title={t("fileHistory.clearAria")} />
@@ -105,10 +106,10 @@ export function FileHistoryModal({ applicationId, path, fileName, onClose, onRes
       </div>
 
       {confirmingClear && (
-        <div className="modal-backdrop" {...clearBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...clearBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...clearBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("fileHistory.clearTitle")}</h2>
+              <h2 className="modal-title" id="filehistorymodal-dialog-title-2">{t("fileHistory.clearTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setConfirmingClear(false)} title={t("common.close")} disabled={clearing} />
             </div>
             <div className="modal-body">

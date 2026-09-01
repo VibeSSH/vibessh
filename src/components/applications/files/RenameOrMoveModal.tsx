@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 
@@ -23,7 +23,7 @@ const ERROR_KEY = { rename: "applicationFilesTab.renameError", move: "applicatio
 /** Covers "Rename", "Move", and "Copy" (design brief sections 108/121) - Rename/Move both call the same backend `rename` primitive with a different destination path (the caller's `onConfirm` decides which), matching how the actual filesystem/SFTP operation is identical either way; Copy's `onConfirm` calls the separate `copy` primitive instead, but shares this exact same "type a destination path" UI. */
 export function RenameOrMoveModal({ mode, currentPath, currentName, onClose, onConfirm, destinationHelp }: RenameOrMoveModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "renameormovemodal-dialog-title-1" });
   const parentDir = currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/")) : "";
   const [name, setName] = useState(mode === "rename" ? currentName : "");
   const [busy, setBusy] = useState(false);
@@ -47,10 +47,10 @@ export function RenameOrMoveModal({ mode, currentPath, currentName, onClose, onC
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t(TITLE_KEY[mode])}</h2>
+          <h2 className="modal-title" id="renameormovemodal-dialog-title-1">{t(TITLE_KEY[mode])}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

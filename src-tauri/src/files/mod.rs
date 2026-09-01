@@ -117,7 +117,7 @@ pub fn provider_for(application: &Application, runtime_config: &serde_json::Valu
             let connection = connection.ok_or_else(|| AppError::Internal("a remote application's file provider requires a connection".into()))?;
             if wants_dedicated_user(application, runtime_config) {
                 let username = crate::dedicated_user::username(application.id);
-                Ok(Box::new(sudo_user::SudoUserApplicationFileProvider::new(connection, application.working_directory.clone(), username)))
+                Ok(Box::new(sudo_user::SudoUserApplicationFileProvider::new(connection, application.working_directory.clone(), username, application.id)))
             } else {
                 Ok(Box::new(sftp::SftpApplicationFileProvider::new(connection, application.working_directory.clone())))
             }

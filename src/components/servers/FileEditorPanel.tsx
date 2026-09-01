@@ -10,6 +10,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
 import "./forms.css";
 import "./FileEditorPanel.css";
+import { errorMessage } from "@/services/tauri";
 
 /** Above this, decoding the whole file into a textarea isn't a good idea - point at the terminal instead. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
@@ -41,7 +42,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setError(null);
     readRemoteFile(serverId, entry.path)
       .then((bytes) => setContent(bytesToText(bytes)))
-      .catch((err) => setError(err instanceof Error ? err.message : t("fileEditor.couldntRead")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, entry.path]);
@@ -53,7 +54,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
       await writeRemoteFile(serverId, entry.path, textToBytes(content));
       toastSuccess(t("fileEditor.savedToast", { name: entry.name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("fileEditor.couldntSave"));
+      setError(errorMessage(err, t));
     } finally {
       setSaving(false);
     }

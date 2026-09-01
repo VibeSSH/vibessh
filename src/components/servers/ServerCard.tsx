@@ -6,8 +6,9 @@ import { IconButton } from "@/components/ui/IconButton";
 import { usePingStore } from "@/stores/pingStore";
 import { getNodeSyncStatus, reconcileAgentNode, type NodeSyncStatus } from "@/services/serverService";
 import type { ManagedServer } from "@/stores/serversStore";
-import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./ServerCard.css";
+import { errorMessage } from "@/services/tauri";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 /**
  * Etap M3 - only meaningful for an Agent-mode Node (SSH-mode has no
@@ -45,7 +46,7 @@ function NodeSyncBadge({ serverId, name }: { serverId: string; name: string }) {
         setError(outcome.error ?? t("serverCard.reconcileFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("serverCard.reconcileFailed"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
       reload();
@@ -118,7 +119,6 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
   const { t } = useTranslation();
   const isAgent = server.connectionMode === "agent";
   const protocolLabel = isAgent ? "AGENT" : "SSH";
-  const statusColor = STATUS_COLOR[server.status];
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
 
   return (
@@ -136,10 +136,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
                 {!isAgent && server.status === "online" && typeof latencyMs === "number" && (
                   <span className="server-card-latency">{latencyMs} ms</span>
                 )}
-                <span className="server-card-status-dot-wrap">
-                  {server.status === "online" && <span className="server-card-status-ping" style={{ background: statusColor }} />}
-                  <span className="server-card-status-dot" style={{ background: statusColor }} />
-                </span>
+                <StatusDot status={server.status} withLabel />
               </span>
             </div>
             <HostAddress value={server.host} prefix={server.username ? `${server.username}@` : undefined} className="server-card-host" />

@@ -57,10 +57,6 @@
     "notificationsClear": "Clear",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "statusOnline": "Online",
-    "statusOffline": "Offline",
-    "statusConnecting": "Connecting",
-    "statusUnknown": "Unknown",
     "hostHidden": "Host hidden",
     "revealHostAria": "Show host address",
     "hideHostAria": "Hide host address"
@@ -324,7 +320,8 @@
     "groupByEgg": "Egg",
     "groupByRuntimeType": "Runtime type",
     "groupByServer": "Server",
-    "groupOther": "Other"
+    "groupOther": "Other",
+    "removedWithWarningsToast": "Removed \"{{name}}\", but not everything on the Node could be cleaned up: {{warning}}"
   },
   "applicationCard": {
     "local": "Local",
@@ -412,7 +409,9 @@
     "migrateConfirm": "Migrate",
     "migrating": "Migrating...",
     "migrateSuccessToast": "Migrated to the new Node as {{name}}.",
-    "migrateError": "Couldn't migrate the application."
+    "migrateError": "Couldn't migrate the application.",
+    "migrateWarningsToast": "\"{{name}}\" was migrated, but not everything finished: {{warning}}",
+    "migrateNotStartedToast": "\"{{name}}\" was migrated but didn't start on the new node."
   },
   "portsTab": {
     "description": "Control which network ports this application uses and who can reach them.",
@@ -440,12 +439,13 @@
     "syncFirewall": "Sync Firewall",
     "firewallSyncNote": "Publishing a port opens it automatically - use this if a port isn't reachable yet.",
     "firewallSyncLocal": "This application runs locally - there's no Node firewall to sync.",
-    "firewallSyncNoBackend": "No supported firewall was detected on this Node.",
+    "firewallSyncNoBackend": "No supported firewall was detected on this Node, so nothing is restricting these ports. Install ufw to enforce them.",
     "firewallSyncSummary": "{{backend}} - {{status}}, {{count}} rule(s) applied.",
     "firewallSyncSummaryWithRemoved": "{{backend}} - {{status}}, {{count}} rule(s) applied, {{removed}} stale rule(s) removed.",
     "firewallActive": "enforcing",
     "firewallInactive": "installed but not enabled",
-    "firewallSyncError": "Couldn't sync the firewall."
+    "firewallSyncError": "Couldn't sync the firewall.",
+    "firewallUnenforced": "These rules are saved but nothing is enforcing them right now - the ports are open."
   },
   "healthCheck": {
     "title": "Health check",
@@ -550,7 +550,7 @@
   },
   "deleteApplicationDialog": {
     "title": "Delete application",
-    "body": "Delete <1>{{name}}</1>? This removes it from VibeSSH - it won't stop a still-running process/unit/container on its own; stop it first if it's running. This can't be undone."
+    "body": "Delete <1>{{name}}</1>? This also removes its container, its databases, its firewall rules and its Node account. Files in its working directory are kept. This can't be undone."
   },
   "dockerImage": {
     "title": "Docker Image",
@@ -627,7 +627,10 @@
     "newDatabase": "New database",
     "generatedNote": "The database name, username, and password are generated automatically - \"purpose\" only seeds the generated name so it's recognizable.",
     "deleteTitle": "Remove database",
-    "deleteBody": "Remove \"{{name}}\"? This drops the actual database and its user on the database server - all data in it is permanently deleted. This can't be undone."
+    "deleteBody": "Remove \"{{name}}\"? This drops the actual database and its user on the database server - all data in it is permanently deleted. This can't be undone.",
+    "installServerOffer": "\"{{name}}\" points at this node itself, and no database server is running on it yet. Installing MariaDB adds a system service and an administrator account.",
+    "installServer": "Install MariaDB",
+    "installingServer": "Installing…"
   },
   "applicationFilesTab": {
     "loadError": "Couldn't load files.",
@@ -888,7 +891,11 @@
     "deleteTitle": "Delete",
     "deleteBody": "Delete \"{{name}}\"? This can't be undone.",
     "deleteBodyMulti": "Delete {{count}} selected items? This can't be undone.",
-    "deleteError": "Couldn't delete."
+    "deleteError": "Couldn't delete.",
+    "filterPlaceholder": "Filter by name",
+    "noMatchesTitle": "Nothing matches",
+    "noMatchesDescription": "No file or folder here matches that filter.",
+    "showingFirst": "Showing the first {{shown}} of {{total}} - narrow the filter to see the rest."
   },
   "fileEditor": {
     "backAria": "Back to file list",
@@ -1258,5 +1265,32 @@
       "localhost": "Reachable only from the node itself - never published externally.",
       "custom": "Bind to a specific address you provide."
     }
+  },
+  "errors": {
+    "unknown": "Something went wrong.",
+    "permission_denied": "VibeSSH doesn't have permission to do that on this Node. Check that the account it connects as can reach the path, or has sudo.",
+    "port_in_use": "Port {{port}}/{{protocol}} is already taken on this Node. Pick a different port.",
+    "docker_unavailable": "Docker isn't installed or isn't running on this Node. Install it from the Node's page, then try again.",
+    "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
+    "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
+    "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
+    "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account."
+  },
+  "connections": {
+    "title": "Connections",
+    "description": "Applications on this node cannot reach each other unless you connect them here. A connection works both ways and takes effect immediately.",
+    "emptyTitle": "Not connected to anything",
+    "emptyDescription": "This application can't reach any other application on this node, and none can reach it.",
+    "reachableAs": "Reachable at the hostname {{host}}",
+    "addLabel": "Connect to",
+    "addPlaceholder": "Pick an application",
+    "connect": "Connect",
+    "disconnectAria": "Disconnect {{name}}"
+  },
+  "serverStatus": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Connecting",
+    "unknown": "Unknown"
   }
 }

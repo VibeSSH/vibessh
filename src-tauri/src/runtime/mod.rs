@@ -1,11 +1,13 @@
 //! The runtime abstraction Applications is built on - see
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. Mirrors
-//! `transport::ServerConnection`'s own shape deliberately: one trait,
-//! `Box<dyn ApplicationRuntime>` held by commands/services, exactly one
-//! place (`runtime_for`, added once real implementations exist in later
-//! phases) that matches on `RuntimeType` to pick which implementation to
-//! construct. No implementation lands in this phase - this is the
-//! interface Phase 2 (LocalProcessRuntime) onward builds against.
+//! docs/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. One
+//! trait, `Box<dyn ApplicationRuntime>` held by commands and services, and
+//! exactly one place (`runtime_for`) that matches on `RuntimeType` to pick
+//! which implementation to construct.
+//!
+//! Unlike the `ServerConnection` trait this was originally modelled on -
+//! since deleted, see `crate::transport` for why - this one earns its keep:
+//! it has four real implementations (Docker, systemd, local process, remote
+//! process) and every call site genuinely goes through it.
 
 pub mod docker;
 pub mod health_check;
@@ -15,8 +17,10 @@ pub mod systemd;
 
 use std::sync::Arc;
 
+use uuid::Uuid;
+
 use crate::errors::{AppError, AppResult};
-use crate::models::{Application, ApplicationPort, ApplicationStatus, EnvironmentVariable, HealthCheckType, RuntimeType};
+use crate::models::{Application, ApplicationPort, ApplicationStatus, EnvironmentVariable, RuntimeType};
 use crate::ssh::SshSession;
 
 /// Everything a runtime call needs, resolved once per command rather than
@@ -37,6 +41,15 @@ pub struct RuntimeContext<'a> {
     /// "publish a port" step of their own (a process already binds
     /// wherever its own config tells it to).
     pub ports: &'a [ApplicationPort],
+    /// The other Applications this one is allowed to reach over the Node's
+    /// internal Docker networking, from `ApplicationDetail::links`. Added
+    /// once reachability between Applications became default-deny
+    /// (`AUDIT_REPORT.md` S-018): `DockerRuntime` needs it to decide which
+    /// private networks this container belongs on, and - just as
+    /// importantly - which ones it must be disconnected from. Every other
+    /// runtime ignores it; nothing but Docker has a network to place a
+    /// workload on in the first place.
+    pub links: &'a [Uuid],
     /// `None` for `RuntimeType::LocalProcess`; `Some` (from
     /// `SshSessionManager`, same cache every other remote feature already
     /// shares) for every Remote runtime type.
@@ -132,6 +145,21 @@ pub trait ApplicationRuntime: Send + Sync {
     /// "destroy" step would need to clean up first. Etap M1's "Recreate
     /// Container" action is `destroy()` then `start()` -
     /// `services::application_service::recreate_application`.
+    /// Re-applies `RuntimeContext::links` - which other Applications this
+    /// one is allowed to reach - to whatever the Node is actually running.
+    ///
+    /// Called when a connection is granted or revoked, so the change lands
+    /// on a running workload immediately. Deliberately not folded into
+    /// `start`: revoking has to take effect on an already-running container,
+    /// which is precisely the case `start` never sees.
+    ///
+    /// No-op by default. Only `DockerRuntime` places a workload on a network
+    /// at all; a systemd unit or a bare process binds wherever its own
+    /// config says, and VibeSSH has nothing to interpose there.
+    async fn sync_connections(&self, _ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        Ok(())
+    }
+
     async fn destroy(&self, _ctx: &RuntimeContext<'_>) -> AppResult<()> {
         Ok(())
     }
@@ -184,7 +212,10 @@ pub fn validate_resource_limits(memory_limit_mb: Option<u32>, cpu_limit_cores: O
         }
     }
     if let Some(cores) = cpu_limit_cores {
-        if !(cores > 0.0) {
+        // `!(cores > 0.0)` would also be correct - it rejects NaN, which a
+        // bare `cores <= 0.0` does not - but it reads as a typo. This says
+        // the same thing outright.
+        if !cores.is_finite() || cores <= 0.0 {
             return Err(AppError::InvalidInput("the CPU limit must be greater than 0".into()));
         }
     }
@@ -203,6 +234,9 @@ pub fn runtime_type_display_name(runtime_type: RuntimeType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the tests build a full `Application`; the module itself never
+    // names this type.
+    use crate::models::HealthCheckType;
     use crate::errors::AppError;
 
     /// Proves the trait is object-safe (`Box<dyn ApplicationRuntime>`
@@ -277,7 +311,7 @@ mod tests {
         let runtime: Box<dyn ApplicationRuntime> = Box::new(StubRuntime);
         let application = stub_application();
         let config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Unknown);

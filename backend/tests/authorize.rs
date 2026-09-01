@@ -3,6 +3,14 @@
 //! role with the right permission can perform an action that used to be
 //! owner-exclusive, and a member without that permission still can't -
 //! against a real Postgres, through the real HTTP router.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -28,6 +36,7 @@ async fn member_id(owner_token: &str, team_id: &str, email: &str) -> String {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_member_granted_team_members_add_can_add_members_without_being_the_owner() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Delegated Team").await;
@@ -72,6 +81,7 @@ async fn a_member_granted_team_members_add_can_add_members_without_being_the_own
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_that_grants_team_members_add_does_not_also_grant_team_members_remove() {
     // Permissions are specific, not a package deal - a role scoped to one
     // action shouldn't silently unlock a different one.
@@ -108,6 +118,7 @@ async fn a_role_that_grants_team_members_add_does_not_also_grant_team_members_re
 }
 
 #[tokio::test]
+#[ignore]
 async fn my_permissions_reflects_the_owners_full_permission_set() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -121,6 +132,7 @@ async fn my_permissions_reflects_the_owners_full_permission_set() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn my_permissions_is_empty_for_a_member_with_no_roles_assigned() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -135,6 +147,7 @@ async fn my_permissions_is_empty_for_a_member_with_no_roles_assigned() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn my_permissions_for_a_non_member_is_not_found() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;

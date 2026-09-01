@@ -60,14 +60,37 @@ and escape confinement. Granting that to `vibessh-agent` now, before any
 Docker feature exists to use it, would be handing out root-equivalent
 access on spec.
 
-**Deferred, deliberately**, to whenever Docker support (an Etap I
-capability) is actually implemented. When it is, the options worth
-comparing then: (a) accept `docker` group membership as an explicit,
-documented, opt-in tradeoff (an `install.sh --enable-docker` flag with a
-loud warning), or (b) a narrow local proxy in front of the Docker API that
-only permits the specific operations Quick Actions/the Docker module
-actually need. Not deciding between those now, since deciding requires
-knowing the real feature's shape.
+~~**Deferred, deliberately**~~ — **the decision was made elsewhere, by
+default, and this document did not record it.**
+
+Docker support shipped. It did not go through the agent at all: every Docker
+operation runs `sudo docker ...` over the **connecting SSH admin's** session
+(`runtime::docker`, `ssh::docker`). The agent still has no `docker` group
+membership, so the letter of the decision above holds — but the practical
+outcome is the thing it was written to avoid. `sudo docker` is exactly as
+root-equivalent as `docker` group membership; VibeSSH simply reaches it
+through an identity that already had broad `sudo` rather than by widening
+the agent's.
+
+That is a defensible choice — it is the admin's own authority being used for
+host management, not a new grant to a long-running daemon — but it is a
+choice, and it deserves to be written down rather than left looking
+deferred. Two consequences follow that the original framing hides:
+
+- **Every Docker feature requires an SSH-mode Node.** An Agent-mode Node
+  cannot run Applications at all (`AUDIT_REPORT.md` A-002), and this is one
+  of the reasons why.
+- **VibeSSH assumes passwordless `sudo` on every managed Node.** Not just
+  for Docker: `ufw`, `wg-quick`, `useradd`, `install`, `mysql` and the file
+  helper all rely on it. That requirement is not stated in
+  `agent-install/README.md` or the setup flow, and a Node whose admin
+  account prompts for a password fails in confusing ways rather than being
+  refused up front.
+
+The options this section listed for the agent — opt-in group membership, or
+a narrow proxy in front of the Docker API — are still the right ones to
+compare *if* Agent-mode Applications are ever built. They are not decided,
+and nothing depends on them today.
 
 ### Cross-user process/file access (e.g. a Minecraft server under its own UID)
 

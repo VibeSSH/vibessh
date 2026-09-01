@@ -4,6 +4,14 @@
 //! grant themselves - or anyone else - a permission they don't already
 //! hold. Every test here reproduces a real escalation path the review
 //! found, against a real Postgres.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -52,6 +60,7 @@ async fn grant_roles_manage_only(owner_token: &str, team_id: &str, delegate_emai
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_manager_cannot_create_a_role_with_permissions_they_dont_hold() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -73,6 +82,7 @@ async fn a_role_manager_cannot_create_a_role_with_permissions_they_dont_hold() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_manager_cannot_widen_an_existing_roles_permissions_beyond_their_own() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -101,6 +111,7 @@ async fn a_role_manager_cannot_widen_an_existing_roles_permissions_beyond_their_
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_manager_cannot_assign_a_role_that_grants_more_than_they_hold() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -132,6 +143,7 @@ async fn a_role_manager_cannot_assign_a_role_that_grants_more_than_they_hold() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_manager_cannot_assign_the_built_in_owner_role_to_anyone() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -154,6 +166,7 @@ async fn a_role_manager_cannot_assign_the_built_in_owner_role_to_anyone() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn inviting_someone_with_a_role_that_exceeds_the_inviters_own_permissions_is_rejected() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -197,6 +210,7 @@ async fn inviting_someone_with_a_role_that_exceeds_the_inviters_own_permissions_
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_owner_themselves_is_unaffected_and_can_still_create_and_assign_any_role() {
     // The fix must not accidentally block the one person who's supposed to
     // be able to do all of this - the owner's own Owner role already grants

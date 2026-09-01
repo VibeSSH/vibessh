@@ -56,6 +56,20 @@ pub struct AgentClientConfig {
     pub client_version: String,
     /// A pairing code on first connection, the stored credential thereafter.
     pub auth_token: Option<String>,
+    /// The agent certificate's SHA-256 fingerprint, as seen and recorded on
+    /// a previous successful connection. `None` means "not pinned yet" -
+    /// the first connection records whatever it sees.
+    ///
+    /// This is trust-on-first-use, the same model `ssh::client`'s
+    /// `TofuHandler` already implements for SSH host keys, and it exists
+    /// for the same reason: the agent presents a self-signed certificate,
+    /// so ordinary chain validation can never succeed and was simply turned
+    /// off (`danger_accept_invalid_certs`). With no pin on top of that, the
+    /// connection was trivially interceptable on *every* connection, not
+    /// just the first - and the very next thing sent over it is the bearer
+    /// credential (see `connect_and_stream`), so an interceptor got a
+    /// durable secret rather than a single session.
+    pub known_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,6 +90,15 @@ pub enum AgentConnectionState {
         /// marks features this particular agent/host can't do instead of
         /// assuming every Linux box has Docker/systemd/etc.
         capabilities: AgentCapabilities,
+        /// The SHA-256 fingerprint of the certificate this connection
+        /// actually used. Reported on every successful handshake so the
+        /// caller can record it the first time (trust on first use) - this
+        /// module deliberately doesn't know about `storage`, the same way
+        /// it doesn't persist `issued_credential` itself.
+        ///
+        /// `None` only for a non-TLS `ws://` connection, which is this
+        /// module's own tests against a mock server.
+        certificate_fingerprint: Option<String>,
     },
     #[serde(rename = "disconnected")]
     Disconnected { reason: String },
@@ -123,10 +146,39 @@ async fn connect_and_stream(
     // Only consulted for wss:// URLs - a plain ws:// URL (used by this
     // module's own tests against a bare mock server) ignores it and
     // connects unencrypted, same as always.
-    let connector = insecure_tls_connector()?;
+    let connector = permissive_tls_connector()?;
     let (mut ws, _) = connect_async_tls_with_config(&config.url, None, false, Some(connector))
         .await
         .map_err(|err| format!("connect failed: {err}"))?;
+
+    // **Before anything is sent.** The handshake below carries the bearer
+    // credential, so the certificate has to be checked while the connection
+    // is still worthless to an interceptor. Chain validation is off by
+    // necessity (the agent's certificate is self-signed), so this pin is
+    // the only thing standing between a MITM and a durable secret.
+    let mut observed_fingerprint = None;
+    match peer_fingerprint(&ws) {
+        Some(fingerprint) => {
+            if let Some(expected) = &config.known_fingerprint {
+                if expected != &fingerprint {
+                    return Err(HOST_KEY_MISMATCH.to_string());
+                }
+            } else {
+                // Trust on first use - the caller records it when the
+                // handshake below succeeds.
+                log::info!("agent_client: first connection to this agent, pinning certificate {fingerprint}");
+            }
+            observed_fingerprint = Some(fingerprint);
+        }
+        None => {
+            // A plain `ws://` connection has no certificate to pin. That is
+            // only ever this module's own tests against a mock server; a
+            // real agent endpoint is always `wss://`.
+            if config.url.starts_with("wss://") {
+                return Err("the agent's TLS certificate could not be read, so its identity can't be verified".to_string());
+            }
+        }
+    }
 
     let request = HandshakeRequest {
         protocol_version: PROTOCOL_VERSION,
@@ -156,6 +208,7 @@ async fn connect_and_stream(
         agent_version: response.agent_version,
         issued_credential: response.issued_credential,
         capabilities: response.capabilities,
+        certificate_fingerprint: observed_fingerprint,
     });
 
     // Etap M3: once `command_rx`'s sender is dropped, `recv()` resolves to
@@ -202,13 +255,44 @@ async fn connect_and_stream(
     }
 }
 
-fn insecure_tls_connector() -> Result<Connector, String> {
+/// The message a fingerprint mismatch produces. Deliberately the same shape
+/// as `ssh::client::classify_connect_error`'s host-key message: same
+/// situation, same two possible causes, and the operator should not have to
+/// learn two different vocabularies for it.
+const HOST_KEY_MISMATCH: &str = "the agent's TLS certificate doesn't match the one VibeSSH saw before - this can mean the agent was reinstalled, \
+     but it can also mean someone is intercepting the connection. Re-pair the Node only if you know why the certificate changed.";
+
+/// Chain validation is disabled because the agent's certificate is
+/// self-signed and generated on the Node itself - there is no CA to check
+/// it against, and there never will be. Identity comes from the fingerprint
+/// pin in `connect_and_stream` instead, which is what makes this safe;
+/// on its own this connector trusts anything.
+fn permissive_tls_connector() -> Result<Connector, String> {
     native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
         .build()
         .map(Connector::NativeTls)
         .map_err(|err| format!("failed to build TLS connector: {err}"))
+}
+
+/// SHA-256 over the peer certificate's DER encoding, lowercase hex.
+///
+/// `None` for a non-TLS stream, which in practice only happens for the
+/// `ws://` mock server this module's own tests use.
+fn peer_fingerprint(ws: &WsStream) -> Option<String> {
+    let tokio_tungstenite::MaybeTlsStream::NativeTls(tls) = ws.get_ref() else {
+        return None;
+    };
+    let certificate = tls.get_ref().peer_certificate().ok().flatten()?;
+    let der = certificate.to_der().ok()?;
+    Some(fingerprint_of(&der))
+}
+
+fn fingerprint_of(der: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(der);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 async fn read_json<T: serde::de::DeserializeOwned>(ws: &mut WsStream) -> Result<T, String> {
@@ -219,5 +303,30 @@ async fn read_json<T: serde::de::DeserializeOwned>(ws: &mut WsStream) -> Result<
         Some(Ok(Message::Close(_))) | None => Err("connection closed".to_string()),
         Some(Ok(_)) => Err("unexpected non-text frame".to_string()),
         Some(Err(err)) => Err(format!("websocket error: {err}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fingerprint is what makes the pin comparable at all, so it has to
+    /// be stable and to actually depend on the certificate bytes.
+    #[test]
+    fn fingerprint_is_stable_lowercase_hex_of_the_certificate_bytes() {
+        let a = fingerprint_of(b"certificate one");
+        assert_eq!(a, fingerprint_of(b"certificate one"));
+        assert_eq!(a.len(), 64, "SHA-256 is 32 bytes, 64 hex characters");
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()), "{a}");
+        assert_ne!(a, fingerprint_of(b"certificate two"));
+    }
+
+    /// The mismatch message is the operator's only signal that something
+    /// may be intercepting the connection, so it must say both things it
+    /// could mean - the same way the SSH host-key message does.
+    #[test]
+    fn the_mismatch_message_explains_both_possible_causes() {
+        assert!(HOST_KEY_MISMATCH.contains("reinstalled"), "{HOST_KEY_MISMATCH}");
+        assert!(HOST_KEY_MISMATCH.contains("intercepting"), "{HOST_KEY_MISMATCH}");
     }
 }

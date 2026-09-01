@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { STATUS_TONE } from "@/components/applications/ApplicationCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -25,8 +26,8 @@ import "./pages.css";
 import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
+import { errorMessage } from "@/services/tauri";
 
-const OVERVIEW_POLL_MS = 20000;
 
 type WorkspaceTab = "applications" | "terminal" | "activity";
 
@@ -91,40 +92,26 @@ export function Dashboard() {
       });
   }, []);
 
-  useEffect(() => {
-    reloadOverview();
-    const intervalId = window.setInterval(reloadOverview, OVERVIEW_POLL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [reloadOverview]);
+  usePolling(reloadOverview, POLL_INTERVALS.dashboardOverview);
 
   const agentKey = agentServerIds.join(",");
-  useEffect(() => {
-    if (agentServerIds.length === 0) {
-      setAgentSync({});
-      return;
-    }
-    let cancelled = false;
-    async function poll() {
-      const entries = await Promise.all(
-        agentServerIds.map(async (id) => {
-          try {
-            return [id, await getNodeSyncStatus(id)] as const;
-          } catch {
-            return [id, null] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      setAgentSync(Object.fromEntries(entries.filter((entry): entry is [string, NodeSyncStatus] => entry[1] !== null)));
-    }
-    poll();
-    const intervalId = window.setInterval(poll, OVERVIEW_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Keyed on the joined id list rather than the array itself, which is a new
+  // reference on every render.
+  const pollAgentSync = useCallback(async () => {
+    const ids = agentKey ? agentKey.split(",") : [];
+    const entries = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          return [id, await getNodeSyncStatus(id)] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    setAgentSync(Object.fromEntries(entries.filter((entry): entry is [string, NodeSyncStatus] => entry[1] !== null)));
   }, [agentKey]);
+
+  usePolling(pollAgentSync, POLL_INTERVALS.dashboardOverview, { enabled: agentServerIds.length > 0 });
 
   function serverName(id: string): string {
     return servers.find((s) => s.id === id)?.name ?? id;
@@ -140,7 +127,7 @@ export function Dashboard() {
         toastSuccess(t("dashboard.taskReconcileSuccess", { name: serverName(id) }));
       }
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("serverCard.reconcileFailed"));
+      toastError(errorMessage(err, t));
     } finally {
       setReconcilingId(null);
       getNodeSyncStatus(id)
@@ -156,7 +143,7 @@ export function Dashboard() {
       toastSuccess(t("dashboard.quickSyncSuccess"));
       reloadOverview();
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      toastError(errorMessage(err, t));
     } finally {
       setSyncingNetwork(false);
     }
@@ -380,7 +367,10 @@ export function Dashboard() {
           </div>
 
           <Card>
-            <div className="dashboard-ops-row" onClick={() => navigate("/vibe-network")}>
+            {/* Buttons, not clickable divs: these three were reachable with a
+                mouse and with nothing else - no tab stop, no Enter, and
+                nothing announcing that a row was a control at all. */}
+            <button type="button" className="dashboard-ops-row" onClick={() => navigate("/vibe-network")}>
               <span className="dashboard-ops-label">
                 <Icon name="wifi" size={14} />
                 {t("vibeNetwork.title")}
@@ -388,15 +378,20 @@ export function Dashboard() {
               <Badge tone={networkMembers.length === 0 ? "neutral" : networkHealthy ? "success" : "danger"}>
                 {networkMembers.length === 0 ? t("dashboard.statNetworkValueNone") : networkHealthy ? t("vibeNetwork.networkHealthy") : t("vibeNetwork.networkDegraded")}
               </Badge>
-            </div>
+            </button>
 
-            <div className="dashboard-ops-row" onClick={() => setAlertsExpanded((v) => !v)}>
+            <button
+              type="button"
+              className="dashboard-ops-row"
+              onClick={() => setAlertsExpanded((v) => !v)}
+              aria-expanded={alertsExpanded}
+            >
               <span className="dashboard-ops-label">
                 <Icon name="alert-triangle" size={14} />
                 {t("dashboard.sectionAlerts")}
               </span>
               <Badge tone={alerts.length > 0 ? "danger" : "success"}>{alerts.length}</Badge>
-            </div>
+            </button>
             {alertsExpanded &&
               (alerts.length === 0 ? (
                 <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">
@@ -420,13 +415,13 @@ export function Dashboard() {
                 </ul>
               ))}
 
-            <div className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)}>
+            <button type="button" className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)} aria-expanded={tasksExpanded}>
               <span className="dashboard-ops-label">
                 <Icon name="list-checks" size={14} />
                 {t("dashboard.sectionTasks")}
               </span>
               <Badge tone={outOfSyncAgentIds.length > 0 ? "warning" : "success"}>{outOfSyncAgentIds.length}</Badge>
-            </div>
+            </button>
             {tasksExpanded &&
               (outOfSyncAgentIds.length === 0 ? (
                 <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">

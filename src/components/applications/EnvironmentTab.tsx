@@ -7,11 +7,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { recreateApplication, refreshApplicationStatus, setApplicationEnvironment } from "@/services/applicationService";
 import type { ApplicationDetail, EnvironmentVariable } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 /** A Docker container's environment is baked in at `docker create` time
  * (see `runtime::docker`'s own doc comment) - a plain restart reuses the
@@ -56,7 +57,7 @@ export function EnvironmentTab({ application, onSaved }: EnvironmentTabProps) {
       await recreateIfRunningDocker(application);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationDetail.envSaveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
@@ -153,27 +154,7 @@ export function EnvironmentTab({ application, onSaved }: EnvironmentTabProps) {
         />
       )}
 
-      {deletingKey && (
-        <div className="modal-backdrop" {...useBackdropClose(() => setDeletingKey(null))}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{t("applicationDetail.deleteEnvVarTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setDeletingKey(null)} title={t("common.close")} />
-            </div>
-            <div className="modal-body">
-              <p className="dialog-body-text">{t("applicationDetail.deleteEnvVarBody", { name: deletingKey })}</p>
-              <div className="form-actions">
-                <Button variant="secondary" onClick={() => setDeletingKey(null)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="danger" onClick={handleConfirmDelete}>
-                  {t("common.remove")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {deletingKey && <DeleteEnvVarDialog envKey={deletingKey} onCancel={() => setDeletingKey(null)} onConfirm={handleConfirmDelete} />}
     </div>
   );
 }
@@ -187,7 +168,7 @@ interface EnvVarFormModalProps {
 
 function EnvVarFormModal({ editing, existingKeys, onClose, onSubmit }: EnvVarFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "environmenttab-dialog-title-1" });
   const isEditing = Boolean(editing);
   const [key, setKey] = useState(editing?.key ?? "");
   const [value, setValue] = useState(editing?.value ?? "");
@@ -223,16 +204,16 @@ function EnvVarFormModal({ editing, existingKeys, onClose, onSubmit }: EnvVarFor
     try {
       await onSubmit(trimmedKey, value, isSecret);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("applicationDetail.envSaveError"));
+      setError(errorMessage(err, t));
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEditing ? t("applicationDetail.editEnvVar") : t("applicationDetail.addEnvVar")}</h2>
+          <h2 className="modal-title" id="environmenttab-dialog-title-1">{isEditing ? t("applicationDetail.editEnvVar") : t("applicationDetail.addEnvVar")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -265,6 +246,41 @@ function EnvVarFormModal({ editing, existingKeys, onClose, onSubmit }: EnvVarFor
             </div>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Its own component rather than JSX inside a conditional, because
+ * `useModalDialog` has an effect: it must run when the dialog mounts, not
+ * when the tab does. The previous inline form called a hook inside a
+ * conditional branch - a rules-of-hooks violation that was merely harmless
+ * with the ref-only hook it used before.
+ */
+function DeleteEnvVarDialog({ envKey, onCancel, onConfirm }: { envKey: string; onCancel: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation();
+  const dialog = useModalDialog(onCancel, { labelledBy: "delete-env-var-title" });
+  return (
+    <div className="modal-backdrop" {...dialog.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...dialog.panelProps}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="delete-env-var-title">
+            {t("applicationDetail.deleteEnvVarTitle")}
+          </h2>
+          <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} />
+        </div>
+        <div className="modal-body">
+          <p className="dialog-body-text">{t("applicationDetail.deleteEnvVarBody", { name: envKey })}</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={onConfirm}>
+              {t("common.remove")}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

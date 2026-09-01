@@ -1,4 +1,12 @@
 //! Real integration tests for Roles + Permissions, against a real Postgres.
+//!
+//! `#[ignore]` - every test here needs a reachable Postgres named by
+//! `DATABASE_URL` (see `backend/.env.example`), which no plain developer
+//! checkout has. Without the marker these panic in `common::database_url`
+//! and, because cargo stops at the first failing test binary, they took the
+//! rest of `cargo test --workspace` down with them. Same convention the
+//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 
 use axum::http::StatusCode;
@@ -13,6 +21,7 @@ async fn create_team(owner_token: &str, name: &str) -> serde_json::Value {
 }
 
 #[tokio::test]
+#[ignore]
 async fn get_permissions_returns_the_catalog() {
     let (_, token) = register_user().await;
     let (status, body) = get_with_bearer(test_router().await, "/permissions", &token).await;
@@ -22,6 +31,7 @@ async fn get_permissions_returns_the_catalog() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn creating_a_team_seeds_an_owner_role_with_every_permission_assigned_to_the_creator() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Owned Team").await;
@@ -44,6 +54,7 @@ async fn creating_a_team_seeds_an_owner_role_with_every_permission_assigned_to_t
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_create_a_custom_role_with_a_subset_of_permissions() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -63,6 +74,7 @@ async fn owner_can_create_a_custom_role_with_a_subset_of_permissions() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_duplicate_permission_in_the_request_is_deduplicated_not_a_server_error() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -81,6 +93,7 @@ async fn a_duplicate_permission_in_the_request_is_deduplicated_not_a_server_erro
 }
 
 #[tokio::test]
+#[ignore]
 async fn creating_a_role_with_an_unknown_permission_is_rejected() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -97,6 +110,7 @@ async fn creating_a_role_with_an_unknown_permission_is_rejected() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_name_owner_is_reserved_and_cannot_be_used_for_a_custom_role() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -113,6 +127,7 @@ async fn the_name_owner_is_reserved_and_cannot_be_used_for_a_custom_role() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn duplicate_role_names_within_a_team_are_a_conflict() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -127,6 +142,7 @@ async fn duplicate_role_names_within_a_team_are_a_conflict() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_non_owner_member_cannot_create_roles() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -146,6 +162,7 @@ async fn a_non_owner_member_cannot_create_roles() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_update_a_custom_roles_permissions() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -173,6 +190,7 @@ async fn owner_can_update_a_custom_roles_permissions() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_owner_role_cannot_be_updated_or_deleted() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -195,6 +213,7 @@ async fn the_owner_role_cannot_be_updated_or_deleted() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn deleting_a_custom_role_removes_it_from_the_list() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -214,6 +233,7 @@ async fn deleting_a_custom_role_removes_it_from_the_list() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn owner_can_assign_a_custom_role_to_a_member_and_then_unassign_it() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -255,6 +275,7 @@ async fn owner_can_assign_a_custom_role_to_a_member_and_then_unassign_it() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn assigning_a_role_to_someone_who_isnt_a_member_is_not_found() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
@@ -280,6 +301,7 @@ async fn assigning_a_role_to_someone_who_isnt_a_member_is_not_found() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn a_role_from_a_different_team_cannot_be_assigned() {
     let (_, owner_a_token) = register_user().await;
     let team_a = create_team(&owner_a_token, "Team A").await;
@@ -312,6 +334,7 @@ async fn a_role_from_a_different_team_cannot_be_assigned() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn the_owners_own_role_assignment_cannot_be_unassigned() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;

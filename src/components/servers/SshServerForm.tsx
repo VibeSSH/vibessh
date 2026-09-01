@@ -12,6 +12,7 @@ import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import type { AuthenticationType } from "@/types/server";
 import "./forms.css";
+import { errorMessage } from "@/services/tauri";
 
 type TestStatus = "idle" | "testing" | "success" | "error";
 
@@ -63,7 +64,7 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
       setTestMessage(t("sshForm.testSuccess"));
     } catch (err) {
       setTestStatus("error");
-      setTestMessage(err instanceof Error ? err.message : t("sshForm.testError"));
+      setTestMessage(errorMessage(err, t));
     }
   }
 
@@ -81,7 +82,7 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
       toastSuccess(isEditing ? t("sshForm.savedChangesToast", { name: saved.name }) : t("sshForm.addedToast", { name: saved.name }));
       onSaved(managed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("sshForm.errorSave"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

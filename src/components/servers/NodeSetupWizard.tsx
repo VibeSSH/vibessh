@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { joinVibeNetwork } from "@/services/networkService";
 import {
   enableServerFirewall,
@@ -22,6 +22,7 @@ import type { NodeCapabilities } from "@/types/server";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import "./AddServerModal.css";
 import "./forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface NodeSetupWizardProps {
   serverId: string;
@@ -57,7 +58,7 @@ function ruleLabel(t: (key: string, opts?: Record<string, unknown>) => string, r
  */
 export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWizardProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "nodesetupwizard-dialog-title-1" });
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
   const alreadyAgentMode = server?.connectionMode === "agent";
 
@@ -81,7 +82,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
     try {
       setCapabilities(await probeServerCapabilities(serverId));
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t("nodeSetup.probeError"));
+      setLoadError(errorMessage(err, t));
     } finally {
       setLoading(false);
     }
@@ -115,7 +116,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
         }
       })
       .catch((err) => {
-        if (!cancelled) setFirewallLoadError(err instanceof Error ? err.message : t("secureFirewallModal.loadError"));
+        if (!cancelled) setFirewallLoadError(errorMessage(err, t));
       });
     return () => {
       cancelled = true;
@@ -134,7 +135,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setFirewallActive(true);
       toastSuccess(t("secureFirewallModal.securedToast", { name: serverName, backend: result.backend }));
     } catch (err) {
-      setSecuringError(err instanceof Error ? err.message : t("secureFirewallModal.enableError"));
+      setSecuringError(errorMessage(err, t));
     } finally {
       setSecuring(false);
     }
@@ -147,7 +148,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setCapabilities(await INSTALLERS[requirement](serverId));
       toastSuccess(t(`nodeSetup.installedToast.${requirement}`));
     } catch (err) {
-      setInstallError(err instanceof Error ? err.message : t("nodeSetup.installError"));
+      setInstallError(errorMessage(err, t));
     } finally {
       setInstalling(null);
     }
@@ -161,7 +162,7 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
       setNetworkJoined(true);
       toastSuccess(t("nodeSetup.joinedNetworkToast"));
     } catch (err) {
-      setNetworkError(err instanceof Error ? err.message : t("nodeSetup.joinNetworkError"));
+      setNetworkError(errorMessage(err, t));
     } finally {
       setJoiningNetwork(false);
     }
@@ -177,10 +178,10 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
   const allReady = Boolean(capabilities?.docker && capabilities?.wireguard && capabilities?.ufw);
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("nodeSetup.title", { name: serverName })}</h2>
+          <h2 className="modal-title" id="nodesetupwizard-dialog-title-1">{t("nodeSetup.title", { name: serverName })}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="modal-body">

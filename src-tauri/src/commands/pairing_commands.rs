@@ -116,6 +116,13 @@ pub fn start_agent_pairing(app: AppHandle, session: State<PairingSession>, host:
         client_name: "VibeSSH Desktop".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         auth_token: Some(pairing_code),
+        // First contact: there is no Server row yet (pairing is what
+        // creates one), so there is nothing to compare against. This is the
+        // same bootstrap gap SSH has before a host's first `known_hosts`
+        // entry. The pin is recorded by the first *session* connection
+        // afterwards - see `state::agent_sessions` - and every connection
+        // from then on is checked against it.
+        known_fingerprint: None,
     };
     let app_for_events = app.clone();
     spawn_pairing_session(
@@ -214,6 +221,7 @@ mod tests {
             client_name: "vibessh-desktop-test".into(),
             client_version: "0.0.0".into(),
             auth_token: Some("VIBE-COMMAND-TEST".into()),
+            known_fingerprint: None,
         };
 
         let (states_tx, mut states_rx) = mpsc::unbounded_channel();

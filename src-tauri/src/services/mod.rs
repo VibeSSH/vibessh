@@ -32,7 +32,10 @@ pub use application_files_service::{
 };
 pub use application_service::{
     add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,
+    refresh_vibe_network_bind_addresses,
     create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
+    ApplicationDeleteOptions, ApplicationTeardownReport,
+    connect_applications, disconnect_applications, list_application_links,
     list_blueprints, list_registry_credentials, recreate_application, refresh_application_status, remove_application_port,
     remove_registry_credential, restart_application,
     pull_application_image, set_application_environment, set_application_health_check, set_application_image, set_application_resource_limits,
@@ -53,7 +56,7 @@ pub use network_service::{
 };
 pub use node_state_service::{reconcile_node, sync_status as node_sync_status};
 pub use database_service::{
-    create_application_database, create_database_host, delete_application_database, delete_database_host,
+    create_application_database, create_database_host, delete_application_database, delete_database_host, install_database_server,
     list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
     reveal_application_database_password, set_database_host_phpmyadmin,
 };

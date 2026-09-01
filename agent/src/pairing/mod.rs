@@ -67,7 +67,14 @@ impl PairingRegistry {
             return false;
         }
 
-        if pending.code == candidate {
+        // Constant-time, matching how the durable credential is already
+        // compared one module over. The burn limit below caps guessing at
+        // ten attempts, so a timing oracle is not the primary risk here -
+        // but comparing a secret with `==` when the codebase already has a
+        // correct helper is not a trade worth making, and the leak (how
+        // many leading characters matched) is exactly what would make those
+        // ten attempts enough.
+        if credential::constant_time_eq(pending.code.as_bytes(), candidate.as_bytes()) {
             state.pending = None;
             return true;
         }

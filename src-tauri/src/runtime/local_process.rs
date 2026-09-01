@@ -144,7 +144,6 @@ impl LocalProcessManager {
 
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
             command.creation_flags(CREATE_NEW_PROCESS_GROUP);
         }
@@ -537,7 +536,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Running);
@@ -562,7 +561,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(instant_exit_command(0)).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(wait_until_status_settles(&runtime, &ctx).await, ApplicationStatus::Stopped);
@@ -575,7 +574,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(instant_exit_command(3)).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert_eq!(wait_until_status_settles(&runtime, &ctx).await, ApplicationStatus::Failed);
@@ -588,7 +587,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         assert!(matches!(runtime.start(&ctx).await, Err(AppError::InvalidInput(_))));
@@ -603,7 +602,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         runtime.stop(&ctx, true).await.unwrap();
@@ -621,7 +620,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
         let first_pid = manager.snapshot(application_id).await.unwrap().pid;
@@ -641,7 +640,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(runtime.console(&ctx).await.unwrap().is_none());
 
@@ -667,7 +666,7 @@ mod tests {
 
         let config_value = serde_json::to_value(config).unwrap();
         let environment = vec![EnvironmentVariable { key: "VIBESSH_TEST_VAR".into(), value: "vibessh-marker-42".into(), is_secret: false }];
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], links: &[], connection: None };
 
         runtime.start(&ctx).await.unwrap();
 
@@ -690,7 +689,7 @@ mod tests {
         let mut application = stub_application(application_id);
         application.working_directory = std::env::temp_dir().join("vibessh-definitely-not-a-real-dir-xyz").to_string_lossy().into_owned();
         let config = serde_json::to_value(sleep_command()).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(runtime.validate(&ctx).await.is_err());
     }
@@ -702,7 +701,7 @@ mod tests {
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
         let config = serde_json::to_value(LocalProcessConfig { command: "  ".into(), args: vec![] }).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(runtime.validate(&ctx).await.is_err());
     }

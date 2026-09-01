@@ -57,10 +57,6 @@
     "notificationsClear": "Wyczyść",
     "signIn": "Zaloguj się",
     "signOut": "Wyloguj się",
-    "statusOnline": "Online",
-    "statusOffline": "Offline",
-    "statusConnecting": "Łączenie",
-    "statusUnknown": "Nieznany",
     "hostHidden": "Host ukryty",
     "revealHostAria": "Pokaż adres hosta",
     "hideHostAria": "Ukryj adres hosta"
@@ -324,7 +320,8 @@
     "groupByEgg": "Egg",
     "groupByRuntimeType": "Typ uruchamiania",
     "groupByServer": "Serwer",
-    "groupOther": "Inne"
+    "groupOther": "Inne",
+    "removedWithWarningsToast": "Usunięto \"{{name}}\", ale nie wszystko na Node udało się posprzątać: {{warning}}"
   },
   "applicationCard": {
     "local": "Lokalnie",
@@ -412,7 +409,9 @@
     "migrateConfirm": "Migruj",
     "migrating": "Migrowanie...",
     "migrateSuccessToast": "Zmigrowano na nowy Node jako {{name}}.",
-    "migrateError": "Nie udało się zmigrować aplikacji."
+    "migrateError": "Nie udało się zmigrować aplikacji.",
+    "migrateWarningsToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wszystko się dokończyło: {{warning}}",
+    "migrateNotStartedToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wystartowała na nowym węźle."
   },
   "portsTab": {
     "description": "Kontroluj, z których portów sieciowych korzysta ta aplikacja i kto może się do nich łączyć.",
@@ -440,12 +439,13 @@
     "syncFirewall": "Zsynchronizuj firewall",
     "firewallSyncNote": "Opublikowanie portu otwiera go automatycznie - użyj tego, jeśli port jeszcze nie jest dostępny.",
     "firewallSyncLocal": "Ta aplikacja działa lokalnie - nie ma firewalla Node'a do zsynchronizowania.",
-    "firewallSyncNoBackend": "Nie wykryto obsługiwanego firewalla na tym Node.",
+    "firewallSyncNoBackend": "Na tym Node nie wykryto obsługiwanego firewalla, więc nic nie ogranicza tych portów. Zainstaluj ufw, aby je egzekwować.",
     "firewallSyncSummary": "{{backend}} - {{status}}, zastosowano {{count}} reguł(y).",
     "firewallSyncSummaryWithRemoved": "{{backend}} - {{status}}, zastosowano {{count}} reguł(y), usunięto {{removed}} nieaktualnych.",
     "firewallActive": "egzekwuje reguły",
     "firewallInactive": "zainstalowany, ale nieaktywny",
-    "firewallSyncError": "Nie udało się zsynchronizować firewalla."
+    "firewallSyncError": "Nie udało się zsynchronizować firewalla.",
+    "firewallUnenforced": "Reguły są zapisane, ale w tej chwili nic ich nie egzekwuje - porty są otwarte."
   },
   "healthCheck": {
     "title": "Health check",
@@ -550,7 +550,7 @@
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
-    "body": "Usunąć <1>{{name}}</1>? To usuwa ją z VibeSSH - nie zatrzymuje samodzielnie wciąż działającego procesu/usługi/kontenera; jeśli działa, zatrzymaj ją najpierw. Tej operacji nie można cofnąć."
+    "body": "Usunąć <1>{{name}}</1>? Usuwa to również jej kontener, bazy danych, reguły firewalla i konto na Node. Pliki w katalogu roboczym zostają. Tej operacji nie można cofnąć."
   },
   "dockerImage": {
     "title": "Obraz Dockera",
@@ -627,7 +627,10 @@
     "newDatabase": "Nowa baza danych",
     "generatedNote": "Nazwa bazy, login i hasło są generowane automatycznie - „przeznaczenie” tylko wpływa na wygenerowaną nazwę, żeby była rozpoznawalna.",
     "deleteTitle": "Usuń bazę danych",
-    "deleteBody": "Usunąć „{{name}}”? To trwale usuwa rzeczywistą bazę danych i jej użytkownika na serwerze bazy danych - wszystkie dane w niej zostaną bezpowrotnie skasowane. Tej operacji nie można cofnąć."
+    "deleteBody": "Usunąć „{{name}}”? To trwale usuwa rzeczywistą bazę danych i jej użytkownika na serwerze bazy danych - wszystkie dane w niej zostaną bezpowrotnie skasowane. Tej operacji nie można cofnąć.",
+    "installServerOffer": "Host \"{{name}}\" wskazuje na ten węzeł, a nie działa na nim jeszcze żaden serwer bazy danych. Instalacja MariaDB dodaje usługę systemową i konto administratora.",
+    "installServer": "Zainstaluj MariaDB",
+    "installingServer": "Instalowanie…"
   },
   "applicationFilesTab": {
     "loadError": "Nie udało się wczytać plików.",
@@ -888,7 +891,11 @@
     "deleteTitle": "Usuń",
     "deleteBody": "Usunąć „{{name}}”? Tej operacji nie można cofnąć.",
     "deleteBodyMulti": "Usunąć {{count}} zaznaczonych pozycji? Tej operacji nie można cofnąć.",
-    "deleteError": "Nie udało się usunąć."
+    "deleteError": "Nie udało się usunąć.",
+    "filterPlaceholder": "Filtruj po nazwie",
+    "noMatchesTitle": "Brak dopasowań",
+    "noMatchesDescription": "Żaden plik ani folder tutaj nie pasuje do tego filtra.",
+    "showingFirst": "Pokazano pierwsze {{shown}} z {{total}} - zawęź filtr, aby zobaczyć resztę."
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",
@@ -1258,5 +1265,32 @@
       "localhost": "Dostępny tylko z poziomu samego node'a - nigdy nie publikowany na zewnątrz.",
       "custom": "Powiąż z konkretnym adresem, który podasz."
     }
+  },
+  "errors": {
+    "unknown": "Coś poszło nie tak.",
+    "permission_denied": "VibeSSH nie ma uprawnień, aby to zrobić na tym Node. Sprawdź, czy konto, którym się łączy, ma dostęp do tej ścieżki albo uprawnienia sudo.",
+    "port_in_use": "Port {{port}}/{{protocol}} jest już zajęty na tym Node. Wybierz inny port.",
+    "docker_unavailable": "Docker nie jest zainstalowany albo nie działa na tym Node. Zainstaluj go ze strony Node i spróbuj ponownie.",
+    "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
+    "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
+    "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
+    "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora."
+  },
+  "connections": {
+    "title": "Połączenia",
+    "description": "Aplikacje na tym węźle nie widzą się nawzajem, dopóki ich tutaj nie połączysz. Połączenie działa w obie strony i zaczyna obowiązywać od razu.",
+    "emptyTitle": "Brak połączeń",
+    "emptyDescription": "Ta aplikacja nie może połączyć się z żadną inną aplikacją na tym węźle ani żadna z nich z nią.",
+    "reachableAs": "Dostępna pod nazwą {{host}}",
+    "addLabel": "Połącz z",
+    "addPlaceholder": "Wybierz aplikację",
+    "connect": "Połącz",
+    "disconnectAria": "Rozłącz {{name}}"
+  },
+  "serverStatus": {
+    "online": "Online",
+    "offline": "Offline",
+    "connecting": "Łączenie",
+    "unknown": "Nieznany"
   }
 }

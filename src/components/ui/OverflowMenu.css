@@ -35,5 +35,5 @@
   cursor: not-allowed;
 }
 .overflow-menu-item-danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }

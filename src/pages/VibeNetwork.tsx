@@ -11,7 +11,7 @@ import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { RowPicker, serverRowPickerOption, type RowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { addApplicationPort, listApplications, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
 import {
@@ -42,6 +42,7 @@ import "./ApplicationDetail.css";
 import "./Servers.css";
 import "./pages.css";
 import "./VibeNetwork.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "nodes" | "endpoints" | "dns";
 
@@ -66,7 +67,7 @@ export function VibeNetwork() {
   const [leavingMember, setLeavingMember] = useState<NodeNetworkMember | null>(null);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
-  const leaveBackdrop = useBackdropClose(() => !leaveBusy && setLeavingMember(null));
+  const leaveBackdrop = useModalDialog(() => !leaveBusy && setLeavingMember(null), { labelledBy: "vibenetwork-dialog-title-1" });
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -78,7 +79,7 @@ export function VibeNetwork() {
         setDnsView(d);
         setApplications(apps);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -97,7 +98,7 @@ export function VibeNetwork() {
       }
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      setError(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -113,7 +114,7 @@ export function VibeNetwork() {
       setLeavingMember(null);
       reload();
     } catch (err) {
-      setLeaveError(err instanceof Error ? err.message : t("vibeNetwork.leaveError"));
+      setLeaveError(errorMessage(err, t));
     } finally {
       setLeaveBusy(false);
     }
@@ -234,10 +235,10 @@ export function VibeNetwork() {
       )}
 
       {leavingMember && (
-        <div className="modal-backdrop" {...leaveBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...leaveBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...leaveBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("vibeNetwork.leaveTitle")}</h2>
+              <h2 className="modal-title" id="vibenetwork-dialog-title-1">{t("vibeNetwork.leaveTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setLeavingMember(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -387,7 +388,7 @@ interface AddNodeModalProps {
  * CIDR, peer, or firewall rule is ever typed here. */
 function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-2" });
   const [serverId, setServerId] = useState(joinableServers[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -405,17 +406,17 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
       onJoined();
     } catch (err) {
       setStep("idle");
-      setError(err instanceof Error ? err.message : t("vibeNetwork.joinError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("vibeNetwork.addNodeTitle")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-2">{t("vibeNetwork.addNodeTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="modal-body">
@@ -488,7 +489,7 @@ function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPan
         setEndpoints(eps);
         setApplications(apps.filter((a) => a.serverId === serverId));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [serverId, t]);
 
@@ -503,7 +504,7 @@ function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPan
       await removeApplicationPort(endpoint.applicationId, endpoint.id);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.deleteError"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -606,7 +607,7 @@ interface EndpointFormModalProps {
 
 function EndpointFormModal({ applications, editing, onClose, onSaved }: EndpointFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-3" });
   const [applicationId, setApplicationId] = useState(editing?.applicationId ?? applications[0]?.id ?? "");
   const [name, setName] = useState(editing?.name ?? "");
   const [protocol, setProtocol] = useState<"tcp" | "udp">(editing?.protocol ?? "tcp");
@@ -643,17 +644,17 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{editing ? t("portsTab.editTitle") : t("vibeNetwork.addEndpoint")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-3">{editing ? t("portsTab.editTitle") : t("vibeNetwork.addEndpoint")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -762,7 +763,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
         setRecords(r);
         setApplications(a);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("vibeNetwork.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -777,7 +778,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
       setSyncNote(failed.length === 0 ? t("vibeNetwork.dnsSyncOk", { count: results.length }) : t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: results.length }));
       onChanged();
     } catch (err) {
-      setSyncNote(err instanceof Error ? err.message : t("vibeNetwork.syncError"));
+      setSyncNote(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -804,7 +805,7 @@ function DnsPanel({ members, dnsView, onChanged }: DnsPanelProps) {
       setSyncNote(failed.length === 0 ? t("vibeNetwork.dnsSyncOk", { count: results.length }) : t("vibeNetwork.dnsSyncPartial", { failed: failed.length, total: results.length }));
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.dnsDeleteError"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -905,7 +906,7 @@ interface DnsFormModalProps {
 
 function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "vibenetwork-dialog-title-4" });
   const [applicationId, setApplicationId] = useState(editing?.applicationId ?? applications[0]?.id ?? "");
   const [hostname, setHostname] = useState(editing?.hostname.replace(/\.vibe$/, "") ?? "");
   const [busy, setBusy] = useState(false);
@@ -929,17 +930,17 @@ function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalP
       }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("vibeNetwork.dnsSaveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{editing ? t("vibeNetwork.editAlias") : t("vibeNetwork.addAlias")}</h2>
+          <h2 className="modal-title" id="vibenetwork-dialog-title-4">{editing ? t("vibeNetwork.editAlias") : t("vibeNetwork.addAlias")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

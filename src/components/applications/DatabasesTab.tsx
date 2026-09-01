@@ -8,12 +8,13 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   createApplicationDatabase,
   deleteApplicationDatabase,
   getPhpmyadminUrl,
   listApplicationDatabases,
+  installDatabaseServer,
   listDatabaseHosts,
   resetApplicationDatabasePassword,
   revealApplicationDatabasePassword,
@@ -21,6 +22,7 @@ import {
 import type { ApplicationDatabase, DatabaseHost } from "@/types/database";
 import "@/components/servers/forms.css";
 import "./DatabasesTab.css";
+import { CommandError, errorMessage } from "@/services/tauri";
 
 interface DatabasesTabProps {
   applicationId: string;
@@ -33,6 +35,11 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [hosts, setHosts] = useState<DatabaseHost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Set when a database operation failed only because the node has no
+   * database server yet. Installing one is a real change to the machine, so
+   * the offer is a button rather than something that already happened. */
+  const [installHostId, setInstallHostId] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const [databaseHostId, setDatabaseHostId] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -45,19 +52,19 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState<string | null>(null);
-  const revealBackdrop = useBackdropClose(() => setRevealingDatabase(null));
+  const revealBackdrop = useModalDialog(() => setRevealingDatabase(null), { labelledBy: "databasestab-dialog-title-1" });
 
   const [deletingDatabase, setDeletingDatabase] = useState<ApplicationDatabase | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingDatabase(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingDatabase(null), { labelledBy: "databasestab-dialog-title-2" });
 
   const reload = useCallback(() => {
     setLoading(true);
     setError(null);
     listApplicationDatabases(applicationId)
       .then(setDatabases)
-      .catch((err) => setError(err instanceof Error ? err.message : t("databasesTab.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, t]);
 
@@ -84,11 +91,32 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     try {
       await createApplicationDatabase(applicationId, databaseHostId, purpose.trim() || undefined);
       setPurpose("");
+      setInstallHostId(null);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("databasesTab.createError"));
+      setError(errorMessage(err, t));
+      if (err instanceof CommandError && err.code === "database_server_unavailable") {
+        setInstallHostId(databaseHostId);
+      }
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleInstallServer() {
+    if (!installHostId) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      await installDatabaseServer(installHostId);
+      setInstallHostId(null);
+      // Not retried automatically: the operator asked for an install, and
+      // silently performing the original request on the back of it is the
+      // habit this whole change exists to break.
+    } catch (err) {
+      setError(errorMessage(err, t));
+    } finally {
+      setInstalling(false);
     }
   }
 
@@ -100,7 +128,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     try {
       setRevealedPassword(await revealApplicationDatabasePassword(database.id));
     } catch (err) {
-      setRevealError(err instanceof Error ? err.message : t("databasesTab.revealError"));
+      setRevealError(errorMessage(err, t));
     } finally {
       setRevealBusy(false);
     }
@@ -115,7 +143,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       setRevealedPassword(password);
       setRevealError(null);
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : t("databasesTab.resetError"));
+      setRowError(errorMessage(err, t));
     } finally {
       setBusyRowId(null);
     }
@@ -128,7 +156,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       const url = await getPhpmyadminUrl(database.databaseHostId, database.databaseName);
       await open(url);
     } catch (err) {
-      setRowError(err instanceof Error ? err.message : t("databasesTab.phpmyadminError"));
+      setRowError(errorMessage(err, t));
     } finally {
       setBusyRowId(null);
     }
@@ -143,7 +171,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       setDeletingDatabase(null);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("databasesTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -215,6 +243,16 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
 
       {rowError && <p className="form-note form-note-danger form-note-spaced">{rowError}</p>}
 
+      {installHostId && (
+        <div className="application-detail-header-row">
+          <p className="form-note">{t("databasesTab.installServerOffer", { name: hostFor(installHostId)?.name ?? "" })}</p>
+          <Button variant="secondary" size="sm" onClick={handleInstallServer} disabled={installing}>
+            <Icon name="download" size={14} />
+            {installing ? t("databasesTab.installingServer") : t("databasesTab.installServer")}
+          </Button>
+        </div>
+      )}
+
       {hosts.length === 0 ? (
         <p className="form-note">
           <Trans t={t} i18nKey="databasesTab.noHosts" components={{ 1: <Link to="/database-hosts" /> }} />
@@ -245,10 +283,10 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {deletingDatabase && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("databasesTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="databasestab-dialog-title-1">{t("databasesTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingDatabase(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -268,10 +306,10 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {revealingDatabase && (
-        <div className="modal-backdrop" {...revealBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...revealBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...revealBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("databasesTab.credentialsTitle", { name: revealingDatabase.databaseName })}</h2>
+              <h2 className="modal-title" id="databasestab-dialog-title-2">{t("databasesTab.credentialsTitle", { name: revealingDatabase.databaseName })}</h2>
               <IconButton icon="x" size="sm" onClick={() => setRevealingDatabase(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">

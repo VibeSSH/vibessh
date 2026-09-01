@@ -114,6 +114,9 @@ export interface ApplicationDetail extends Application {
   ports: ApplicationPort[];
   runtimeConfig: unknown;
   metadata: unknown;
+  /** Ids of the other applications this one is allowed to reach on its node.
+   * Symmetric - if A lists B, B lists A. See `listApplicationLinks`. */
+  links: string[];
 }
 
 export interface ResourceUsage {

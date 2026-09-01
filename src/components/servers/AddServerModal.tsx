@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import { NodeSetupWizard } from "./NodeSetupWizard";
@@ -21,7 +21,7 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "addservermodal-dialog-title-1" });
   // A freshly created SSH-mode Node still needs Docker/WireGuard/ufw/Vibe
   // Network - the design doc's own "Setup Page" - so a brand new server
   // hands off into that guided flow instead of just closing (an edit, or a
@@ -34,10 +34,10 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEditing ? t("addServerModal.titleEdit") : t("addServerModal.titleAdd")}</h2>
+          <h2 className="modal-title" id="addservermodal-dialog-title-1">{isEditing ? t("addServerModal.titleEdit") : t("addServerModal.titleAdd")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
 

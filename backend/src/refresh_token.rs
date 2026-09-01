@@ -6,6 +6,11 @@
 //! presented twice (the old one, after rotation already happened) is a
 //! reasonable signal something is wrong - the token is simply rejected
 //! either way since it's already revoked.
+/// `(id, user_id, expires_at, revoked_at)` - the columns every lookup here
+/// selects, named so the query below reads as a lookup rather than a tuple
+/// puzzle.
+type StoredRefreshToken = (Uuid, Uuid, DateTime<Utc>, Option<DateTime<Utc>>);
+
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -50,7 +55,7 @@ pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid,
     let hashed = tokens::hash(raw_token);
     let mut tx = db.begin().await?;
 
-    let row: Option<(Uuid, Uuid, DateTime<Utc>, Option<DateTime<Utc>>)> = sqlx::query_as(
+    let row: Option<StoredRefreshToken> = sqlx::query_as(
         "SELECT id, user_id, expires_at, revoked_at FROM refresh_tokens WHERE token_hash = $1",
     )
     .bind(&hashed)

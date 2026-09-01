@@ -5,6 +5,9 @@ use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldT
 use crate::services::latest_paper_build;
 
 use super::{bool_input, render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 /// Not a user-facing wizard field - `provision()` writes the real,
 /// downloaded jar's filename here (only known once the download actually
@@ -234,23 +237,6 @@ async fn write_eula(context: &ProvisionContext<'_>) -> AppResult<()> {
     }
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, same as it already is across `runtime::remote_process`,
-/// `runtime::docker`, and `services::application_service`.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 #[cfg(test)]
 mod tests {

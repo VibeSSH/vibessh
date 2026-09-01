@@ -48,17 +48,57 @@ use vibessh_protocol::RemoteFileEntry;
 use crate::dedicated_user;
 use crate::errors::{AppError, AppResult};
 use crate::ssh::SshSession;
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 use super::sandbox::{relativize, sanitize_relative_path};
 use super::{ApplicationFileProvider, ProgressFn};
 
 const HELPER_PATH: &str = "/usr/local/lib/vibessh/file-helper.sh";
 const SUDOERS_PATH: &str = "/etc/sudoers.d/vibessh-file-helper";
-/// Every staging file lives under this exact prefix - the helper script
-/// itself refuses to `read`/`write` a staging argument that doesn't start
-/// with it (`require_staging`), a defense-in-depth check against a
-/// hypothetical bug on the Rust side ever passing through some other path.
-const STAGING_PREFIX: &str = "/tmp/vibessh-stage-";
+/// Every staging file lives under this directory - the helper script itself
+/// refuses to `read`/`write` a staging argument that doesn't start with it
+/// (`require_staging`), a defense-in-depth check against a hypothetical bug
+/// on the Rust side ever passing through some other path.
+///
+/// **This used to be `/tmp/vibessh-stage-`, and that was two separate
+/// vulnerabilities.** `/tmp` is world-readable and the helper explicitly
+/// `chmod 644`'d each staging file, so every file anyone opened in the
+/// Files tab became a world-readable copy - readable by every *other*
+/// Application's dedicated account, which is exactly the boundary this
+/// provider exists to enforce. And the staging file was created by the
+/// dedicated account (through `sudo -u`) while the cleanup was attempted
+/// over the connecting admin's own SFTP: `/tmp`'s sticky bit means a
+/// non-owner cannot unlink, so that cleanup always failed, its error was
+/// discarded, and the world-readable copies accumulated forever.
+///
+/// Both are fixed by the layout in `staging_dir` plus the `sudo rm` in
+/// `discard_staging`, and by the staging files now being mode 0600.
+pub(crate) const STAGING_ROOT: &str = "/run/vibessh/stage";
+
+/// Per-Application staging directory, owned by that Application's own
+/// dedicated account.
+///
+/// **Mode 0701 is deliberate, not a typo.** Two mutually-untrusting
+/// unprivileged identities have to exchange bytes here: the dedicated
+/// account (which owns the Application's files and is what the helper runs
+/// as) and the connecting SSH admin (which is the only identity SFTP can
+/// authenticate as, so it is the only one that can move binary content).
+/// Owner `rwx` lets the helper create and read staging files; other `--x`
+/// lets the admin *traverse* to a path it already knows without being able
+/// to **list** the directory. Staging file names are v4 UUIDs, so another
+/// Application's account - which gets the same `--x` and no read - has no
+/// way to enumerate or guess one.
+///
+/// The admin's own half of each handoff goes through `sudo` (see
+/// `claim_staging`/`release_staging`) rather than through a shared group:
+/// adding the admin to a per-Application group would not take effect on an
+/// already-open SSH session anyway, since group membership is fixed at
+/// login.
+fn staging_dir(application_id: Uuid) -> String {
+    format!("{STAGING_ROOT}/{application_id}")
+}
 
 /// POSIX `sh`, not bash - portable across every distro this codebase
 /// otherwise assumes (Debian/Ubuntu). Every path/mode argument arrives as
@@ -82,6 +122,7 @@ set -eu
 # working directory") if it can't - `cd /` first sidesteps that entirely,
 # since `/` is traversable by every account regardless of what it owns.
 cd / || exit 1
+umask 077
 
 root_arg="$1"; shift
 op="$1"; shift
@@ -114,7 +155,7 @@ require_within_root() {{
 
 require_staging() {{
     case "$1" in
-        {staging_prefix}*) return 0 ;;
+        {staging_root}/*) return 0 ;;
         *) echo "vibessh-file-helper: staging path rejected" >&2; exit 8 ;;
     esac
 }}
@@ -143,7 +184,7 @@ case "$op" in
     staging="$2"
     require_staging "$staging"
     cp -- "$target" "$staging"
-    chmod 644 "$staging"
+    chmod 600 "$staging"
     ;;
   write)
     target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such directory" >&2; exit 4; }}
@@ -189,13 +230,17 @@ case "$op" in
     esac
     chmod "$mode" -- "$target"
     ;;
+  cleanup)
+    require_staging "$1"
+    rm -f -- "$1"
+    ;;
   *)
     echo "vibessh-file-helper: unknown operation '$op'" >&2
     exit 2
     ;;
 esac
 "#,
-        staging_prefix = STAGING_PREFIX,
+        staging_root = STAGING_ROOT,
     )
 }
 
@@ -235,7 +280,14 @@ pub(crate) async fn ensure_helper_installed(connection: &SshSession) -> AppResul
         return Ok(());
     }
 
-    let staging = staging_path();
+    // Not an Application staging path: this is the helper script itself,
+    // staged by (and owned by) the connecting admin before `sudo install`
+    // moves it into place as root. A relative SFTP path lands in the
+    // admin's own home directory, which the admin owns outright - so the
+    // `rm -f` below actually succeeds, and no world-writable directory is
+    // involved. The content is not secret (it is this binary's own embedded
+    // script), so the concern here is only integrity and cleanup.
+    let staging = format!(".vibessh-helper-{}", Uuid::new_v4());
     connection.write_file(&staging, expected.as_bytes()).await?;
 
     let runas_group = format!("%{}", dedicated_user::GROUP);
@@ -260,23 +312,10 @@ pub(crate) async fn ensure_helper_installed(connection: &SshSession) -> AppResul
     Ok(())
 }
 
-fn staging_path() -> String {
-    format!("{STAGING_PREFIX}{}", Uuid::new_v4())
+fn staging_path(application_id: Uuid) -> String {
+    format!("{}/{}", staging_dir(application_id), Uuid::new_v4())
 }
 
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 /// Parses one `find -printf '%f\t%y\t%Y\t%s\t%T@\t%m'` line: bare name,
 /// lstat type char (`is_symlink = 'l'`), dereferenced type char
@@ -316,11 +355,101 @@ pub struct SudoUserApplicationFileProvider {
     connection: Arc<SshSession>,
     root: String,
     username: String,
+    /// Only used to derive this Application's own staging directory - see
+    /// `staging_dir` for why staging is per-Application rather than one
+    /// shared location.
+    application_id: Uuid,
 }
 
 impl SudoUserApplicationFileProvider {
-    pub fn new(connection: Arc<SshSession>, root: String, username: String) -> Self {
-        Self { connection, root, username }
+    pub fn new(connection: Arc<SshSession>, root: String, username: String, application_id: Uuid) -> Self {
+        Self { connection, root, username, application_id }
+    }
+
+    /// Creates this Application's staging directory if it isn't there yet.
+    /// Cheap and idempotent (`install -d` re-applies owner and mode), and
+    /// called at the start of every staged transfer rather than once at
+    /// provisioning time, so a Node upgraded from a build that staged
+    /// through `/tmp` heals itself with no manual step.
+    async fn ensure_staging_dir(&self) -> AppResult<()> {
+        let command = format!(
+            "sudo install -d -o root -g root -m 755 {root} && sudo install -d -o {user} -g {user} -m 701 {dir}",
+            root = shell_quote(STAGING_ROOT),
+            user = shell_quote(&self.username),
+            dir = shell_quote(&staging_dir(self.application_id)),
+        );
+        let output = self.connection.execute_command(&command).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "couldn't prepare the staging directory".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(detail));
+        }
+        Ok(())
+    }
+
+    /// Hands a staging file the *helper* created (owned by the dedicated
+    /// account) over to the connecting admin, so the admin's SFTP session
+    /// can read it. The admin's own broad `sudo` does this - the same
+    /// privilege it already uses to install the helper and the sudoers
+    /// rule. Mode stays 0600 throughout; only the owner changes.
+    async fn claim_staging(&self, staging: &str) -> AppResult<()> {
+        let command = format!(
+            "sudo chown \"$(id -un)\":\"$(id -gn)\" {path} && sudo chmod 600 {path}",
+            path = shell_quote(staging),
+        );
+        let output = self.connection.execute_command(&command).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection("couldn't stage the file for transfer".into()));
+        }
+        Ok(())
+    }
+
+    /// The reverse handoff: a staging file the admin just uploaded over
+    /// SFTP becomes owned by the dedicated account, so the helper (which
+    /// runs as that account) can read it back out.
+    async fn release_staging(&self, staging: &str) -> AppResult<()> {
+        let command = format!(
+            "sudo chown {user}:{user} {path} && sudo chmod 600 {path}",
+            user = shell_quote(&self.username),
+            path = shell_quote(staging),
+        );
+        let output = self.connection.execute_command(&command).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection("couldn't stage the file for transfer".into()));
+        }
+        Ok(())
+    }
+
+    /// Creates an empty, admin-owned staging file so the admin's SFTP write
+    /// can land in a directory it does not own. `install /dev/null` is what
+    /// makes this one step rather than a create-then-chown race.
+    async fn reserve_staging(&self, staging: &str) -> AppResult<()> {
+        let command = format!("sudo install -o \"$(id -un)\" -g \"$(id -gn)\" -m 600 /dev/null {}", shell_quote(staging));
+        let output = self.connection.execute_command(&command).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "couldn't prepare the staging file".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(detail));
+        }
+        Ok(())
+    }
+
+    /// Removes a staging file, whoever ended up owning it, and says so in
+    /// the log when it cannot.
+    ///
+    /// Deliberately `sudo rm` rather than the admin's own SFTP `remove`:
+    /// the previous implementation used SFTP, which cannot unlink a file
+    /// owned by another account in a sticky directory, so **every** staged
+    /// read left a permanent copy behind - and because the result was
+    /// discarded with `let _`, nothing ever reported it. Root can always
+    /// unlink, and a failure here is at least visible now.
+    async fn discard_staging(&self, staging: &str) {
+        let command = format!("sudo rm -f {}", shell_quote(staging));
+        match self.connection.execute_command(&command).await {
+            Ok(output) if output.exit_code == 0 => {}
+            Ok(output) => log::warn!("couldn't remove the staging file {staging}: {}", output.stderr.trim()),
+            Err(err) => log::warn!("couldn't remove the staging file {staging}: {err}"),
+        }
     }
 
     /// Sanitizes and joins `relative` onto `root` - deliberately *not*
@@ -386,19 +515,29 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
 
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>> {
         let resolved = self.resolve(path)?;
-        let staging = staging_path();
+        self.ensure_staging_dir().await?;
+        let staging = staging_path(self.application_id);
         self.run_helper("read", &[&resolved, &staging]).await?;
-        let result = self.connection.read_file(&staging).await;
-        let _ = self.connection.remove_file(&staging).await;
+        let result = match self.claim_staging(&staging).await {
+            Ok(()) => self.connection.read_file(&staging).await,
+            Err(err) => Err(err),
+        };
+        self.discard_staging(&staging).await;
         result
     }
 
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         let resolved = self.resolve(path)?;
-        let staging = staging_path();
-        self.connection.write_file(&staging, contents).await?;
-        let result = self.run_helper("write", &[&resolved, &staging]).await.map(|_| ());
-        let _ = self.connection.remove_file(&staging).await;
+        self.ensure_staging_dir().await?;
+        let staging = staging_path(self.application_id);
+        let result = async {
+            self.reserve_staging(&staging).await?;
+            self.connection.write_file(&staging, contents).await?;
+            self.release_staging(&staging).await?;
+            self.run_helper("write", &[&resolved, &staging]).await.map(|_| ())
+        }
+        .await;
+        self.discard_staging(&staging).await;
         result
     }
 
@@ -427,24 +566,39 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
     async fn set_permissions(&self, path: &str, mode: u32) -> AppResult<()> {
         let resolved = self.resolve(path)?;
         let mode_octal = format!("{mode:o}");
+        // `mode` is a u32 straight off the wire, so a caller could send
+        // something that renders as more than four octal digits. The helper
+        // script rejects it too, but failing here gives a message naming the
+        // mode rather than a bare non-zero exit.
+        crate::ssh::command::validate_octal_mode(&mode_octal, "the permission mode")?;
         self.run_helper("chmod", &[&resolved, &mode_octal]).await.map(|_| ())
     }
 
     async fn download_file(&self, path: &str, local_dest: &Path, on_progress: ProgressFn<'_>) -> AppResult<()> {
         let resolved = self.resolve(path)?;
-        let staging = staging_path();
+        self.ensure_staging_dir().await?;
+        let staging = staging_path(self.application_id);
         self.run_helper("read", &[&resolved, &staging]).await?;
-        let result = self.connection.download_file_with_progress(&staging, local_dest, on_progress).await;
-        let _ = self.connection.remove_file(&staging).await;
+        let result = match self.claim_staging(&staging).await {
+            Ok(()) => self.connection.download_file_with_progress(&staging, local_dest, on_progress).await,
+            Err(err) => Err(err),
+        };
+        self.discard_staging(&staging).await;
         result
     }
 
     async fn upload_file(&self, local_src: &Path, path: &str, on_progress: ProgressFn<'_>) -> AppResult<()> {
         let resolved = self.resolve(path)?;
-        let staging = staging_path();
-        self.connection.upload_file_with_progress(local_src, &staging, on_progress).await?;
-        let result = self.run_helper("write", &[&resolved, &staging]).await.map(|_| ());
-        let _ = self.connection.remove_file(&staging).await;
+        self.ensure_staging_dir().await?;
+        let staging = staging_path(self.application_id);
+        let result = async {
+            self.reserve_staging(&staging).await?;
+            self.connection.upload_file_with_progress(local_src, &staging, on_progress).await?;
+            self.release_staging(&staging).await?;
+            self.run_helper("write", &[&resolved, &staging]).await.map(|_| ())
+        }
+        .await;
+        self.discard_staging(&staging).await;
         result
     }
 }
@@ -481,8 +635,8 @@ mod tests {
     fn helper_script_embeds_the_staging_prefix_and_every_operation() {
         let script = helper_script();
         assert!(script.starts_with("#!/bin/sh"));
-        assert!(script.contains(STAGING_PREFIX));
-        for op in ["realpath", "list", "stat", "read", "write", "mkdir", "delete", "rename", "copy", "chmod"] {
+        assert!(script.contains(STAGING_ROOT));
+        for op in ["realpath", "list", "stat", "read", "write", "mkdir", "delete", "rename", "copy", "chmod", "cleanup"] {
             assert!(script.contains(&format!("{op})")), "missing '{op}' case in helper script");
         }
         // No stray unescaped format-brace made it into the generated
@@ -491,6 +645,51 @@ mod tests {
         // vanish from the output.
         assert!(script.contains("within_root() {"));
         assert!(script.contains("esac"));
+    }
+
+    /// The regression test for the disclosure half of the staging finding:
+    /// the helper used to `chmod 644` every staged file in world-readable
+    /// `/tmp`, which made every file anyone opened in the Files tab
+    /// readable by every other Application's dedicated account.
+    #[test]
+    fn helper_script_never_makes_a_staging_file_readable_to_anyone_else() {
+        let script = helper_script();
+        assert!(!script.contains("chmod 644"), "{script}");
+        assert!(script.contains("chmod 600 \"$staging\""), "{script}");
+        assert!(script.contains("umask 077"), "{script}");
+    }
+
+    /// The regression test for the leak half: nothing may stage through
+    /// `/tmp` at all. A sticky world-writable directory is both readable by
+    /// everyone and impossible for a non-owner to clean up, which is why
+    /// the old staging files accumulated forever.
+    #[test]
+    fn nothing_stages_through_tmp() {
+        assert!(!STAGING_ROOT.starts_with("/tmp"), "{STAGING_ROOT}");
+        assert!(!helper_script().contains("/tmp"), "{}", helper_script());
+        let staging = staging_path(Uuid::new_v4());
+        assert!(staging.starts_with(&format!("{STAGING_ROOT}/")), "{staging}");
+    }
+
+    /// Staging is per-Application, so one Application's staged bytes never
+    /// share a directory with another's.
+    #[test]
+    fn staging_is_scoped_to_one_application() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        assert_ne!(staging_dir(a), staging_dir(b));
+        assert!(staging_path(a).starts_with(&staging_dir(a)));
+        assert!(!staging_path(a).starts_with(&staging_dir(b)));
+    }
+
+    /// Two different transfers of the same file must not collide, which is
+    /// also what makes the directory's `--x`-only mode safe: another
+    /// account can traverse but cannot list, so it would have to guess a
+    /// v4 UUID to reach anything.
+    #[test]
+    fn every_staging_path_is_unique() {
+        let id = Uuid::new_v4();
+        assert_ne!(staging_path(id), staging_path(id));
     }
 
     #[test]

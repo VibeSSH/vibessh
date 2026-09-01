@@ -5,6 +5,7 @@ import { cloudAssignRole, cloudListMemberRoles, cloudListRoles, cloudUnassignRol
 import { toastError } from "@/stores/toastStore";
 import type { CloudRole } from "@/types/cloud";
 import "./MemberRolesEditor.css";
+import { errorMessage } from "@/services/tauri";
 
 interface MemberRolesEditorProps {
   teamId: string;
@@ -42,7 +43,7 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner, canMana
         setAllRoles(roles);
         setAssignedRoleIds(new Set(memberRoles.map((r) => r.id)));
       })
-      .catch((err) => toastError(err instanceof Error ? err.message : t("roles.couldntList")))
+      .catch((err) => toastError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -66,7 +67,7 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner, canMana
         setAssignedRoleIds((prev) => new Set(prev).add(role.id));
       }
     } catch (err) {
-      toastError(err instanceof Error ? err.message : t("roles.couldntAssign"));
+      toastError(errorMessage(err, t));
     } finally {
       setBusyRoleId(null);
     }

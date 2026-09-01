@@ -9,13 +9,14 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { listPortForwards, startPortForward, stopPortForward } from "@/services/portForwardService";
 import { useServersStore } from "@/stores/serversStore";
 import type { PortForwardKind, PortForwardStatus, StartPortForwardInput } from "@/types/portForward";
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 function kindLabel(t: (key: string) => string, kind: PortForwardKind): string {
   switch (kind) {
@@ -46,7 +47,7 @@ export function PortForwardingPage() {
     setLoadError(null);
     listPortForwards()
       .then(setForwards)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("portForwardingPage.loadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [t]);
 
@@ -65,7 +66,7 @@ export function PortForwardingPage() {
       await stopPortForward(id);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("portForwardingPage.stopError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setStoppingId(null);
     }
@@ -153,7 +154,7 @@ interface AddForwardModalProps {
 
 function AddForwardModal({ serverId, onClose, onAdded }: AddForwardModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "portforwarding-dialog-title-1" });
   const [kind, setKind] = useState<PortForwardKind>("local");
   const [bindAddress, setBindAddress] = useState("127.0.0.1");
   const [bindPort, setBindPort] = useState("");
@@ -191,17 +192,17 @@ function AddForwardModal({ serverId, onClose, onAdded }: AddForwardModalProps) {
       await startPortForward(input);
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portForwardingPage.startError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("portForwardingPage.addForwardTitle")}</h2>
+          <h2 className="modal-title" id="portforwarding-dialog-title-1">{t("portForwardingPage.addForwardTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

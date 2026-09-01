@@ -8,7 +8,7 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { ContainerLogsPanel } from "@/components/servers/ContainerLogsPanel";
 import {
   disableServerService,
@@ -30,6 +30,7 @@ import "./pages.css";
 import "./Actions.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const MAX_ROWS_SHOWN = 200;
 
@@ -69,7 +70,7 @@ export function ActionsPage() {
   const [confirming, setConfirming] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const confirmBackdrop = useBackdropClose(() => !actionBusy && setConfirming(null));
+  const confirmBackdrop = useModalDialog(() => !actionBusy && setConfirming(null), { labelledBy: "actions-dialog-title-1" });
 
   const loadServices = useCallback(() => {
     if (!serverId) return;
@@ -77,7 +78,7 @@ export function ActionsPage() {
     setServicesError(null);
     listServerServices(serverId)
       .then((loaded) => setServices([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setServicesError(err instanceof Error ? err.message : t("actionsPage.couldntListServices")))
+      .catch((err) => setServicesError(errorMessage(err, t)))
       .finally(() => setServicesLoading(false));
   }, [serverId]);
 
@@ -87,7 +88,7 @@ export function ActionsPage() {
     setContainersError(null);
     listServerContainers(serverId)
       .then((loaded) => setContainers([...loaded].sort((a, b) => a.name.localeCompare(b.name))))
-      .catch((err) => setContainersError(err instanceof Error ? err.message : t("actionsPage.couldntListContainers")))
+      .catch((err) => setContainersError(errorMessage(err, t)))
       .finally(() => setContainersLoading(false));
   }, [serverId]);
 
@@ -260,10 +261,10 @@ export function ActionsPage() {
       )}
 
       {confirming && (
-        <div className="modal-backdrop" {...confirmBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...confirmBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...confirmBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">
+              <h2 className="modal-title" id="actions-dialog-title-1">
                 {t(confirming.kind === "service" ? "actionsPage.confirmTitleService" : "actionsPage.confirmTitleContainer", {
                   verb: t(`actionsPage.verb.${confirming.verb}`),
                 })}

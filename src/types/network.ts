@@ -21,13 +21,6 @@ export interface NodeMeshStatus {
   peers: PeerHandshake[];
 }
 
-/** Mirrors the Rust `MeshReconcileResult` DTO. */
-export interface MeshReconcileResult {
-  serverId: string;
-  ok: boolean;
-  error: string | null;
-}
-
 /** Mirrors the Rust `NodeEndpoint` DTO - the "Endpoints" view, a Node-scoped read over existing Application ports. */
 export interface NodeEndpoint {
   applicationId: string;

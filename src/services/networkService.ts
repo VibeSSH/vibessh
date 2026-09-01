@@ -4,7 +4,6 @@ import type {
   DnsRecord,
   DnsSyncResult,
   DnsView,
-  MeshReconcileResult,
   NodeEndpoint,
   NodeMeshStatus,
   NodeNetworkMember,
@@ -24,10 +23,6 @@ export function joinVibeNetwork(serverId: string): Promise<NodeNetworkMember> {
 
 export function leaveVibeNetwork(serverId: string): Promise<void> {
   return callCommand<void>("leave_vibe_network", { serverId });
-}
-
-export function reconcileVibeMesh(): Promise<MeshReconcileResult[]> {
-  return callCommand<MeshReconcileResult[]>("reconcile_vibe_mesh");
 }
 
 /** Real, current state - each Node's own `wg show` output, cross-referenced back to whichever mesh member each peer is. */

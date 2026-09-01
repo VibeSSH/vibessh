@@ -14,6 +14,7 @@ import "./Servers.css";
 import "./Files.css";
 import "./Teams.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 export function Teams() {
   const { t } = useTranslation();
@@ -32,7 +33,7 @@ export function Teams() {
     setError(null);
     cloudListTeams()
       .then(setTeams)
-      .catch((err) => setError(err instanceof Error ? err.message : t("teams.couldntList")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -50,7 +51,7 @@ export function Teams() {
       setNewTeamName("");
       toastSuccess(t("teams.createdToast", { name: team.name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("teams.couldntCreate"));
+      setError(errorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -67,7 +68,7 @@ export function Teams() {
       toastSuccess(t("teams.acceptedInvitationToast", { name: team.name }));
       load();
     } catch (err) {
-      setInvitationError(err instanceof Error ? err.message : t("teams.couldntAcceptInvitation"));
+      setInvitationError(errorMessage(err, t));
     } finally {
       setInvitationBusy(false);
     }
@@ -83,7 +84,7 @@ export function Teams() {
       setInvitationToken("");
       toastSuccess(t("teams.declinedInvitationToast"));
     } catch (err) {
-      setInvitationError(err instanceof Error ? err.message : t("teams.couldntDeclineInvitation"));
+      setInvitationError(errorMessage(err, t));
     } finally {
       setInvitationBusy(false);
     }

@@ -5,8 +5,8 @@ import { usePingStore } from "@/stores/pingStore";
 import type { NodeSyncStatus } from "@/services/serverService";
 import type { ManagedServer } from "@/stores/serversStore";
 import type { ServerMetrics } from "@/types/serverEvent";
-import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./NodeMiniCard.css";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
@@ -75,7 +75,6 @@ interface NodeMiniCardProps {
 export function NodeMiniCard({ server, metrics, history, syncStatus, selected, onSelect }: NodeMiniCardProps) {
   const { t } = useTranslation();
   const isAgent = server.connectionMode === "agent";
-  const statusColor = STATUS_COLOR[server.status];
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
   const ramPercent = metrics && metrics.ramTotalBytes > 0 ? (metrics.ramUsedBytes / metrics.ramTotalBytes) * 100 : 0;
   const needsAttention = server.status === "offline" || (isAgent && syncStatus !== null && !syncStatus.inSync);
@@ -110,10 +109,7 @@ export function NodeMiniCard({ server, metrics, history, syncStatus, selected, o
           </div>
           <HostAddress value={server.host} prefix={server.username ? `${server.username}@` : undefined} className="node-mini-card-host" />
         </div>
-        <span className="node-mini-card-status-dot-wrap">
-          {server.status === "online" && <span className="node-mini-card-status-ping" style={{ background: statusColor }} />}
-          <span className="node-mini-card-status-dot" style={{ background: statusColor }} />
-        </span>
+        <StatusDot status={server.status} withLabel />
       </div>
 
       {isAgent ? (

@@ -64,13 +64,39 @@ where
     match attempt().await {
         Ok(value) => Ok(value),
         Err(first_err) => {
+            // Only a transport failure is worth reconnecting for. This used
+            // to retry on *any* error, so a plain
+            // `InvalidInput("port 25565 is already published")` tore down a
+            // perfectly healthy SSH session, opened a new one, and re-ran
+            // the whole operation - side effects included. A rejected input
+            // did the work twice; a failed `docker pull` pulled twice. The
+            // name said "connection failure" and the code said "anything".
+            if !is_transport_failure(&first_err) {
+                return Err(first_err);
+            }
             let Some(server_id) = server_id else {
                 return Err(first_err);
             };
             sessions.remove(server_id).await;
-            attempt().await.map_err(|_| first_err)
+            // Surface the *second* error, not the first. A reconnect that
+            // fails for a new reason ("SSH authentication was rejected") is
+            // far more actionable than repeating the stale transport error
+            // that triggered the retry - which is what `map_err(|_| first_err)`
+            // used to do.
+            attempt().await
         }
     }
+}
+
+/// `true` for the errors a fresh connection could plausibly fix.
+///
+/// `Connection` is the transport itself. `Internal` is included because
+/// several call sites report a missing or unusable session that way rather
+/// than as `Connection`, and reconnecting is the right response to it.
+/// Everything else - `InvalidInput`, `NotFound`, `Storage`, `Unauthorized` -
+/// describes a request that fails identically on a new connection.
+fn is_transport_failure(error: &AppError) -> bool {
+    matches!(error, AppError::Connection(_) | AppError::Internal(_))
 }
 
 /// Opens an interactive shell against a saved server, reusing a cached
@@ -423,6 +449,20 @@ pub(super) async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessio
         return Ok(session);
     }
 
+    // Serialize connecting to *this* Node. Without this, two callers that
+    // both miss the cache above - the metrics poller and a user action, say -
+    // each open a full SSH connection, and the loser of the `insert` race
+    // leaks: never closed, never removed. See `SshSessionManager::connect_locks`.
+    let connect_lock = sessions.connect_lock(server_id).await;
+    let _guard = connect_lock.lock().await;
+
+    // Re-check now that the lock is held: whoever held it before us has very
+    // likely just connected, and connecting again is exactly the duplicate
+    // this lock exists to prevent.
+    if let Some(session) = sessions.get(server_id).await {
+        return Ok(session);
+    }
+
     let server = repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
     let credentials = credentials_from_server(&server)?;
     let known_fingerprint = repo.get_known_host_fingerprint(server_id)?;
@@ -487,4 +527,121 @@ fn credentials_from_server(server: &Server) -> AppResult<SshCredentials> {
 
 fn non_blank(value: &Option<String>) -> Option<&str> {
     value.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// The regression test for the retry finding. Retrying on *any* error
+    /// meant a rejected input re-ran the whole operation, side effects and
+    /// all, and tore down a healthy SSH session on the way.
+    #[tokio::test]
+    async fn a_rejected_input_is_not_retried() {
+        let sessions = SshSessionManager::new();
+        let attempts = AtomicUsize::new(0);
+
+        let result: AppResult<()> = retry_on_connection_failure(&sessions, Some(Uuid::new_v4()), || async {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Err(AppError::InvalidInput("port 25565 is already published".into()))
+        })
+        .await;
+
+        assert!(matches!(result, Err(AppError::InvalidInput(_))));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1, "an invalid input must not be attempted twice");
+    }
+
+    #[tokio::test]
+    async fn a_not_found_or_storage_error_is_not_retried() {
+        let sessions = SshSessionManager::new();
+        for error in [AppError::NotFound("server".into()), AppError::Storage("database is locked".into())] {
+            let attempts = AtomicUsize::new(0);
+            let message = error.to_string();
+            let _: AppResult<()> = retry_on_connection_failure(&sessions, Some(Uuid::new_v4()), || async {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(AppError::Storage(message.clone()))
+            })
+            .await;
+            assert_eq!(attempts.load(Ordering::SeqCst), 1, "{message} must not be retried");
+        }
+    }
+
+    /// A transport failure is exactly what the retry exists for, and a
+    /// second attempt that succeeds must return that success.
+    #[tokio::test]
+    async fn a_transport_failure_is_retried_once_and_can_succeed() {
+        let sessions = SshSessionManager::new();
+        let attempts = AtomicUsize::new(0);
+
+        let result = retry_on_connection_failure(&sessions, Some(Uuid::new_v4()), || async {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(AppError::Connection("connection reset".into()))
+            } else {
+                Ok(42)
+            }
+        })
+        .await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    /// When both attempts fail, the *second* error is what the caller sees.
+    /// The previous `map_err(|_| first_err)` reported the stale transport
+    /// error even when the reconnect had failed for a new, far more
+    /// actionable reason.
+    #[tokio::test]
+    async fn the_second_error_wins_when_both_attempts_fail() {
+        let sessions = SshSessionManager::new();
+        let attempts = AtomicUsize::new(0);
+
+        let result: AppResult<()> = retry_on_connection_failure(&sessions, Some(Uuid::new_v4()), || async {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(AppError::Connection("connection reset".into()))
+            } else {
+                Err(AppError::InvalidInput("SSH authentication was rejected".into()))
+            }
+        })
+        .await;
+
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("authentication was rejected"), "{message}");
+    }
+
+    /// Without a server id there is no session to drop and nothing to
+    /// reconnect, so retrying would just repeat the same failure.
+    #[tokio::test]
+    async fn a_local_operation_with_no_server_is_never_retried() {
+        let sessions = SshSessionManager::new();
+        let attempts = AtomicUsize::new(0);
+
+        let _: AppResult<()> = retry_on_connection_failure(&sessions, None, || async {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            Err(AppError::Connection("connection reset".into()))
+        })
+        .await;
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    /// Two callers racing for the same Node must serialize behind one lock,
+    /// and two different Nodes must not block each other.
+    #[tokio::test]
+    async fn connect_locks_are_per_server() {
+        let sessions = SshSessionManager::new();
+        let server = Uuid::new_v4();
+
+        let first = sessions.connect_lock(server).await;
+        let second = sessions.connect_lock(server).await;
+        assert!(Arc::ptr_eq(&first, &second), "the same server must share one connect lock");
+
+        let other = sessions.connect_lock(Uuid::new_v4()).await;
+        assert!(!Arc::ptr_eq(&first, &other), "different servers must not share a connect lock");
+
+        // The shared lock genuinely excludes: a second acquisition cannot
+        // proceed while the first guard is alive.
+        let _held = first.lock().await;
+        assert!(second.try_lock().is_err());
+    }
 }

@@ -1,6 +1,12 @@
 //! Shared by every integration test file - not a test binary itself (lives
 //! in a `tests/<name>/` subdirectory, which cargo doesn't treat as its own
 //! test target the way a direct `tests/*.rs` file is).
+// Shared by every backend integration test file. Each test binary compiles
+// this module independently, so a helper used by only *some* of them reads
+// as dead in the others - the warning is an artifact of that layout, not of
+// anything actually unused.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use axum::body::Body;

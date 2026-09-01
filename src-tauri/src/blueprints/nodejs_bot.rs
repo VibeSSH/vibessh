@@ -4,6 +4,9 @@ use crate::errors::AppResult;
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, RuntimeType};
 
 use super::{text_input, text_list_input, validate_inputs, BlueprintHandler};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 
 /// Runs a Node.js script/bot from the Application's own working directory.
 /// There's no `provision()` step that runs `npm install` ahead of time -
@@ -95,25 +98,6 @@ impl BlueprintHandler for NodejsBotBlueprint {
     }
 }
 
-/// POSIX single-quote shell escaping - duplicated across this crate per its
-/// own small-helper convention; see `runtime::remote_process`'s copy for the
-/// full reasoning. Used here (unlike the Minecraft blueprints' copy, which
-/// quotes for a *remote SSH exec*) to safely embed a user-supplied entry
-/// file/argument into the `sh -c` script this blueprint's own command runs
-/// *inside the container*.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
 #[cfg(test)]
 mod tests {

@@ -33,7 +33,9 @@
   height: 36px;
   padding: 0 12px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  /* Not `--border`: this line is the only thing marking where the field is.
+     See `--t-border-control`. */
+  border: 1px solid var(--t-border-control);
   background: var(--surface-2);
   color: var(--text-primary);
   font-size: 13px;
@@ -112,7 +114,7 @@
 }
 
 .form-note-danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .form-note-spaced {
@@ -252,7 +254,7 @@
 
 .pairing-status-error {
   background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .pairing-spinner {

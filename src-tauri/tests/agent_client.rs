@@ -72,6 +72,7 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
         client_name: "vibessh-desktop-test".into(),
         client_version: "0.0.0".into(),
         auth_token: Some("VIBE-TEST-PAIRING-CODE".into()),
+        known_fingerprint: None,
     };
     let (events_tx, mut events_rx) = mpsc::channel(8);
     let (state_tx, mut state_rx) = watch::channel(AgentConnectionState::Connecting);
@@ -141,6 +142,7 @@ async fn a_command_sent_before_the_connection_exists_is_queued_and_delivered_onc
         client_name: "vibessh-desktop-test".into(),
         client_version: "0.0.0".into(),
         auth_token: Some("VIBE-TEST-PAIRING-CODE".into()),
+        known_fingerprint: None,
     };
     let client_task = tokio::spawn(run(config, events_tx, state_tx, command_rx));
 

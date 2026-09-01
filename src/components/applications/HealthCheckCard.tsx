@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { getApplicationHealth, setApplicationHealthCheck } from "@/services/applicationService";
 import type { ApplicationDetail, HealthCheckType, HealthStatus } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const HEALTH_TONE: Record<HealthStatus["status"], "neutral" | "success" | "danger"> = {
   healthy: "success",
@@ -36,7 +37,7 @@ export function HealthCheckCard({ applicationId, application, onConfigChanged }:
     setCheckError(null);
     getApplicationHealth(applicationId)
       .then(setStatus)
-      .catch((err) => setCheckError(err instanceof Error ? err.message : t("healthCheck.checkError")))
+      .catch((err) => setCheckError(errorMessage(err, t)))
       .finally(() => setChecking(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId, application.healthCheckType, application.healthCheckPortId, application.healthCheckHttpPath, t]);
@@ -107,7 +108,7 @@ interface HealthCheckFormModalProps {
 
 function HealthCheckFormModal({ applicationId, application, onClose, onSaved }: HealthCheckFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "healthcheckcard-dialog-title-1" });
 
   const [type, setType] = useState<HealthCheckType>(application.healthCheckType);
   const [portId, setPortId] = useState(application.healthCheckPortId ?? "");
@@ -143,17 +144,17 @@ function HealthCheckFormModal({ applicationId, application, onClose, onSaved }: 
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("healthCheck.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("healthCheck.configure")}</h2>
+          <h2 className="modal-title" id="healthcheckcard-dialog-title-1">{t("healthCheck.configure")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

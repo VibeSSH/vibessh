@@ -1,7 +1,7 @@
 import { Trans, useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 
@@ -15,12 +15,12 @@ interface DeleteApplicationDialogProps {
 
 export function DeleteApplicationDialog({ applicationName, busy, error, onConfirm, onCancel }: DeleteApplicationDialogProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onCancel);
+  const backdrop = useModalDialog(onCancel, { labelledBy: "deleteapplicationdialog-dialog-title-1" });
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("deleteApplicationDialog.title")}</h2>
+          <h2 className="modal-title" id="deleteapplicationdialog-dialog-title-1">{t("deleteApplicationDialog.title")}</h2>
           <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} />
         </div>
         <div className="modal-body">

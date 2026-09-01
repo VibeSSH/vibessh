@@ -268,6 +268,18 @@ pub struct PortInput {
     pub required: bool,
 }
 
+/// The wire name for a protocol, for an error's `params` - the frontend
+/// renders "25565/tcp", and building that string in Rust would make it
+/// untranslatable prose again. Lives beside the enum rather than inside one
+/// service, since both `application_service` and `application_repository`
+/// now raise `PortInUse`.
+pub fn protocol_name(protocol: PortProtocol) -> &'static str {
+    match protocol {
+        PortProtocol::Tcp => "tcp",
+        PortProtocol::Udp => "udp",
+    }
+}
+
 /// Everything a single `applications` row round-trips as, one repository
 /// call - the environment/ports/config/metadata that live in their own
 /// tables, assembled together for the frontend so it never has to make 4
@@ -281,4 +293,16 @@ pub struct ApplicationDetail {
     pub ports: Vec<ApplicationPort>,
     pub runtime_config: serde_json::Value,
     pub metadata: serde_json::Value,
+    /// The other Applications this one is allowed to reach over the Node's
+    /// internal Docker networking, from `application_links` (migration 16).
+    ///
+    /// Ids rather than a richer view type: every consumer already has the
+    /// full Application list to hand - the frontend from its own store, the
+    /// runtime because it only needs the id to derive a network name - and a
+    /// join here would make `get` pay for a lookup that the one caller who
+    /// wants names does better itself.
+    ///
+    /// Unordered pairs, so this is symmetric: if A lists B, B lists A. See
+    /// migration 16 for why a connection cannot be one-way.
+    pub links: Vec<Uuid>,
 }

@@ -17,6 +17,7 @@ import type { ServerMetrics } from "@/types/serverEvent";
 import { CapabilityBadges } from "./CapabilityBadges";
 import { MetricsPreview } from "./MetricsPreview";
 import "./forms.css";
+import { errorMessage } from "@/services/tauri";
 
 const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agent-install/install.sh";
 
@@ -146,7 +147,7 @@ export function AgentPairingFlow({ onPaired, upgradeExistingServer }: AgentPairi
       setLatestMetrics(null);
       await startAgentPairing(host, Number(port), newCode);
     } catch (err) {
-      setBackendError(err instanceof Error ? err.message : t("agentPairing.errorBackend"));
+      setBackendError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,11 @@
+// This codebase's doc comments lean heavily on multi-line prose under a
+// bullet, which `doc_lazy_continuation` wants indented to keep rustdoc's
+// rendering exact. The rendering difference is cosmetic, the comments are
+// the main way design decisions are recorded here, and reflowing 49 of them
+// would bury real changes in whitespace diffs. Allowed deliberately, at the
+// crate root, so the choice is visible rather than implicit.
+#![allow(clippy::doc_lazy_continuation)]
+
 // `pub` (not just `mod`) so the integration test in `tests/agent_client.rs`
 // can drive it directly - everything else here only needs in-crate tests
 // (pairing_commands' own test lives inside that module, see its file for why).
@@ -9,7 +17,12 @@ mod commands;
 // helper's install/provisioning logic (`files::sudo_user`) needs this, and a
 // future real-server integration test would too.
 pub mod dedicated_user;
-mod errors;
+// `pub` for the integration tests: `tests/concurrency.rs` asserts that a
+// loser in a port race gets `PortInUse` naming the winner rather than a bare
+// storage error, and that distinction is the entire point of the transaction
+// behaviour it is testing. There is nothing here a consumer of this crate
+// would use - the visibility exists so the property can be asserted.
+pub mod errors;
 // `pub` for the same reason as `runtime`/`ssh` above - a real-server
 // integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
 // directly against a live, real ufw installation.
@@ -22,6 +35,14 @@ pub mod files;
 // `tests/docker_runtime.rs` real-server test needs to build a real
 // `Application`/`ApplicationPort` to drive `runtime::docker` with.
 pub mod models;
+// Turning arbitrary user text into names DNS and Docker will accept - the
+// same conversion was written twice before this existed.
+mod naming;
+// Where VibeSSH may put working files on a managed Node. Shared by
+// `network::wireguard` and `runtime::docker`, both of which used to reach
+// for a predictable `/tmp` path instead - see the module's own doc
+// comment for the two vulnerabilities that caused.
+mod node_paths;
 // `pub` for the same reason as `firewall`/`runtime` above - a real-server
 // integration test (`tests/vibe_network.rs`) drives
 // `network::wireguard` directly against a real WireGuard installation.
@@ -166,6 +187,9 @@ pub fn run() {
             commands::application_commands::update_application_port,
             commands::application_commands::remove_application_port,
             commands::application_commands::sync_application_node_firewall,
+            commands::application_commands::list_application_links,
+            commands::application_commands::connect_applications,
+            commands::application_commands::disconnect_applications,
             commands::application_commands::get_application,
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,
@@ -205,6 +229,7 @@ pub fn run() {
             commands::database_commands::create_database_host,
             commands::database_commands::delete_database_host,
             commands::database_commands::set_database_host_phpmyadmin,
+            commands::database_commands::install_database_server,
             commands::database_commands::list_application_databases,
             commands::database_commands::create_application_database,
             commands::database_commands::delete_application_database,
@@ -251,7 +276,6 @@ pub fn run() {
             commands::network_commands::list_network_members,
             commands::network_commands::join_vibe_network,
             commands::network_commands::leave_vibe_network,
-            commands::network_commands::reconcile_vibe_mesh,
             commands::network_commands::get_vibe_network_status,
             commands::network_commands::list_node_endpoints,
             commands::network_commands::list_dns_records,

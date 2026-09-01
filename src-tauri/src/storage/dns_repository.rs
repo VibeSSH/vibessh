@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::DnsRecord;
-use crate::storage::migrations::migrations;
 
 pub struct DnsRepository {
     conn: Mutex<Connection>,
@@ -19,13 +18,11 @@ pub struct DnsRepository {
 
 impl DnsRepository {
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| AppError::Storage(format!("failed to create the DNS database directory: {err}")))?;
-        }
-        let mut conn = Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the DNS database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
-        migrations().to_latest(&mut conn).map_err(|err| AppError::Storage(format!("failed to migrate the DNS database: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "DNS")?;
+        super::schema::migrate(&mut conn, db_path, "DNS")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

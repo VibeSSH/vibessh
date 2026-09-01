@@ -12,6 +12,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import type { CloudInvitation, CloudRole, InvitationStatus } from "@/types/cloud";
 import "@/components/servers/forms.css";
 import "./InvitationsSection.css";
+import { errorMessage } from "@/services/tauri";
 
 const STATUS_TONE: Record<InvitationStatus, "success" | "danger" | "warning" | "neutral"> = {
   pending: "warning",
@@ -53,7 +54,7 @@ export function InvitationsSection({ teamId, canManage }: InvitationsSectionProp
         setInvitations(loadedInvitations);
         setRoles(loadedRoles);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("invitations.couldntList")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -73,7 +74,7 @@ export function InvitationsSection({ teamId, canManage }: InvitationsSectionProp
       toastSuccess(t("invitations.createdToast", { email: created.email }));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("invitations.couldntCreate"));
+      setError(errorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -86,7 +87,7 @@ export function InvitationsSection({ teamId, canManage }: InvitationsSectionProp
       toastSuccess(t("invitations.revokedToast", { email: invitation.email }));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("invitations.couldntRevoke"));
+      setError(errorMessage(err, t));
     }
   }
 

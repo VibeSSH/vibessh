@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   addApplicationPort,
   listApplicationPorts,
@@ -20,6 +21,7 @@ import {
 import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 interface PortsTabProps {
   applicationId: string;
@@ -60,7 +62,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
   const [deletingPort, setDeletingPort] = useState<ApplicationPort | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const deleteBackdrop = useBackdropClose(() => !deleteBusy && setDeletingPort(null));
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingPort(null), { labelledBy: "portstab-dialog-title-1" });
 
   const [firewallSyncing, setFirewallSyncing] = useState(false);
   // `undefined` = never synced this session yet; `null` = synced, but this
@@ -74,7 +76,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     try {
       setFirewallResult(await syncApplicationNodeFirewall(applicationId));
     } catch (err) {
-      setFirewallError(err instanceof Error ? err.message : t("portsTab.firewallSyncError"));
+      setFirewallError(errorMessage(err, t));
     } finally {
       setFirewallSyncing(false);
     }
@@ -85,7 +87,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     setError(null);
     listApplicationPorts(applicationId)
       .then(setPorts)
-      .catch((err) => setError(err instanceof Error ? err.message : t("portsTab.loadError")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [applicationId, t]);
 
@@ -101,7 +103,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
       await recreateIfRunningDocker(application);
       reload();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("portsTab.deleteError"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -129,7 +131,9 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
         <p className="form-note">
           {firewallResult === undefined && t("portsTab.firewallSyncNote")}
           {firewallResult === null && t("portsTab.firewallSyncLocal")}
-          {firewallResult && firewallResult.backend === null && t("portsTab.firewallSyncNoBackend")}
+          {firewallResult && firewallResult.backend === null && (
+            <span className="form-note-danger">{t("portsTab.firewallSyncNoBackend")}</span>
+          )}
           {firewallResult &&
             firewallResult.backend !== null &&
             t(firewallResult.rulesRemoved > 0 ? "portsTab.firewallSyncSummaryWithRemoved" : "portsTab.firewallSyncSummary", {
@@ -138,6 +142,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
               count: firewallResult.rulesApplied,
               removed: firewallResult.rulesRemoved,
             })}
+          {/* A sync that "succeeded" while nothing enforces the rules is the
+              case that made "Vibe Network only" ports publicly reachable -
+              it has to read as a warning, not as part of the summary. */}
+          {firewallResult && firewallResult.backend !== null && firewallResult.unenforced && (
+            <span className="form-note-danger"> {t("portsTab.firewallUnenforced")}</span>
+          )}
           {firewallError && <span className="form-note-danger"> {firewallError}</span>}
         </p>
         <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
@@ -191,6 +201,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
         </ul>
       )}
 
+      {/* Ports are who can reach this application from outside the node;
+          connections are who can reach it from inside it. They belong on the
+          same tab because until this existed only the first half was visible,
+          and the second half was "everything". */}
+      <ConnectionsCard application={application} />
+
       {formOpen && (
         <PortFormModal
           applicationId={applicationId}
@@ -205,10 +221,10 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
       )}
 
       {deletingPort && (
-        <div className="modal-backdrop" {...deleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("portsTab.deleteTitle")}</h2>
+              <h2 className="modal-title" id="portstab-dialog-title-1">{t("portsTab.deleteTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setDeletingPort(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
@@ -240,7 +256,7 @@ interface PortFormModalProps {
 
 function PortFormModal({ applicationId, application, editingPort, onClose, onSaved }: PortFormModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "portstab-dialog-title-2" });
   const isEditing = Boolean(editingPort);
 
   const [name, setName] = useState(editingPort?.name ?? "");
@@ -281,17 +297,17 @@ function PortFormModal({ applicationId, application, editingPort, onClose, onSav
       await recreateIfRunningDocker(application);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("portsTab.saveError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEditing ? t("portsTab.editTitle") : t("portsTab.addTitle")}</h2>
+          <h2 className="modal-title" id="portstab-dialog-title-2">{isEditing ? t("portsTab.editTitle") : t("portsTab.addTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>

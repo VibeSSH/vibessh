@@ -58,12 +58,13 @@ export interface FirewallRule {
   sourceCidr?: string;
 }
 
-/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this Node - not a failure. `rulesRemoved` counts rules this same sync just revoked (see the Rust `firewall` module's own doc comment). */
+/** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this Node - not a failure. `rulesRemoved` counts rules this same sync just revoked (see the Rust `firewall` module's own doc comment). `unenforced` is `true` when nothing is actually restricting these ports - either no backend at all, or one that's installed but switched off. It must be surfaced as a warning: a sync that reports success while leaving ports open is exactly what made "Vibe Network only" ports publicly reachable. */
 export interface FirewallSyncResult {
   backend: string | null;
   active: boolean;
   rulesApplied: number;
   rulesRemoved: number;
+  unenforced: boolean;
 }
 
 /** A local-only read, no SSH round trip - what "Secure this server"'s confirmation dialog shows before anything actually changes (the SSH port is always first). See the Rust `preview_server_firewall_rules` doc comment. */

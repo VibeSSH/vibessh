@@ -18,6 +18,62 @@ use crate::errors::{AppError, AppResult};
 use vibessh_protocol::CommandOutput;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long a single `execute_command` may run before it is given up on.
+///
+/// There was no command timeout at all: `CONNECT_TIMEOUT` covered only the
+/// initial connect, so a command that never finished - a hung `apt-get`
+/// waiting on a lock, a `docker pull` against an unreachable registry -
+/// blocked the calling Tauri command forever, with no cancellation and no
+/// way for the UI to recover.
+///
+/// Generous on purpose. This codebase legitimately runs slow commands over
+/// this channel (`apt-get install mariadb-server`, `docker pull` of a
+/// multi-gigabyte image), so the value has to be "something is wrong", not
+/// "this is taking a while". Ten minutes is well past any of them and still
+/// far short of forever.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Keepalive, not a deadline.
+///
+/// This used to be a 60-second `inactivity_timeout`, which tore down the
+/// whole session - every channel on it - after a minute of silence on the
+/// wire. That directly contradicted the long-running commands above: a real
+/// `apt-get install` routinely produces no output for longer than a minute
+/// while it unpacks, and the session died underneath it.
+///
+/// Sending a keepalive every 30 seconds keeps the connection demonstrably
+/// alive instead, and the per-command `COMMAND_TIMEOUT` is what bounds a
+/// command that genuinely never returns.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How much of a command's output is kept before the rest is discarded.
+///
+/// There was no cap: `execute_command` accumulated stdout and stderr into
+/// unbounded `Vec<u8>`s, so a mistyped `cat` of a large file, a wide `find`,
+/// or a runaway process writing to stderr pulled the whole thing into the
+/// desktop's memory. With `panic = "abort"` in the release profile, running
+/// out of memory there kills the app rather than failing the command.
+///
+/// 8 MiB is far past every command this codebase actually issues - the
+/// largest are `docker logs --tail 5000` and a `find` listing - so hitting
+/// it means something has gone wrong, and the truncation notice says so.
+const MAX_COMMAND_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Appends up to the cap, and reports whether anything had to be dropped.
+fn append_capped(buffer: &mut Vec<u8>, data: &[u8], truncated: &mut bool) {
+    let remaining = MAX_COMMAND_OUTPUT_BYTES.saturating_sub(buffer.len());
+    if remaining == 0 {
+        *truncated = true;
+        return;
+    }
+    if data.len() > remaining {
+        buffer.extend_from_slice(&data[..remaining]);
+        *truncated = true;
+    } else {
+        buffer.extend_from_slice(data);
+    }
+}
 /// SSH's "stderr" extended-data stream id, per RFC 4254 5.2.
 const SSH_EXTENDED_DATA_STDERR: u32 = 1;
 
@@ -90,15 +146,16 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
     };
 
     let config = Arc::new(client::Config {
-        inactivity_timeout: Some(Duration::from_secs(60)),
+        keepalive_interval: Some(KEEPALIVE_INTERVAL),
+        inactivity_timeout: None,
         ..Default::default()
     });
 
     let addr = (credentials.host.as_str(), credentials.port);
     let mut handle = tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler))
         .await
-        .map_err(|_| AppError::Connection(format!("timed out connecting to {}:{}", credentials.host, credentials.port)))?
-        .map_err(|err| classify_connect_error(&err, &seen))?;
+        .map_err(|_| AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() })?
+        .map_err(|err| classify_connect_error(&err, &seen, &credentials.host))?;
 
     let auth_result = match &credentials.auth {
         SshAuth::Password(password) => handle
@@ -145,7 +202,15 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
 }
 
 impl SshSession {
+    /// Bounded by `COMMAND_TIMEOUT` - see that constant for why there is a
+    /// bound at all, and why it is as generous as it is.
     pub async fn execute_command(&self, command: &str) -> AppResult<CommandOutput> {
+        tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command))
+            .await
+            .unwrap_or_else(|_| Err(AppError::Timeout { operation: "the command", seconds: COMMAND_TIMEOUT.as_secs() }))
+    }
+
+    async fn execute_command_inner(&self, command: &str) -> AppResult<CommandOutput> {
         let mut channel = self
             .handle
             .channel_open_session()
@@ -159,23 +224,30 @@ impl SshSession {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let mut exit_code = None;
+        let mut truncated = false;
 
         while let Some(msg) = channel.wait().await {
             match msg {
-                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                ChannelMsg::Data { data } => append_capped(&mut stdout, &data, &mut truncated),
                 ChannelMsg::ExtendedData { data, ext } if ext == SSH_EXTENDED_DATA_STDERR => {
-                    stderr.extend_from_slice(&data);
+                    append_capped(&mut stderr, &data, &mut truncated);
                 }
                 ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status as i32),
                 _ => {}
             }
         }
 
-        Ok(CommandOutput {
-            exit_code: exit_code.unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
-        })
+        let mut stderr = String::from_utf8_lossy(&stderr).into_owned();
+        if truncated {
+            // Appended to stderr rather than silently dropped: a caller that
+            // parses stdout would otherwise see a plausible-looking but
+            // incomplete result with nothing to indicate it.
+            stderr.push_str(&format!(
+                "\n[vibessh] output exceeded {} MiB and was truncated",
+                MAX_COMMAND_OUTPUT_BYTES / (1024 * 1024)
+            ));
+        }
+        Ok(CommandOutput { exit_code: exit_code.unwrap_or(-1), stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr })
     }
 
     pub async fn close(&self) {
@@ -187,7 +259,7 @@ impl SshSession {
     /// diffs the two to get a real rate instead of a single-point-in-time
     /// number that doesn't mean anything for CPU%/network throughput.
     pub(super) fn swap_metrics_sample(&self, new_sample: MetricsSample) -> Option<MetricsSample> {
-        std::mem::replace(&mut self.metrics_sample.lock().expect("metrics sample mutex poisoned"), Some(new_sample))
+        self.metrics_sample.lock().expect("metrics sample mutex poisoned").replace(new_sample)
     }
 
     /// Lazily negotiates the SFTP subsystem on first use and reuses it for
@@ -421,14 +493,15 @@ impl client::Handler for TofuHandler {
     }
 }
 
-fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>) -> AppError {
+fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>, host: &str) -> AppError {
     if seen.lock().expect("host key mutex poisoned").mismatched {
-        AppError::Connection(
-            "the server's SSH host key doesn't match the one VibeSSH saw before - this can mean the \
-             server was reinstalled, but it can also mean someone is intercepting the connection. \
-             Verify the server before trusting it again."
-                .to_string(),
-        )
+        // Its own code rather than a generic connection error: this is the
+        // one failure here where the right UI is a warning the user has to
+        // read and decide about, not a retry button. The full explanation
+        // ("reinstalled, or someone is intercepting") now lives in the
+        // frontend's own translated copy, where it can be phrased properly
+        // in the user's language instead of assembled in Rust.
+        AppError::HostKeyMismatch { host: host.to_string() }
     } else {
         AppError::Connection(format!("SSH connection failed: {err}"))
     }

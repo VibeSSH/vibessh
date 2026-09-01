@@ -41,6 +41,11 @@ pub const MAX_EDITABLE_FILE_SIZE: u64 = 1024 * 1024;
 
 /// Settled permission-string catalog (see this module's own doc comment
 /// for why nothing enforces these yet).
+// Nothing enforces these yet, by design (see the module doc comment) - the
+// catalog is settled ahead of the permission system that will read it, so
+// that system does not get to invent a second set of names. Kept compiling
+// rather than commented out precisely so it cannot silently drift.
+#[allow(dead_code)]
 pub mod permissions {
     pub const VIEW: &str = "applications.files.view";
     pub const DOWNLOAD: &str = "applications.files.download";
@@ -75,8 +80,16 @@ pub(crate) async fn resolve_provider(
             // error from the helper itself (e.g. "unknown user") right
             // after this if provisioning genuinely didn't work.
             let username = crate::dedicated_user::username(detail.application.id);
-            let _ = crate::dedicated_user::ensure_provisioned(connection, &username).await;
-            let _ = files::sudo_user::ensure_helper_installed(connection).await;
+            // Both best-effort: the file operation that follows fails on
+            // its own with a message about the file the user actually asked
+            // for. But when it does, this is the reason, and without these
+            // lines that reason exists nowhere.
+            if let Err(err) = crate::dedicated_user::ensure_provisioned(connection, &username).await {
+                log::warn!("couldn't provision the dedicated account for application {application_id}, file access may fail: {err}");
+            }
+            if let Err(err) = files::sudo_user::ensure_helper_installed(connection).await {
+                log::warn!("couldn't install the file helper for application {application_id}, file access may fail: {err}");
+            }
         }
     }
     let provider = files::provider_for(&detail.application, &detail.runtime_config, connection)?;
@@ -102,6 +115,14 @@ pub(crate) async fn resolve_provider(
 /// of its own) and reconnect fresh, same "dead session, drop and retry
 /// once" recovery `ssh_service::execute_command` already does for plain
 /// commands.
+/// Deliberately *not* `ssh_service::retry_on_connection_failure`, unlike the
+/// four blocks that were folded into it: this is a liveness probe, not a
+/// retry. It runs a cheap `REALPATH "."` to find out whether the cached
+/// session is dead *before* handing it to a caller, because the failure it
+/// prevents is not an error the caller could retry - it is `resolve()`
+/// caching a wrong answer in a `OnceCell` nothing ever resets. The shared
+/// helper retries an operation that already failed; this one makes sure the
+/// operation never runs against a dead session in the first place.
 async fn connect_with_live_sftp(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
     if connection.canonicalize_path(".").await.is_ok() {
@@ -295,7 +316,44 @@ pub async fn upload_file(
         .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_src.display())))?
         .len();
     let mut reporter = throttled_reporter(total, on_progress);
-    provider.upload_file(local_src, path, &mut reporter).await
+
+    // Uploads land on a `.vibessh-partial` sibling and only move to the real
+    // path once the transfer has completed.
+    //
+    // Without this, an upload that failed partway - a dropped connection, a
+    // cancelled transfer - left a *truncated file at the real path*,
+    // silently replacing whatever was there. For the files this feature is
+    // actually used on (a server jar, a world archive, a config read at
+    // boot) that is a broken Application with nothing to indicate why.
+    //
+    // Two limits worth stating plainly rather than implying they are
+    // handled. Cancellation aborts the task, so the future is dropped
+    // rather than returning `Err` - the real path is still protected, but
+    // the `.vibessh-partial` fragment is left behind and shows up in the
+    // Files tab. And an overwrite has to unlink the destination before the
+    // rename (SFTP's rename fails when the target exists), so there is a
+    // brief window where the path does not exist at all. That is a much
+    // better failure than a truncated file: a missing file is obvious
+    // immediately, a half-written jar is not.
+    let partial = format!("{path}.vibessh-partial");
+    match provider.upload_file(local_src, &partial, &mut reporter).await {
+        Ok(()) => {
+            // Only when something is actually there - `delete` on a missing
+            // path is an error on some providers.
+            if provider.metadata(path).await.is_ok() {
+                provider.delete(path).await?;
+            }
+            provider.rename(&partial, path).await
+        }
+        Err(err) => {
+            // Best-effort, and logged rather than discarded: a leftover
+            // fragment is not fatal but it is confusing.
+            if let Err(cleanup_err) = provider.delete(&partial).await {
+                log::warn!("couldn't remove the partial upload at '{partial}': {cleanup_err}");
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Extracts an archive that's already sitting in the Application's own

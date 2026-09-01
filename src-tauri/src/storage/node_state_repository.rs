@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{NodeAppliedRecord, NodeSyncStatus};
-use crate::storage::migrations::migrations;
 
 pub struct NodeStateRepository {
     conn: Mutex<Connection>,
@@ -21,19 +20,15 @@ pub struct NodeStateRepository {
 
 impl NodeStateRepository {
     /// `db_path` is the same `servers.sqlite3` every other repository
-    /// opens - `migrations().to_latest()` is a no-op once the file's
+    /// opens - `schema::migrate` is a no-op once the file's
     /// `user_version` is already current, so it's safe to call from here
     /// too.
     pub fn open(db_path: &Path) -> AppResult<Self> {
-        if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| AppError::Storage(format!("failed to create the node state database directory: {err}")))?;
-        }
-        let mut conn = Connection::open(db_path).map_err(|err| AppError::Storage(format!("failed to open the node state database: {err}")))?;
-        conn.pragma_update(None, "foreign_keys", true)
-            .map_err(|err| AppError::Storage(format!("failed to enable foreign key enforcement: {err}")))?;
-        migrations()
-            .to_latest(&mut conn)
-            .map_err(|err| AppError::Storage(format!("failed to migrate the node state database: {err}")))?;
+        // Pragmas (WAL, busy timeout, foreign keys) live in one place -
+        // see `storage::open_connection` for why they matter with nine
+        // connections open on the same file.
+        let mut conn = super::open_connection(db_path, "node state")?;
+        super::schema::migrate(&mut conn, db_path, "node state")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 

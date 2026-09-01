@@ -147,6 +147,10 @@ pub async fn create_backup(
     let entries = provider.list_directory(".").await?;
     let paths: Vec<String> = entries.iter().filter(|e| !e.name.starts_with(".vibessh-")).map(|e| e.name.clone()).collect();
 
+    // Not checked: an existing directory is the common case and reports an
+    // error on some providers, and if it genuinely could not be created the
+    // `create_zip` immediately below fails with a message that names the
+    // real problem.
     let _ = provider.create_directory(BACKUPS_DIR).await;
 
     let now = Utc::now();
@@ -203,11 +207,19 @@ pub async fn delete_backup(
     // a delete the user can never complete because e.g. the Node is
     // temporarily unreachable.
     if let Ok((_, provider)) = resolve_provider(app_repo, server_repo, sessions, application_id).await {
-        let _ = provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await;
+        if let Err(err) = provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await {
+            // Best-effort, but never silent: the UI stops listing this
+            // backup, and an operator who deleted it to reclaim disk - or
+            // because of what it contains - is entitled to know the file is
+            // still on the Node.
+            log::warn!("the '{file_name}' backup row was deleted but the file is still on the node: {err}");
+        }
     }
     if let Some(key) = s3_key {
         if let Some(client) = s3_client(backup_destination).await {
-            let _ = client.delete_object(&key).await;
+            if let Err(err) = client.delete_object(&key).await {
+                log::warn!("the '{file_name}' backup row was deleted but the object is still in the bucket: {err}");
+            }
         }
     }
     Ok(())
@@ -238,22 +250,45 @@ pub async fn restore_backup(
 
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
     let local_path = format!("{BACKUPS_DIR}/{}", backup.file_name);
-    let archive_bytes = match provider.read_file(&local_path).await {
-        Ok(bytes) => bytes,
+
+    // Streamed to a local scratch file rather than read into a `Vec<u8>`.
+    // A restore archive is the largest thing this application ever moves -
+    // a world save, a database volume - and holding all of it in memory is
+    // how a restore turned into an out-of-memory abort instead of a
+    // restore. `download_file` already streams; `extract_zip_from_file`
+    // then reads one entry at a time.
+    let scratch = std::env::temp_dir().join(format!("vibessh-restore-{}.zip", Uuid::new_v4()));
+    let mut no_progress = |_: u64| {};
+    let fetched = match provider.download_file(&local_path, &scratch, &mut no_progress).await {
+        Ok(()) => Ok(()),
         // The local copy is gone (a rebuilt Node, a wiped disk - exactly
         // what a local-only backup can't survive) - fall back to the S3
         // copy if this backup has one, rather than failing outright.
-        Err(local_err) => {
-            let Some(key) = &backup.s3_key else { return Err(local_err) };
-            let Some(client) = s3_client(backup_destination).await else { return Err(local_err) };
-            let bytes = client.get_object(key).await?;
-            // Best-effort: heals the local copy too, so the *next* restore
-            // (or a future prune) doesn't need S3 again.
-            let _ = provider.write_file(&local_path, &bytes).await;
-            bytes
-        }
+        Err(local_err) => match (&backup.s3_key, s3_client(backup_destination).await) {
+            (Some(key), Some(client)) => {
+                let bytes = client.get_object(key).await?;
+                tokio::fs::write(&scratch, &bytes)
+                    .await
+                    .map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
+                // Best-effort: heals the local copy too, so the *next*
+                // restore (or a future prune) doesn't need S3 again. The
+                // restore itself proceeds from `scratch` either way, so this
+                // failing costs a slower next restore, not this one.
+                if let Err(err) = provider.write_file(&local_path, &bytes).await {
+                    log::warn!("restored from the remote copy, but couldn't re-create the local one: {err}");
+                }
+                Ok(())
+            }
+            _ => Err(local_err),
+        },
     };
-    archive::extract_zip(provider.as_ref(), &archive_bytes, ".").await
+
+    let result = match fetched {
+        Ok(()) => archive::extract_zip_from_file(provider.as_ref(), &scratch, ".").await,
+        Err(err) => Err(err),
+    };
+    let _ = tokio::fs::remove_file(&scratch).await;
+    result
 }
 
 pub fn get_backup_schedule(backup_repo: &ApplicationBackupRepository, application_id: Uuid) -> AppResult<BackupSchedule> {
@@ -316,9 +351,16 @@ async fn prune_old_backups(
     let client = s3_client(backup_destination).await;
     for old in to_prune {
         backup_repo.delete(old.id)?;
-        let _ = provider.delete(&format!("{BACKUPS_DIR}/{}", old.file_name)).await;
+        // Retention is a promise about disk, not about rows. A prune that
+        // drops the row and leaves the file means "keep at most N bytes"
+        // quietly stops being true while the UI shows it working.
+        if let Err(err) = provider.delete(&format!("{BACKUPS_DIR}/{}", old.file_name)).await {
+            log::warn!("retention removed the '{}' backup but its file is still on the node: {err}", old.file_name);
+        }
         if let (Some(key), Some(client)) = (&old.s3_key, &client) {
-            let _ = client.delete_object(key).await;
+            if let Err(err) = client.delete_object(key).await {
+                log::warn!("retention removed the '{}' backup but its object is still in the bucket: {err}", old.file_name);
+            }
         }
     }
     Ok(())
@@ -348,7 +390,12 @@ pub async fn run_due_backups(
         }
         if create_backup(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, BackupKind::Scheduled).await.is_ok() {
             created += 1;
-            let _ = prune_old_backups(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, &schedule).await;
+            if let Err(err) = prune_old_backups(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, &schedule).await {
+                // Nobody is watching this sweep, so it must not fail the
+                // run - but a retention rule that has silently stopped
+                // running is exactly how a Node fills its disk overnight.
+                log::warn!("couldn't apply the retention rules for application {application_id}: {err}");
+            }
         }
     }
     Ok(created)

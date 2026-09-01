@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { HelpHint } from "@/components/ui/HelpHint";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { createApplication, detectJavaInstallations, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
 import { installDocker, listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
@@ -17,6 +17,7 @@ import { listBlueprints } from "@/services/applicationService";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./CreateApplicationWizard.css";
+import { errorMessage } from "@/services/tauri";
 
 interface CreateApplicationWizardProps {
   onClose: () => void;
@@ -106,7 +107,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [runtimeType, setRuntimeType] = useState<RuntimeType | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [environment, setEnvironment] = useState<EnvironmentVariable[]>([]);
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "createapplicationwizard-dialog-title-1" });
 
   useEffect(() => {
     listBlueprints()
@@ -225,7 +226,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
         setDockerInstallError(t("createApplicationWizard.dockerInstallError"));
       }
     } catch (err) {
-      setDockerInstallError(err instanceof Error ? err.message : t("createApplicationWizard.dockerInstallError"));
+      setDockerInstallError(errorMessage(err, t));
     } finally {
       setInstallingDocker(false);
     }
@@ -247,17 +248,17 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
       });
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("createApplicationWizard.createError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-lg" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-lg" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("createApplicationWizard.title")}</h2>
+          <h2 className="modal-title" id="createapplicationwizard-dialog-title-1">{t("createApplicationWizard.title")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
 

@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import "./AddServerModal.css";
 import "./forms.css";
 
@@ -62,13 +62,13 @@ export function CreateEntryModal({ mode, onClose, onCreate }: CreateEntryModalPr
     }
   }
 
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "createentrymodal-dialog-title-1" });
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{mode === "folder" ? t("filesPage.newFolderTitle") : t("filesPage.newFileTitle")}</h2>
+          <h2 className="modal-title" id="createentrymodal-dialog-title-1">{mode === "folder" ? t("filesPage.newFolderTitle") : t("filesPage.newFileTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
 

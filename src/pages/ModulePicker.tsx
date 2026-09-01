@@ -8,10 +8,10 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
-import { STATUS_COLOR } from "@/utils/serverStatusColor";
 import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface ModulePickerProps {
   titleKey: string;
@@ -74,7 +74,7 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
                   {server.name}
                 </button>
                 <HostAddress value={server.host} className="server-list-host" />
-                <span className="server-list-status-dot" style={{ background: STATUS_COLOR[server.status] }} />
+                <StatusDot status={server.status} withLabel />
               </li>
             ))}
           </ul>

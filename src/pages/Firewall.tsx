@@ -10,7 +10,7 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   addFirewallCustomRule,
   enableServerFirewall,
@@ -26,6 +26,7 @@ import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 function originLabel(t: (key: string, opts?: Record<string, unknown>) => string, origin: FirewallRuleOrigin): string {
   switch (origin.kind) {
@@ -62,7 +63,7 @@ export function FirewallPage() {
     setLoadError(null);
     getNodeFirewallOverview(serverId)
       .then(setOverview)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : t("firewallPage.loadError")))
+      .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }, [serverId, t]);
 
@@ -79,7 +80,7 @@ export function FirewallPage() {
       await syncNodeFirewall(serverId!);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.syncError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setSyncing(false);
     }
@@ -97,7 +98,7 @@ export function FirewallPage() {
       toastSuccess(t("firewallPage.securedToast"));
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.enableError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setEnabling(false);
     }
@@ -111,7 +112,7 @@ export function FirewallPage() {
       setDeletingRule(null);
       load();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("firewallPage.deleteRuleError"));
+      setActionError(errorMessage(err, t));
     } finally {
       setDeleting(false);
     }
@@ -215,25 +216,12 @@ export function FirewallPage() {
       )}
 
       {deletingRule && (
-        <div className="modal-backdrop" {...useBackdropClose(() => !deleting && setDeletingRule(null))}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{t("firewallPage.deleteRuleTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setDeletingRule(null)} title={t("common.close")} disabled={deleting} />
-            </div>
-            <div className="modal-body">
-              <p className="dialog-body-text">{t("firewallPage.deleteRuleBody", { label: deletingRule.label })}</p>
-              <div className="form-actions">
-                <Button variant="secondary" onClick={() => setDeletingRule(null)} disabled={deleting}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant="danger" onClick={handleConfirmDelete} disabled={deleting}>
-                  {deleting ? t("common.loading") : t("common.remove")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DeleteFirewallRuleDialog
+          label={deletingRule.label}
+          busy={deleting}
+          onCancel={() => !deleting && setDeletingRule(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
     </div>
   );
@@ -247,7 +235,7 @@ interface AddCustomRuleModalProps {
 
 function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalProps) {
   const { t } = useTranslation();
-  const backdrop = useBackdropClose(onClose);
+  const backdrop = useModalDialog(onClose, { labelledBy: "firewall-dialog-title-1" });
   const [label, setLabel] = useState("");
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState<"tcp" | "udp">("tcp");
@@ -279,17 +267,17 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
       await addFirewallCustomRule(serverId, input);
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("firewallPage.addRuleError"));
+      setError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" {...backdrop.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title">{t("firewallPage.addCustomRuleTitle")}</h2>
+          <h2 className="modal-title" id="firewall-dialog-title-1">{t("firewallPage.addCustomRuleTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -334,6 +322,49 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
             </div>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Its own component rather than JSX inside a conditional, because
+ * `useModalDialog` has an effect that must run on the dialog's own mount -
+ * see `EnvironmentTab`'s copy of this note.
+ */
+function DeleteFirewallRuleDialog({
+  label,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  label: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  const dialog = useModalDialog(onCancel, { labelledBy: "delete-firewall-rule-title" });
+  return (
+    <div className="modal-backdrop" {...dialog.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...dialog.panelProps}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="delete-firewall-rule-title">
+            {t("firewallPage.deleteRuleTitle")}
+          </h2>
+          <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} disabled={busy} />
+        </div>
+        <div className="modal-body">
+          <p className="dialog-body-text">{t("firewallPage.deleteRuleBody", { label })}</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={onConfirm} disabled={busy}>
+              {busy ? t("common.loading") : t("common.remove")}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

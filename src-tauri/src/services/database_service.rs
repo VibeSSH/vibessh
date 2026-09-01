@@ -23,7 +23,10 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
-use crate::ssh::SshSession;
+use crate::ssh::{write_private_file, SshSession};
+// The one shared implementation - every module that builds a remote
+// command used to carry its own byte-identical copy of this.
+use crate::ssh::command::quote as shell_quote;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::credentials::{self, SecretKind};
@@ -37,10 +40,31 @@ const MAX_DATABASE_NAME_LEN: usize = 64;
 const MAX_USERNAME_LEN: usize = 32;
 const RANDOM_SUFFIX_LEN: usize = 6;
 const GENERATED_PASSWORD_LEN: usize = 24;
-/// Every generated database gets this bind pattern - not exposed as a wizard
-/// field (Section 12.2: "the only input is an optional free-text purpose;
-/// everything else is generated").
-const CONNECTIONS_FROM: &str = "%";
+/// The host pattern a generated database user may connect from.
+///
+/// **This used to be `%` - connectable from anywhere on the internet.** A
+/// generated user's only protection was then a 24-character password, on a
+/// server this same module had just reconfigured to listen on every
+/// interface. Narrowing it costs nothing: an Application reaching its
+/// database is either a container (arriving over a Docker bridge, always
+/// inside Docker's default `172.16.0.0/12` pool) or a plain process on the
+/// Node itself (arriving over loopback). Nothing legitimate connects from
+/// anywhere else.
+///
+/// MySQL host patterns are string wildcards, not CIDRs, so `172.%` is the
+/// closest expressible form. It is wider than Docker's pool by the
+/// `172.0.*`-`172.15.*` range, but narrower than `%` by the entire rest of
+/// the internet, and it is paired with a bind address that does not accept
+/// connections from outside the Node in the first place.
+const CONNECTIONS_FROM: &str = "172.%";
+
+/// Every host pattern a generated user is created for. `CONNECTIONS_FROM`
+/// is the one recorded on the row (containers are the common case);
+/// `localhost` covers an Application that runs as a plain process or a
+/// systemd unit directly on the Node, which arrives over loopback.
+fn grant_hosts() -> [&'static str; 2] {
+    [CONNECTIONS_FROM, "localhost"]
+}
 
 // ---- Database hosts ----
 
@@ -91,7 +115,7 @@ pub fn create_database_host(repo: &DatabaseRepository, input: CreateDatabaseHost
 /// `DatabaseRepository::delete_host` itself, nothing extra needed here.
 pub fn delete_database_host(repo: &DatabaseRepository, id: Uuid) -> AppResult<()> {
     repo.delete_host(id)?;
-    let _ = credentials::delete_secret(id, SecretKind::DatabaseHostAdmin);
+    credentials::forget_secret(id, SecretKind::DatabaseHostAdmin);
     Ok(())
 }
 
@@ -135,12 +159,14 @@ pub async fn create_application_database(
     let username = generate_identifier(seed, MAX_USERNAME_LEN);
     let password = generate_password();
 
-    let sql = format!(
-        "CREATE DATABASE IF NOT EXISTS `{database_name}`; \
-         CREATE USER IF NOT EXISTS '{username}'@'{CONNECTIONS_FROM}' IDENTIFIED BY '{password}'; \
-         GRANT ALL PRIVILEGES ON `{database_name}`.* TO '{username}'@'{CONNECTIONS_FROM}'; \
-         FLUSH PRIVILEGES;"
-    );
+    let mut sql = format!("CREATE DATABASE IF NOT EXISTS `{database_name}`; ");
+    for grant_host in grant_hosts() {
+        sql.push_str(&format!(
+            "CREATE USER IF NOT EXISTS '{username}'@'{grant_host}' IDENTIFIED BY '{password}'; \
+             GRANT ALL PRIVILEGES ON `{database_name}`.* TO '{username}'@'{grant_host}'; "
+        ));
+    }
+    sql.push_str("FLUSH PRIVILEGES;");
     run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[&password]).await?;
 
     let record = match db_repo.create_database(&CreateApplicationDatabaseInput {
@@ -156,8 +182,24 @@ pub async fn create_application_database(
             // collision) - the database/user just created on the remote
             // host would otherwise be orphaned (untracked, but real).
             // Best-effort undo rather than leaving that behind silently.
-            let cleanup_sql = format!("DROP USER IF EXISTS '{username}'@'{CONNECTIONS_FROM}'; DROP DATABASE IF EXISTS `{database_name}`;");
-            let _ = run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &cleanup_sql, &[]).await;
+            let mut cleanup_sql = String::new();
+            for grant_host in grant_hosts() {
+                cleanup_sql.push_str(&format!("DROP USER IF EXISTS '{username}'@'{grant_host}'; "));
+            }
+            cleanup_sql.push_str(&format!("DROP DATABASE IF EXISTS `{database_name}`;"));
+            if let Err(cleanup_err) = run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &cleanup_sql, &[]).await {
+                // The undo failed, so a real database and a real user with a
+                // real password now exist on the host that nothing in
+                // VibeSSH records - it will never appear in the UI and never
+                // be dropped by any later teardown. Only the operator can
+                // clear that, and only if they are told.
+                log::error!("couldn't clean up the orphaned '{database_name}' database after a failed save: {cleanup_err}");
+                return Err(AppError::Internal(format!(
+                    "{err}. A '{database_name}' database and its user were also left behind on '{host_name}' and couldn't be removed \
+                     automatically ({cleanup_err}) - drop them by hand before retrying",
+                    host_name = host.host
+                )));
+            }
             return Err(err);
         }
     };
@@ -180,14 +222,19 @@ pub async fn delete_application_database(
     let host = load_host(db_repo, database.database_host_id)?;
     let admin_password = load_host_admin_password(&host)?;
 
-    let sql = format!(
-        "DROP USER IF EXISTS '{}'@'{}'; DROP DATABASE IF EXISTS `{}`;",
-        database.username, database.connections_from, database.database_name
-    );
+    // Drops every host pattern the user could have been created for, plus
+    // the one actually recorded on the row - a database created before
+    // `grant_hosts` existed still carries the old `%` pattern, and leaving
+    // that user behind would be an orphaned account with a live password.
+    let mut sql = String::new();
+    for grant_host in grant_hosts().iter().copied().chain(std::iter::once(database.connections_from.as_str())) {
+        sql.push_str(&format!("DROP USER IF EXISTS '{}'@'{grant_host}'; ", database.username));
+    }
+    sql.push_str(&format!("DROP DATABASE IF EXISTS `{}`;", database.database_name));
     run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[]).await?;
 
     db_repo.delete_database(id)?;
-    let _ = credentials::delete_secret(id, SecretKind::ApplicationDatabaseUser);
+    credentials::forget_secret(id, SecretKind::ApplicationDatabaseUser);
     Ok(())
 }
 
@@ -211,7 +258,11 @@ pub async fn reset_application_database_password(
     let admin_password = load_host_admin_password(&host)?;
 
     let new_password = generate_password();
-    let sql = format!("ALTER USER '{}'@'{}' IDENTIFIED BY '{new_password}'; FLUSH PRIVILEGES;", database.username, database.connections_from);
+    let mut sql = String::new();
+    for grant_host in grant_hosts().iter().copied().chain(std::iter::once(database.connections_from.as_str())) {
+        sql.push_str(&format!("ALTER USER IF EXISTS '{}'@'{grant_host}' IDENTIFIED BY '{new_password}'; ", database.username));
+    }
+    sql.push_str("FLUSH PRIVILEGES;");
     run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[&new_password]).await?;
 
     credentials::store_secret(id, SecretKind::ApplicationDatabaseUser, &new_password)?;
@@ -251,16 +302,33 @@ pub fn phpmyadmin_url(
 
     let mut url = format!("http://{address}:{port}/");
     if let Some(name) = database_name {
-        // Always machine-generated (alphanumeric + underscore only, see
-        // `generate_identifier`) - safe to embed directly in a query
-        // string, no percent-encoding needed.
+        // Percent-encoded even though `generate_identifier` only ever
+        // produces `[a-z0-9_]`. This value arrives from the frontend as a
+        // free-form string, so "it is always machine-generated" is an
+        // assumption about a caller rather than something this function can
+        // see - and an unencoded `&` or `#` here silently truncates the
+        // parameter rather than failing.
         url.push_str("?db=");
-        url.push_str(name);
+        url.push_str(&percent_encode_query_value(name));
     }
     Ok(url)
 }
 
 // ---- Shared helpers ----
+
+/// Percent-encodes everything outside the unreserved set from RFC 3986.
+/// Deliberately conservative - encoding a character that did not strictly
+/// need it is harmless, missing one is not.
+fn percent_encode_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => encoded.push(byte as char),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
 
 fn load_host(db_repo: &DatabaseRepository, id: Uuid) -> AppResult<DatabaseHost> {
     db_repo.get_host(id)?.ok_or_else(|| AppError::NotFound(format!("database host {id}")))
@@ -298,7 +366,14 @@ async fn run_mysql_with_retry(
     retry_on_connection_failure(sessions, host.server_id, || async {
         let connection = connect_to_host(server_repo, sessions, host).await?;
         ensure_mysql_client_installed(&connection).await;
-        ensure_mysql_server_installed(&connection, host, admin_password).await;
+        // Was: silently `apt-get install mariadb-server`, enable it, and
+        // grant this host's admin user `ALL PRIVILEGES ... WITH GRANT
+        // OPTION` - on any operation that happened to touch a loopback
+        // host, with every error discarded (S-006/S-033). Installing a
+        // database server and creating a superuser on it is not a
+        // reasonable side effect of asking for an application database. Now
+        // it is refused with a code the UI turns into an offer.
+        require_database_server(&connection, host).await?;
         run_mysql(&connection, host, admin_password, sql, redact).await
     })
     .await
@@ -349,8 +424,21 @@ fn is_loopback_host(host: &str) -> bool {
 /// they're always machine-generated) because `host.admin_username`/
 /// `host.host` embedded below are free-text the user typed into the
 /// Database Host form.
+/// A MySQL string literal.
+///
+/// **Backslashes have to be escaped too, not just quotes.** Doubling `'`
+/// alone is correct only under `NO_BACKSLASH_ESCAPES`, which is not the
+/// default in MySQL or MariaDB. Without escaping the backslash, a value
+/// ending in one breaks out: `x\` renders as `'x\''...'`, the server reads
+/// `\'` as a literal quote, the string closes early, and whatever follows
+/// runs as SQL. That matters here because `admin_username` and `host` are
+/// free text and the statement they land in runs through `sudo mysql` as
+/// the database superuser.
+///
+/// Backslash first, deliberately: escaping quotes first would then double
+/// the backslashes this step introduces.
 fn sql_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
+    format!("'{}'", value.replace('\\', r"\\").replace('\'', "''"))
 }
 
 /// "Plug and play, no manual server prep" (`server_service::install_docker`'s
@@ -391,23 +479,84 @@ fn sql_quote(value: &str) -> String {
 /// installed *before* this function knew to fix the `localhost` account
 /// still gets self-healed on its very next provisioning attempt, not only
 /// on a fresh install.
-async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseHost, admin_password: &str) {
+/// Whether a database server is actually running on this Node.
+///
+/// Only ever asked of a loopback host - a remote host's server is somebody
+/// else's business and this Node's `systemctl` says nothing about it.
+async fn database_server_running(connection: &SshSession) -> AppResult<bool> {
+    let active = connection.execute_command("systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql").await?;
+    Ok(active.exit_code == 0)
+}
+
+/// Refuses the operation, with an actionable code, when a loopback Database
+/// Host has no server behind it.
+///
+/// Deliberately a refusal rather than an install: see the call site. A
+/// remote host is left alone entirely - if it is unreachable, `run_mysql`'s
+/// own error says so far better than a guess from here would.
+async fn require_database_server(connection: &SshSession, host: &DatabaseHost) -> AppResult<()> {
     if !is_loopback_host(&host.host) {
-        return;
+        return Ok(());
     }
-    let active = connection.execute_command("systemctl is-active --quiet mariadb || systemctl is-active --quiet mysql").await;
-    if !matches!(active, Ok(ref output) if output.exit_code == 0) {
+    if database_server_running(connection).await? {
+        return Ok(());
+    }
+    Err(AppError::DatabaseServerUnavailable { host: host.name.clone() })
+}
+
+/// Installs MariaDB on the Node behind a loopback Database Host, and gives
+/// that host's configured admin user the privileges VibeSSH then relies on.
+///
+/// **Explicit and consented** - this is the whole of A.4.3. It used to run
+/// as an unannounced side effect of creating an application database, which
+/// meant an `apt-get install`, an enabled system service, a new superuser
+/// with `WITH GRANT OPTION`, and a rewritten bind address all appearing on
+/// somebody's machine because they clicked "New database". Every step's
+/// error was discarded, so when any of it failed the operator saw an
+/// "access denied" from a later query instead.
+///
+/// Every step now propagates. A half-installed database server is worth
+/// stopping on: the next step's failure would otherwise be reported against
+/// whatever the operator does next, hours later.
+pub async fn install_database_server(
+    repo: &DatabaseRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    host_id: Uuid,
+) -> AppResult<()> {
+    let host = repo.get_host(host_id)?.ok_or_else(|| AppError::NotFound(format!("database host {host_id}")))?;
+    if !is_loopback_host(&host.host) {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' points at {}, not at this node itself - VibeSSH only installs a database server on a node it manages",
+            host.name, host.host
+        )));
+    }
+    let admin_password = load_host_admin_password(&host)?;
+    let connection = connect_to_host(server_repo, sessions, &host).await?;
+
+    if !database_server_running(&connection).await? {
         let install = connection
             .execute_command(
                 "sudo apt-get update -qq \
                  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mariadb-server \
                  && sudo systemctl enable --now mariadb",
             )
-            .await;
-        if !matches!(install, Ok(ref output) if output.exit_code == 0) {
-            return;
+            .await?;
+        if install.exit_code != 0 {
+            let detail = install.stderr.trim();
+            let detail = if detail.is_empty() { "the install command failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't install a database server on this node: {detail}")));
         }
     }
+    grant_admin_user(&connection, &host, &admin_password).await?;
+    ensure_mysql_reachable_from_containers(&connection, host.port).await;
+    Ok(())
+}
+
+/// Creates (or re-points) the Database Host's configured admin user on a
+/// freshly installed server, so the credentials the operator typed when they
+/// linked the host actually work against it.
+async fn grant_admin_user(connection: &SshSession, host: &DatabaseHost, admin_password: &str) -> AppResult<()> {
     let user = sql_quote(&host.admin_username);
     let addr = sql_quote(&host.host);
     let local = sql_quote("localhost");
@@ -421,53 +570,87 @@ async fn ensure_mysql_server_installed(connection: &SshSession, host: &DatabaseH
          GRANT ALL PRIVILEGES ON *.* TO {user}@{local} WITH GRANT OPTION; \
          FLUSH PRIVILEGES;"
     );
-    let _ = connection.execute_command(&format!("sudo mysql -e {}", shell_quote(&grant_sql))).await;
-    ensure_mysql_listens_on_all_interfaces(connection, host.port).await;
+    // Through a file, not `-e`: this statement contains the admin password
+    // in plaintext, and a command string is visible in `ps` to every local
+    // account on the Node while it runs.
+    let sql_file = format!(".vibessh-grant-{}.sql", Uuid::new_v4());
+    write_private_file(connection, &sql_file, grant_sql.as_bytes()).await?;
+    // Propagates, unlike before. Every later `mysql` call authenticates as
+    // this user, so a grant that quietly did not land turns into "access
+    // denied" against whatever the operator does next - an error that names
+    // neither this step nor the install that triggered it.
+    let applied = connection.execute_command(&format!("sudo mysql < {file}; rm -f {file}", file = shell_quote(&sql_file))).await?;
+    if applied.exit_code != 0 {
+        let detail = applied.stderr.trim().replace(admin_password, "[redacted]");
+        let detail = if detail.is_empty() { "the grant statement failed".to_string() } else { detail };
+        return Err(AppError::Connection(format!("the database server was installed but its admin user couldn't be created: {detail}")));
+    }
+    Ok(())
 }
 
-/// Two independent things stand between a phpMyAdmin (or any other) Docker
-/// container and a self-hosted MariaDB, and both have to be fixed for
-/// `host.docker.internal` to actually work - fixing only one still times
-/// out, it just times out for a different reason:
+/// Makes a self-hosted MariaDB reachable from an Application's container
+/// without making it reachable from the internet.
 ///
-/// 1. **The bind address.** Debian/Ubuntu's `mariadb-server` package ships
-///    `bind-address = 127.0.0.1` in `50-server.cnf` - loopback-only, by
-///    design. A container's connection arrives over the `docker0` bridge
-///    interface, never `lo`, and a socket bound specifically to
-///    `127.0.0.1` never accepts a connection arriving on any other
-///    interface, full stop - no firewall rule changes that. A drop-in
-///    config file (`99-vibessh-bind.cnf`, loaded after `50-server.cnf` so
-///    it wins) widens it to every interface.
-/// 2. **The firewall.** A host with `ufw` active (this codebase's own
-///    `firewall_service` sets exactly this kind of default-deny-incoming
-///    policy up) drops - not rejects, which is exactly why this fails as a
-///    silent connection *timeout* rather than an immediate refusal -
-///    anything not explicitly allowed, and nothing before this ever taught
-///    it about `docker0`. `ufw allow in on docker0 ... proto tcp` scopes
-///    the allow to traffic arriving over that one interface specifically
-///    (not a CIDR guess at Docker's bridge subnet, which varies) - the
-///    public internet stays exactly as blocked from this port as it always
-///    was, nothing here opens it there. Skipped entirely if `ufw` isn't
-///    installed or isn't active, so this never *turns on* a firewall that
-///    wasn't already managing this host's incoming traffic.
+/// **Why anything is needed at all.** Debian/Ubuntu's `mariadb-server`
+/// package ships `bind-address = 127.0.0.1`. A container's connection
+/// arrives over a Docker bridge interface, never `lo`, and a socket bound
+/// specifically to `127.0.0.1` never accepts a connection arriving on any
+/// other interface - no firewall rule changes that.
 ///
-/// Only restarts MariaDB when the drop-in's content actually needs to
-/// change, not on every provisioning call; the `ufw allow` is idempotent by
-/// nature (re-adding an identical rule is a no-op) so it's safe to just run
-/// every time too.
-async fn ensure_mysql_listens_on_all_interfaces(connection: &SshSession, port: u16) {
-    let script = format!(
-        "path=/etc/mysql/mariadb.conf.d/99-vibessh-bind.cnf; \
-         desired=$(printf '[mysqld]\\nbind-address = 0.0.0.0\\n'); \
-         current=$(sudo cat \"$path\" 2>/dev/null || true); \
-         if [ \"$current\" != \"$desired\" ]; then \
-             printf '%s' \"$desired\" | sudo tee \"$path\" >/dev/null && sudo systemctl restart mariadb; \
-         fi; \
-         if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q '^Status: active'; then \
-             sudo ufw allow in on docker0 to any port {port} proto tcp >/dev/null; \
-         fi"
-    );
-    let _ = connection.execute_command(&script).await;
+/// **Why this no longer writes `0.0.0.0`.** It used to, unconditionally and
+/// with its errors discarded, which silently converted a correctly
+/// loopback-only database into one listening on the Node's public
+/// interface. Paired with the `'user'@'%'` grants this module also used to
+/// create, that put the database on the internet behind nothing but a
+/// generated password. Only `ufw` stood in the way, and only when `ufw`
+/// happened to already be active.
+///
+/// Instead it binds loopback **plus the Docker bridge address specifically**
+/// (`bind-address = 127.0.0.1,172.17.0.1`, multi-address support present in
+/// MariaDB 10.11+ and MySQL 8.0.13+). The public interface is never bound,
+/// so exposure does not depend on a firewall being installed, enabled, or
+/// correctly configured.
+///
+/// **If the server cannot start with that config** - an older MariaDB
+/// without multi-address support - the drop-in is removed again and the
+/// server restarted, leaving the package default in place. That means
+/// container access does not work on those versions, which is a visible,
+/// fixable limitation; silently falling back to `0.0.0.0` would trade a
+/// broken feature for an exposed database, which is the wrong trade.
+///
+/// Only restarts when the drop-in's content actually needs to change.
+async fn ensure_mysql_reachable_from_containers(connection: &SshSession, port: u16) {
+    let _ = port;
+    let script = r#"set -e
+path=/etc/mysql/mariadb.conf.d/99-vibessh-bind.cnf
+bridge=$(ip -4 -o addr show docker0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+if [ -z "$bridge" ]; then
+    # No Docker bridge on this Node yet - nothing to widen the bind for,
+    # and widening it "just in case" is exactly the mistake this replaced.
+    exit 0
+fi
+desired=$(printf '[mysqld]\nbind-address = 127.0.0.1,%s\n' "$bridge")
+current=$(sudo cat "$path" 2>/dev/null || true)
+if [ "$current" = "$desired" ]; then
+    exit 0
+fi
+printf '%s' "$desired" | sudo tee "$path" >/dev/null
+if ! sudo systemctl restart mariadb; then
+    # This MariaDB cannot parse a multi-address bind. Roll back rather than
+    # fall back to 0.0.0.0 - a database that is unreachable from containers
+    # is a fixable inconvenience; one that is reachable from the internet is
+    # not.
+    sudo rm -f "$path"
+    sudo systemctl restart mariadb || true
+    echo "vibessh: this MariaDB does not support a multi-address bind-address; containers cannot reach it" >&2
+    exit 1
+fi
+"#;
+    match connection.execute_command(script).await {
+        Ok(output) if output.exit_code == 0 => {}
+        Ok(output) => log::warn!("couldn't make MariaDB reachable from containers: {}", output.stderr.trim()),
+        Err(err) => log::warn!("couldn't make MariaDB reachable from containers: {err}"),
+    }
 }
 
 async fn connect_to_host(server_repo: &ServerRepository, sessions: &SshSessionManager, host: &DatabaseHost) -> AppResult<Arc<SshSession>> {
@@ -485,8 +668,18 @@ async fn connect_to_host(server_repo: &ServerRepository, sessions: &SshSessionMa
 /// isn't embedded in the SQL body itself (only used to authenticate the
 /// connection).
 async fn run_mysql(connection: &SshSession, host: &DatabaseHost, admin_password: &str, sql: &str, redact: &[&str]) -> AppResult<()> {
-    let command = build_mysql_command(host, admin_password, sql);
-    let output = connection.execute_command(&command).await?;
+    // The password reaches the client through a mode-0600 defaults file
+    // written over SFTP, never through the command string. Anything in a
+    // command string is visible in `ps` to every local account on the Node
+    // for as long as the client runs, and `MYSQL_PWD` - what this used to
+    // do - is documented by MySQL itself as insecure for that reason.
+    let defaults_file = format!(".vibessh-my-{}.cnf", Uuid::new_v4());
+    write_private_file(connection, &defaults_file, defaults_file_contents(admin_password).as_bytes()).await?;
+
+    let command = build_mysql_command(&defaults_file, host, sql);
+    let attempt = connection.execute_command(&command).await;
+    let _ = connection.execute_command(&format!("rm -f {}", shell_quote(&defaults_file))).await;
+    let output = attempt?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
         let mut detail = if detail.is_empty() { "mysql command failed".to_string() } else { detail.to_string() };
@@ -516,10 +709,34 @@ async fn run_mysql(connection: &SshSession, host: &DatabaseHost, admin_password:
 /// (the default on most Debian/Ubuntu MySQL/MariaDB installs) - exactly
 /// the confusing "Access denied for user 'root'@'localhost'" this forces
 /// a real TCP connection to avoid, regardless of what `host.host` is set to.
-fn build_mysql_command(host: &DatabaseHost, admin_password: &str, sql: &str) -> String {
+/// The `[client]` section `--defaults-extra-file` reads. Only the password
+/// goes here - everything else stays on the command line, where it is not
+/// sensitive and is much easier to read back from a log.
+fn defaults_file_contents(admin_password: &str) -> String {
+    format!("[client]\npassword={}\n", option_file_value(admin_password))
+}
+
+/// Quotes a value for a MySQL option file.
+///
+/// An unquoted value cannot be used here: MySQL option files treat `#` as
+/// the start of a comment and strip trailing whitespace, so an admin
+/// password containing either would be silently truncated and
+/// authentication would fail with a confusing "access denied" that has
+/// nothing to do with the password being wrong. Double quotes disable both.
+///
+/// Inside a quoted value MySQL recognizes backslash escape sequences, so
+/// `\` and `"` have to be escaped themselves - backslash first, or the
+/// escaping would double the backslashes it just introduced.
+fn option_file_value(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', r"\\").replace('"', "\\\""))
+}
+
+/// `--defaults-extra-file` must be the first option: MySQL clients reject
+/// it anywhere else.
+fn build_mysql_command(defaults_file: &str, host: &DatabaseHost, sql: &str) -> String {
     format!(
-        "MYSQL_PWD={} mysql --protocol=TCP -h {} -P {} -u {} -e {}",
-        shell_quote(admin_password),
+        "mysql --defaults-extra-file={} --protocol=TCP -h {} -P {} -u {} -e {}",
+        shell_quote(defaults_file),
         shell_quote(&host.host),
         host.port,
         shell_quote(&host.admin_username),
@@ -527,24 +744,14 @@ fn build_mysql_command(host: &DatabaseHost, admin_password: &str, sql: &str) -> 
     )
 }
 
-/// POSIX single-quote shell escaping - see `runtime::remote_process`'s copy
-/// of the same function for the full reasoning; duplicated rather than
-/// shared, matching how it's already duplicated across several modules in
-/// this codebase.
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
-}
 
+
+/// Deliberately **not** `naming::dns_label`, despite the similar name.
+///
+/// This produces part of a SQL identifier, where `-` is not a legal
+/// character at all - so this strips every non-alphanumeric rather than
+/// converting runs of them to dashes. Two conversions that look alike and
+/// have to stay different; sharing them would break one or the other.
 fn slugify(input: &str) -> String {
     input.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
 }
@@ -604,12 +811,24 @@ mod tests {
         }
     }
 
+    /// `-u 'ro'\''ot'` - what POSIX single-quote escaping turns
+    /// `ro'ot` into. Spelled out as a constant so the test's own
+    /// expectation is readable rather than a wall of backslashes.
+    const SHELL_ESCAPED_ROOT: &str = r"-u 'ro'\''ot'";
+
+    /// The regression test for the password-in-argv finding: a command
+    /// string is visible in `ps` to every local account on the Node for as
+    /// long as the client runs, so the password must not appear in one -
+    /// not as `-p`, and not as `MYSQL_PWD` either.
     #[test]
-    fn build_mysql_command_uses_mysql_pwd_not_a_visible_dash_p_flag() {
+    fn build_mysql_command_never_carries_the_password() {
         let host = stub_host();
-        let command = build_mysql_command(&host, "adminpass", "SELECT 1;");
-        assert!(command.starts_with("MYSQL_PWD='adminpass' mysql --protocol=TCP"));
-        assert!(!command.contains("-p'adminpass'"), "the password must never be passed as a -p flag");
+        let command = build_mysql_command(".vibessh-my-test.cnf", &host, "SELECT 1;");
+        assert!(!command.contains("adminpass"), "{command}");
+        assert!(!command.contains("MYSQL_PWD"), "{command}");
+        // --defaults-extra-file has to be the first option or the client
+        // rejects it.
+        assert!(command.starts_with("mysql --defaults-extra-file='.vibessh-my-test.cnf'"), "{command}");
         assert!(command.contains("-h '127.0.0.1'"));
         assert!(command.contains("-P 3306"));
         assert!(command.contains("-u 'root'"));
@@ -617,13 +836,33 @@ mod tests {
     }
 
     #[test]
+    fn defaults_file_contents_is_a_client_section_with_only_the_password() {
+        assert_eq!(defaults_file_contents("adminpass"), "[client]\npassword=\"adminpass\"\n");
+    }
+
+    /// The admin password is free text the operator typed. MySQL option
+    /// files treat `#` as a comment and strip trailing whitespace, so an
+    /// unquoted value would be silently truncated and surface as a
+    /// confusing "access denied" rather than anything pointing at the real
+    /// cause.
+    #[test]
+    fn option_file_value_survives_characters_an_option_file_would_otherwise_eat() {
+        assert_eq!(option_file_value("p#ss"), "\"p#ss\"");
+        assert_eq!(option_file_value("pass "), "\"pass \"");
+        assert_eq!(option_file_value("a\"b"), "\"a\\\"b\"");
+        assert_eq!(option_file_value(r"a\b"), "\"a\\\\b\"");
+        // A quote preceded by a backslash must not let the value close early.
+        assert_eq!(option_file_value("a\\\"b"), "\"a\\\\\\\"b\"");
+    }
+
+    #[test]
     fn build_mysql_command_forces_tcp_even_when_the_host_is_literally_localhost() {
         // The mysql client silently switches to a Unix socket - bypassing
-        // MYSQL_PWD/-u auth entirely - whenever `-h` is exactly "localhost".
-        // --protocol=TCP is what stops that from happening.
+        // the defaults file and `-u` auth entirely - whenever `-h` is
+        // exactly "localhost". --protocol=TCP is what stops that.
         let mut host = stub_host();
         host.host = "localhost".to_string();
-        let command = build_mysql_command(&host, "adminpass", "SELECT 1;");
+        let command = build_mysql_command(".vibessh-my-test.cnf", &host, "SELECT 1;");
         assert!(command.contains("--protocol=TCP"), "{command}");
     }
 
@@ -631,11 +870,42 @@ mod tests {
     fn build_mysql_command_single_quote_escapes_every_embedded_value() {
         let mut host = stub_host();
         host.admin_username = "ro'ot".to_string();
-        let command = build_mysql_command(&host, "pa'ss", "DROP DATABASE `x`;");
+        let command = build_mysql_command(".vibessh-my-test.cnf", &host, "DROP DATABASE `x`;");
         // A raw embedded quote would otherwise close the shell string early.
-        assert!(command.contains("MYSQL_PWD='pa'\\''ss'"));
-        assert!(command.contains("-u 'ro'\\''ot'"));
+        assert!(command.contains(SHELL_ESCAPED_ROOT), "{command}");
     }
+
+    /// The regression test for the SQL-injection finding. Doubling `'`
+    /// alone is only correct under `NO_BACKSLASH_ESCAPES`, which is not the
+    /// default - so a value ending in a backslash closed the string early
+    /// and let everything after it run as SQL, through `sudo mysql`.
+    #[test]
+    fn sql_quote_escapes_backslashes_as_well_as_quotes() {
+        assert_eq!(sql_quote("plain"), "'plain'");
+        assert_eq!(sql_quote("it's"), "'it''s'");
+        assert_eq!(sql_quote(r"x\"), r"'x\\'");
+        // The breakout attempt: a trailing backslash followed by a quote.
+        // Both must survive escaping as inert literal characters.
+        let hostile = sql_quote(r"x\'; GRANT ALL PRIVILEGES ON *.* TO 'evil'@'%'; -- ");
+        assert!(hostile.starts_with(r"'x\\''"), "{hostile}");
+        assert!(hostile.ends_with('\''), "{hostile}");
+    }
+
+    /// A generated database user must never be reachable from the whole
+    /// internet. `%` was the previous value, and the reason the bind-address
+    /// exposure mattered as much as it did.
+    #[test]
+    fn generated_users_are_never_granted_to_every_host() {
+        assert_ne!(CONNECTIONS_FROM, "%");
+        for grant_host in grant_hosts() {
+            assert_ne!(grant_host, "%", "a grant host of '%' is reachable from anywhere");
+        }
+        // Containers arrive over a Docker bridge; host processes over
+        // loopback. Those are the only two legitimate sources.
+        assert!(grant_hosts().contains(&"localhost"));
+        assert!(grant_hosts().iter().any(|h| h.starts_with("172.")));
+    }
+
 
     #[test]
     fn is_loopback_host_accepts_only_the_same_node_addresses() {
@@ -782,5 +1052,17 @@ mod tests {
             admin_username: "root".to_string(),
             admin_password: "hunter2".to_string(),
         }
+    }
+    /// The value is machine-generated today, but it arrives here as a
+    /// free-form string from the frontend - an unencoded `&` or `#` would
+    /// silently truncate the parameter rather than failing.
+    #[test]
+    fn percent_encode_query_value_escapes_everything_outside_the_unreserved_set() {
+        assert_eq!(percent_encode_query_value("vibessh_app_a1b2c3"), "vibessh_app_a1b2c3");
+        assert_eq!(percent_encode_query_value("a-b.c~d"), "a-b.c~d");
+        assert_eq!(percent_encode_query_value("a&b"), "a%26b");
+        assert_eq!(percent_encode_query_value("a#b"), "a%23b");
+        assert_eq!(percent_encode_query_value("a b"), "a%20b");
+        assert_eq!(percent_encode_query_value("a/b?c=d"), "a%2Fb%3Fc%3Dd");
     }
 }

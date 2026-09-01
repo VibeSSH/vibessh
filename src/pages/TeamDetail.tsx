@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
+import { useModalDialog } from "@/hooks/useModalDialog";
 import { AuditLogSection } from "@/components/teams/AuditLogSection";
 import { InvitationsSection } from "@/components/teams/InvitationsSection";
 import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
@@ -22,6 +22,7 @@ import "./Servers.css";
 import "./Teams.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import { errorMessage } from "@/services/tauri";
 
 type Tab = "members" | "roles" | "servers" | "invitations" | "audit";
 
@@ -38,7 +39,7 @@ export function TeamDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const confirmDeleteBackdrop = useBackdropClose(() => !deleteBusy && setConfirmingDelete(false));
+  const confirmDeleteBackdrop = useModalDialog(() => !deleteBusy && setConfirmingDelete(false), { labelledBy: "teamdetail-dialog-title-1" });
 
   function loadOverview() {
     if (!teamId) return;
@@ -50,7 +51,7 @@ export function TeamDetail() {
         setMembers(loadedMembers);
         setPermissions(new Set(loadedPermissions));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("teams.couldntLoad")))
+      .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
   }
 
@@ -74,7 +75,7 @@ export function TeamDetail() {
       toastSuccess(t("teams.removedMemberToast", { name: member.displayName }));
       loadOverview();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("teams.couldntRemoveMember"));
+      setError(errorMessage(err, t));
     }
   }
 
@@ -86,7 +87,7 @@ export function TeamDetail() {
       toastSuccess(t("teams.deletedToast", { name: team?.name ?? "" }));
       navigate("/teams");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("teams.couldntDeleteTeam"));
+      setDeleteError(errorMessage(err, t));
     } finally {
       setDeleteBusy(false);
     }
@@ -186,10 +187,10 @@ export function TeamDetail() {
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
 
       {confirmingDelete && (
-        <div className="modal-backdrop" {...confirmDeleteBackdrop}>
-          <div className="modal-panel modal-panel-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" {...confirmDeleteBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...confirmDeleteBackdrop.panelProps}>
             <div className="modal-header">
-              <h2 className="modal-title">{t("teams.deleteTeamTitle")}</h2>
+              <h2 className="modal-title" id="teamdetail-dialog-title-1">{t("teams.deleteTeamTitle")}</h2>
               <IconButton icon="x" size="sm" onClick={() => setConfirmingDelete(false)} title={t("common.close")} />
             </div>
             <div className="modal-body">

@@ -90,11 +90,29 @@ impl S3Client {
     /// (`endpoint/bucket/key`, what MinIO needs) or virtual-hosted-style
     /// (`bucket.endpoint-host/key`, what AWS S3/R2 both prefer) depending
     /// on `self.config.path_style`.
+    /// `true` for an endpoint host that cannot leave the machine - the one
+    /// case where plain HTTP is not a disclosure.
+    fn is_loopback_host_part(host: &str) -> bool {
+        let host = host.split('/').next().unwrap_or(host);
+        let host = host.rsplit_once(':').map_or(host, |(before, _)| before);
+        matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
+    }
+
     fn request_target(&self, key: &str) -> AppResult<(String, String, String)> {
         let endpoint = self.config.endpoint.trim().trim_end_matches('/');
         let (scheme, rest) = endpoint
             .split_once("://")
-            .ok_or_else(|| AppError::InvalidInput("the backup destination endpoint must start with http:// or https://".into()))?;
+            .ok_or_else(|| AppError::InvalidInput("the backup destination endpoint must start with https://".into()))?;
+        // Backups carry the operator's application data, and every request
+        // to this endpoint is signed with the destination's secret access
+        // key. Over plain HTTP both are on the wire in the clear. The one
+        // legitimate exception is a MinIO instance on the same host, so
+        // loopback is still allowed - anything else has to be TLS.
+        if scheme == "http" && !Self::is_loopback_host_part(rest) {
+            return Err(AppError::InvalidInput(
+                "the backup destination must use https:// - over plain http the backup contents and the access key are sent in the clear".into(),
+            ));
+        }
         let encoded_key = encode_key_path(key);
         if self.config.path_style {
             let path = format!("/{}/{encoded_key}", self.config.bucket);
@@ -315,5 +333,36 @@ mod tests {
         config.endpoint = "s3.amazonaws.com".to_string();
         let client = S3Client::new(config, "secret".to_string());
         assert!(client.request_target("key").is_err());
+    }
+    /// Backups carry application data and every request is signed with the
+    /// destination's secret key - over plain HTTP both are in the clear.
+    #[test]
+    fn a_plaintext_http_endpoint_is_rejected() {
+        let mut config = test_config();
+        config.endpoint = "http://backups.example.com".to_string();
+        let client = S3Client::new(config, "secret".to_string());
+        let err = client.request_target("backups/a.zip").unwrap_err();
+        assert!(err.to_string().contains("https"), "{err}");
+    }
+
+    /// The one legitimate exception: a MinIO instance on the same machine
+    /// cannot put anything on a network.
+    #[test]
+    fn a_loopback_http_endpoint_is_allowed() {
+        for endpoint in ["http://127.0.0.1:9000", "http://localhost:9000", "http://[::1]:9000"] {
+            let mut config = test_config();
+            config.endpoint = endpoint.to_string();
+            config.path_style = true;
+            let client = S3Client::new(config, "secret".to_string());
+            assert!(client.request_target("backups/a.zip").is_ok(), "{endpoint} should be allowed");
+        }
+    }
+
+    #[test]
+    fn an_https_endpoint_is_always_allowed() {
+        let mut config = test_config();
+        config.endpoint = "https://backups.example.com".to_string();
+        let client = S3Client::new(config, "secret".to_string());
+        assert!(client.request_target("backups/a.zip").is_ok());
     }
 }
