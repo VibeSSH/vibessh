@@ -18,6 +18,7 @@ boundary**, not afterwards.
 | Agent bearer credentials | OS keyring (desktop); SHA-256 hash only (agent) | Constant-time comparison; the raw value never persists on the Node. |
 | WireGuard private keys | `/etc/wireguard`, mode 0600, on each Node | Generated on the Node, never transmitted. `wg-quick strip` output stages in a root-only directory. |
 | Application files and databases | The Node | Per-Application Linux account; path sandboxing with post-canonicalisation checks. |
+| An Application's unpublished ports | The Node's Docker networking | Its own private bridge network. Another Application reaches it only through a connection granted in the UI, which is a second private network holding exactly those two containers. |
 | Backup archives and S3 credentials | The Node, plus the configured bucket | HTTPS enforced for non-loopback endpoints. |
 | Registry tokens | OS keyring | Reach the Node through a mode-0600 file, never a command line. |
 | Docker daemon control | The Node | `sudo docker` as the connecting admin. **Root-equivalent** — see `agent-privileges.md`. |
@@ -36,16 +37,16 @@ boundary**, not afterwards.
                                                    │                    │
                                          [Application container] ◄──bind mount──┘
                                                    │
-                                       shared vibessh-net + docker0
+                             its own private network + docker0
                                                    │
-                                   ◄── reaches every other Application on the Node
+                          ◄── reaches only the Applications explicitly connected to it
 ```
 
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |
 |---|---|---|
-| Malicious/compromised Application container | **Partly** | File and console isolation are enforced (staging is per-Application 0600; the console FIFO is outside the bind mount). **Network isolation is not** — every Application shares `vibessh-net` and can reach any other's internal ports by alias. See the open question below. |
+| Malicious/compromised Application container | **No, for the isolation VibeSSH claims** | Files (per-Application staging, 0600), console (FIFO outside the bind mount) and now network: each Application has its own Docker network and reaches another only where an operator granted it, via a private two-member network. It can still reach the host's MariaDB across `docker0` and is still confined only by that database's own grants — see the open question below. |
 | Unprivileged local user on a Node | **No** | The predictable-`/tmp` symlink and world-readable key paths are gone; VibeSSH's Node-side files live under a root-write-only `/run/vibessh`. |
 | Compromised Node | **No** | Peer values are shape-validated and the generated scripts have no shell-expansion context at all. |
 | Remote unauthenticated attacker | **No, for VibeSSH-managed ports** | Non-public ports bind the mesh address, so the kernel refuses them; `DOCKER-USER` rules add filter-level defence. A port published out of band is still the operator's own business. |
@@ -72,12 +73,15 @@ breaks the model.
 
 ## Open questions
 
-- **The shared Docker network** (`AUDIT_REPORT.md` S-018). Every
-  Application joins `vibessh-net` with a resolvable alias, so Application A
-  can reach Application B's *unpublished* ports. This is deliberate — it is
-  what makes a Velocity proxy find its Paper backend — but it is not
-  currently presented to the operator as a trust boundary at all. Either
-  per-Application networks with explicit links, or say so in the UI.
+- **The host's database port across `docker0`.** Closing S-018 removed
+  Application-to-Application reachability, but every container still reaches
+  the host through `host.docker.internal`, which is what a self-hosted
+  MariaDB is reached on. The only thing standing between one Application's
+  container and another Application's database is the grant
+  (`'user'@'172.%'`) and the password. That is a real credential boundary
+  rather than a network one, and narrowing it further means either
+  per-Application source CIDRs in the grants or a proxy — neither designed
+  yet.
 - **Release signing** (`security-review.md` finding 5). `install.sh`
   verifies a checksum fetched from the same host as the binary, which
   protects against corruption and not against a compromised release host.

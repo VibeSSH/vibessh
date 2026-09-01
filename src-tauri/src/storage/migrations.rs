@@ -356,6 +356,31 @@ pub fn migrations() -> Migrations<'static> {
         // construction), so unlike credentials this belongs in the database
         // rather than the OS keyring.
         M::up("ALTER TABLE servers ADD COLUMN agent_certificate_fingerprint TEXT;"),
+        // Migration 16: explicit Application-to-Application connections.
+        // Until this existed every container joined one shared
+        // `vibessh-net` bridge with a resolvable alias, so any Application
+        // could reach any other Application's *unpublished* ports by name -
+        // the one isolation guarantee the architecture claims that was not
+        // actually enforced (`AUDIT_REPORT.md` S-018). Reachability is now
+        // default-deny and this table is the allow-list.
+        //
+        // A row is an unordered pair, not an arrow: `runtime::docker`
+        // implements a connection by putting both containers on a private
+        // two-member Docker network, and a bridge network is inherently
+        // bidirectional. The CHECK is what stops a caller storing a
+        // one-way link the network layer would silently make two-way -
+        // better to be unable to express it than to display a direction
+        // that isn't real.
+        M::up(
+            "CREATE TABLE application_links (
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                peer_id        TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                created_at     TEXT NOT NULL,
+                PRIMARY KEY (application_id, peer_id),
+                CHECK (application_id < peer_id)
+            );
+            CREATE INDEX application_links_peer_idx ON application_links (peer_id);",
+        ),
     ])
 }
 

@@ -229,6 +229,7 @@ impl ApplicationRepository {
 
         let environment = self.list_environment_locked(&conn, id)?;
         let ports = self.list_ports_locked(&conn, id)?;
+        let links = list_links_locked(&conn, id)?;
         let runtime_config = conn
             .query_row("SELECT config_json FROM application_runtime_config WHERE application_id = ?1", params![id.to_string()], |row| {
                 row.get::<_, String>(0)
@@ -246,6 +247,7 @@ impl ApplicationRepository {
             ports,
             runtime_config: serde_json::from_str(&runtime_config).unwrap_or_default(),
             metadata: serde_json::from_str(&metadata).unwrap_or_default(),
+            links,
         }))
     }
 
@@ -292,6 +294,50 @@ impl ApplicationRepository {
             .map_err(|err| AppError::Storage(format!("failed to insert environment variable: {err}")))?;
         }
         tx.commit().map_err(|err| AppError::Storage(format!("failed to commit transaction: {err}")))
+    }
+
+    /// The Applications `application_id` may reach over the Node's internal
+    /// Docker networking. See `ApplicationDetail::links`.
+    pub fn list_links(&self, application_id: Uuid) -> AppResult<Vec<Uuid>> {
+        let conn = self.lock();
+        list_links_locked(&conn, application_id)
+    }
+
+    /// Idempotent - granting a connection that already exists is a no-op
+    /// rather than a constraint failure, so a retry after a failed *apply*
+    /// (the Docker half, which is the half that can fail against a live
+    /// Node) does not first have to undo the stored half.
+    ///
+    /// Rejects a self-link: a container is trivially able to reach itself,
+    /// so storing one would only produce a Docker network with a single
+    /// member and a row the UI would have to special-case.
+    pub fn add_link(&self, a: Uuid, b: Uuid) -> AppResult<()> {
+        if a == b {
+            return Err(AppError::InvalidInput("an application can't be connected to itself".into()));
+        }
+        let (lo, hi) = ordered_pair(a, b);
+        let conn = self.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO application_links (application_id, peer_id, created_at) VALUES (?1, ?2, ?3)",
+            params![lo.to_string(), hi.to_string(), Utc::now().to_rfc3339()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to store the connection: {err}")))?;
+        Ok(())
+    }
+
+    /// Also idempotent, and for a sharper reason than `add_link`: revoking
+    /// is the direction that closes an exposure, so "it was already gone"
+    /// has to be a success or a partially-applied revoke could never be
+    /// retried to completion.
+    pub fn remove_link(&self, a: Uuid, b: Uuid) -> AppResult<()> {
+        let (lo, hi) = ordered_pair(a, b);
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM application_links WHERE application_id = ?1 AND peer_id = ?2",
+            params![lo.to_string(), hi.to_string()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to remove the connection: {err}")))?;
+        Ok(())
     }
 
     pub fn list_ports(&self, application_id: Uuid) -> AppResult<Vec<ApplicationPort>> {
@@ -503,6 +549,47 @@ fn storage_or_fk_error(err: rusqlite::Error, referenced: &str) -> AppError {
 const APPLICATION_COLUMNS: &str = "SELECT id, server_id, name, description, blueprint_id, blueprint_version, \
      runtime_type, working_directory, status, last_status_check_at, health_check_type, health_check_port_id, \
      health_check_http_path, created_at, updated_at";
+
+/// `application_links` stores one row per unordered pair with
+/// `application_id < peer_id` (a CHECK constraint enforces it), so every
+/// read and write normalises the pair the same way first.
+fn ordered_pair(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
+    if a <= b {
+        (a, b)
+    } else {
+        (b, a)
+    }
+}
+
+/// Both columns, because the pair is normalised on write: an Application is
+/// as often the higher id as the lower one, and which side it landed on says
+/// nothing about the relationship.
+fn list_links_locked(conn: &Connection, application_id: Uuid) -> AppResult<Vec<Uuid>> {
+    let id = application_id.to_string();
+    let mut stmt = conn
+        .prepare(
+            "SELECT peer_id FROM application_links WHERE application_id = ?1
+             UNION
+             SELECT application_id FROM application_links WHERE peer_id = ?1",
+        )
+        .map_err(|err| AppError::Storage(format!("failed to prepare the connection query: {err}")))?;
+    let rows = stmt
+        .query_map(params![id], |row| row.get::<_, String>(0))
+        .map_err(|err| AppError::Storage(format!("failed to list connections: {err}")))?;
+    let mut links = Vec::new();
+    for row in rows {
+        let raw = row.map_err(|err| AppError::Storage(format!("failed to read a connection row: {err}")))?;
+        // A row whose id no longer parses is a corrupted row, not a reason to
+        // fail the whole Application load - but it must not silently become
+        // "no connection", because a dropped link reads as *more* isolation
+        // than there is. Log it and keep the rest.
+        match Uuid::parse_str(&raw) {
+            Ok(id) => links.push(id),
+            Err(err) => log::warn!("ignoring an unparseable application_links row '{raw}': {err}"),
+        }
+    }
+    Ok(links)
+}
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     Ok(Application {

@@ -93,7 +93,7 @@ async fn bind_mounted_working_directory_survives_a_destroy_and_recreate_on_the_r
 async fn run_test(session: Arc<SshSession>, application_id: uuid::Uuid, working_directory: String) {
     let application = stub_application(application_id, working_directory.clone());
     let runtime_config = serde_json::json!({ "image": "alpine:latest", "command": ["sh", "-c", "sleep 3600"] });
-    let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: Some(session.clone()) };
+    let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: Some(session.clone()) };
     let runtime = DockerRuntime::new();
     let name = container_name(application_id);
 

@@ -80,7 +80,19 @@ published port (S-007).
 If you add a resource created on a Node, add it to the teardown in the same
 change.
 
-## 6. Don't infer a caller's behaviour from the callee
+## 6. A boundary the UI doesn't show isn't a boundary
+
+Every Application used to share one Docker network, so any container could
+reach any other's *unpublished* ports. That was a deliberate design choice -
+it is what let a Velocity proxy find its Paper backend - and it was written
+down nowhere the operator could see. It is now default-deny with an explicit
+allow-list (S-018, `runtime::docker`).
+
+If you add something that lets one Application affect another, it needs a
+place in the interface where an operator can see it and turn it off. "It's
+documented in a doc comment" is not that place.
+
+## 7. Don't infer a caller's behaviour from the callee
 
 Three findings in `AUDIT_REPORT.md` were wrong, all the same way: reading
 one function correctly, then reasoning about what the rest of the system

@@ -1273,5 +1273,16 @@
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port."
+  },
+  "connections": {
+    "title": "Connections",
+    "description": "Applications on this node cannot reach each other unless you connect them here. A connection works both ways and takes effect immediately.",
+    "emptyTitle": "Not connected to anything",
+    "emptyDescription": "This application can't reach any other application on this node, and none can reach it.",
+    "reachableAs": "Reachable at the hostname {{host}}",
+    "addLabel": "Connect to",
+    "addPlaceholder": "Pick an application",
+    "connect": "Connect",
+    "disconnectAria": "Disconnect {{name}}"
   }
 }

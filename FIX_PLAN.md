@@ -113,13 +113,22 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE B — HIGH bugs and correctness
 
-> **Status: done except B.17.**
+> **Status: done, B.17 included.**
 > Closed: B.1-B.10, B.12, B.13, B.14, B.15, B.16.
 > B.11 turned out not to be a real finding - see the S-016 correction in
 > `AUDIT_REPORT.md`; what is left of it is a narrower MEDIUM (restore is not
 > atomic), carried into Phase D.
 >
-> **Still open:** B.17 (decide the shared-Docker-network trust boundary -
+> **B.17 is closed**, taking the isolating option rather than the
+> documenting one: per-Application Docker networks, default-deny, with
+> connections granted explicitly in the Ports tab. A connection is its own
+> two-member network rather than the client joining the target's, so two
+> Applications granted access to a shared third do not thereby reach each
+> other. Migration 16 stores the allow-list; `runtime::docker::reconcile_networks`
+> applies it on every start and every grant/revoke. Existing Nodes lose their
+> implicit connectivity at the next start - see `AUDIT_REPORT.md` S-018.
+>
+> **Was still open:** B.17 (decide the shared-Docker-network trust boundary -
 > a design decision, not a fix), and A.4.3 carried over from Phase A
 > (consented database-server install).
 >
@@ -149,7 +158,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 | B.14 | Reject `http://` S3 endpoints (or require explicit opt-in) | S-023 |
 | B.15 | URL-encode the `?db=` parameter in `phpmyadmin_url` | S-024 |
 | B.16 | Surface keyring deletion failures instead of `let _ =` | S-036 |
-| B.17 | Decide S-018: per-Application Docker networks with opt-in links, **or** document the shared network as a visible trust boundary in the UI. Do not leave it implicit | S-018 |
+| B.17 | ~~Decide S-018~~ **Done** - per-Application Docker networks with opt-in connections (migration 16, `runtime::docker`, `ConnectionsCard`) | S-018 |
 
 ---
 

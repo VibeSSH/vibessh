@@ -343,6 +343,8 @@ What remains is narrower but real: the extraction itself is file-by-file over th
 `runtime/docker.rs`: every container joins `--network vibessh-net` with `--network-alias <slug>` and gets `--add-host host.docker.internal:host-gateway`. Combined with `ensure_mysql_listens_on_all_interfaces`'s `ufw allow in on docker0`, Application A can reach Application B's **internal, unpublished** ports directly by name, and can reach the host's MariaDB. This is a deliberate design (it is what makes service discovery work) but it is not stated as a security boundary anywhere and contradicts §6's isolation claims.
 **Fix:** per-Application networks by default with explicit opt-in links; or document the shared network as an accepted, visible trust boundary in the UI.
 
+**Status: fixed** (the first option, deliberately — see `FIX_PLAN.md` B.17). Each Application now gets its own bridge network and reaches nothing by default. A connection granted in the Ports tab creates a private network holding exactly those two containers, which is why granting A→C and B→C does not also connect A to B. Applied on every start and on every grant or revoke, so revoking takes effect on a running container. **Breaking for an existing Node:** connectivity that worked because everything shared `vibessh-net` stops at the next start and has to be granted. Guessing which of those connections were load-bearing would have meant re-creating the exposure under a new name. The host-MariaDB half of this finding is *not* closed — see `docs/threat-model.md`.
+
 **S-019 — Frontend receives raw Rust error strings and discards the error kind | HIGH | P1**
 `src/services/tauri.ts::normalizeError` reduces `{ kind, message }` to `new Error(message)`. The `kind` discriminator that `AppError`'s `Serialize` impl deliberately provides is **thrown away**, so the frontend cannot branch on error type at all. What reaches the user is `AppError::Display` verbatim:
 
@@ -633,7 +635,7 @@ Serialize as `{ code: "port_in_use", params: { port: 25565, owner: "nginx" }, de
 | `MAX_STORED_LINES = 5000` | `storage/log_capture.rs` |
 | `MAX_FAILED_ATTEMPTS = 10`, pairing TTL | `agent/src/pairing/mod.rs` |
 | `LISTEN_PORT = 54221`, `MESH_CIDR = 10.77.0.0/16`, `MESH_CIDR_SECOND_OCTET = 77` | `wireguard.rs`, `node_network_repository.rs` — not configurable; will collide with an existing 10.77/16 network |
-| `NETWORK_NAME = "vibessh-net"` | `runtime/docker.rs` |
+| `APP_NETWORK_PREFIX`/`LINK_NETWORK_PREFIX` (was `NETWORK_NAME = "vibessh-net"`) | `runtime/docker.rs` |
 | `DEFAULT_BIND_ADDR = "0.0.0.0:7420"` | `agent/src/main.rs` |
 | `HELPER_PATH`, `SUDOERS_PATH` | `files/sudo_user.rs` |
 | `GENERATED_PASSWORD_LEN = 24`, `MAX_DATABASE_NAME_LEN`, `MAX_USERNAME_LEN` | `database_service.rs` |

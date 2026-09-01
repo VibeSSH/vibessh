@@ -281,4 +281,16 @@ pub struct ApplicationDetail {
     pub ports: Vec<ApplicationPort>,
     pub runtime_config: serde_json::Value,
     pub metadata: serde_json::Value,
+    /// The other Applications this one is allowed to reach over the Node's
+    /// internal Docker networking, from `application_links` (migration 16).
+    ///
+    /// Ids rather than a richer view type: every consumer already has the
+    /// full Application list to hand - the frontend from its own store, the
+    /// runtime because it only needs the id to derive a network name - and a
+    /// join here would make `get` pay for a lookup that the one caller who
+    /// wants names does better itself.
+    ///
+    /// Unordered pairs, so this is symmetric: if A lists B, B lists A. See
+    /// migration 16 for why a connection cannot be one-way.
+    pub links: Vec<Uuid>,
 }

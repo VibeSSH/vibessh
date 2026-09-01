@@ -675,6 +675,11 @@ pub async fn delete_application(
     let server_id = detail.application.server_id;
     let working_directory = detail.application.working_directory.clone();
     let wants_dedicated_user = crate::files::wants_dedicated_user(&detail.application, &detail.runtime_config);
+    // Read before the row goes away: `ON DELETE CASCADE` takes the
+    // `application_links` rows with it, and step 7 needs to know which
+    // per-connection Docker networks existed and which peers have to be
+    // taken off them.
+    let former_peers = detail.links.clone();
 
     // 1. The runtime itself. For Docker this is `docker rm -f`, which is
     //    the step whose absence left orphaned containers holding ports.
@@ -685,6 +690,7 @@ pub async fn delete_application(
                 runtime_config: &detail.runtime_config,
                 environment: &detail.environment,
                 ports: &detail.ports,
+                links: &detail.links,
                 connection,
             };
             match runtime.destroy(&ctx).await {
@@ -746,12 +752,38 @@ pub async fn delete_application(
         report.dns_synced = true;
     }
 
-    // 6. Node-side leftovers: the console fifo, the staging directory, the
-    //    dedicated account, and - only when explicitly asked - the files.
+    // 6. Connections. The peers are still attached to the per-connection
+    //    networks this Application shared with them, and their own rows no
+    //    longer mention it, so reconciling each one is what actually takes
+    //    them off. Doing this *after* the row is gone is what makes each
+    //    peer's desired set come out without this Application in it.
+    for peer in &former_peers {
+        match load_runtime(repo, server_repo, sessions, local_process_manager, *peer).await {
+            Ok((peer_detail, connection, runtime)) => {
+                let ctx = RuntimeContext {
+                    application: &peer_detail.application,
+                    runtime_config: &peer_detail.runtime_config,
+                    environment: &peer_detail.environment,
+                    ports: &peer_detail.ports,
+                    links: &peer_detail.links,
+                    connection,
+                };
+                if let Err(err) = runtime.sync_connections(&ctx).await {
+                    report.warnings.push(format!("couldn't disconnect '{}' from this application's network: {err}", peer_detail.application.name));
+                }
+            }
+            Err(err) => report.warnings.push(format!("couldn't reach a connected application to disconnect it: {err}")),
+        }
+    }
+
+    // 7. Node-side leftovers: the console fifo, the staging directory, the
+    //    dedicated account, this Application's own Docker networks, and -
+    //    only when explicitly asked - the files.
     if let Some(server_id) = server_id {
         match get_or_connect(server_repo, sessions, server_id).await {
             Ok(connection) => {
                 cleanup_node_artifacts(&connection, id, wants_dedicated_user, &mut report).await;
+                report.warnings.extend(crate::runtime::docker::remove_networks(&connection, id, &former_peers).await);
                 if options.remove_files {
                     match remove_working_directory(&connection, &working_directory).await {
                         Ok(()) => report.working_directory_removed = true,
@@ -769,6 +801,134 @@ pub async fn delete_application(
     }
 
     Ok(report)
+}
+
+/// Which other Applications this one is allowed to reach over the Node's
+/// internal Docker networking.
+pub fn list_application_links(repo: &ApplicationRepository, id: Uuid) -> AppResult<Vec<Uuid>> {
+    // Through `get_application` rather than the repository directly, so a
+    // missing Application is a `NotFound` rather than an empty list - "this
+    // application can reach nothing" and "there is no such application" are
+    // very different answers to give a UI about isolation.
+    Ok(get_application(repo, id)?.links)
+}
+
+/// Lets two Applications on the same Node reach each other's ports.
+///
+/// Reachability is default-deny (`runtime::docker`'s `APP_NETWORK_PREFIX`),
+/// so this is how a Velocity proxy is allowed to find its Paper backend, or
+/// an app its self-hosted cache. It is symmetric, because the Docker bridge
+/// network that implements it is: granting A→B also grants B→A, and the
+/// storage layer refuses to record a direction it could not honour.
+///
+/// Both Applications must be Docker workloads on the *same* Node. A Docker
+/// network does not span hosts, and a systemd unit or bare process is not on
+/// one at all - for those, "who can reach this port" is the firewall's
+/// question, not this one.
+///
+/// Writes the row first and applies second, and `disconnect_applications`
+/// does the reverse, so that a half-completed change always errs towards
+/// reporting *more* connectivity than exists rather than less. An operator
+/// who is told two Applications are connected when they are not loses a
+/// feature until the next start; one told they are isolated when they are
+/// not has been given a false answer about a boundary.
+pub async fn connect_applications(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    a: Uuid,
+    b: Uuid,
+) -> AppResult<()> {
+    validate_connectable(repo, a, b)?;
+    repo.add_link(a, b)?;
+    apply_connections(repo, server_repo, sessions, local_process_manager, &[a, b]).await
+}
+
+/// Stops two Applications being able to reach each other.
+///
+/// Applies before it forgets: if taking the containers off their shared
+/// network fails, the row goes back, because the connection is still live
+/// and a UI that has stopped listing it would be claiming an isolation the
+/// Node is not enforcing.
+pub async fn disconnect_applications(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    a: Uuid,
+    b: Uuid,
+) -> AppResult<()> {
+    repo.remove_link(a, b)?;
+    match apply_connections(repo, server_repo, sessions, local_process_manager, &[a, b]).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            if let Err(restore) = repo.add_link(a, b) {
+                // Now the stored state under-reports a live connection,
+                // which is the one outcome this function is arranged to
+                // avoid - it has to be loud.
+                log::error!("failed to restore the connection row after a failed disconnect between {a} and {b}: {restore}");
+            }
+            Err(err)
+        }
+    }
+}
+
+/// Both Applications exist, both are Docker, and both are on the same Node.
+///
+/// Checked here rather than at the storage layer because it is a statement
+/// about what the *runtime* can implement, not about what the table can
+/// hold - and the error has to name which of the three conditions failed,
+/// since an operator staring at two Applications side by side has no way to
+/// tell from the UI that one of them is a systemd unit.
+fn validate_connectable(repo: &ApplicationRepository, a: Uuid, b: Uuid) -> AppResult<()> {
+    if a == b {
+        return Err(AppError::InvalidInput("an application can't be connected to itself".into()));
+    }
+    let first = get_application(repo, a)?.application;
+    let second = get_application(repo, b)?.application;
+    for application in [&first, &second] {
+        if application.runtime_type != RuntimeType::Docker {
+            return Err(AppError::InvalidInput(format!(
+                "'{}' isn't a Docker application, so there's no private network to connect it to",
+                application.name
+            )));
+        }
+    }
+    match (first.server_id, second.server_id) {
+        (Some(left), Some(right)) if left == right => Ok(()),
+        _ => Err(AppError::InvalidInput(format!(
+            "'{}' and '{}' aren't on the same node - a Docker network doesn't span hosts",
+            first.name, second.name
+        ))),
+    }
+}
+
+/// Re-applies the stored allow-list to each of `ids` on the Node.
+///
+/// Every id, not just the one that changed: a connection has two ends, and
+/// applying it to one container without the other leaves a network with a
+/// single member, which reaches nothing.
+async fn apply_connections(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    ids: &[Uuid],
+) -> AppResult<()> {
+    for id in ids {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, *id).await?;
+        let ctx = RuntimeContext {
+            application: &detail.application,
+            runtime_config: &detail.runtime_config,
+            environment: &detail.environment,
+            ports: &detail.ports,
+            links: &detail.links,
+            connection,
+        };
+        runtime.sync_connections(&ctx).await?;
+    }
+    Ok(())
 }
 
 /// The per-Application files VibeSSH itself put on the Node outside the
@@ -888,7 +1048,7 @@ pub async fn start_application(
         if let (Some(conn), Some(image)) = (&connection, detail.runtime_config.get("image").and_then(|v| v.as_str())) {
             ensure_registry_login(conn, registry_repo, image).await?;
         }
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.start(&ctx).await?;
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
     })
@@ -906,7 +1066,7 @@ pub async fn stop_application(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.stop(&ctx, graceful).await?;
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
     })
@@ -923,7 +1083,7 @@ pub async fn restart_application(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.restart(&ctx).await?;
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
     })
@@ -955,7 +1115,7 @@ pub async fn recreate_application(
     let server_id = detail.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.destroy(&ctx).await?;
         // Same best-effort login as `start_application` - `recreate` is
         // exactly the path a changed image (via `ApplicationConfigCard`/
@@ -981,7 +1141,7 @@ pub async fn kill_application(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.kill(&ctx).await?;
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
     })
@@ -998,7 +1158,7 @@ pub async fn refresh_application_status(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
     })
     .await
@@ -1014,7 +1174,7 @@ pub async fn application_resource_usage(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.resource_usage(&ctx).await
     })
     .await
@@ -1044,7 +1204,7 @@ pub async fn application_logs(
     let server_id = get_application(repo, id)?.application.server_id;
     let live_fetch = retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.logs(&ctx).await?.tail(max_lines).await
     })
     .await;
@@ -1114,7 +1274,7 @@ pub async fn application_console_write(
     let server_id = get_application(repo, id)?.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         let console = runtime
             .console(&ctx)
             .await?
@@ -1469,7 +1629,7 @@ pub async fn application_health_check(
         let Some(spec) = resolve_health_check_spec(server_repo, &detail.application, &detail.ports)? else {
             return Ok(HealthStatus::Unknown);
         };
-        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, connection };
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.health_check(&ctx, &spec).await
     })
     .await

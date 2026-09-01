@@ -1273,5 +1273,16 @@
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port."
+  },
+  "connections": {
+    "title": "Połączenia",
+    "description": "Aplikacje na tym węźle nie widzą się nawzajem, dopóki ich tutaj nie połączysz. Połączenie działa w obie strony i zaczyna obowiązywać od razu.",
+    "emptyTitle": "Brak połączeń",
+    "emptyDescription": "Ta aplikacja nie może połączyć się z żadną inną aplikacją na tym węźle ani żadna z nich z nią.",
+    "reachableAs": "Dostępna pod nazwą {{host}}",
+    "addLabel": "Połącz z",
+    "addPlaceholder": "Wybierz aplikację",
+    "connect": "Połącz",
+    "disconnectAria": "Rozłącz {{name}}"
   }
 }

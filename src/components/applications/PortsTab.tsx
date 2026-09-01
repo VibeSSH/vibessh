@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -199,6 +200,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
           ))}
         </ul>
       )}
+
+      {/* Ports are who can reach this application from outside the node;
+          connections are who can reach it from inside it. They belong on the
+          same tab because until this existed only the first half was visible,
+          and the second half was "everything". */}
+      <ConnectionsCard application={application} />
 
       {formOpen && (
         <PortFormModal

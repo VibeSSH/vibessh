@@ -62,6 +62,42 @@ pub fn list_application_ports(repo: State<ApplicationRepository>, id: Uuid) -> A
     services::list_application_ports(&repo, id)
 }
 
+/// Which other Applications this one is allowed to reach on its Node.
+///
+/// Ids only - the frontend already holds the Application list this resolves
+/// against, and it needs that list anyway to offer the ones not yet
+/// connected.
+#[tauri::command]
+pub fn list_application_links(repo: State<ApplicationRepository>, id: Uuid) -> AppResult<Vec<Uuid>> {
+    services::list_application_links(&repo, id)
+}
+
+/// Grants two Applications on the same Node the ability to reach each
+/// other's ports. Symmetric - see `services::connect_applications`.
+#[tauri::command]
+pub async fn connect_applications(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+    peer_id: Uuid,
+) -> AppResult<()> {
+    services::connect_applications(&repo, &server_repo, &sessions, &local_process_manager, id, peer_id).await
+}
+
+#[tauri::command]
+pub async fn disconnect_applications(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+    peer_id: Uuid,
+) -> AppResult<()> {
+    services::disconnect_applications(&repo, &server_repo, &sessions, &local_process_manager, id, peer_id).await
+}
+
 #[tauri::command]
 pub async fn add_application_port(
     repo: State<'_, ApplicationRepository>,

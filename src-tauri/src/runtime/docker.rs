@@ -38,18 +38,16 @@
 //! field's own doc comment. Application Files for such an Application
 //! also switches providers accordingly - see `files::sudo_user`.
 //!
-//! **Shared network** (`NETWORK_NAME`/`network_alias`): every container
-//! joins one custom `vibessh-net` bridge network (created on demand,
-//! `ensure_network_exists`) instead of Docker's own default `bridge` -
-//! Docker's default bridge never resolves sibling containers by name, only
-//! by an IP that isn't stable across a recreate, which is exactly what a
-//! Velocity proxy reaching its own Paper backend on the same Node needs to
-//! not break every time either side gets recreated. **Only takes effect
-//! going forward, from each Application's next recreate** - an already-
-//! running container stays on whatever network it was created on; two
-//! Applications on *different* Docker networks can't reach each other at
-//! all, so reaching another Application by name only works once *both*
-//! sides have been recreated at least once after this existed.
+//! **Private per-Application networks** (`app_network_name`/`network_alias`):
+//! every container gets its own bridge network and, by default, shares it
+//! with nothing - one Application cannot open a socket to another at all.
+//! An operator grants reachability explicitly (`ApplicationDetail::links`),
+//! and a grant is a private two-member network shared by exactly those two
+//! containers, on which each resolves the other by its `network_alias`. See
+//! `APP_NETWORK_PREFIX`'s own doc comment for why default-deny, and for why
+//! a grant is its own network rather than the client joining the target's.
+//! `reconcile_networks` applies the allow-list on every start and on every
+//! grant/revoke, so a change lands on a running container without a restart.
 //!
 //! **Interactive console** (`console()`/`DockerConsole`): every container
 //! created here gets `-i` and, on each `start`/`restart`, a background
@@ -217,17 +215,106 @@ fn validate_environment(environment: &[EnvironmentVariable]) -> AppResult<()> {
     Ok(())
 }
 
-/// Every VibeSSH-created container on a Node joins this one shared,
-/// custom bridge network instead of Docker's own unnamed default `bridge` -
-/// a custom network is what actually gets a container's embedded DNS
-/// resolution by name (`--network-alias`, see `network_alias` below); the
-/// default bridge network never resolves sibling containers by name at
-/// all, only by IP, and that IP isn't guaranteed to survive a recreate.
-/// This is what makes "one Application reaches another on the same Node"
-/// (a Velocity proxy's `velocity.toml` pointing at a Paper backend, say)
-/// a stable hostname instead of an IP the user has to go re-type every
-/// time either side gets recreated.
-const NETWORK_NAME: &str = "vibessh-net";
+/// Every VibeSSH-created container gets its own private bridge network,
+/// named from its Application's id, and by default shares it with nothing.
+///
+/// This replaced a single shared `vibessh-net` that every container joined
+/// with a resolvable alias. That made service discovery free - a Velocity
+/// proxy found its Paper backend by name, stable across either side being
+/// recreated - and it also meant any Application could open a socket to any
+/// other Application's *unpublished* ports on the same Node, including the
+/// ones left unpublished precisely because they were never meant to be
+/// reachable (`AUDIT_REPORT.md` S-018). Of the four isolation guarantees the
+/// architecture claims, that was the one not actually enforced: a hostile
+/// image, or one compromised Application, was a single `connect()` away
+/// from every other Application's database and admin port on the box.
+///
+/// Reachability is now default-deny and an operator grants it explicitly
+/// (`application_links`, migration 16). A grant is implemented as a private
+/// two-member network shared by exactly those containers
+/// (`link_network_name`), **not** by putting the client onto the target's
+/// own network. The distinction is the whole point: under the simpler
+/// scheme, two Applications each granted access to a shared third one would
+/// land on that third one's network together and silently become reachable
+/// to each other, which is not what either grant said.
+///
+/// Cost of the design, stated plainly: one Docker network per Application
+/// plus one per connection, against a default daemon address pool of
+/// roughly thirty. `ensure_network` turns exhaustion into an error that
+/// names the cause rather than a raw Docker string.
+const APP_NETWORK_PREFIX: &str = "vibessh-net-";
+
+/// A granted connection's own network. Exactly two containers ever join
+/// one, and it is created `--internal`: a link network exists to carry
+/// traffic between two Applications, never to reach the outside, and each
+/// container still has egress through its own `APP_NETWORK_PREFIX` network.
+const LINK_NETWORK_PREFIX: &str = "vibessh-link-";
+
+/// Everything this module considers its own. `reconcile_networks` only ever
+/// *disconnects* a container from a network whose name starts with this: a
+/// network the operator attached by hand is theirs, and tearing it off on
+/// the next start would be its own kind of surprise.
+const MANAGED_NETWORK_PREFIX: &str = "vibessh-";
+
+/// The pre-S-018 shared network. Nothing joins it any more, and
+/// `reconcile_networks` disconnects any container still on it - which is
+/// what actually migrates an existing Node, at each Application's next
+/// start. `MANAGED_NETWORK_PREFIX` already covers the name; this constant
+/// exists so that behaviour is greppable and can be asserted by name.
+///
+/// **This is a breaking change for an existing Node** and deliberately so:
+/// cross-Application connectivity that worked yesterday because everything
+/// shared one network stops working, and has to be granted. There is no
+/// safe way to infer which of those connections were load-bearing - only
+/// the operator knows - and guessing would have meant re-creating the
+/// exposure under a new name.
+const LEGACY_SHARED_NETWORK: &str = "vibessh-net";
+
+/// First 12 hex digits of the Application's id.
+///
+/// A network name has to fit alongside a second one in
+/// `link_network_name`, and two full UUIDs make an 85-character name that
+/// is unreadable in `docker network ls` for no gain. Twelve hex digits is
+/// 48 bits: two Applications on one Node colliding is not a practical
+/// concern, and a collision would be an availability bug (two Applications
+/// sharing a network name) rather than a silent grant.
+fn short_id(id: Uuid) -> String {
+    // `Uuid::simple` is always 32 hex digits, so this slice cannot panic.
+    id.simple().to_string()[..12].to_string()
+}
+
+fn app_network_name(application_id: Uuid) -> String {
+    format!("{APP_NETWORK_PREFIX}{}", short_id(application_id))
+}
+
+/// Order-normalised, exactly as `application_links` normalises the stored
+/// pair - both ends of a connection have to derive the same name from their
+/// own point of view, or each would create its own network and neither
+/// would ever reach the other.
+fn link_network_name(a: Uuid, b: Uuid) -> String {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    format!("{LINK_NETWORK_PREFIX}{}-{}", short_id(lo), short_id(hi))
+}
+
+/// The networks this container should be on: its own, plus one per granted
+/// connection. Pure, so the allow-list translation is unit-testable without
+/// a Node - the same split `build_create_command` already uses.
+fn desired_networks(ctx: &RuntimeContext<'_>) -> Vec<String> {
+    let id = ctx.application.id;
+    let mut networks = vec![app_network_name(id)];
+    for peer in ctx.links {
+        // A self-link is rejected at the storage layer; skipping it here too
+        // keeps this function total rather than relying on that.
+        if *peer == id {
+            continue;
+        }
+        let name = link_network_name(id, *peer);
+        if !networks.contains(&name) {
+            networks.push(name);
+        }
+    }
+    networks
+}
 
 /// Slugified `Application::name` (lowercase, `[a-z0-9-]`, collapsed
 /// repeats, never empty) - the same treatment `services::dns_service::slugify`
@@ -254,21 +341,161 @@ fn network_alias(application: &Application) -> String {
 }
 
 /// Idempotent - a plain `docker network create` errors on a network that
-/// already exists, so this probes first via `inspect`, same "cheap check
+/// already exists, so this probes first via `inspect`, the same "cheap check
 /// before touching the mutating command" shape `dedicated_user::ensure_provisioned`
-/// already uses for its own group/user creation.
-async fn ensure_network_exists(connection: &SshSession) -> AppResult<()> {
-    let probe = connection.execute_command(&format!("sudo docker network inspect {NETWORK_NAME} >/dev/null 2>&1")).await?;
+/// already uses for its own group/user creation. The probe is also what
+/// makes a lost race harmless: two Applications starting at once can both
+/// miss the same link network, and the loser re-probes instead of failing.
+///
+/// `internal` creates the network with no route out (`--internal`), which is
+/// right for a link network and wrong for an Application's own - see
+/// `LINK_NETWORK_PREFIX`.
+async fn ensure_network(connection: &SshSession, name: &str, internal: bool) -> AppResult<()> {
+    let quoted = shell_quote(name);
+    let probe = connection.execute_command(&format!("sudo docker network inspect {quoted} >/dev/null 2>&1")).await?;
     if probe.exit_code == 0 {
         return Ok(());
     }
-    let output = connection.execute_command(&format!("sudo docker network create {NETWORK_NAME}")).await?;
+    let internal_flag = if internal { "--internal " } else { "" };
+    let output = connection.execute_command(&format!("sudo docker network create {internal_flag}{quoted}")).await?;
     if output.exit_code != 0 {
+        // Lost race: somebody else created it between the probe and here.
+        let recheck = connection.execute_command(&format!("sudo docker network inspect {quoted} >/dev/null 2>&1")).await?;
+        if recheck.exit_code == 0 {
+            return Ok(());
+        }
         let detail = output.stderr.trim();
+        // The one failure worth naming. Per-Application networks make it
+        // reachable in a way one shared network never was, and Docker's own
+        // wording gives an operator nothing to act on.
+        if detail.contains("non-overlapping IPv4 address pool") {
+            return Err(AppError::Connection(format!(
+                "Docker has no address space left for another private network on this node. Each application gets its own network, \
+                 and each connection between two applications gets one more, against a default pool of about thirty. Remove unused \
+                 networks with 'docker network prune', or widen 'default-address-pools' in /etc/docker/daemon.json. Docker said: {detail}"
+            )));
+        }
         let detail = if detail.is_empty() { "docker network create failed".to_string() } else { detail.to_string() };
-        return Err(AppError::Connection(format!("couldn't create the '{NETWORK_NAME}' network: {detail}")));
+        return Err(AppError::Connection(format!("couldn't create the '{name}' network: {detail}")));
     }
     Ok(())
+}
+
+/// A Go template rather than JSON: the whole answer is a list of names, and
+/// `docker inspect -f` is already how this module reads a single field.
+/// Kept as a plain constant rather than a `format!` argument, so the doubled
+/// braces a Go template needs are not also doubled for Rust.
+const INSPECT_NETWORKS_FORMAT: &str = "{{range $name, $config := .NetworkSettings.Networks}}{{$name}} {{end}}";
+
+/// The networks this container is on right now, according to the Node -
+/// never inferred from what VibeSSH last did. A container created before
+/// per-Application networks existed is still sitting on the old shared
+/// network, and asking is the only way to find that out.
+async fn current_networks(connection: &SshSession, container: &str) -> AppResult<Vec<String>> {
+    validate_container_ref(container)?;
+    let output = connection
+        .execute_command(&format!("sudo docker inspect -f {} {}", shell_quote(INSPECT_NETWORKS_FORMAT), shell_quote(container)))
+        .await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let detail = if detail.is_empty() { "docker inspect failed".to_string() } else { detail.to_string() };
+        return Err(AppError::Connection(format!("couldn't read the container's networks: {detail}")));
+    }
+    Ok(output.stdout.split_whitespace().map(str::to_string).collect())
+}
+
+/// Brings a container's actual network membership in line with the granted
+/// allow-list: connect what is missing, then disconnect what is no longer
+/// granted.
+///
+/// Connect first, disconnect second, so a container that is only on the
+/// legacy shared network is never momentarily left with no network at all.
+///
+/// A failed *disconnect* fails the whole call, and callers propagate it -
+/// `start` included. Leaving a container attached to a network it is no
+/// longer allowed on is an open exposure, and a start that reports success
+/// while quietly keeping it open is exactly the failure shape this audit
+/// kept finding (`AGENTS.md` rule 3).
+async fn reconcile_networks(connection: &SshSession, ctx: &RuntimeContext<'_>, container: &str) -> AppResult<()> {
+    let own = app_network_name(ctx.application.id);
+    let desired = desired_networks(ctx);
+    let alias = network_alias(ctx.application);
+    let current = current_networks(connection, container).await?;
+
+    for name in &desired {
+        if current.iter().any(|existing| existing == name) {
+            continue;
+        }
+        ensure_network(connection, name, name != &own).await?;
+        // The alias is the one genuinely useful thing the old shared network
+        // did, kept - but now only between two Applications someone
+        // connected on purpose.
+        let output = connection
+            .execute_command(&format!(
+                "sudo docker network connect --alias {} {} {}",
+                shell_quote(&alias),
+                shell_quote(name),
+                shell_quote(container)
+            ))
+            .await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "docker network connect failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't join the '{name}' network: {detail}")));
+        }
+    }
+
+    for name in &current {
+        if !name.starts_with(MANAGED_NETWORK_PREFIX) || desired.iter().any(|wanted| wanted == name) {
+            continue;
+        }
+        if name == LEGACY_SHARED_NETWORK {
+            // Worth a log line rather than a silent disconnect: this is the
+            // one-off migration off the pre-S-018 shared network, and it is
+            // also the moment cross-Application connectivity an operator was
+            // relying on stops working. If they come asking why, this is the
+            // line that answers it.
+            log::info!(
+                "taking '{container}' off the legacy shared '{LEGACY_SHARED_NETWORK}' network -                  reachability between applications is now granted explicitly"
+            );
+        }
+        let output = connection
+            .execute_command(&format!("sudo docker network disconnect {} {}", shell_quote(name), shell_quote(container)))
+            .await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "docker network disconnect failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!(
+                "couldn't disconnect this application from the '{name}' network, so it can still reach whatever else is on it: {detail}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Tears down the networks an Application owned, once its container is gone.
+///
+/// Best-effort, returning what it could not do rather than failing: this
+/// runs inside `delete_application`'s teardown, where every other step
+/// reports into the same warning list, and a leftover empty bridge network
+/// is untidy rather than dangerous - it has no members left to expose
+/// anything to. `former_peers` comes from the link rows read *before* the
+/// cascade deleted them.
+pub async fn remove_networks(connection: &SshSession, application_id: Uuid, former_peers: &[Uuid]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut names = vec![app_network_name(application_id)];
+    for peer in former_peers {
+        names.push(link_network_name(application_id, *peer));
+    }
+    for name in names {
+        // A non-zero exit is the normal case here - the network may never
+        // have been created, or the peer may not have disconnected yet - so
+        // only a transport failure is worth reporting.
+        if let Err(err) = connection.execute_command(&format!("sudo docker network rm {} >/dev/null 2>&1", shell_quote(&name))).await {
+            warnings.push(format!("couldn't remove the '{name}' network: {err}"));
+        }
+    }
+    warnings
 }
 
 async fn container_exists(connection: &SshSession, name: &str) -> AppResult<bool> {
@@ -312,21 +539,24 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     // guessable. Harmless when nothing inside the container ever resolves
     // that name.
     //
-    // `--network {NETWORK_NAME} --network-alias {network_alias(...)}` puts
-    // every container on the same shared, custom network (see
-    // `NETWORK_NAME`'s own doc comment for why that - not Docker's default
-    // `bridge` - is what makes name-based resolution between two
-    // Applications on the same Node possible at all) and gives it a
-    // human-readable name on that network, so one Application (a Velocity
-    // proxy, say) can reach another (its Paper backend) as
-    // `<other Application's name>:<port>` - stable across either side being
-    // recreated, unlike hand-copying a container IP.
+    // `--network` puts the container on its *own* private network and
+    // nothing else - see `APP_NETWORK_PREFIX`'s doc comment for why the
+    // shared one this used to name was removed. Any connection to another
+    // Application is a separate network joined afterwards by
+    // `reconcile_networks`, because `docker create` takes only one
+    // `--network` and because a connection can be granted or revoked long
+    // after the container was created.
+    //
+    // The alias travels with it onto every network it joins, so the far end
+    // of a granted connection addresses this Application by name rather than
+    // by an IP that does not survive a recreate.
     let mut command = format!(
         "sudo docker create -i --name {} --restart {} --add-host host.docker.internal:host-gateway \
-         --network {NETWORK_NAME} --network-alias {} \
+         --network {} --network-alias {} \
          -v {working_directory}:{working_directory} -w {working_directory} ",
         shell_quote(name),
         restart_policy,
+        shell_quote(&app_network_name(ctx.application.id)),
         shell_quote(&network_alias(ctx.application)),
     );
     // Only ever set for `run_as_dedicated_user` (see that field's own doc
@@ -369,7 +599,8 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
 }
 
 async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
-    ensure_network_exists(connection).await?;
+    // Not internal: an Application's own network is also its way out.
+    ensure_network(connection, &app_network_name(ctx.application.id), false).await?;
     let user_flag = if config.run_as_dedicated_user {
         let username = dedicated_user::username(ctx.application.id);
         dedicated_user::ensure_provisioned(connection, &username).await?;
@@ -608,6 +839,11 @@ impl ApplicationRuntime for DockerRuntime {
         if !container_exists(connection, &name).await? {
             create_container(connection, ctx, &config, &name).await?;
         }
+        // Before the container runs, not after: this is where a container
+        // created under the old shared network gets taken off it, and where
+        // a connection revoked while this Application was stopped actually
+        // stops applying. Propagates on failure - see `reconcile_networks`.
+        reconcile_networks(connection, ctx, &name).await?;
         if config.run_as_dedicated_user {
             ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
             // Best-effort, same reasoning as everything else on this path -
@@ -636,6 +872,23 @@ impl ApplicationRuntime for DockerRuntime {
         connection.stop_container(&name).await
     }
 
+    /// Applies a granted or revoked connection to a container that already
+    /// exists, without restarting it - `docker network connect`/`disconnect`
+    /// both work on a running container, which is what makes revoking take
+    /// effect at the moment the operator asks rather than at some later
+    /// restart they might never perform.
+    ///
+    /// Nothing to do for an Application that has never been started: there
+    /// is no container to attach, and `start` reconciles before it runs one.
+    async fn sync_connections(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        let connection = connection_ref(ctx)?;
+        let name = container_name(ctx.application.id);
+        if !container_exists(connection, &name).await? {
+            return Ok(());
+        }
+        reconcile_networks(connection, ctx, &name).await
+    }
+
     /// Restarts the existing container in place - does not recreate it
     /// (see the module doc comment). Falls back to `start()` if nothing has
     /// been created yet, same as the other two SSH runtimes.
@@ -644,6 +897,7 @@ impl ApplicationRuntime for DockerRuntime {
         let config = parse_config(ctx)?;
         let name = container_name(ctx.application.id);
         if container_exists(connection, &name).await? {
+            reconcile_networks(connection, ctx, &name).await?;
             if config.run_as_dedicated_user {
                 ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
                 let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
@@ -852,6 +1106,77 @@ mod tests {
         }
     }
 
+    /// The default, and the claim the rest of the isolation story rests on:
+    /// an Application nobody has connected to anything is on exactly one
+    /// network, its own, which no other container ever joins.
+    #[test]
+    fn an_application_with_no_connections_is_alone_on_its_own_network() {
+        let id = Uuid::new_v4();
+        let application = stub_application(id);
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        assert_eq!(desired_networks(&ctx), vec![app_network_name(id)]);
+    }
+
+    /// Both ends have to name the shared network identically or each would
+    /// create its own and the connection would exist only on paper. The
+    /// pair is normalised, so the two Applications derive it from opposite
+    /// orderings of the same ids.
+    #[test]
+    fn both_ends_of_a_connection_derive_the_same_network_name() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        assert_eq!(link_network_name(a, b), link_network_name(b, a));
+        assert_ne!(link_network_name(a, b), app_network_name(a));
+        assert!(link_network_name(a, b).starts_with(MANAGED_NETWORK_PREFIX));
+    }
+
+    #[test]
+    fn a_connection_adds_exactly_one_network_and_leaves_the_application_on_its_own() {
+        let id = Uuid::new_v4();
+        let peer = Uuid::new_v4();
+        let application = stub_application(id);
+        let runtime_config = serde_json::json!({});
+        let links = [peer, peer];
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &links, connection: None };
+
+        // Duplicated peer collapses: a repeated row must not produce a
+        // second `docker network connect` that then fails.
+        assert_eq!(desired_networks(&ctx), vec![app_network_name(id), link_network_name(id, peer)]);
+    }
+
+    /// A container is trivially able to reach itself, and a one-member
+    /// network would be a permanent no-op that `reconcile_networks` kept
+    /// re-creating.
+    #[test]
+    fn a_self_link_never_becomes_a_network() {
+        let id = Uuid::new_v4();
+        let application = stub_application(id);
+        let runtime_config = serde_json::json!({});
+        let links = [id];
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &links, connection: None };
+
+        assert_eq!(desired_networks(&ctx), vec![app_network_name(id)]);
+    }
+
+    /// The legacy shared network is not in any desired set, and its name is
+    /// covered by the prefix `reconcile_networks` uses to decide what it may
+    /// disconnect - which together are what actually migrate an existing
+    /// Node off it.
+    #[test]
+    fn the_legacy_shared_network_is_never_desired_but_is_always_managed() {
+        let id = Uuid::new_v4();
+        let peer = Uuid::new_v4();
+        let application = stub_application(id);
+        let runtime_config = serde_json::json!({});
+        let links = [peer];
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &links, connection: None };
+
+        assert!(LEGACY_SHARED_NETWORK.starts_with(MANAGED_NETWORK_PREFIX));
+        assert!(!desired_networks(&ctx).iter().any(|name| name == LEGACY_SHARED_NETWORK));
+    }
+
     #[test]
     fn container_name_is_stable_and_namespaced() {
         let id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
@@ -889,14 +1214,18 @@ mod tests {
     }
 
     #[test]
-    fn build_create_command_joins_the_shared_network_with_an_alias_before_the_image() {
-        let application = stub_application(Uuid::new_v4());
+    fn build_create_command_joins_its_own_private_network_with_an_alias_before_the_image() {
+        let id = Uuid::new_v4();
+        let application = stub_application(id);
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains(&format!("--network {NETWORK_NAME} --network-alias 'my-app'")), "{command}");
+        assert!(command.contains(&format!("--network '{}' --network-alias 'my-app'", app_network_name(id))), "{command}");
+        // The whole point of S-018: nothing is created on the shared network
+        // any more, so no container starts life able to reach another.
+        assert!(!command.contains(&format!("--network {LEGACY_SHARED_NETWORK} ")), "{command}");
         assert!(command.find("--network").unwrap() < command.find("alpine:latest").unwrap());
     }
 
@@ -964,7 +1293,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(512), cpu_limit_cores: Some(1.5), restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("--memory 512m"), "{command}");
@@ -977,7 +1306,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", Some("1000:1000")).unwrap();
         assert!(command.contains("--user 1000:1000"), "{command}");
@@ -989,7 +1318,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(!command.contains("--user"), "{command}");
@@ -1000,7 +1329,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("docker create -i "), "{command}");
@@ -1011,7 +1340,7 @@ mod tests {
     fn build_attach_script_wires_the_fifo_and_the_container_name() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
         assert!(script.contains("[ ! -p "), "{script}");
@@ -1031,7 +1360,7 @@ mod tests {
     fn build_attach_script_never_makes_the_console_fifo_world_writable() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let script = build_attach_script(&ctx, "vibessh-app-test").unwrap();
         // Match the mode as an argument, not as a bare substring - the
@@ -1051,7 +1380,7 @@ mod tests {
     fn build_attach_script_keeps_the_fifo_out_of_the_bind_mounted_directory() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let fifo = console_fifo_path(application.id);
         assert!(!fifo.starts_with(&application.working_directory), "{fifo}");
@@ -1066,7 +1395,7 @@ mod tests {
     fn build_attach_script_rejects_an_invalid_container_name() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(build_attach_script(&ctx, "not; a valid name").is_err());
     }
@@ -1076,7 +1405,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("-v '/srv/my-app':'/srv/my-app'"), "{command}");
@@ -1089,7 +1418,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("--restart unless-stopped"), "{command}");
@@ -1099,7 +1428,7 @@ mod tests {
     fn build_create_command_honors_an_explicit_restart_policy_and_rejects_an_invalid_one() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()), run_as_dedicated_user: false };
         let command = build_create_command(&ctx, &always, "vibessh-app-test", None).unwrap();
@@ -1135,7 +1464,7 @@ mod tests {
             stub_port(PortProtocol::Udp, "0.0.0.0", 24454, Some(24454)),
             stub_port(PortProtocol::Tcp, "127.0.0.1", 3306, None),
         ];
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(command.contains("-p '0.0.0.0:25565:25565/tcp'"), "{command}");
@@ -1150,7 +1479,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(!command.contains("-p "));
@@ -1162,7 +1491,7 @@ mod tests {
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
         let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
         assert!(build_create_command(&ctx, &config, "vibessh-app-test", None).is_err());
     }
@@ -1172,7 +1501,7 @@ mod tests {
         let application = stub_application(Uuid::new_v4());
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
         assert!(!command.contains("--memory"));
@@ -1183,7 +1512,7 @@ mod tests {
     fn build_create_command_rejects_a_zero_memory_limit_or_non_positive_cpu_limit() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
-        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
         assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test", None).is_err());
@@ -1196,7 +1525,7 @@ mod tests {
     async fn methods_that_need_a_connection_fail_cleanly_without_one() {
         let application = stub_application(Uuid::new_v4());
         let config = serde_json::json!({ "image": "alpine:latest", "command": [] });
-        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], connection: None };
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
         let runtime = DockerRuntime::new();
 
         assert!(matches!(runtime.validate(&ctx).await, Err(AppError::Internal(_))));

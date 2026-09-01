@@ -169,6 +169,31 @@ export function syncApplicationNodeFirewall(id: string): Promise<FirewallSyncRes
   return callCommand<FirewallSyncResult | null>("sync_application_node_firewall", { id });
 }
 
+/** The other applications this one is allowed to reach over its node's
+ * internal Docker networking. Ids, resolved against `listApplications` by the
+ * caller - which needs that list anyway, to offer the ones not yet connected.
+ *
+ * Reachability is default-deny: an application that has never been connected
+ * to anything cannot open a socket to any other application on the node, not
+ * even to a port that application declared but never published. It used to be
+ * the opposite, silently - see `ConnectionsCard`'s own doc comment. */
+export function listApplicationLinks(id: string): Promise<string[]> {
+  return callCommand<string[]>("list_application_links", { id });
+}
+
+/** Lets two Docker applications on the same node reach each other's ports.
+ *
+ * Symmetric: this is implemented as a private Docker network shared by
+ * exactly those two containers, and a bridge network has no direction. Takes
+ * effect immediately on running containers - no restart, no recreate. */
+export function connectApplications(id: string, peerId: string): Promise<void> {
+  return callCommand<void>("connect_applications", { id, peerId });
+}
+
+export function disconnectApplications(id: string, peerId: string): Promise<void> {
+  return callCommand<void>("disconnect_applications", { id, peerId });
+}
+
 export function removeApplicationPort(id: string, portId: string): Promise<void> {
   return callCommand<void>("remove_application_port", { id, portId });
 }
