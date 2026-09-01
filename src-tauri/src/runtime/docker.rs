@@ -247,28 +247,10 @@ const NETWORK_NAME: &str = "vibessh-net";
 /// needed for the identical reason. Every char actually pushed here is
 /// single-byte ASCII, so `result.len()` is a safe stand-in for a char count.
 fn network_alias(application: &Application) -> String {
-    let mut result = String::with_capacity(application.name.len().min(63));
-    let mut last_was_dash = false;
-    for ch in application.name.chars().flat_map(char::to_lowercase) {
-        if result.len() >= 63 {
-            break;
-        }
-        if ch.is_ascii_alphanumeric() {
-            result.push(ch);
-            last_was_dash = false;
-        } else if !last_was_dash && !result.is_empty() {
-            result.push('-');
-            last_was_dash = true;
-        }
-    }
-    while result.ends_with('-') {
-        result.pop();
-    }
-    if result.is_empty() {
-        container_name(application.id)
-    } else {
-        result
-    }
+    // Falls back to the container name rather than a literal, so two
+    // Applications whose names both slugify to nothing still get distinct,
+    // resolvable aliases instead of colliding on the same one.
+    crate::naming::dns_label(&application.name).unwrap_or_else(|| container_name(application.id))
 }
 
 /// Idempotent - a plain `docker network create` errors on a network that

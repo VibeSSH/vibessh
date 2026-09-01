@@ -70,39 +70,12 @@ pub fn validate_dns_suffix(suffix: &str) -> AppResult<()> {
 const BEGIN_MARKER: &str = "# BEGIN VIBESSH-MANAGED-DNS";
 const END_MARKER: &str = "# END VIBESSH-MANAGED-DNS";
 
-/// Lowercases, replaces anything that isn't `[a-z0-9-]` with `-`, collapses
-/// repeats, and trims leading/trailing `-` - the same treatment a Node's
-/// own name (arbitrary user text) and a user-typed alias both need before
-/// either is safe to use as a hostname or to interpolate into a shell
-/// heredoc. Never empty: an all-symbol input becomes `"node"`. Capped at 63
-/// characters - RFC 1123's own limit for a single DNS label - so a long
-/// Node/Application name can't produce a hostname real DNS/`/etc/hosts`
-/// rejects; every char actually pushed here is single-byte ASCII
-/// (alphanumeric or `-`), so `result.len()` is a safe stand-in for a char
-/// count when checking the cap.
+/// The shared RFC 1123 label conversion, with this module's own fallback
+/// for input that contains nothing usable: an all-symbol Node name still
+/// has to resolve to *something*. See `crate::naming::dns_label` for why
+/// the fallback lives here rather than there.
 fn slugify(input: &str) -> String {
-    let mut result = String::with_capacity(input.len().min(63));
-    let mut last_was_dash = false;
-    for ch in input.chars().flat_map(char::to_lowercase) {
-        if result.len() >= 63 {
-            break;
-        }
-        if ch.is_ascii_alphanumeric() {
-            result.push(ch);
-            last_was_dash = false;
-        } else if !last_was_dash && !result.is_empty() {
-            result.push('-');
-            last_was_dash = true;
-        }
-    }
-    while result.ends_with('-') {
-        result.pop();
-    }
-    if result.is_empty() {
-        "node".to_string()
-    } else {
-        result
-    }
+    crate::naming::dns_label(input).unwrap_or_else(|| "node".to_string())
 }
 
 /// Slugifies and appends `suffix` if not already present - `"db01"` and

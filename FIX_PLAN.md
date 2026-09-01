@@ -212,6 +212,27 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE E — Architecture cleanup
 
+> **Status: E.1, E.2, E.3, E.5 done.**
+> E.4 is partly done as a side effect (the `ServerConnection` deletion took
+> the largest block of dead code with it); the TypeScript
+> `constants/permissions.ts` and the now-orphaned per-site error fallback
+> i18n keys are still there.
+>
+> **Deliberately not done, with reasons:**
+> - **E.9** (unique constraint on `application_ports`) is not expressible.
+>   The uniqueness that matters is `(server_id, protocol, external_port)`,
+>   and `server_id` lives on `applications`, not `application_ports` - SQLite
+>   cannot express a constraint across that join without denormalising the
+>   column or adding a trigger. A narrower index on
+>   `(application_id, protocol, external_port)` *is* expressible, but adding
+>   it as a migration would fail on any existing database that already holds
+>   a duplicate, which would brick startup - precisely the failure mode
+>   A-005 was about. It needs a dedupe step in the same migration, designed
+>   against real data.
+> - **E.6/E.7/E.8** (dedupe the connect-retry blocks, split
+>   `application_service.rs`, add `down` migrations) are mechanical but
+>   large, and none of them changes behaviour.
+
 | # | Item | Finding |
 |---|---|---|
 | E.1 | Implement the error taxonomy from `AUDIT_REPORT.md` §10; serialize `{ code, params, detail }` | S-020 |

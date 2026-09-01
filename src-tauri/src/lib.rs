@@ -30,6 +30,9 @@ pub mod files;
 // `tests/docker_runtime.rs` real-server test needs to build a real
 // `Application`/`ApplicationPort` to drive `runtime::docker` with.
 pub mod models;
+// Turning arbitrary user text into names DNS and Docker will accept - the
+// same conversion was written twice before this existed.
+mod naming;
 // Where VibeSSH may put working files on a managed Node. Shared by
 // `network::wireguard` and `runtime::docker`, both of which used to reach
 // for a predictable `/tmp` path instead - see the module's own doc

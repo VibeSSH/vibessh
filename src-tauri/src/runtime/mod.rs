@@ -1,11 +1,13 @@
 //! The runtime abstraction Applications is built on - see
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. Mirrors
-//! `transport::ServerConnection`'s own shape deliberately: one trait,
-//! `Box<dyn ApplicationRuntime>` held by commands/services, exactly one
-//! place (`runtime_for`, added once real implementations exist in later
-//! phases) that matches on `RuntimeType` to pick which implementation to
-//! construct. No implementation lands in this phase - this is the
-//! interface Phase 2 (LocalProcessRuntime) onward builds against.
+//! docs/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. One
+//! trait, `Box<dyn ApplicationRuntime>` held by commands and services, and
+//! exactly one place (`runtime_for`) that matches on `RuntimeType` to pick
+//! which implementation to construct.
+//!
+//! Unlike the `ServerConnection` trait this was originally modelled on -
+//! since deleted, see `crate::transport` for why - this one earns its keep:
+//! it has four real implementations (Docker, systemd, local process, remote
+//! process) and every call site genuinely goes through it.
 
 pub mod docker;
 pub mod health_check;

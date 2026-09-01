@@ -11,7 +11,7 @@ pub enum AuthenticationType {
 
 /// How the app talks to a given server. This is the only place the two
 /// transports are named side by side — everything downstream (commands,
-/// services, frontend) works through `ServerConnection` and never branches
+/// services, frontend) works through `SshSession` and never branches
 /// on this value itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

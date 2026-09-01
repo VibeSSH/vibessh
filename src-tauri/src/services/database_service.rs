@@ -658,6 +658,12 @@ fn build_mysql_command(defaults_file: &str, host: &DatabaseHost, sql: &str) -> S
 
 
 
+/// Deliberately **not** `naming::dns_label`, despite the similar name.
+///
+/// This produces part of a SQL identifier, where `-` is not a legal
+/// character at all - so this strips every non-alphanumeric rather than
+/// converting runs of them to dashes. Two conversions that look alike and
+/// have to stay different; sharing them would break one or the other.
 fn slugify(input: &str) -> String {
     input.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
 }
