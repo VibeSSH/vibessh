@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::blueprints::{BlueprintRegistry, ProvisionContext};
 use crate::errors::{AppError, AppResult};
+use crate::models::protocol_name;
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput,
     CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortVisibility, RegistryCredential, RuntimeType,
@@ -75,16 +76,6 @@ pub fn list_application_ports(repo: &ApplicationRepository, application_id: Uuid
 /// Docker's iptables rules to bypass. It also fails *loudly* and early -
 /// a Node that has not joined the mesh gets a clear error here rather than
 /// a silently public port.
-/// The wire name for a protocol, for an error's `params` - the frontend
-/// renders "25565/tcp", and building that string in Rust would make it
-/// untranslatable prose again.
-fn protocol_name(protocol: crate::models::PortProtocol) -> &'static str {
-    match protocol {
-        crate::models::PortProtocol::Tcp => "tcp",
-        crate::models::PortProtocol::Udp => "udp",
-    }
-}
-
 fn resolve_bind_address(network_repo: &NodeNetworkRepository, server_id: Option<Uuid>, port: &PortInput) -> AppResult<String> {
     match port.visibility {
         PortVisibility::Public => Ok("0.0.0.0".to_string()),
@@ -218,8 +209,18 @@ pub async fn add_application_port(
 ) -> AppResult<ApplicationPort> {
     let server_id = get_application(repo, application_id)?.application.server_id;
     let port = PortInput { bind_address: resolve_bind_address(network_repo, server_id, port)?, ..port.clone() };
+    // The live half of the check first - it talks to the Node and cannot be
+    // inside a database transaction. The database half then happens
+    // *atomically* with the insert (`claim_external_port`), because a
+    // separate check and insert is a window two concurrent adds both fit
+    // through - which a double-clicked button produces.
     check_external_port_available(repo, server_repo, sessions, application_id, None, &port).await?;
-    let created = repo.add_port(application_id, &port)?;
+    let created = match server_id {
+        Some(server_id) => repo.claim_external_port(application_id, server_id, &port)?,
+        // A Local application has no Node to share a port with, so there is
+        // no cross-Application claim to make.
+        None => repo.add_port(application_id, &port)?,
+    };
     sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
     Ok(created)
 }

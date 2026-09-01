@@ -13,6 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
+use crate::models::protocol_name;
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
     PortInput, PortProtocol, PortVisibility, RuntimeType, UpdateApplicationInput,
@@ -454,21 +455,64 @@ impl ApplicationRepository {
         external_port: u16,
     ) -> AppResult<Option<String>> {
         let conn = self.lock();
-        conn.query_row(
-            "SELECT a.name FROM application_ports p
-             JOIN applications a ON a.id = p.application_id
-             WHERE a.server_id = ?1 AND p.protocol = ?2 AND p.external_port = ?3
-             AND p.id != ?4",
-            params![
-                server_id.to_string(),
-                protocol_to_str(protocol),
-                external_port,
-                excluding_port_id.map(|id| id.to_string()).unwrap_or_default(),
-            ],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| AppError::Storage(format!("failed to check for an external port collision: {err}")))
+        find_external_port_owner_locked(&conn, server_id, excluding_port_id, protocol, external_port)
+    }
+
+    /// Checks for a collision and inserts the port in **one** transaction.
+    ///
+    /// `add_port` checks only against this same Application's other ports,
+    /// and the cross-Application check on a published `external_port` lived
+    /// in the service layer as a separate query before a separate insert.
+    /// Between those two statements is a window where two concurrent adds -
+    /// which is what a double-clicked button produces, since each Tauri
+    /// command runs on the same async runtime - both see the port free and
+    /// both write it (`AUDIT_REPORT.md` D-007).
+    ///
+    /// Double-booking a published port is not cosmetic: `docker create`
+    /// fails on the second one, and because the collision check consults the
+    /// database, the row that should never have been written then makes the
+    /// *next* check report the port as taken by an Application that could
+    /// not start.
+    ///
+    /// `TransactionBehavior::Immediate` rather than the default deferred
+    /// one, and that is the whole fix. A deferred transaction lets both
+    /// racers take a read lock, see the port free, and only then fight over
+    /// the write - the loser gets a busy/snapshot error, having already
+    /// decided the port was available. Taking the write lock up front makes
+    /// the loser wait (`busy_timeout`), re-read, and correctly find the
+    /// collision, so it returns `PortInUse` naming the winner rather than a
+    /// storage error naming nothing.
+    ///
+    /// D-007 asked for a unique index instead. That is not expressible here:
+    /// the uniqueness that matters is `(server_id, protocol, external_port)`
+    /// and `server_id` lives on `applications`, across a join SQLite cannot
+    /// constrain - see `FIX_PLAN.md` E.9. This closes the same window inside
+    /// one process, which is where it is actually reachable.
+    pub fn claim_external_port(&self, application_id: Uuid, server_id: Uuid, port: &PortInput) -> AppResult<ApplicationPort> {
+        let Some(external_port) = port.external_port else {
+            // Nothing published, so nothing to claim against another
+            // Application - `add_port`'s own per-Application check is the
+            // whole requirement.
+            return self.add_port(application_id, port);
+        };
+        let mut conn = self.lock();
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|err| AppError::Storage(format!("failed to start the port transaction: {err}")))?;
+
+        if let Some(collision) = self.find_port_collision_locked(&tx, application_id, None, port)? {
+            return Err(AppError::InvalidInput(format!("port {} is already used by '{collision}' on this application", port.internal_port)));
+        }
+        if let Some(owner) = find_external_port_owner_locked(&tx, server_id, None, port.protocol, external_port)? {
+            return Err(AppError::PortInUse { port: external_port, protocol: protocol_name(port.protocol), owner: Some(owner) });
+        }
+        let id = insert_port(&tx, application_id, port)?;
+        tx.commit().map_err(|err| AppError::Storage(format!("failed to commit the port: {err}")))?;
+
+        self.list_ports_locked(&conn, application_id)?
+            .into_iter()
+            .find(|existing| existing.id == id)
+            .ok_or_else(|| AppError::Internal(format!("port {id} vanished immediately after being created")))
     }
 
     fn find_port_collision_locked(
@@ -498,6 +542,35 @@ impl ApplicationRepository {
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("application database mutex poisoned")
     }
+}
+
+/// Which other Application on `server_id` has already published
+/// `external_port` on this protocol, if any. Takes a `&Connection` so
+/// `claim_external_port` can run it inside its own transaction rather than
+/// re-locking - the point of that transaction is that this check and the
+/// insert cannot be separated.
+fn find_external_port_owner_locked(
+    conn: &Connection,
+    server_id: Uuid,
+    excluding_port_id: Option<Uuid>,
+    protocol: PortProtocol,
+    external_port: u16,
+) -> AppResult<Option<String>> {
+    conn.query_row(
+        "SELECT a.name FROM application_ports p
+         JOIN applications a ON a.id = p.application_id
+         WHERE a.server_id = ?1 AND p.protocol = ?2 AND p.external_port = ?3
+         AND p.id != ?4",
+        params![
+            server_id.to_string(),
+            protocol_to_str(protocol),
+            external_port,
+            excluding_port_id.map(|id| id.to_string()).unwrap_or_default(),
+        ],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|err| AppError::Storage(format!("failed to check for an external port collision: {err}")))
 }
 
 fn insert_port(conn: &Connection, application_id: Uuid, port: &PortInput) -> AppResult<Uuid> {

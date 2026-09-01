@@ -203,10 +203,34 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > arguments. Given four of the seven CRITICALs were command injection, this
 > is the property the whole `ssh::command` module exists for.
 >
+> **C.4 and C.6 done, and C.4 found a real bug.** `tests/concurrency.rs`
+> covers the cases reachable without a Node: nine repositories writing to one
+> SQLite file at once (the D-001 regression, at the level it actually failed
+> - `storage::mod` only tested nine *opens*), concurrent claims on one
+> published port, and repeated claim/release churn on the same port.
+>
+> The port race is D-007. The check and the insert were separate statements,
+> and a double-clicked "Add port" produces two Tauri commands on the same
+> runtime. SQLite's single-writer rule meant the row was never actually
+> double-booked - but the loser came back with
+> `Storage("database is locked")`, which the UI can only render as a storage
+> error telling the operator nothing. `ApplicationRepository::claim_external_port`
+> now does the check and the insert in one `Immediate` transaction, so the
+> loser waits, re-reads, and gets `PortInUse` naming the winner.
+>
+> **The test took two attempts to be worth anything.** The first version
+> opened each repository inside its own thread, which staggered them past
+> each other so the race never happened - it passed against the unfixed code.
+> The second opens every connection up front and gates on a barrier, and was
+> then checked by weakening the fix back to a deferred transaction to confirm
+> it fails. A concurrency test that has not been seen to fail is decoration.
+>
 > **Still open:** the rest of C.2 (archive/symlink/Unicode cases beyond what
 > `archive.rs` and each builder already cover), C.3 (the full scenario
-> matrix), C.4 (port collision), C.5 (Docker lifecycle) and C.6
-> (concurrency).
+> matrix) and C.5 (Docker lifecycle). The C.6 cases that need a live host -
+> concurrent DNS sync, concurrent firewall reconcile, concurrent SFTP writes
+> - are deliberately not faked with a mock that would only prove the mock;
+> they belong in the integration pass this whole branch still needs.
 
 | # | Item |
 |---|---|

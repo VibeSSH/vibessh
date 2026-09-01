@@ -17,7 +17,12 @@ mod commands;
 // helper's install/provisioning logic (`files::sudo_user`) needs this, and a
 // future real-server integration test would too.
 pub mod dedicated_user;
-mod errors;
+// `pub` for the integration tests: `tests/concurrency.rs` asserts that a
+// loser in a port race gets `PortInUse` naming the winner rather than a bare
+// storage error, and that distinction is the entire point of the transaction
+// behaviour it is testing. There is nothing here a consumer of this crate
+// would use - the visibility exists so the property can be asserted.
+pub mod errors;
 // `pub` for the same reason as `runtime`/`ssh` above - a real-server
 // integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
 // directly against a live, real ufw installation.
