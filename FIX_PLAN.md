@@ -362,9 +362,24 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 > `bootstrap_legacy_schema` no longer has to be in whichever repository
 > happens to be constructed first - which is what it silently depended on.
 >
-> **Deliberately not done, with reasons:**
-> - **E.7** (split `application_service.rs`) is mechanical but large, and
->   changes no behaviour.
+> **E.7 done.** `application_service.rs` was 2685 lines; it is now a
+> directory of eight modules behind a `mod.rs` that re-exports the same
+> surface, so no call site changed. The seams are the ones the plan named,
+> and they are where the audit's findings clustered rather than where the
+> alphabet fell: `ports` (everything that can change what is reachable from
+> outside a Node), `teardown` (S-007's path, whose step order is the design),
+> `links` (S-018's allow-list), `registry` (both halves of S-008's
+> keep-the-password-off-argv rule), plus `provisioning`, `lifecycle`, `logs`
+> and `config`.
+>
+> Named `lifecycle`, not `runtime`: every file in the directory imports
+> `crate::runtime`, and a sibling module of that name shadows it.
+>
+> The tests stayed in `mod.rs`. Splitting a thousand lines of shared setup
+> across eight files would have been a second, larger change wearing the same
+> commit, and three private helpers carry a `pub(super)` with a comment
+> saying that is the only reason. Verified as a pure move: 103 functions
+> before, the same 103 after, none renamed.
 
 | # | Item | Finding |
 |---|---|---|
