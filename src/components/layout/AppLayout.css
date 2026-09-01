@@ -29,8 +29,11 @@
   margin: 0 8px 8px 0;
   background: var(--t-bg-base);
   overflow: hidden;
-  /* .chrome-slab (globals.css) already rounds only the top-left corner -
-     correct here, Rail occupies the space to its left. */
+  /* This margin is why `.chrome-slab` rounds every corner: it leaves 8px of
+     frame visible along the right and bottom, so those edges are free-
+     standing. The left edge sits flush against the Rail and the top against
+     the title bar, and rounding them reads as a deliberate notch rather than
+     a gap. */
 }
 
 .app-layout-brand {

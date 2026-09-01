@@ -192,7 +192,14 @@
 }
 
 .chrome-slab {
-  border-top-left-radius: var(--r-lg);
+  /* All four corners, not just the top-left.
+     The slab is inset from the window by `app-layout-main`'s own
+     `margin: 0 8px 8px 0`, so its right and bottom edges float clear of the
+     frame - and those were the square ones, which is exactly where a square
+     corner shows. Rounding only the top-left rounded the single corner that
+     sits flush against the rail and the title bar, and left the three that
+     actually hang in space unrounded. */
+  border-radius: var(--r-lg);
   box-shadow: var(--t-slab-highlight), var(--t-slab-shadow);
 }
 
