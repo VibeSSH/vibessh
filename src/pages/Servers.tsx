@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { DeleteServerDialog } from "@/components/servers/DeleteServerDialog";
 import { NodeSetupWizard } from "@/components/servers/NodeSetupWizard";
+import { LocalMachineCard } from "@/components/servers/LocalMachineCard";
 import { ServerCard } from "@/components/servers/ServerCard";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { deleteServer, listServers, serverSummaryToManagedServer } from "@/services/serverService";
@@ -78,6 +79,11 @@ export function Servers() {
           {t("servers.addServer")}
         </Button>
       </div>
+
+      {/* Above the node list, and shown whether or not there are any nodes:
+          "run it here" is a real answer to "where can this run", and it used
+          to be reachable only by leaving a field blank in the wizard. */}
+      <LocalMachineCard />
 
       {servers.length === 0 ? (
         <Card>

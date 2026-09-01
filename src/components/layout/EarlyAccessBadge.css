@@ -48,10 +48,7 @@
   color: var(--text-secondary);
 }
 
-/* The sidebar collapses on narrow windows; the version is the first thing
-   worth dropping, since "Early Access" is the part that matters. */
-@media (max-width: 1100px) {
-  .early-access-badge-version {
-    display: none;
-  }
-}
+/* No width breakpoint. This lived in the brand row once, where the sidebar
+   collapsing made the version the first thing worth dropping; in the title
+   bar there is nothing to compete with but the window controls, and hiding
+   the version at 800px only hid the useful half. */

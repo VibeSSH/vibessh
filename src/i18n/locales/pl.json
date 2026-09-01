@@ -1296,5 +1296,10 @@
   "earlyAccess": {
     "label": "Early Access",
     "tooltip": "Wersja przedpremierowa. Zarządza prawdziwymi serwerami z uprawnieniami roota, a części nie sprawdzono na każdej konfiguracji - trzymaj kopię zapasową i przeczytaj informacje o wydaniu."
+  },
+  "localMachine": {
+    "title": "Ta maszyna",
+    "description": "Aplikacje mogą działać tutaj bezpośrednio, bez węzła i bez SSH. Mniej funkcji niż węzeł - bez Dockera, firewalla i przeglądarki plików - ale nic nie trzeba konfigurować.",
+    "action": "Utwórz aplikację lokalną"
   }
 }

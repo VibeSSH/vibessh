@@ -1296,5 +1296,10 @@
   "earlyAccess": {
     "label": "Early Access",
     "tooltip": "A pre-release build. It manages real servers with root, and parts of it have not been exercised against every configuration - keep a backup and read the release notes."
+  },
+  "localMachine": {
+    "title": "This machine",
+    "description": "Applications can run here directly, with no node and no SSH. Fewer features than a node - no Docker, firewall or file browser - but nothing to set up.",
+    "action": "Create a local application"
   }
 }
