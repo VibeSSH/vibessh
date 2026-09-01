@@ -1,5 +1,24 @@
 # Security review (Etap K)
 
+> ## ⚠️ Superseded — read `AUDIT_REPORT.md` first
+>
+> **This document was accurate when written and is now dangerously out of
+> date in one specific way.** It concluded that command injection and path
+> traversal were "not applicable" because nothing in the codebase executed a
+> shell command with any input. That was true of the *agent* at Etap J. It
+> has not been true of the desktop since Docker, SFTP, the sudo file helper,
+> UFW, WireGuard and DNS landed — all of which shell out constantly.
+>
+> The full audit (`AUDIT_REPORT.md`) found **four CRITICAL findings in
+> exactly the category this document marked N/A**, including a shell
+> injection in the WireGuard config writer that gave a single compromised
+> Node code execution on every other Node in the mesh.
+>
+> The individual findings below have been re-checked and annotated with
+> their current status. Nothing here has been deleted: this is what was
+> known at Etap K, and the gap between it and reality is itself worth
+> keeping visible.
+
 Reviewed against the codebase as of the Etap J commit, before any of the
 fixes below landed. Severities: LOW / MEDIUM / HIGH / CRITICAL, per the
 planning doc. HIGH and CRITICAL findings were fixed as part of this same
@@ -23,11 +42,19 @@ connection, who could present their own certificate before the desktop has
 anything to compare it to (the pairing code is generated blind, before the
 desktop has ever talked to the agent - there's no side channel to seed a
 pin ahead of time, the same bootstrap problem SSH has before a host's first
-`known_hosts` entry). **Residual risk: MEDIUM** - down from CRITICAL, not
-eliminated. Pinning the certificate fingerprint after the first successful
-connection, and rejecting a mismatch on every connection after that, is the
-concrete next hardening step; the certificate is already persisted (not
-regenerated per boot) specifically so a future pin stays valid.
+`known_hosts` entry). ~~**Residual risk: MEDIUM**~~ — **now fixed.** The
+"concrete next hardening step" named here was never taken, and the audit
+found it still outstanding (`AUDIT_REPORT.md` S-010): with no pin on top of
+`danger_accept_invalid_certs`, Agent Mode was interceptable on *every*
+connection, not just the first — and the very next thing sent over it is the
+bearer credential.
+
+Trust-on-first-use pinning now exists, matching what `ssh::client` already
+did for SSH host keys: migration 15 adds
+`servers.agent_certificate_fingerprint`, the fingerprint is checked *before*
+the handshake is sent, and it is only ever written when the column is still
+NULL — so an interceptor present for one connection cannot make itself
+permanently trusted.
 
 ### 2. Pairing control endpoint had no code-level guarantee of staying local
 
@@ -105,15 +132,39 @@ rules), not something to duplicate inside the agent.
 
 ## LOW / not applicable yet
 
-- **Command injection / shell escaping**: no code path anywhere in the
-  agent executes a shell command with any input, trusted or not - grepped
-  for real, zero matches. N/A until a feature that actually shells out
-  (Quick Actions, Terminal, SshTransport) exists. Flagged so whoever builds
-  that feature starts from `Command::new(program).arg(...)` with explicit
-  argument arrays, never a shell string built from untrusted input.
-- **Path traversal**: same reasoning - `read_file`/`write_file` exist only
-  as trait method signatures with zero implementations. N/A until a real
-  file-access transport exists to validate paths in.
+- **Command injection / shell escaping**: ~~N/A~~ — **NO LONGER TRUE.**
+  This was correct for the *agent*, which still shells out nowhere. The
+  desktop now does, everywhere: `runtime::docker`, `files::sudo_user`,
+  `firewall::ufw`, `network::wireguard`, `services::dns_service` and
+  `services::database_service` all build shell command strings over SSH.
+
+  The advice this entry gave — "start from `Command::new(program).arg(...)`
+  with explicit argument arrays, never a shell string built from untrusted
+  input" — was right, and was not followed, because SSH exec has no argv
+  form to reach for. What happened instead was thirteen copies of a
+  `shell_quote` helper, each call site independently deciding what to
+  validate, and four CRITICAL findings that were all the same mistake in
+  different places (`AUDIT_REPORT.md` S-002 through S-005).
+
+  Now: one `ssh::command` module is the only place a value becomes part of a
+  remote command, with `quote` for arguments,
+  `reject_shell_metacharacters` for the contexts where quoting is not
+  available, and typed validators (`validate_host`,
+  `validate_wireguard_key`, `validate_application_directory`, …) for values
+  with a known shape. **Anything that builds a remote command goes through
+  it.**
+- **Path traversal**: ~~N/A~~ — **superseded, and the outcome was good.**
+  Real file access exists now (`files::sftp`, `files::local`,
+  `files::sudo_user`). Traversal itself is correctly defended:
+  `files::sandbox` rejects `..`, absolute paths, backslashes and null bytes,
+  and each provider re-checks that the *canonicalised* path is still inside
+  the Application's root, so a planted symlink cannot widen it either. Zip
+  extraction is guarded by `enclosed_name()` on top of that. This is one of
+  the areas the audit verified as genuinely correct.
+
+  What the file layer got wrong instead was not traversal but *exposure*:
+  staged copies written world-readable into `/tmp` and never cleaned up
+  (S-005).
 - **Agent running as root**: it doesn't - runs as the dedicated `vibessh-agent`
   system user, confirmed via `ps -o user` on the test server (Etap G).
 - **Downgrade attack**: the protocol version check is strict equality, not

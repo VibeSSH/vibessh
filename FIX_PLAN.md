@@ -270,6 +270,24 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE G — Documentation
 
+> **Status: done.**
+> G.1 `docs/security-review.md` carries a superseded banner and its two
+> false "N/A" entries (command injection, path traversal) are corrected
+> in place; finding 1's residual risk is marked fixed. Nothing deleted -
+> the gap between what it claimed and what was true is itself worth
+> keeping visible.
+> G.2 `docs/agent-privileges.md` - the Docker decision it described as
+> "deferred" was made elsewhere by default (`sudo docker` as the admin),
+> and the two consequences it hid are now written down, including the
+> undocumented passwordless-sudo assumption.
+> G.3 README - two module claims did not match the code ("scripted
+> multi-step quick actions", "VibeSSH Pro") and are corrected. **Spot-checked,
+> not line-by-line verified**: the file is 47 KB and the rest was sampled.
+> G.4 `docs/threat-model.md` - new, maintained, with the standing
+> assumptions that were previously undocumented.
+> G.5 `AGENTS.md` - the six rules that would have prevented four of the
+> seven CRITICALs, each naming the finding it comes from.
+
 | # | Item | Finding |
 |---|---|---|
 | G.1 | Re-run and re-date `docs/security-review.md` — its central claim ("nothing shells out") is now false | §13 |

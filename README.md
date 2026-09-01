@@ -55,13 +55,20 @@ actually enforced.
 - **VibeSSH Terminal** — interactive, multi-session SSH terminal
 - **VibeSSH Files** — SFTP file manager
 - **VibeSSH Monitor** — dashboard, process manager, systemd, Docker, ports
-- **VibeSSH Actions** — scripted multi-step quick actions
-- **VibeSSH Pro** — advanced features (incl. a Minecraft server module)
+- **VibeSSH Actions** — one-click start/stop/restart/enable/disable for
+  systemd units and Docker containers on a Node
+- **Applications** — Docker/systemd/process workloads from a blueprint,
+  with files, console, logs, ports, environment, databases and backups.
+  Includes Minecraft blueprints (Paper, Purpur, Velocity, Waterfall)
+- **Vibe Network** — a WireGuard mesh between Nodes, with private DNS and a
+  firewall derived per Node
 
 ## Roadmap
 
 - [x] App shell — layout, routing, design system, reusable components
-- [x] Connection model + transport abstraction (`ServerConnection` trait)
+- [x] Connection model. (The `ServerConnection` trait this originally
+      introduced was removed - it only ever had one implementation and none
+      of its methods was ever called; see `src-tauri/src/transport/mod.rs`.)
 - [x] Vibe Agent skeleton — standalone daemon, durable identity, no network yet
 - [x] Desktop ↔ Agent protocol — WebSocket, handshake/version check, heartbeat,
       reconnect with backoff, typed event enum (`protocol` crate, shared by
