@@ -1,5 +1,16 @@
 # VibeSSH — Fix Plan
 
+> **Status: PHASE A COMPLETE** (branch `audit/phase-a`, commits `91554d5`..`37643cd`).
+> All 7 CRITICAL and the Phase A HIGH findings are closed with regression
+> tests. `cargo test --workspace` 516 pass / 0 fail, clippy 0 errors,
+> `tsc --noEmit` clean, i18n 1122/1122.
+>
+> **One Phase A item was deliberately deferred to Phase B:** A.4.3, making
+> database-server installation an explicit, consented, progress-reported
+> action. The security half of S-006 (the `%` grants and the forced
+> `0.0.0.0` bind) is fixed; what remains is the UX consent flow, which is a
+> frontend change rather than a security control.
+
 Companion to `AUDIT_REPORT.md` (commit `bb04132`). Phases are ordered by risk, not by convenience. Phase A must land before any release build is cut.
 
 ## Working rule for every fix
