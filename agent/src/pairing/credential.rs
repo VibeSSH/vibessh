@@ -67,7 +67,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 /// Avoids leaking the number of matching leading bytes through comparison
 /// timing. Both inputs here are fixed-length hex digests, but this stays
 /// correct even if that ever changes.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+///
+/// `pub(crate)` so the pairing-code check in `super` uses this same
+/// implementation rather than `==` - see `PairingRegistry::try_consume`.
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

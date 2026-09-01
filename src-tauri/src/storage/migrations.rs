@@ -346,6 +346,16 @@ pub fn migrations() -> Migrations<'static> {
             );
             CREATE UNIQUE INDEX registry_credentials_registry_idx ON registry_credentials (registry);",
         ),
+        // Migration 15: trust-on-first-use pin for an Agent-mode Node's
+        // TLS certificate. The agent generates a self-signed certificate on
+        // the Node and persists it, so chain validation can never apply -
+        // identity has to come from remembering what we saw the first time,
+        // exactly as `ssh_known_hosts` already does for SSH host keys.
+        // NULL means "not pinned yet"; the first successful handshake
+        // fills it in. Not a secret (a certificate fingerprint is public by
+        // construction), so unlike credentials this belongs in the database
+        // rather than the OS keyring.
+        M::up("ALTER TABLE servers ADD COLUMN agent_certificate_fingerprint TEXT;"),
     ])
 }
 

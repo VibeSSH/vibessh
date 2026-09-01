@@ -117,6 +117,7 @@ impl ServerRepository {
             node_capabilities: None,
             created_at: now,
             updated_at: now,
+            agent_certificate_fingerprint: None,
         };
         self.insert(&server)?;
         Ok(server)
@@ -189,6 +190,9 @@ impl ServerRepository {
             node_capabilities: capabilities,
             created_at: now,
             updated_at: now,
+            // A brand-new agent row: nothing has connected to it yet, so
+            // the first successful handshake is what pins it.
+            agent_certificate_fingerprint: None,
         };
         self.insert(&server)?;
         Ok(server)
@@ -309,6 +313,10 @@ impl ServerRepository {
             connection_mode: existing.connection_mode,
             agent_id: existing.agent_id,
             agent_status: existing.agent_status,
+            // Same reasoning, and load-bearing: silently dropping the pin
+            // on an unrelated edit would make the next connection trust
+            // whatever certificate it saw.
+            agent_certificate_fingerprint: existing.agent_certificate_fingerprint.clone(),
             // Same reasoning - a probe result, not something a manual edit
             // form has any opinion on.
             node_capabilities: existing.node_capabilities,
@@ -389,13 +397,44 @@ impl ServerRepository {
             .map_err(|err| AppError::Storage(format!("failed to read a server row: {err}")))
     }
 
+    /// Records the TLS certificate fingerprint an Agent-mode Node presented,
+    /// the first time it presents one. See migration 15 and
+    /// `agent_client::AgentClientConfig::known_fingerprint` for why this is
+    /// trust-on-first-use rather than chain validation.
+    ///
+    /// **Only writes when the column is still NULL.** Once a Node is pinned,
+    /// a *different* fingerprint is rejected at connection time - before the
+    /// bearer credential is sent - and must never be quietly written over
+    /// the old one here, or an interceptor would only need to be present
+    /// once to make itself permanently trusted. Re-pinning is a deliberate
+    /// operator action, see `clear_agent_certificate_fingerprint`.
+    pub fn pin_agent_certificate_fingerprint(&self, id: Uuid, fingerprint: &str) -> AppResult<()> {
+        self.lock()
+            .execute(
+                "UPDATE servers SET agent_certificate_fingerprint = ?1 WHERE id = ?2 AND agent_certificate_fingerprint IS NULL",
+                params![fingerprint, id.to_string()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to record the agent certificate fingerprint: {err}")))?;
+        Ok(())
+    }
+
+    /// Forgets the pin, so the next connection trusts whatever it sees -
+    /// the operator's escape hatch for an agent that was legitimately
+    /// reinstalled.
+    pub fn clear_agent_certificate_fingerprint(&self, id: Uuid) -> AppResult<()> {
+        self.lock()
+            .execute("UPDATE servers SET agent_certificate_fingerprint = NULL WHERE id = ?1", params![id.to_string()])
+            .map_err(|err| AppError::Storage(format!("failed to clear the agent certificate fingerprint: {err}")))?;
+        Ok(())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("server database mutex poisoned")
     }
 }
 
 const SELECT_COLUMNS: &str = "SELECT id, name, host, ssh_port, username, authentication_type, \
-     private_key_path, connection_mode, agent_id, agent_status, group_id, node_capabilities_json, created_at, updated_at";
+     private_key_path, connection_mode, agent_id, agent_status, group_id, node_capabilities_json, created_at, updated_at,      agent_certificate_fingerprint";
 
 fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
     Ok(Server {
@@ -427,6 +466,7 @@ fn row_to_server(row: &rusqlite::Row) -> rusqlite::Result<Server> {
         }),
         created_at: parse_timestamp(row.get::<_, String>(12)?, 12)?,
         updated_at: parse_timestamp(row.get::<_, String>(13)?, 13)?,
+        agent_certificate_fingerprint: row.get(14)?,
     })
 }
 
@@ -820,5 +860,45 @@ mod tests {
 
         let err = repo.delete(created.id).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
+    }
+    /// Trust on first use, and *only* first use. Once a Node is pinned, a
+    /// second attempt with a different fingerprint must not overwrite it -
+    /// otherwise an interceptor present for a single connection would make
+    /// itself permanently trusted. The rejection happens in `agent_client`,
+    /// before the credential is sent; this pins that the storage layer
+    /// cannot undo it either.
+    #[test]
+    fn an_agent_certificate_pin_is_recorded_once_and_never_silently_replaced() {
+        let repo = temp_repository();
+        let created = repo.create(&test_input("Agent Node")).unwrap();
+        assert_eq!(repo.get(created.id).unwrap().unwrap().agent_certificate_fingerprint, None);
+
+        repo.pin_agent_certificate_fingerprint(created.id, "aaaa").unwrap();
+        assert_eq!(repo.get(created.id).unwrap().unwrap().agent_certificate_fingerprint, Some("aaaa".to_string()));
+
+        // A different fingerprint arriving later leaves the pin alone.
+        repo.pin_agent_certificate_fingerprint(created.id, "bbbb").unwrap();
+        assert_eq!(repo.get(created.id).unwrap().unwrap().agent_certificate_fingerprint, Some("aaaa".to_string()));
+
+        // Clearing is the deliberate operator action that allows re-pinning.
+        repo.clear_agent_certificate_fingerprint(created.id).unwrap();
+        assert_eq!(repo.get(created.id).unwrap().unwrap().agent_certificate_fingerprint, None);
+        repo.pin_agent_certificate_fingerprint(created.id, "bbbb").unwrap();
+        assert_eq!(repo.get(created.id).unwrap().unwrap().agent_certificate_fingerprint, Some("bbbb".to_string()));
+    }
+
+    /// Editing a Node through the SSH form must not drop its agent pin -
+    /// silently forgetting it would make the next connection trust whatever
+    /// certificate it saw.
+    #[test]
+    fn updating_a_server_preserves_its_agent_certificate_pin() {
+        let repo = temp_repository();
+        let created = repo.create(&test_input("Agent Node")).unwrap();
+        repo.pin_agent_certificate_fingerprint(created.id, "aaaa").unwrap();
+
+        repo.update(created.id, &test_input("Renamed Node")).unwrap();
+        let loaded = repo.get(created.id).unwrap().unwrap();
+        assert_eq!(loaded.name, "Renamed Node");
+        assert_eq!(loaded.agent_certificate_fingerprint, Some("aaaa".to_string()));
     }
 }

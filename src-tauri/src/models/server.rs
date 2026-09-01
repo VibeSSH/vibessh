@@ -86,6 +86,18 @@ pub struct Server {
     pub agent_id: Option<Uuid>,
     pub agent_status: Option<AgentStatus>,
     pub group_id: Option<Uuid>,
+    /// The SHA-256 fingerprint of the TLS certificate this Agent-mode Node
+    /// presented the first time VibeSSH connected to it, and the value
+    /// every later connection is checked against.
+    ///
+    /// `None` means "not pinned yet" - the next successful handshake
+    /// records whatever it sees. Trust on first use, the same model
+    /// `ssh_known_hosts` uses for SSH host keys, and for the same reason:
+    /// the agent's certificate is self-signed and generated on the Node, so
+    /// there is no chain to validate against. Not a secret - a certificate
+    /// fingerprint is public by construction - so it lives in this row
+    /// rather than the keyring.
+    pub agent_certificate_fingerprint: Option<String>,
     /// `None` means "never probed" - genuinely unknown, not "no
     /// capabilities" - so a freshly added Node (or one from before Etap M1)
     /// doesn't read back as Docker-incapable until something has actually
