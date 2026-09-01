@@ -271,7 +271,6 @@ pub fn run() {
             commands::network_commands::list_network_members,
             commands::network_commands::join_vibe_network,
             commands::network_commands::leave_vibe_network,
-            commands::network_commands::reconcile_vibe_mesh,
             commands::network_commands::get_vibe_network_status,
             commands::network_commands::list_node_endpoints,
             commands::network_commands::list_dns_records,

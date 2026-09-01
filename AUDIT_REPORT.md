@@ -667,13 +667,17 @@ Rust error strings are hardcoded English throughout (~200 sites) and reach the U
 - The connect-retry-reconnect block is copy-pasted in `firewall_service.rs` (twice), `network_service.rs`, and `dns_service.rs` instead of using `ssh_service::retry_on_connection_failure`.
 - `slugify` exists in both `dns_service.rs` and `runtime/docker.rs::network_alias` with subtly different fallbacks.
 
-**Dead code (compiler-confirmed):**
-- `transport::ServerConnection` — all 20 methods (A-001).
-- `FirewallProvider::current_rules` — only called from a real-server integration test.
-- `backend/tests/common/mod.rs` — `delete`, `patch`, `post`, `request`, `get_with_bearer`, `post_with_bearer`, `register_user`, `unique_email` all unused.
-- `src/constants/permissions.ts` — `VIEW`, `CREATE`, `EDIT`, `DELETE`, `RENAME`, `CHMOD`, `UPLOAD`, `DOWNLOAD` all unused.
+**Dead code — ⚠️ this list was wrong on three of its four items. See §16.**
+- `transport::ServerConnection` — all 20 methods (A-001). **Correct**, and deleted in E.3.
+- ~~`FirewallProvider::current_rules` — only called from a real-server integration test.~~ **Wrong**: documented as being for a future firewall-state view, implemented, and integration-tested. Deliberate, not dead.
+- ~~`backend/tests/common/mod.rs` — `delete`, `patch`, `post`, `request`, `get_with_bearer`, `post_with_bearer`, `register_user`, `unique_email` all unused.~~ **Wrong, badly**: these are among the most-used functions in the repository. The `#![allow(dead_code)]` at the top of that file exists to suppress a warning the file's own comment explains is an artifact of cargo's test layout.
+- ~~`src/constants/permissions.ts` — `VIEW`, `CREATE`, `EDIT`, ... all unused.~~ **Wrong**: those constants are in `services/application_files_service.rs`, not this file, and are deliberately kept ahead of the permission system that will read them. The TypeScript file is six-eighths used.
 
-None of these should be deleted without first confirming they are not reached dynamically — for the four above, the compiler has already confirmed it.
+Genuinely unreachable, found while checking the above: `reconcile_vibe_mesh` (a Tauri command superseded by `sync_vibe_network`, which calls the same reconcile plus DNS and firewall) and the `ServerGroup` type (no table, no command, no UI behind it). Both removed in E.4.
+
+The original warning below still stands, and applies to this list more than to anything else in the report:
+
+> None of these should be deleted without first confirming they are not reached dynamically.
 
 ---
 
@@ -726,19 +730,30 @@ Recorded so a later pass does not re-litigate it:
 
 ## 16. Corrections to this report
 
-Three findings were wrong and have been corrected in place. They are collected here because they share one cause, and that cause is worth knowing when reading the rest.
+Four findings were wrong and have been corrected in place. The first three share one cause; the fourth has a different one, and is the more embarrassing of the two.
 
 | ID | Claimed | Actually |
 |---|---|---|
 | **U-003** | The Environment/Ports/Resource Limits/Docker Image surfaces were "effectively non-functional for any already-running Application" | All five already re-probe status after saving and call `recreate_application` when running. One even renders a note saying so. **Withdrawn.** |
 | **S-016** | "Restore extracts over a running Application" | `restore_backup` refreshes the status and refuses for `Running`/`Starting`/`Stopping` before touching anything. **Downgraded** to the narrower, real point: extraction is not atomic. |
 | **S-015** | Backups cost "roughly 3×" the data size, because the archive is read back "for sizing/S3 upload" | Sizing uses `provider.metadata`; the extra full read only happens when an S3 destination is configured. The finding stood, the **multiplier was overstated**. |
+| **§12 dead code** | Four items listed as "compiler-confirmed" dead code | Only one of them was. See below. |
 
-**The common cause: inferring a caller's behaviour from the callee.** Each of these came from reading one function correctly — `DockerRuntime::start`'s recreate-avoidance, `extract_zip`'s signature, `create_backup`'s use of `read_file` — and then reasoning about what the rest of the system must therefore do, without opening the call sites to check. In each case the surrounding code already handled it.
+**§12's dead-code list was wrong on three of its four items**, and wrong in the direction that would have caused deletions:
+
+- `backend/tests/common/mod.rs` — the eight helpers named as unused are among the most-used code in the repo (`register_user` 105 call sites, `post_with_bearer` 104). The file carries `#![allow(dead_code)]` with a comment explaining that each test binary compiles the module independently, so a helper used by only some of them *reads* as dead in the others. The audit took the symptom that comment exists to explain and reported it as the diagnosis.
+- `src/constants/permissions.ts` — the constants named (`VIEW`, `CREATE`, `EDIT`, `DELETE`, `RENAME`, `CHMOD`, `UPLOAD`, `DOWNLOAD`) are not in that file and never were. They are in `services/application_files_service.rs`, a Rust module which is explicitly `#[allow(dead_code)]` and documents itself as a catalog settled ahead of the permission system that will read it, kept compiling so it cannot drift. The TypeScript file it was attributed to is six-eighths used.
+- `FirewallProvider::current_rules` — documented as being for a future "current firewall state" view, implemented, and exercised by an integration test. Not accidental.
+
+Only `transport::ServerConnection` was genuinely dead, and it was deleted in E.3.
+
+**The cause here is different, and worth naming separately: describing a file's contents without opening it.** The three wrong items were assembled from filenames, `#[allow(dead_code)]` attributes and compiler warnings, none of which is evidence of anything on its own — the attribute is usually there *because* the warning is wrong. Acting on this list unchecked would have deleted working test infrastructure.
+
+**The common cause of the first three: inferring a caller's behaviour from the callee.** Each of these came from reading one function correctly — `DockerRuntime::start`'s recreate-avoidance, `extract_zip`'s signature, `create_backup`'s use of `read_file` — and then reasoning about what the rest of the system must therefore do, without opening the call sites to check. In each case the surrounding code already handled it.
 
 Two things follow for anyone using this report:
 
 1. **A finding's severity is only as good as its call-site check.** The findings that were verified end-to-end (S-001's UFW bypass, S-002's unquoted heredoc, S-005's `/tmp` staging, S-007's delete path) all held up under implementation. The ones that were inferred are the three above.
 2. **The direction of the error was consistently the same** — overstating. Nothing in this report turned out to be *worse* than described. That is the safer direction for an audit to be wrong in, but it still costs whoever acts on it, which is why these are corrected rather than quietly dropped.
 
-The findings not yet worked through in `FIX_PLAN.md` have not had this treatment, and should be re-checked against their call sites before anyone budgets work against them.
+The findings not yet worked through in `FIX_PLAN.md` have not had this treatment, and should be re-checked against their call sites before anyone budgets work against them. That goes double for anything phrased as "unused" or "dead": three of the four claims of that shape in this report were false.

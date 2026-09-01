@@ -29,6 +29,14 @@ export function cloudSessionInfo(): Promise<CloudSessionInfo | null> {
   return callCommand<CloudSessionInfo | null>("cloud_session_info").catch(() => null);
 }
 
+/** Not called from anywhere yet, and deliberately kept.
+ *
+ * `cloud_config.rs`'s own doc comment says a self-hosted backend's URL is set
+ * "via settings" - settings that do not exist. Deleting this pair as unused
+ * code would make that documented path disappear rather than appear, leaving
+ * self-hosters hand-editing a JSON file nothing tells them about. The gap is
+ * the missing settings field, not this wrapper. Recorded in `FIX_PLAN.md`
+ * under E.4 rather than quietly resolved in either direction. */
 export function cloudGetBackendUrl(): Promise<string> {
   return callCommand<string>("cloud_get_backend_url");
 }

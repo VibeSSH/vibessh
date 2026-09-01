@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::errors::AppResult;
 use crate::models::{DnsRecord, NodeNetworkMember};
-use crate::services::{self, MeshReconcileResult, NodeEndpoint, NodeMeshStatus, VibeNetworkSyncResult};
+use crate::services::{self, NodeEndpoint, NodeMeshStatus, VibeNetworkSyncResult};
 use crate::state::{DnsSuffixState, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::dns_repository::DnsRepository;
@@ -63,15 +63,6 @@ pub async fn leave_vibe_network(
     // departed Node's alias out of every remaining member's view.
     let _ = services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await;
     Ok(())
-}
-
-#[tauri::command]
-pub async fn reconcile_vibe_mesh(
-    network_repo: State<'_, NodeNetworkRepository>,
-    server_repo: State<'_, ServerRepository>,
-    sessions: State<'_, SshSessionManager>,
-) -> AppResult<Vec<MeshReconcileResult>> {
-    services::reconcile_mesh(&network_repo, &server_repo, &sessions).await
 }
 
 #[tauri::command]

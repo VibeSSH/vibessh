@@ -224,11 +224,31 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE E — Architecture cleanup
 
-> **Status: E.1, E.2, E.3, E.5 done.**
-> E.4 is partly done as a side effect (the `ServerConnection` deletion took
-> the largest block of dead code with it); the TypeScript
-> `constants/permissions.ts` and the now-orphaned per-site error fallback
-> i18n keys are still there.
+> **Status: E.1, E.2, E.3, E.4, E.5, E.6, E.8 done.**
+>
+> **E.4 mostly consisted of finding out the finding was wrong.** Three of
+> the four items §12 listed as compiler-confirmed dead code were not dead -
+> one of them (`backend/tests/common`) is among the most-used code in the
+> repository, and acting on the list unchecked would have deleted working
+> test infrastructure. Corrected in place in §12 and recorded in §16, whose
+> cause is different from the other three corrections: describing a file's
+> contents without opening it.
+>
+> What was actually unreachable and is now gone: `reconcile_vibe_mesh` (a
+> registered Tauri command plus its frontend wrapper, superseded by
+> `sync_vibe_network`, which performs the same reconcile plus DNS and
+> firewall) and the `ServerGroup` type. The orphaned i18n keys the earlier
+> note expected were not there - a sweep of all 1148 keys found one
+> apparent orphan, reached dynamically through a template.
+>
+> **Deliberately kept, with reasons now in the code:** `TEAM_VIEW`/
+> `TEAM_UPDATE` (an incomplete mirror of the backend's permission catalog
+> invites the invented string the file exists to prevent) and
+> `cloudGetBackendUrl`/`cloudSetBackendUrl`. The second was removed and then
+> restored mid-change: `cloud_config.rs` documents a self-hosted backend URL
+> as something set "via settings", so deleting the pair would have made a
+> documented path disappear rather than appear. **The real gap is the
+> missing settings field**, which is a feature, not a cleanup.
 >
 > **Deliberately not done, with reasons:**
 > - **E.9** (unique constraint on `application_ports`) is not expressible.
@@ -275,7 +295,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 | E.1 | Implement the error taxonomy from `AUDIT_REPORT.md` §10; serialize `{ code, params, detail }` | S-020 |
 | E.2 | Preserve `code` and `params` through `tauri.ts::normalizeError`; render via `t("errors.<code>", params)` with `detail` behind a disclosure | S-019, U-004 |
 | E.3 | Decide `ServerConnection`: delete it, or make it the real seam and implement `AgentTransport` | A-001, A-002 |
-| E.4 | Remove the confirmed dead code (`backend/tests/common` helpers, `constants/permissions.ts`, `current_rules` if still unused after E.3) | §12 |
+| E.4 | ~~Remove the confirmed dead code~~ **Done, and the finding was largely wrong** - see the status block and `AUDIT_REPORT.md` §16 | §12 |
 | E.5 | Unify the two `slugify` implementations | §12 |
 | E.6 | ~~Replace the four copy-pasted connect-retry blocks with the (now-corrected) `retry_on_connection_failure`~~ **Done** | §12 |
 | E.7 | Split `application_service.rs` (1700 lines) along its natural seams: lifecycle / ports / config / registry / logs | A-001 |
