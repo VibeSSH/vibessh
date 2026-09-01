@@ -283,6 +283,23 @@ fn write_into_zip<'a, W: std::io::Write + std::io::Seek + Send>(
                 .add_directory(format!("{name}/"), options)
                 .map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
             for entry in provider.list_directory(path).await? {
+                // The listing's `is_symlink` is the one that can be trusted,
+                // and the check above cannot replace it.
+                // `LocalApplicationFileProvider::resolve` canonicalises a
+                // path before `metadata` stats it, so by then the link has
+                // already been resolved and `symlink_metadata` describes the
+                // target - `stat.is_symlink` is therefore always false for
+                // anything reached that way. A directory listing goes through
+                // `read_dir`, which reports the entry's own type.
+                //
+                // Found by the first run of CI on Linux. On Windows the test
+                // for this is `#[cfg(unix)]` and never ran, so the guard had
+                // been inert since it was written, with only `MAX_ARCHIVE_DEPTH`
+                // stopping a self-referential link - which turns a backup into
+                // an error instead of a backup.
+                if entry.is_symlink {
+                    continue;
+                }
                 let child_path = format!("{}/{}", path.trim_end_matches('/'), entry.name);
                 let child_name = format!("{name}/{}", entry.name);
                 write_into_zip(provider, &child_path, child_name, depth + 1, writer).await?;
@@ -536,9 +553,17 @@ mod tests {
         std::os::unix::fs::symlink(&root, root.join("plugins").join("loop")).unwrap();
 
         // Must finish rather than recurse forever, and must not archive the
-        // link itself.
+        // link itself. Asserting the *contents*, not just that a file
+        // appeared: the weaker version of this passed while the symlink was
+        // being followed 64 levels deep and only the depth cap stopped it.
         create_zip(&provider, &["plugins".to_string()], "out.zip").await.unwrap();
         assert!(root.join("out.zip").is_file());
+
+        let bytes = std::fs::read(root.join("out.zip")).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let names: Vec<String> = (0..archive.len()).map(|i| archive.by_index(i).unwrap().name().to_string()).collect();
+        assert!(names.iter().any(|n| n == "plugins/real.jar"), "the real file is missing: {names:?}");
+        assert!(!names.iter().any(|n| n.contains("loop")), "the symlink was followed: {names:?}");
         std::fs::remove_dir_all(&root).ok();
     }
     /// The round trip must still work after the streaming rewrite - this is

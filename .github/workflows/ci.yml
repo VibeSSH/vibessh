@@ -32,6 +32,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+          # A Secret Service implementation. Twelve tests deliberately use the
+          # *real* OS keyring rather than a fake - that is the point of them,
+          # since the property they check is that a secret reaches the
+          # platform store and never SQLite. A headless runner has no
+          # `org.freedesktop.secrets`, so without this they fail with a DBus
+          # error and the obvious "fix" is to stop running them, which would
+          # leave the one automated check of that property switched off.
+          sudo apt-get install -y gnome-keyring dbus-x11
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,8 +55,17 @@ jobs:
       # `--workspace` specifically: the break that hid for months was in an
       # integration test target, which a bare `cargo test` in one crate would
       # not have compiled.
+      #
+      # Wrapped in a session with an unlocked keyring, for the tests described
+      # at the install step above. `--components=secrets` is the only part of
+      # gnome-keyring needed here; the password is arbitrary, since the
+      # keyring lives and dies with this one process.
       - name: Test
-        run: cargo test --workspace
+        run: |
+          dbus-run-session -- sh -c '
+            echo "ci" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            cargo test --workspace
+          '
 
   frontend:
     name: Frontend

@@ -168,6 +168,24 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 ## PHASE C — Tests
 
 > **Status: C.1 and C.8 done.**
+> **C.8's first real run found a bug the whole session had missed.** Every
+> check in this branch was run on Windows; CI runs on Linux, and
+> `create_zip_terminates_on_a_self_referential_symlink` is `#[cfg(unix)]`, so
+> it had never executed. On Linux it failed - and not because the test was
+> wrong. `LocalApplicationFileProvider::resolve` canonicalises a path before
+> `metadata` stats it, so the link is already resolved by then and
+> `is_symlink` is always false for anything reached that way. The
+> symlink-skip guard in `archive::write_into_zip` had been inert since it was
+> written, with only `MAX_ARCHIVE_DEPTH` stopping a self-referential link -
+> which turns a backup into an error instead of a backup. The walk now uses
+> the directory listing's `is_symlink`, which `read_dir` reports correctly.
+>
+> Twelve keyring tests also failed, for a different reason: they use the
+> *real* OS keyring on purpose - the property is that a secret reaches the
+> platform store and never SQLite - and a headless runner has no
+> `org.freedesktop.secrets`. CI now runs the suite inside `dbus-run-session`
+> with an unlocked `gnome-keyring`, rather than marking them `#[ignore]`,
+> which would switch off the one automated check of that property.
 > C.8: `.github/workflows/ci.yml` runs clippy (`-D warnings`), the workspace
 > test suite, typecheck, frontend tests, build, `npm audit` and `cargo
 > audit`. All 93 standing clippy warnings were cleared first - a gate that is
