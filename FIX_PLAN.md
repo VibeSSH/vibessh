@@ -113,15 +113,23 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 ## PHASE B — HIGH bugs and correctness
 
-> **Status: mostly done** (commits `01c61c0`, `b6903db`, `621f143`).
-> Closed: B.1, B.2, B.3, B.4, B.5, B.6, B.7, B.8, B.9, B.13, B.14, B.15, B.16.
+> **Status: done except B.17.**
+> Closed: B.1-B.10, B.12, B.13, B.14, B.15, B.16.
 > B.11 turned out not to be a real finding - see the S-016 correction in
-> `AUDIT_REPORT.md`; what is left of it is a narrower MEDIUM.
+> `AUDIT_REPORT.md`; what is left of it is a narrower MEDIUM (restore is not
+> atomic), carried into Phase D.
 >
-> **Still open:** B.10 (partial firewall application has no rollback),
-> B.12 (streaming backups - S-015, the largest remaining item and a real
-> redesign), B.17 (decide the shared-Docker-network trust boundary), and
-> A.4.3 carried over from Phase A (consented database-server install).
+> **Still open:** B.17 (decide the shared-Docker-network trust boundary -
+> a design decision, not a fix), and A.4.3 carried over from Phase A
+> (consented database-server install).
+>
+> B.12 is closed for the desktop's own memory use: archives are built and
+> extracted through a local scratch file, one entry at a time. Every byte
+> still round-trips through the desktop. Building the archive on the Node
+> (`zip -r` over SSH) would avoid that too, but depends on tooling being
+> present there and on a new operation in the privileged helper for
+> dedicated-user Applications - tracked as a Phase D follow-up rather than
+> folded in here.
 
 | # | Item | Finding |
 |---|---|---|

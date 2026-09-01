@@ -238,22 +238,41 @@ pub async fn restore_backup(
 
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
     let local_path = format!("{BACKUPS_DIR}/{}", backup.file_name);
-    let archive_bytes = match provider.read_file(&local_path).await {
-        Ok(bytes) => bytes,
+
+    // Streamed to a local scratch file rather than read into a `Vec<u8>`.
+    // A restore archive is the largest thing this application ever moves -
+    // a world save, a database volume - and holding all of it in memory is
+    // how a restore turned into an out-of-memory abort instead of a
+    // restore. `download_file` already streams; `extract_zip_from_file`
+    // then reads one entry at a time.
+    let scratch = std::env::temp_dir().join(format!("vibessh-restore-{}.zip", Uuid::new_v4()));
+    let mut no_progress = |_: u64| {};
+    let fetched = match provider.download_file(&local_path, &scratch, &mut no_progress).await {
+        Ok(()) => Ok(()),
         // The local copy is gone (a rebuilt Node, a wiped disk - exactly
         // what a local-only backup can't survive) - fall back to the S3
         // copy if this backup has one, rather than failing outright.
-        Err(local_err) => {
-            let Some(key) = &backup.s3_key else { return Err(local_err) };
-            let Some(client) = s3_client(backup_destination).await else { return Err(local_err) };
-            let bytes = client.get_object(key).await?;
-            // Best-effort: heals the local copy too, so the *next* restore
-            // (or a future prune) doesn't need S3 again.
-            let _ = provider.write_file(&local_path, &bytes).await;
-            bytes
-        }
+        Err(local_err) => match (&backup.s3_key, s3_client(backup_destination).await) {
+            (Some(key), Some(client)) => {
+                let bytes = client.get_object(key).await?;
+                tokio::fs::write(&scratch, &bytes)
+                    .await
+                    .map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
+                // Best-effort: heals the local copy too, so the *next*
+                // restore (or a future prune) doesn't need S3 again.
+                let _ = provider.write_file(&local_path, &bytes).await;
+                Ok(())
+            }
+            _ => Err(local_err),
+        },
     };
-    archive::extract_zip(provider.as_ref(), &archive_bytes, ".").await
+
+    let result = match fetched {
+        Ok(()) => archive::extract_zip_from_file(provider.as_ref(), &scratch, ".").await,
+        Err(err) => Err(err),
+    };
+    let _ = tokio::fs::remove_file(&scratch).await;
+    result
 }
 
 pub fn get_backup_schedule(backup_repo: &ApplicationBackupRepository, application_id: Uuid) -> AppResult<BackupSchedule> {

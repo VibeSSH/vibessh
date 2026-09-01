@@ -320,7 +320,9 @@ let _ = connection.execute_command(&format!("sudo chown -R {} {}", user, workdir
 **Test required:** `reconcile_node` with no provider returns a distinguishable "unenforced" result; the frontend renders a warning, not a success toast.
 
 **S-015 — Backups are read wholly into desktop memory (~3× the data size) | HIGH | P1**
-`files/archive.rs::create_zip` collects **every file's full bytes** into `Vec<(String, bool, Vec<u8>)>` before writing, then builds the zip in a second in-memory buffer; `application_backup_service::create_backup` then calls `provider.read_file(&destination)` to read the finished archive **back into memory again** for sizing/S3 upload. `restore_backup` likewise reads the entire archive into a `Vec<u8>` before extracting. Peak desktop RSS is roughly 3× the application's data size, all transferred over SFTP. A 5 GB Minecraft world OOMs, and with `panic = "abort"` it takes the app with it.
+`files/archive.rs::create_zip` collects **every file's full bytes** into `Vec<(String, bool, Vec<u8>)>` before writing, then builds the zip in a second in-memory buffer. `restore_backup` likewise reads the entire archive into a `Vec<u8>` before extracting. Peak desktop RSS is therefore roughly 2× the application's data size on create, and 1× the archive on restore, all transferred over SFTP. A 5 GB Minecraft world OOMs, and with `panic = "abort"` it takes the app with it.
+
+> **Correction:** this originally said the archive is also read back "for sizing/S3 upload", making it 3×. Sizing uses `provider.metadata`, not a re-read - the extra full-archive read only happens when an S3 destination is configured. The finding stands; the multiplier was overstated.
 **Fix:** stream. Build the archive on the Node (`tar`/`zip` over SSH) and stream it to S3 or local disk; never materialise it in the desktop process.
 **Test required:** backup of a directory larger than available RAM completes; peak memory stays bounded.
 

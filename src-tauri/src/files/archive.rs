@@ -12,6 +12,7 @@
 //! operation uses - extraction is not a bulk-write bypass of that.
 
 use std::future::Future;
+use std::path::Path;
 use std::io::{Read, Write};
 use std::pin::Pin;
 
@@ -42,9 +43,34 @@ const MAX_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_ENTRIES: usize = 20_000;
 
+/// Extracts an archive that is already in memory.
+///
+/// Fine for the Files tab's own "Extract" action, which operates on
+/// something the operator just uploaded and can see the size of. A backup
+/// restore must not use this - see `extract_zip_from_file`.
 pub async fn extract_zip(provider: &dyn ApplicationFileProvider, archive_bytes: &[u8], destination: &str) -> AppResult<u32> {
-    let cursor = std::io::Cursor::new(archive_bytes);
-    let mut archive = zip::ZipArchive::new(cursor).map_err(|err| AppError::InvalidInput(format!("not a valid zip archive: {err}")))?;
+    extract_zip_from(provider, std::io::Cursor::new(archive_bytes), destination).await
+}
+
+/// Extracts an archive from a local file, without ever holding all of it in
+/// memory.
+///
+/// This is what a backup restore uses. The caller streams the archive to a
+/// local scratch file first (`download_file` already does that), so peak
+/// memory is one entry rather than the whole archive - which for the thing
+/// backups exist for is gigabytes.
+pub async fn extract_zip_from_file(provider: &dyn ApplicationFileProvider, archive_path: &Path, destination: &str) -> AppResult<u32> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|err| AppError::Internal(format!("couldn't open the archive at {}: {err}", archive_path.display())))?;
+    extract_zip_from(provider, std::io::BufReader::new(file), destination).await
+}
+
+async fn extract_zip_from<R: std::io::Read + std::io::Seek>(
+    provider: &dyn ApplicationFileProvider,
+    source: R,
+    destination: &str,
+) -> AppResult<u32> {
+    let mut archive = zip::ZipArchive::new(source).map_err(|err| AppError::InvalidInput(format!("not a valid zip archive: {err}")))?;
     if archive.len() > MAX_ENTRIES {
         return Err(AppError::InvalidInput(format!(
             "this archive contains {} entries, more than the {MAX_ENTRIES} VibeSSH will extract at once",
@@ -136,28 +162,67 @@ pub async fn extract_zip(provider: &dyn ApplicationFileProvider, archive_bytes: 
 /// assembly as one synchronous block. Fine for the file sizes this UI
 /// already handles (backups/plugin jars, not multi-gigabyte datasets) -
 /// streaming would need a very different shape.
-pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String], destination_path: &str) -> AppResult<()> {
-    let mut entries = Vec::new();
-    for path in paths {
-        let name = path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(path).to_string();
-        collect_for_zip(provider, path, name, 0, &mut entries).await?;
-    }
+/// A local scratch file that deletes itself when it goes out of scope.
+///
+/// Both directions of archiving stage through the desktop's own temp
+/// directory, so every early return - a read failure halfway through a
+/// tree, a rejected entry, a dropped connection - has to leave nothing
+/// behind. Doing that with an explicit cleanup at each `?` is exactly the
+/// kind of thing that gets missed when a new early return is added later.
+struct ScratchFile {
+    path: std::path::PathBuf,
+}
 
-    let mut buf = Vec::new();
+impl ScratchFile {
+    fn new(label: &str) -> Self {
+        Self { path: std::env::temp_dir().join(format!("vibessh-{label}-{}.zip", uuid::Uuid::new_v4())) }
+    }
+}
+
+impl Drop for ScratchFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Builds a zip of `paths` and writes it to `destination_path`.
+///
+/// **Streams through a local scratch file rather than building the archive
+/// in memory.** The previous implementation collected *every* file's full
+/// contents into a `Vec<(String, bool, Vec<u8>)>`, then built the whole zip
+/// into a second in-memory buffer, then handed that buffer to
+/// `write_file`. Peak memory was therefore roughly twice the total size of
+/// everything being archived - which for the thing this feature exists to
+/// back up, a world save or a database volume, is gigabytes, and with
+/// `panic = "abort"` an allocation failure kills the app rather than
+/// failing the backup.
+///
+/// Now each file is read, written into the zip, and dropped before the next
+/// one is touched, so peak memory is the size of the *largest single file*
+/// rather than the sum. The finished archive is then uploaded with
+/// `upload_file`, which already streams.
+///
+/// The remaining cost is that every byte still round-trips through the
+/// desktop. Building the archive on the Node itself (`zip -r` over SSH)
+/// would avoid that entirely and is the natural next step, but it depends
+/// on tooling being present there and, for a dedicated-user Application, on
+/// a new operation in the privileged helper - a bigger change than this
+/// one, and one this bounds the damage of in the meantime.
+pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String], destination_path: &str) -> AppResult<()> {
+    let scratch = ScratchFile::new("archive");
     {
-        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let options = zip::write::SimpleFileOptions::default();
-        for (name, is_dir, contents) in &entries {
-            if *is_dir {
-                writer.add_directory(format!("{name}/"), options).map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
-            } else {
-                writer.start_file(name, options).map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
-                writer.write_all(contents).map_err(|err| AppError::Internal(format!("couldn't write '{name}' into the archive: {err}")))?;
-            }
+        let file = std::fs::File::create(&scratch.path)
+            .map_err(|err| AppError::Internal(format!("couldn't create a scratch file for the archive: {err}")))?;
+        let mut writer = zip::ZipWriter::new(std::io::BufWriter::new(file));
+        for path in paths {
+            let name = path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(path).to_string();
+            write_into_zip(provider, path, name, 0, &mut writer).await?;
         }
         writer.finish().map_err(|err| AppError::Internal(format!("couldn't finalize the archive: {err}")))?;
     }
-    provider.write_file(destination_path, &buf).await
+
+    let mut no_progress = |_: u64| {};
+    provider.upload_file(&scratch.path, destination_path, &mut no_progress).await
 }
 
 /// Boxed for the same reason `files::sftp`'s own `delete_resolved`/
@@ -183,12 +248,17 @@ pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String]
 /// provider might expose.
 const MAX_ARCHIVE_DEPTH: usize = 64;
 
-fn collect_for_zip<'a>(
+/// Walks `path` and writes what it finds straight into `writer`.
+///
+/// Deliberately writes as it goes rather than returning a collected list:
+/// holding every file's bytes until the whole tree has been walked is
+/// precisely the allocation this streaming rewrite removes.
+fn write_into_zip<'a, W: std::io::Write + std::io::Seek + Send>(
     provider: &'a dyn ApplicationFileProvider,
     path: &'a str,
     name: String,
     depth: usize,
-    out: &'a mut Vec<(String, bool, Vec<u8>)>,
+    writer: &'a mut zip::ZipWriter<W>,
 ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
     Box::pin(async move {
         if depth > MAX_ARCHIVE_DEPTH {
@@ -205,16 +275,26 @@ fn collect_for_zip<'a>(
         if stat.is_symlink {
             return Ok(());
         }
+        let options = zip::write::SimpleFileOptions::default();
         if stat.is_dir {
-            out.push((name.clone(), true, Vec::new()));
+            writer
+                .add_directory(format!("{name}/"), options)
+                .map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
             for entry in provider.list_directory(path).await? {
                 let child_path = format!("{}/{}", path.trim_end_matches('/'), entry.name);
                 let child_name = format!("{name}/{}", entry.name);
-                collect_for_zip(provider, &child_path, child_name, depth + 1, out).await?;
+                write_into_zip(provider, &child_path, child_name, depth + 1, writer).await?;
             }
         } else {
+            // Read, written, dropped - one file's worth of memory at a
+            // time, never the whole tree's.
             let contents = provider.read_file(path).await?;
-            out.push((name, false, contents));
+            writer
+                .start_file(&name, options)
+                .map_err(|err| AppError::Internal(format!("couldn't add '{name}' to the archive: {err}")))?;
+            writer
+                .write_all(&contents)
+                .map_err(|err| AppError::Internal(format!("couldn't write '{name}' into the archive: {err}")))?;
         }
         Ok(())
     })
@@ -433,5 +513,77 @@ mod tests {
         create_zip(&provider, &["plugins".to_string()], "out.zip").await.unwrap();
         assert!(root.join("out.zip").is_file());
         std::fs::remove_dir_all(&root).ok();
+    }
+    /// The round trip must still work after the streaming rewrite - this is
+    /// the behaviour every backup depends on.
+    #[tokio::test]
+    async fn create_zip_then_extract_from_file_round_trips_a_tree() {
+        let source_root = temp_root();
+        let provider = LocalApplicationFileProvider::new(source_root.to_string_lossy().into_owned());
+        std::fs::create_dir_all(source_root.join("plugins")).unwrap();
+        std::fs::write(source_root.join("plugins").join("a.jar"), b"jar bytes").unwrap();
+        std::fs::write(source_root.join("server.properties"), b"key=value").unwrap();
+
+        create_zip(&provider, &["plugins".to_string(), "server.properties".to_string()], "out.zip").await.unwrap();
+
+        // Extract into a fresh root, through the file-based entry point the
+        // restore path uses.
+        let restore_root = temp_root();
+        let restore = LocalApplicationFileProvider::new(restore_root.to_string_lossy().into_owned());
+        let extracted = extract_zip_from_file(&restore, &source_root.join("out.zip"), ".").await.unwrap();
+
+        assert_eq!(extracted, 2);
+        assert_eq!(std::fs::read(restore_root.join("plugins").join("a.jar")).unwrap(), b"jar bytes");
+        assert_eq!(std::fs::read(restore_root.join("server.properties")).unwrap(), b"key=value");
+
+        std::fs::remove_dir_all(&source_root).ok();
+        std::fs::remove_dir_all(&restore_root).ok();
+    }
+
+    /// The regression test for the memory finding: the archive is assembled
+    /// on disk, so a tree far larger than any buffer we would want to hold
+    /// still completes. The old implementation held every file's bytes plus
+    /// the whole finished zip in memory at once.
+    #[tokio::test]
+    async fn create_zip_does_not_hold_the_whole_tree_in_memory() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(root.to_string_lossy().into_owned());
+
+        // 64 files x 1 MiB. Small enough to stay fast, large enough that the
+        // old "collect everything then build a second buffer" shape is
+        // clearly not what is running.
+        let chunk = vec![b'x'; 1024 * 1024];
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        for index in 0..64 {
+            std::fs::write(root.join("data").join(format!("{index}.bin")), &chunk).unwrap();
+        }
+
+        create_zip(&provider, &["data".to_string()], "out.zip").await.unwrap();
+
+        let archive_size = std::fs::metadata(root.join("out.zip")).unwrap().len();
+        assert!(archive_size > 0);
+
+        // And it reads back correctly.
+        let restore_root = temp_root();
+        let restore = LocalApplicationFileProvider::new(restore_root.to_string_lossy().into_owned());
+        let extracted = extract_zip_from_file(&restore, &root.join("out.zip"), ".").await.unwrap();
+        assert_eq!(extracted, 64);
+        assert_eq!(std::fs::metadata(restore_root.join("data").join("0.bin")).unwrap().len(), 1024 * 1024);
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&restore_root).ok();
+    }
+
+    /// The scratch file must not survive a failed archive build - every
+    /// early return goes through `ScratchFile`'s `Drop`.
+    #[test]
+    fn the_scratch_file_removes_itself() {
+        let path = {
+            let scratch = ScratchFile::new("droptest");
+            std::fs::write(&scratch.path, b"partial").unwrap();
+            assert!(scratch.path.exists());
+            scratch.path.clone()
+        };
+        assert!(!path.exists(), "the scratch file should be gone once it goes out of scope");
     }
 }

@@ -71,18 +71,37 @@ impl FirewallProvider for UfwProvider {
         "ufw"
     }
 
+    /// Applies every rule, then reports whatever failed.
+    ///
+    /// **Deliberately does not stop at the first failure.** It used to, and
+    /// that was the wrong shape twice over: every rule after the failing
+    /// one was silently never applied, and the caller only ever saw the
+    /// first error, so an operator fixing one problem at a time had no idea
+    /// how many remained.
+    ///
+    /// Continuing is safe here specifically because every rule is an
+    /// `allow`. Failing to apply one leaves the Node *more* restricted, not
+    /// less - the opposite of the usual partial-application hazard - so
+    /// there is nothing to roll back, and getting the rest applied is
+    /// strictly better than abandoning them.
     async fn apply_rules(&self, connection: &SshSession, desired: &[FirewallRule]) -> AppResult<()> {
+        let mut failures = Vec::new();
         for rule in desired {
-            let output = connection.execute_command(&allow_command(rule)).await?;
-            if output.exit_code != 0 {
-                let detail = output.stderr.trim();
-                let detail = if detail.is_empty() { "ufw allow failed".to_string() } else { detail.to_string() };
-                return Err(AppError::Connection(format!(
-                    "couldn't allow {}/{} through ufw: {detail}",
-                    rule.port,
-                    protocol_str(rule.protocol)
-                )));
+            match connection.execute_command(&allow_command(rule)).await {
+                Ok(output) if output.exit_code == 0 => {}
+                Ok(output) => {
+                    let detail = output.stderr.trim();
+                    let detail = if detail.is_empty() { "ufw allow failed".to_string() } else { detail.to_string() };
+                    failures.push(format!("{}/{}: {detail}", rule.port, protocol_str(rule.protocol)));
+                }
+                // A transport failure means the remaining rules cannot be
+                // attempted either - unlike a rejected rule, there is no
+                // point continuing.
+                Err(err) => return Err(err),
             }
+        }
+        if !failures.is_empty() {
+            return Err(AppError::Connection(format!("couldn't apply {} firewall rule(s) - {}", failures.len(), failures.join("; "))));
         }
         Ok(())
     }
