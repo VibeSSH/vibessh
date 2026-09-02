@@ -274,6 +274,53 @@ pub(crate) static KEYRING_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::ne
 mod tests {
     use super::*;
 
+    /// Preserves an install-wide keyring entry across a test that has to use
+    /// the real one.
+    ///
+    /// The cloud refresh token and the backup destination secret are not
+    /// keyed by any id - there is exactly one of each per install - so a
+    /// test exercising them writes to *the user's own* entry. Both tests
+    /// asserted the entry started empty and deleted it on cleanup, which
+    /// was fine on a machine where nobody had signed in and destructive on
+    /// one where somebody had: running the suite failed the assertion and
+    /// logged the user out. Both of those happened, in that order.
+    ///
+    /// Restoring on drop keeps the tests exercising the real credential
+    /// store - which is the point of them, and the reason they are not
+    /// mocked - without the suite being something you cannot run on your
+    /// own working machine.
+    struct Preserved {
+        previous: Option<String>,
+        restore: fn(&str) -> AppResult<()>,
+        clear: fn() -> AppResult<()>,
+    }
+
+    impl Preserved {
+        fn capture(load: fn() -> AppResult<Option<String>>, restore: fn(&str) -> AppResult<()>, clear: fn() -> AppResult<()>) -> Self {
+            let previous = load().unwrap_or(None);
+            // Start from a known state rather than asserting one: what was
+            // there is the user's, not the test's business.
+            let _ = clear();
+            Self { previous, restore, clear }
+        }
+    }
+
+    impl Drop for Preserved {
+        fn drop(&mut self) {
+            let result = match &self.previous {
+                Some(value) => (self.restore)(value),
+                None => (self.clear)(),
+            };
+            // Never panics - this runs during unwind when the test has
+            // already failed, and a second panic there replaces the real
+            // failure with an unhelpful one. Logged instead, per AGENTS.md
+            // §3: not fatal, not invisible.
+            if let Err(err) = result {
+                log::warn!("couldn't put the keyring entry back after a test: {err}");
+            }
+        }
+    }
+
     fn lock() -> std::sync::MutexGuard<'static, ()> {
         KEYRING_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -309,13 +356,7 @@ mod tests {
     #[test]
     fn cloud_refresh_token_stores_loads_and_deletes_via_the_real_os_keyring() {
         let _guard = lock();
-        struct CloudCleanup;
-        impl Drop for CloudCleanup {
-            fn drop(&mut self) {
-                let _ = delete_cloud_refresh_token();
-            }
-        }
-        let _cleanup = CloudCleanup;
+        let _preserved = Preserved::capture(load_cloud_refresh_token, store_cloud_refresh_token, delete_cloud_refresh_token);
 
         assert_eq!(load_cloud_refresh_token().unwrap(), None);
         store_cloud_refresh_token("real-refresh-token-value").unwrap();
@@ -410,13 +451,8 @@ mod tests {
     #[test]
     fn backup_destination_secret_stores_loads_and_deletes_via_the_real_os_keyring() {
         let _guard = lock();
-        struct Cleanup;
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = delete_backup_destination_secret();
-            }
-        }
-        let _cleanup = Cleanup;
+        let _preserved =
+            Preserved::capture(load_backup_destination_secret, store_backup_destination_secret, delete_backup_destination_secret);
 
         assert_eq!(load_backup_destination_secret().unwrap(), None);
         store_backup_destination_secret("s3-secret-value").unwrap();
