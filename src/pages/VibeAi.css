@@ -1,0 +1,242 @@
+/* The assistant panel.
+ *
+ * Laid out as a column that fills the page rather than a growing document:
+ * the composer stays put at the bottom and the transcript scrolls, which is
+ * what makes a long answer readable without the input walking off screen. */
+
+.vibe-ai-page {
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+}
+
+.vibe-ai-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+
+/* ---- Toolbar ---- */
+
+.vibe-ai-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vibe-ai-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vibe-ai-modes {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.vibe-ai-mode {
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.vibe-ai-mode:hover {
+  color: var(--text-primary);
+}
+.vibe-ai-mode-active {
+  background: var(--surface-bg);
+  color: var(--accent);
+}
+
+/* ---- Context preview ----
+ *
+ * Monospace and scrollable on purpose: this is the literal payload, and
+ * showing it as prose would invite reading it as a summary of the payload
+ * rather than as the thing itself. */
+
+.vibe-ai-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  padding: 12px;
+}
+
+.vibe-ai-preview-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.vibe-ai-preview-notes {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--warning, var(--text-secondary));
+}
+
+.vibe-ai-preview-body {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.vibe-ai-preview-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ---- Transcript ---- */
+
+.vibe-ai-transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.vibe-ai-intro {
+  margin: auto;
+  max-width: 420px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.vibe-ai-intro-title {
+  margin: 10px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.vibe-ai-intro-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.vibe-ai-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 76%;
+}
+.vibe-ai-message-user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.vibe-ai-message-assistant {
+  align-self: flex-start;
+}
+
+.vibe-ai-bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.6;
+  /* The model answers in prose with its own line breaks; collapsing them
+   * would run the three-point answer format into one paragraph. */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.vibe-ai-message-user .vibe-ai-bubble {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.vibe-ai-message-assistant .vibe-ai-bubble {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.vibe-ai-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  opacity: 0.7;
+  animation: vibe-ai-blink 1s steps(2, start) infinite;
+}
+
+@keyframes vibe-ai-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Respects a system setting rather than blinking regardless - the caret is
+ * decoration, and the answer text is what carries the meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .vibe-ai-caret {
+    animation: none;
+  }
+}
+
+.vibe-ai-thinking {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.vibe-ai-stopped {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ---- Composer ---- */
+
+.vibe-ai-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.vibe-ai-input {
+  flex: 1;
+  resize: none;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.vibe-ai-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.vibe-ai-disclaimer {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}

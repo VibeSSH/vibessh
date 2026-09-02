@@ -22,6 +22,8 @@ const ICON_NAMES = [
   "activity",
   "zap",
   "sparkles",
+  "send",
+  "message-square",
   "chevron-left",
   "chevron-right",
   "chevron-down",

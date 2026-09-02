@@ -40,7 +40,8 @@
     "comingSoon": "soon",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
-    "sidebarAria": "Primary navigation"
+    "sidebarAria": "Primary navigation",
+    "vibeAi": "Vibe AI"
   },
   "time": {
     "justNow": "just now",
@@ -1178,7 +1179,25 @@
     "dnsSuffixNote": "Must start with a dot and contain only lowercase letters, digits, dots, and hyphens. Only affects aliases created from now on - existing ones keep their current suffix.",
     "dnsSuffixCurrent": "Current: {{suffix}}",
     "dnsSuffixSavedToast": "DNS suffix saved.",
-    "dnsSuffixSaveError": "Couldn't save the suffix."
+    "dnsSuffixSaveError": "Couldn't save the suffix.",
+    "aiTitle": "Vibe AI",
+    "aiSubtitle": "The built-in assistant. Off by default — this is the only feature that sends anything about your setup to a third party.",
+    "aiEnable": "Enable the Vibe AI assistant",
+    "aiProvider": "Provider",
+    "aiProviderOpenAiCompatible": "OpenAI-compatible API",
+    "aiProviderNote": "Works with OpenRouter, OpenAI, Groq and Together, and with self-hosted servers such as LM Studio, llama.cpp or vLLM.",
+    "aiBaseUrl": "Endpoint address",
+    "aiBaseUrlNote": "The API root, without /chat/completions — for example https://openrouter.ai/api/v1 or http://localhost:1234/v1.",
+    "aiModel": "Model",
+    "aiModelNote": "Exactly as the provider names it, for example gpt-4o-mini or meta-llama/llama-3.3-70b-instruct.",
+    "aiApiKey": "API key",
+    "aiApiKeyPlaceholder": "Paste your key",
+    "aiApiKeyPlaceholderExisting": "A key is stored — leave blank to keep it",
+    "aiApiKeyNote": "Kept in your operating system’s credential store, never in a settings file. Leave blank for a self-hosted endpoint that needs no key.",
+    "aiPrivacyNote": "In Diagnose mode a snapshot of the selected Node or Application is sent — its status, ports, limits and recent logs. Passwords, tokens, keys and secret environment values are removed first, and you can see the exact text before it is sent.",
+    "aiTest": "Test connection",
+    "aiTestOk": "The provider answered.",
+    "aiSavedToast": "Vibe AI settings saved."
   },
   "vibeNetwork": {
     "title": "Vibe Network",
@@ -1274,7 +1293,12 @@
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
-    "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account."
+    "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account.",
+    "ai_not_configured": "The Vibe AI assistant isn’t set up yet. Add an endpoint, a model and an API key in Settings.",
+    "ai_auth_failed": "The AI provider rejected the API key. Check it in Settings, and that it hasn’t expired or been revoked.",
+    "ai_model_unavailable": "The AI provider doesn’t offer the model “{{model}}”. Check the model name in Settings.",
+    "ai_rate_limited": "The AI provider’s rate limit was reached. Wait a moment and try again.",
+    "ai_provider_unavailable": "Couldn’t reach the AI provider. Check the endpoint address and your connection."
   },
   "connections": {
     "title": "Connections",
@@ -1311,5 +1335,35 @@
     "tooLarge": "That image is {{size}}, over the {{limit}} limit. Icons are shown at 64×64 - pick something smaller, or export it at a lower resolution first.",
     "tooManyPixels": "That image is {{width}}×{{height}}, which is more than {{limit}} megapixels. Decoding it would cost far more memory than a 64×64 icon is worth.",
     "notAnImage": "That file couldn't be read as an image. Use a PNG, JPEG or WebP."
+  },
+  "vibeAi": {
+    "title": "Vibe AI",
+    "subtitle": "Ask about VibeSSH, or have it look at a Node or Application that isn’t behaving.",
+    "notConfiguredTitle": "The assistant isn’t set up yet",
+    "notConfiguredDescription": "Vibe AI talks to an OpenAI-compatible endpoint of your choosing — OpenRouter, OpenAI, or your own server. Add its address, a model and an API key to get started.",
+    "openSettings": "Open Settings",
+    "modeAria": "What the assistant may look at",
+    "mode_ask": "Ask",
+    "mode_ask_hint": "Answers questions about VibeSSH. Nothing is read from your Nodes.",
+    "mode_diagnose": "Diagnose",
+    "mode_diagnose_hint": "Also sends a snapshot of the selected Node or Application. Secrets are removed first.",
+    "noContext": "Nothing selected",
+    "contextUnnamed": "Selected",
+    "previewContext": "What gets sent",
+    "previewTitle": "This is exactly what will be sent with your next message.",
+    "previewLoading": "Collecting…",
+    "previewEmpty": "There is nothing to send — pick a Node or an Application first.",
+    "introTitle": "Ask anything about your setup",
+    "introText": "For example: why an Application won’t start, what a port’s visibility setting does, or why a Node can’t be reached.",
+    "thinking": "Thinking…",
+    "stoppedNote": "Stopped — this answer is incomplete.",
+    "placeholder": "Ask a question. Enter sends, Shift+Enter adds a line.",
+    "inputAria": "Your question",
+    "send": "Send",
+    "stop": "Stop",
+    "clear": "Clear",
+    "askAction": "Ask Vibe AI",
+    "seedApplicationFailed": "The Application “{{name}}” has failed. What is wrong, and how do I fix it?",
+    "disclaimer": "Answers come from the model you configured and can be wrong. Vibe AI can read your setup but never changes anything."
   }
 }

@@ -40,7 +40,8 @@
     "comingSoon": "wkrótce",
     "collapse": "Zwiń panel boczny",
     "expand": "Rozwiń panel boczny",
-    "sidebarAria": "Nawigacja główna"
+    "sidebarAria": "Nawigacja główna",
+    "vibeAi": "Vibe AI"
   },
   "time": {
     "justNow": "przed chwilą",
@@ -1178,7 +1179,25 @@
     "dnsSuffixNote": "Musi zaczynać się od kropki i zawierać tylko małe litery, cyfry, kropki i myślniki. Zmiana obowiązuje tylko nowe aliasy - istniejące zachowują swój dotychczasowy sufiks.",
     "dnsSuffixCurrent": "Obecny: {{suffix}}",
     "dnsSuffixSavedToast": "Zapisano sufiks DNS.",
-    "dnsSuffixSaveError": "Nie udało się zapisać sufiksu."
+    "dnsSuffixSaveError": "Nie udało się zapisać sufiksu.",
+    "aiTitle": "Vibe AI",
+    "aiSubtitle": "Wbudowany asystent. Domyślnie wyłączony — to jedyna funkcja, która wysyła cokolwiek o Twojej konfiguracji na zewnątrz.",
+    "aiEnable": "Włącz asystenta Vibe AI",
+    "aiProvider": "Dostawca",
+    "aiProviderOpenAiCompatible": "API zgodne z OpenAI",
+    "aiProviderNote": "Działa z OpenRouter, OpenAI, Groq i Together oraz z serwerami własnymi, takimi jak LM Studio, llama.cpp czy vLLM.",
+    "aiBaseUrl": "Adres punktu końcowego",
+    "aiBaseUrlNote": "Korzeń API, bez /chat/completions — na przykład https://openrouter.ai/api/v1 albo http://localhost:1234/v1.",
+    "aiModel": "Model",
+    "aiModelNote": "Dokładnie tak, jak nazywa go dostawca, na przykład gpt-4o-mini albo meta-llama/llama-3.3-70b-instruct.",
+    "aiApiKey": "Klucz API",
+    "aiApiKeyPlaceholder": "Wklej swój klucz",
+    "aiApiKeyPlaceholderExisting": "Klucz jest zapisany — zostaw puste, aby go zachować",
+    "aiApiKeyNote": "Przechowywany w magazynie poświadczeń systemu, nigdy w pliku ustawień. Zostaw puste dla własnego punktu końcowego, który nie wymaga klucza.",
+    "aiPrivacyNote": "W trybie Diagnoza wysyłana jest migawka wybranego Node lub aplikacji — status, porty, limity i ostatnie logi. Hasła, tokeny, klucze i sekretne wartości środowiskowe są wcześniej usuwane, a dokładny tekst możesz zobaczyć przed wysłaniem.",
+    "aiTest": "Testuj połączenie",
+    "aiTestOk": "Dostawca odpowiedział.",
+    "aiSavedToast": "Zapisano ustawienia Vibe AI."
   },
   "vibeNetwork": {
     "title": "Vibe Network",
@@ -1274,7 +1293,12 @@
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
-    "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora."
+    "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora.",
+    "ai_not_configured": "Asystent Vibe AI nie jest jeszcze skonfigurowany. Podaj adres, model i klucz API w Ustawieniach.",
+    "ai_auth_failed": "Dostawca AI odrzucił klucz API. Sprawdź go w Ustawieniach oraz to, czy nie wygasł i nie został unieważniony.",
+    "ai_model_unavailable": "Dostawca AI nie udostępnia modelu „{{model}}”. Sprawdź nazwę modelu w Ustawieniach.",
+    "ai_rate_limited": "Przekroczono limit dostawcy AI. Odczekaj chwilę i spróbuj ponownie.",
+    "ai_provider_unavailable": "Nie udało się połączyć z dostawcą AI. Sprawdź adres punktu końcowego i połączenie."
   },
   "connections": {
     "title": "Połączenia",
@@ -1311,5 +1335,35 @@
     "tooLarge": "Ten obrazek ma {{size}}, ponad limit {{limit}}. Ikony wyświetlane są w 64×64 - wybierz mniejszy albo wyeksportuj go w niższej rozdzielczości.",
     "tooManyPixels": "Ten obrazek ma {{width}}×{{height}}, czyli ponad {{limit}} megapikseli. Jego zdekodowanie kosztowałoby znacznie więcej pamięci, niż warta jest ikona 64×64.",
     "notAnImage": "Nie udało się odczytać tego pliku jako obrazu. Użyj PNG, JPEG albo WebP."
+  },
+  "vibeAi": {
+    "title": "Vibe AI",
+    "subtitle": "Zapytaj o VibeSSH albo poproś o przyjrzenie się Node lub aplikacji, która sprawia problemy.",
+    "notConfiguredTitle": "Asystent nie jest jeszcze skonfigurowany",
+    "notConfiguredDescription": "Vibe AI rozmawia z wybranym przez Ciebie punktem końcowym zgodnym z OpenAI — OpenRouter, OpenAI albo Twój własny serwer. Podaj jego adres, model i klucz API, żeby zacząć.",
+    "openSettings": "Otwórz Ustawienia",
+    "modeAria": "Do czego asystent ma wgląd",
+    "mode_ask": "Pytanie",
+    "mode_ask_hint": "Odpowiada na pytania o VibeSSH. Nic nie jest odczytywane z Twoich Node.",
+    "mode_diagnose": "Diagnoza",
+    "mode_diagnose_hint": "Dodatkowo wysyła migawkę wybranego Node lub aplikacji. Sekrety są wcześniej usuwane.",
+    "noContext": "Nic nie wybrano",
+    "contextUnnamed": "Wybrane",
+    "previewContext": "Co zostanie wysłane",
+    "previewTitle": "Dokładnie to zostanie wysłane wraz z Twoją następną wiadomością.",
+    "previewLoading": "Zbieranie…",
+    "previewEmpty": "Nie ma czego wysłać — najpierw wybierz Node albo aplikację.",
+    "introTitle": "Zapytaj o cokolwiek w swojej konfiguracji",
+    "introText": "Na przykład: dlaczego aplikacja się nie uruchamia, co robi ustawienie widoczności portu albo dlaczego Node jest nieosiągalny.",
+    "thinking": "Myślę…",
+    "stoppedNote": "Zatrzymano — ta odpowiedź jest niepełna.",
+    "placeholder": "Zadaj pytanie. Enter wysyła, Shift+Enter dodaje linię.",
+    "inputAria": "Twoje pytanie",
+    "send": "Wyślij",
+    "stop": "Zatrzymaj",
+    "clear": "Wyczyść",
+    "askAction": "Zapytaj Vibe AI",
+    "seedApplicationFailed": "Aplikacja „{{name}}” ma status błędu. Co jest nie tak i jak to naprawić?",
+    "disclaimer": "Odpowiedzi pochodzą z modelu, który skonfigurowałeś, i mogą być błędne. Vibe AI czyta Twoją konfigurację, ale niczego w niej nie zmienia."
   }
 }

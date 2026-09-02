@@ -10,6 +10,14 @@
 // can drive it directly - everything else here only needs in-crate tests
 // (pairing_commands' own test lives inside that module, see its file for why).
 pub mod agent_client;
+// The Vibe AI assistant's mechanism half - provider transport,
+// context collection, redaction and the system prompt. The
+// orchestration that ties them together is `services::ai_service`,
+// matching the split every other subsystem here already uses
+// (`runtime`/`firewall`/`network` are mechanism; `services` decides).
+// `pub` so `tests/ai_assistant.rs` can drive the sanitizer and the
+// service against a mock provider without going through Tauri.
+pub mod ai;
 mod blueprints;
 pub mod cloud_client;
 mod commands;
@@ -101,6 +109,7 @@ pub fn run() {
         .manage(PortForwardManager::new())
         .manage(state::AgentSessionManager::new())
         .manage(state::FileTransferManager::new())
+        .manage(state::AiTurnManager::new())
         .manage(state::MigrationLockManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
@@ -111,6 +120,11 @@ pub fn run() {
         // see blueprints::mod's own doc comment for why this is the whole
         // persistence story for built-in blueprints in this phase.
         .manage(BlueprintRegistry::with_builtins())
+        // The Vibe AI assistant's documentation corpus, split into
+        // sections once at startup. Read-only afterwards, same as the
+        // blueprint registry above - the documents are compiled into
+        // the binary, so there is nothing to reload.
+        .manage(ai::knowledge::KeywordKnowledgeService::with_builtin_docs())
         .setup(|app| {
             // Needs the resolved app data dir, which only exists once the
             // app is running - can't be built alongside the other .manage()
@@ -173,6 +187,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_info,
+            commands::ai_commands::get_ai_config,
+            commands::ai_commands::set_ai_config,
+            commands::ai_commands::test_ai_connection,
+            commands::ai_commands::preview_ai_context,
+            commands::ai_commands::send_ai_turn,
+            commands::ai_commands::stop_ai_turn,
             commands::pairing_commands::generate_pairing_code,
             commands::pairing_commands::pairing_code_ttl_seconds,
             commands::pairing_commands::start_agent_pairing,

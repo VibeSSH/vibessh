@@ -1,3 +1,4 @@
+mod ai;
 mod app_info;
 mod application;
 mod application_backup;
@@ -13,6 +14,10 @@ mod port_forward;
 mod registry_credential;
 mod server;
 
+pub use ai::{
+    AiConfig, AiConfigView, AiContextBundle, AiContextRef, AiMessage, AiMode, AiProviderKind, AiRole, AiTurnRequest,
+    AiTurnResponse, SetAiConfigInput,
+};
 pub use app_info::AppInfo;
 pub use application::{
     Application, ApplicationDetail, ApplicationLocation, ApplicationPort, ApplicationStatus, CreateApplicationFromBlueprintInput,

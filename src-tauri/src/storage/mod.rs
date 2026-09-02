@@ -4,6 +4,7 @@
 //! `server_repository` (Etap 2) is the SQLite-backed store for server
 //! records themselves; it never touches secrets, see `credentials`.
 
+pub mod ai_config;
 pub mod application_backup_repository;
 pub mod application_repository;
 pub mod backup_destination_config;

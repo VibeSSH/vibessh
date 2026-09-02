@@ -21,7 +21,14 @@ export type ErrorCode =
   | "docker_unavailable"
   | "database_server_unavailable"
   | "timeout"
-  | "host_key_mismatch";
+  | "host_key_mismatch"
+  // Vibe AI. Four codes rather than one because the remedy differs: fix the
+  // settings, replace the key, correct the model name, or wait and retry.
+  | "ai_not_configured"
+  | "ai_auth_failed"
+  | "ai_model_unavailable"
+  | "ai_rate_limited"
+  | "ai_provider_unavailable";
 
 /**
  * An error from a Tauri command, with the backend's classification intact.
@@ -62,7 +69,17 @@ export async function callCommand<T>(command: string, args?: Record<string, unkn
   }
 }
 
-function normalizeError(error: unknown): Error {
+/**
+ * Turns whatever Tauri handed back into an `Error` - a `CommandError` when
+ * the payload carries the Rust side's `code`.
+ *
+ * Exported because command rejections are not the only way a backend error
+ * reaches the UI: the Vibe AI assistant delivers a failed turn on an *event*
+ * (`ai://{id}/error`), whose payload is the same serialized `AppError` but
+ * arrives as a plain object that never passed through `callCommand`. Without
+ * this, such an error would lose its `code` and fall back to English prose.
+ */
+export function normalizeError(error: unknown): Error {
   if (error instanceof Error) return error;
   if (typeof error === "string") return new Error(error);
   // The Rust side's AppError serializes to { kind, code, params, message }

@@ -1,3 +1,4 @@
+mod ai_service;
 mod app_info_service;
 mod application_backup_service;
 mod application_files_service;
@@ -29,6 +30,10 @@ pub use application_files_service::{
     list_directory as list_application_files, list_file_history, read_file_for_editor as read_application_file, rename as rename_application_file,
     restore_file_history, save_file as save_application_file, set_permissions as set_application_file_permissions,
     upload_file as upload_application_file, write_file as write_application_file, FileHistoryVersion,
+};
+pub use ai_service::{
+    ai_config_view, build_ai_context, resolve_provider as resolve_ai_provider, run_turn as run_ai_turn, set_ai_config,
+    test_ai_connection,
 };
 pub use application_service::{
     add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,

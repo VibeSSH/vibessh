@@ -1,4 +1,5 @@
 mod agent_sessions;
+mod ai_turns;
 mod backup_destination_state;
 pub mod cloud_session;
 mod dns_suffix_state;
@@ -10,6 +11,7 @@ mod ssh_sessions;
 mod terminal_sessions;
 
 pub use agent_sessions::AgentSessionManager;
+pub use ai_turns::AiTurnManager;
 pub use backup_destination_state::BackupDestinationState;
 pub use cloud_session::CloudState;
 pub use dns_suffix_state::DnsSuffixState;

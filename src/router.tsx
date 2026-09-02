@@ -15,6 +15,7 @@ import { Settings } from "@/pages/Settings";
 import { TeamDetail } from "@/pages/TeamDetail";
 import { Teams } from "@/pages/Teams";
 import { TerminalPage } from "@/pages/Terminal";
+import { VibeAi } from "@/pages/VibeAi";
 import { VibeNetwork } from "@/pages/VibeNetwork";
 
 export function AppRouter() {
@@ -66,6 +67,7 @@ export function AppRouter() {
         <Route path="/firewall/:serverId" element={<FirewallPage />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/teams/:teamId" element={<TeamDetail />} />
+        <Route path="/vibe-ai" element={<VibeAi />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

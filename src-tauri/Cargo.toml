@@ -80,7 +80,11 @@ russh-sftp = "2"
 # native-tls is already a dependency here for agent_client's WSS connections.
 # Also what the S3-compatible backup destination client (src/s3) uploads
 # through - same client, no second HTTP stack for that either.
-reqwest = { version = "0.12", features = ["json"] }
+# "stream" is new here, for the Vibe AI assistant: an OpenAI-compatible
+# endpoint returns a streamed answer as server-sent events, and
+# `bytes_stream()` is what lets `ai::openai_compatible` forward tokens
+# to the UI as they arrive instead of holding the whole answer back.
+reqwest = { version = "0.12", features = ["json", "stream"] }
 # AWS SigV4 request signing for the S3-compatible backup destination
 # (src/s3) - hand-rolled against these two primitives rather than pulling in
 # aws-sdk-s3 (a very large dependency tree, and its own opinions about

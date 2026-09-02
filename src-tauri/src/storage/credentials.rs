@@ -147,6 +147,40 @@ pub fn delete_backup_destination_secret() -> AppResult<()> {
     }
 }
 
+/// The Vibe AI provider's API key - install-wide like the cloud refresh
+/// token and the backup destination secret above, since there is one
+/// configured provider for the whole app (see `models::AiConfig`).
+///
+/// This is the only copy. It is written once from the Settings form, read
+/// only by `services::ai_service` when it builds a provider, and never
+/// returned to the frontend - which is why `AiConfigView` carries a
+/// `has_api_key` boolean instead of anything derived from the value.
+const AI_API_KEY_ENTRY: &str = "ai-provider-api-key";
+
+fn ai_api_key_entry() -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, AI_API_KEY_ENTRY)
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_ai_api_key(value: &str) -> AppResult<()> {
+    ai_api_key_entry()?.set_password(value).map_err(|err| AppError::Storage(format!("failed to store the AI API key: {err}")))
+}
+
+pub fn load_ai_api_key() -> AppResult<Option<String>> {
+    match ai_api_key_entry()?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the AI API key: {err}"))),
+    }
+}
+
+pub fn delete_ai_api_key() -> AppResult<()> {
+    match ai_api_key_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to clear the AI API key: {err}"))),
+    }
+}
+
 // Named wrappers for the one call site (pairing_commands.rs) that predates
 // SecretKind - self-documenting at the call site, same implementation.
 pub fn store_agent_credential(server_id: Uuid, credential: &str) -> AppResult<()> {

@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
+import { AskVibeAiButton } from "@/components/ai/AskVibeAiButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
+import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
@@ -196,6 +198,7 @@ export function ApplicationDetail() {
     return <Navigate to="/applications" replace />;
   }
 
+  const aiReady = useAiReady();
   const canStart = application ? ["stopped", "failed", "unknown"].includes(application.status) : false;
   const canStopOrRestart = application ? ["running", "starting"].includes(application.status) : false;
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
@@ -227,6 +230,17 @@ export function ApplicationDetail() {
           <div className="application-detail-header-row">
             <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
             <div className="application-detail-actions">
+              {/* The quick action from the brief: a failed Application is the
+                  case where somebody most wants an explanation, and this is
+                  where they are already looking. Hidden unless the assistant
+                  is configured - see `useAiReady`. */}
+              {aiReady && application.status === "failed" && (
+                <AskVibeAiButton
+                  context={{ kind: "application", id: application.id }}
+                  contextLabel={application.name}
+                  question={t("vibeAi.seedApplicationFailed", { name: application.name })}
+                />
+              )}
               {canStart && (
                 <Button size="sm" onClick={() => setConfirming("start")}>
                   <Icon name="play" size={14} />

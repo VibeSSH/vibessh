@@ -9,11 +9,13 @@ import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
 import { useModalDialog } from "@/hooks/useModalDialog";
+import { getAiConfig, setAiConfig, testAiConnection } from "@/services/aiService";
 import { getAppInfo } from "@/services/appService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
 import { getDnsSuffix, setDnsSuffix } from "@/services/networkService";
 import { toastSuccess } from "@/stores/toastStore";
+import type { AiConfigView, AiProviderKind } from "@/types/ai";
 import type { BackupDestinationConfig, RegistryCredential } from "@/types/application";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n";
 import "./pages.css";
@@ -65,6 +67,8 @@ export function Settings() {
         </div>
       </Card>
 
+      <AiCard />
+
       <BackupDestinationCard />
 
       <RegistryCredentialsCard />
@@ -81,6 +85,163 @@ export function Settings() {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * The Vibe AI assistant's provider settings.
+ *
+ * Same write-only shape as the backup destination below: the key is
+ * submitted, never returned, and a blank field means "leave the stored one
+ * alone" - the form has no way to display it because the backend has no way
+ * to hand it over.
+ *
+ * The model is a free-text field rather than a dropdown on purpose. An
+ * OpenAI-compatible endpoint serves whatever its operator decided to serve -
+ * OpenRouter alone offers hundreds, a self-hosted llama.cpp offers one with
+ * whatever name its owner gave it - so any list shipped here would be wrong
+ * within a month and would make the endpoints this feature exists to support
+ * look unsupported.
+ */
+function AiCard() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<AiConfigView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [enabled, setEnabled] = useState(false);
+  const [provider, setProvider] = useState<AiProviderKind>("openAiCompatible");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [testOk, setTestOk] = useState(false);
+
+  useEffect(() => {
+    getAiConfig()
+      .then((loaded) => {
+        setConfig(loaded);
+        setEnabled(loaded.enabled);
+        setProvider(loaded.provider);
+        setBaseUrl(loaded.baseUrl);
+        setModel(loaded.model);
+      })
+      .catch((err) => setLoadError(errorMessage(err, t)))
+      .finally(() => setLoading(false));
+  }, [t]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    setTestOk(false);
+    setTestError(null);
+    try {
+      const saved = await setAiConfig({ enabled, provider, baseUrl, model, apiKey });
+      setConfig(saved);
+      // Cleared as soon as it has been handed over, so the only copy is the
+      // one in the OS keyring - not also sitting in React state for the rest
+      // of the session.
+      setApiKey("");
+      toastSuccess(t("settings.aiSavedToast"));
+    } catch (err) {
+      setSaveError(errorMessage(err, t));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestError(null);
+    setTestOk(false);
+    try {
+      await testAiConnection();
+      setTestOk(true);
+    } catch (err) {
+      setTestError(errorMessage(err, t));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card title={t("settings.aiTitle")} subtitle={t("settings.aiSubtitle")}>
+      {loading ? (
+        <SkeletonRows />
+      ) : (
+        <form className="server-form" onSubmit={handleSubmit}>
+          {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
+          {saveError && <p className="form-note form-note-danger form-note-spaced">{saveError}</p>}
+          <Switch checked={enabled} onChange={setEnabled} label={t("settings.aiEnable")} />
+          {enabled && (
+            <>
+              <label className="form-field">
+                <span className="form-label">{t("settings.aiProvider")}</span>
+                <select className="form-input" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderKind)}>
+                  <option value="openAiCompatible">{t("settings.aiProviderOpenAiCompatible")}</option>
+                </select>
+                <span className="form-note">{t("settings.aiProviderNote")}</span>
+              </label>
+              <label className="form-field">
+                <span className="form-label">{t("settings.aiBaseUrl")}</span>
+                <input
+                  className="form-input"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://openrouter.ai/api/v1"
+                  autoComplete="off"
+                />
+                <span className="form-note">{t("settings.aiBaseUrlNote")}</span>
+              </label>
+              <label className="form-field">
+                <span className="form-label">{t("settings.aiModel")}</span>
+                <input
+                  className="form-input"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="meta-llama/llama-3.3-70b-instruct"
+                  autoComplete="off"
+                />
+                <span className="form-note">{t("settings.aiModelNote")}</span>
+              </label>
+              <label className="form-field">
+                <span className="form-label">{t("settings.aiApiKey")}</span>
+                <input
+                  className="form-input"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={config?.hasApiKey ? t("settings.aiApiKeyPlaceholderExisting") : t("settings.aiApiKeyPlaceholder")}
+                  autoComplete="off"
+                />
+                <span className="form-note">{t("settings.aiApiKeyNote")}</span>
+              </label>
+              <p className="form-note">{t("settings.aiPrivacyNote")}</p>
+            </>
+          )}
+          <div className="form-actions form-actions-split">
+            <div>
+              {config?.enabled && (
+                <Button type="button" variant="secondary" size="sm" onClick={handleTest} disabled={testing}>
+                  <Icon name="zap" size={14} />
+                  {testing ? t("common.loading") : t("settings.aiTest")}
+                </Button>
+              )}
+              {testOk && <span className="form-note form-note-success"> {t("settings.aiTestOk")}</span>}
+              {testError && <span className="form-note form-note-danger"> {testError}</span>}
+            </div>
+            <Button type="submit" size="sm" disabled={saving}>
+              {saving ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
   );
 }
 

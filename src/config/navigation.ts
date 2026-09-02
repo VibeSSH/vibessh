@@ -39,6 +39,7 @@ export const sidebarGroups: SidebarGroup[] = [
       { id: "monitor", labelKey: "nav.monitor", path: "/monitor", icon: "activity" },
       { id: "actions", labelKey: "nav.actions", path: "/actions", icon: "zap" },
       { id: "port-forwarding", labelKey: "nav.portForwarding", path: "/port-forwarding", icon: "arrow-left-right" },
+      { id: "vibe-ai", labelKey: "nav.vibeAi", path: "/vibe-ai", icon: "sparkles" },
     ],
   },
   {

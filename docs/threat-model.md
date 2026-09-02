@@ -42,6 +42,73 @@ boundary**, not afterwards.
                           ◄── reaches only the Applications explicitly connected to it
 ```
 
+## The Vibe AI assistant, and the outbound boundary it creates
+
+This is the only feature in VibeSSH that sends anything about the user's
+infrastructure to a party outside their control, so it is the only one whose
+boundary points *outwards*.
+
+```
+[Desktop app] ──HTTPS, user-supplied endpoint──►  [Any OpenAI-compatible provider]
+      │                                            OpenRouter / OpenAI / self-hosted
+      │
+      └─ sanitizer runs here, before the request is built
+```
+
+**Off by default, and off means off.** `AiConfig::enabled` starts `false` on
+a fresh install and after an upgrade. Nothing is collected, no client is
+built and no endpoint is resolved until the user turns it on and supplies an
+address and a model. Turning it off deletes the stored API key rather than
+orphaning it.
+
+**The provider is not trusted.** It is an arbitrary URL the user typed. The
+design therefore assumes the endpoint may log everything it receives, may be
+compromised, and may return hostile text.
+
+**What can cross, and what cannot.**
+
+| Crosses | Never crosses |
+|---|---|
+| Application name, blueprint, runtime, status, working directory | SSH passwords and key passphrases (keyring-only, never read) |
+| Ports, visibility, resource limits | Private key *contents* and their file *paths* |
+| Environment variable **names**, and non-secret values | Any environment value flagged secret, or named like one |
+| `runtime_config`, with secret keys and flag-values redacted | Agent credentials, the cloud refresh token, the AI key itself |
+| Up to 40 recent log lines, redacted | The Node's agent certificate fingerprint |
+| Node address, ports, capabilities, CPU/RAM/disk, firewall backend | `AUDIT_REPORT.md` / `FIX_PLAN.md` (excluded from the doc corpus) |
+
+Redaction is `ai::sanitizer`, and it is the second line of defence rather
+than the first: secret environment values already read back empty from the
+repository, and private keys are referenced by path rather than content, so
+the obvious secrets are structurally absent before it runs. What it catches
+is the rest - a password typed into a *plain* variable, a `--requirepass`
+inside a rendered command array, a connection string embedded in a log line.
+It over-redacts where the two conflict.
+
+**The user can see the payload.** `preview_ai_context` returns the literal
+text a turn would send, from the same builder the turn uses, and the panel
+shows it on demand. This is `AGENTS.md` §6 applied to an outbound boundary:
+a boundary the interface does not show is not a boundary.
+
+**Prompt injection is contained by having nothing to inject into.** Log
+lines and Application names collected from a Node are attacker-influenced
+text, and they end up in a model's context. The system prompt says plainly
+that the context is data rather than instruction, but the real mitigation is
+structural: this assistant has no tools, executes no commands, and changes
+nothing. The worst outcome of a successful injection is a wrong answer.
+
+**What is deliberately still open.**
+
+- **Conversations are not persisted, and that is load-bearing.** Neither
+  side keeps a transcript. If persistence is added it needs its own decision
+  about retention, because a conversation about a broken Node *is* a copy of
+  that Node's configuration and logs.
+- **The user's question is not sanitized.** Only collected context is. Someone
+  who pastes a password into the chat box has sent it, and no redaction pass
+  can reliably tell a pasted secret from prose about one.
+- **No egress allow-list.** Any URL the user configures is contacted. This is
+  the point of supporting self-hosted endpoints, but it means a mistyped or
+  malicious base URL is a real disclosure channel.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

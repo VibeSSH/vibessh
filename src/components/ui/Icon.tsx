@@ -34,6 +34,8 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   activity: "activity",
   zap: "zap",
   sparkles: "sparkles",
+  send: "send",
+  "message-square": "message-square",
   "chevron-left": "chevron-left",
   "chevron-right": "chevron-right",
   "chevron-down": "chevron-down",

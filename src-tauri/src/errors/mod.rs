@@ -57,6 +57,30 @@ pub enum ErrorCode {
     /// The Node's host key changed. Deliberately its own code: this is the
     /// one error where the right UI is a warning, not a retry button.
     HostKeyMismatch,
+
+    // ---- Vibe AI ----
+    //
+    // Four codes rather than one, because the fix differs in every
+    // case and the request brief for this feature was explicit that a
+    // user must never be shown a raw provider JSON body. The technical
+    // detail is logged; only these reach the interface.
+    /// The assistant is off, or has no endpoint/model/key yet. The fix is
+    /// in Settings, so the UI can link straight there.
+    AiNotConfigured,
+    /// The provider rejected the key. Not a connection problem and not a
+    /// retry: the stored key is wrong, expired or revoked.
+    AiAuthFailed,
+    /// The endpoint answered, but does not serve the configured model.
+    /// Carries the model name so the message can say which one.
+    AiModelUnavailable,
+    /// The provider's own rate or quota limit. Worth retrying later,
+    /// unlike the two above.
+    AiRateLimited,
+    /// The endpoint could not be reached, failed on its own side, or
+    /// answered with something this client could not parse. One code for
+    /// the three because the user's next step is the same for all of
+    /// them, and none of them is their fault.
+    AiProviderUnavailable,
 }
 
 /// Single error type shared by every backend module. New modules should add a
@@ -113,6 +137,28 @@ pub enum AppError {
 
     #[error("the Node's host key doesn't match the one VibeSSH saw before")]
     HostKeyMismatch { host: String },
+
+    // ---- Vibe AI ----
+    //
+    // Every message here is a plain sentence, and none of them carries a
+    // provider response body. That is not tidiness: a provider error body
+    // is attacker-influenced text from a third-party endpoint, and it is
+    // also where an echoed request would put the API key. It goes to
+    // `log::warn!` in `ai::openai_compatible` and no further.
+    #[error("the AI assistant isn't configured yet")]
+    AiNotConfigured,
+
+    #[error("the AI provider rejected the API key")]
+    AiAuthFailed,
+
+    #[error("the AI provider doesn't offer the model {model}")]
+    AiModelUnavailable { model: String },
+
+    #[error("the AI provider's rate limit was reached")]
+    AiRateLimited,
+
+    #[error("couldn't reach the AI provider")]
+    AiProviderUnavailable,
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -132,6 +178,11 @@ impl AppError {
             AppError::DatabaseServerUnavailable { .. } => ErrorCode::DatabaseServerUnavailable,
             AppError::Timeout { .. } => ErrorCode::Timeout,
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
+            AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
+            AppError::AiAuthFailed => ErrorCode::AiAuthFailed,
+            AppError::AiModelUnavailable { .. } => ErrorCode::AiModelUnavailable,
+            AppError::AiRateLimited => ErrorCode::AiRateLimited,
+            AppError::AiProviderUnavailable => ErrorCode::AiProviderUnavailable,
         }
     }
 
@@ -148,6 +199,7 @@ impl AppError {
             }
             AppError::Timeout { operation, seconds } => serde_json::json!({ "operation": operation, "seconds": seconds }),
             AppError::HostKeyMismatch { host } => serde_json::json!({ "host": host }),
+            AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             _ => serde_json::Value::Null,
         }
     }
@@ -186,6 +238,12 @@ impl Serialize for AppError {
                 "invalid_input"
             }
             ErrorCode::Timeout | ErrorCode::HostKeyMismatch => "connection",
+            // Same rule as the block above: each new code degrades to the
+            // coarse bucket a `kind` reader would have seen before it
+            // existed. Not configured and a rejected key are input
+            // problems the user can fix; the rest are the network.
+            ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
+            ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
@@ -218,6 +276,11 @@ mod tests {
             AppError::DockerUnavailable,
             AppError::Timeout { operation: "the command", seconds: 600 },
             AppError::HostKeyMismatch { host: "node.example.com".into() },
+            AppError::AiNotConfigured,
+            AppError::AiAuthFailed,
+            AppError::AiModelUnavailable { model: "gpt-4o-mini".into() },
+            AppError::AiRateLimited,
+            AppError::AiProviderUnavailable,
         ] {
             let value = json(&error);
             assert!(value["code"].is_string(), "{value}");
