@@ -97,3 +97,25 @@
   font-family: var(--font-mono);
   color: var(--text-primary);
 }
+
+/* Two meters side by side under the console.
+ *
+ * `auto-fit` with a floor rather than a fixed pair of columns, so they
+ * stack on a narrow window instead of squeezing into strips too thin for
+ * the shape to read. */
+.application-detail-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* The number stays the primary reading; the chart is context for it. A
+ * sparkline answers "is this normal" and only a number answers "what is
+ * it". */
+.application-detail-chart-value {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}

@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
+import { Sparkline } from "@/components/ui/Sparkline";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
@@ -45,6 +46,10 @@ import "./ApplicationDetail.css";
 import { errorMessage } from "@/services/tauri";
 import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
+/** How many resource samples the charts keep - five minutes at
+ * `POLL_INTERVALS.applicationDetail`. */
+const HISTORY_SAMPLES = 60;
+
 const LOG_TAIL_LINES = 500;
 
 type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files" | "backups" | "settings";
@@ -71,6 +76,16 @@ export function ApplicationDetail() {
   const [application, setApplication] = useState<ApplicationDetailData | null>(null);
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [resourceUsage, setResourceUsage] = useState<ResourceUsage | null>(null);
+  /**
+   * Recent samples, for the charts under the console.
+   *
+   * Held in memory for as long as the page is open and no longer. Nothing
+   * persists them, so the charts start empty and fill over the next few
+   * minutes rather than showing history that was never recorded - the same
+   * bargain any live meter makes, and better than implying a past this app
+   * does not have.
+   */
+  const [history, setHistory] = useState<{ cpu: number; ram: number }[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -122,7 +137,15 @@ export function ApplicationDetail() {
     // already-successful `getApplication` result and leave the whole page
     // stuck on a bare id with nothing usable on it.
     try {
-      setResourceUsage(await getApplicationResourceUsage(id));
+      const usage = await getApplicationResourceUsage(id);
+      setResourceUsage(usage);
+      setHistory((previous) => {
+        const next = [...previous, { cpu: usage.cpuPercent ?? 0, ram: usage.ramBytes ?? 0 }];
+        // Five minutes at the detail page's own poll interval. Long enough
+        // to show a spike settling, short enough that the window is about
+        // now rather than about the whole session.
+        return next.length > HISTORY_SAMPLES ? next.slice(next.length - HISTORY_SAMPLES) : next;
+      });
     } catch {
       // Leave the last-known usage in place rather than clearing it - this
       // tab already shows its own errors where it matters (Console, Logs,
@@ -359,6 +382,33 @@ export function ApplicationDetail() {
             <div className="application-detail-overview-grid">
               <div className="application-detail-overview">
                 {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
+
+                {/* Under the console rather than beside it: these are worth
+                    a glance, and the console is worth the width. Only while
+                    there is something to plot - two empty boxes under a
+                    stopped Application say less than nothing. */}
+                {history.length > 0 && (
+                  <div className="application-detail-charts">
+                    <Card title={t("applicationDetail.cpu")}>
+                      <p className="application-detail-chart-value">{resourceUsage?.cpuPercent?.toFixed(1) ?? "\u2014"}%</p>
+                      <Sparkline
+                        values={history.map((sample) => sample.cpu)}
+                        label={t("applicationDetail.cpuChartLabel", { value: resourceUsage?.cpuPercent?.toFixed(1) ?? "0" })}
+                      />
+                    </Card>
+                    <Card title={t("applicationDetail.ram")}>
+                      <p className="application-detail-chart-value">
+                        {resourceUsage?.ramBytes ? `${(resourceUsage.ramBytes / 1024 / 1024).toFixed(0)} MB` : "\u2014"}
+                      </p>
+                      <Sparkline
+                        values={history.map((sample) => sample.ram / 1024 / 1024)}
+                        label={t("applicationDetail.ramChartLabel", {
+                          value: resourceUsage?.ramBytes ? (resourceUsage.ramBytes / 1024 / 1024).toFixed(0) : "0",
+                        })}
+                      />
+                    </Card>
+                  </div>
+                )}
               </div>
 
               <aside className="application-detail-aside">

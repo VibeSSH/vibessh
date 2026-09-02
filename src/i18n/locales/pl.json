@@ -425,7 +425,9 @@
     "node": "Node",
     "runtime": "Środowisko uruchomieniowe",
     "workingDirectory": "Katalog roboczy",
-    "noPorts": "Nie skonfigurowano żadnych portów."
+    "noPorts": "Nie skonfigurowano żadnych portów.",
+    "cpuChartLabel": "Użycie CPU z ostatnich kilku minut, teraz {{value}} procent",
+    "ramChartLabel": "Użycie pamięci z ostatnich kilku minut, teraz {{value}} megabajtów"
   },
   "portsTab": {
     "description": "Kontroluj, z których portów sieciowych korzysta ta aplikacja i kto może się do nich łączyć.",

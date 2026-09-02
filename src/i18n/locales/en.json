@@ -425,7 +425,9 @@
     "node": "Node",
     "runtime": "Runtime",
     "workingDirectory": "Working directory",
-    "noPorts": "No ports configured."
+    "noPorts": "No ports configured.",
+    "cpuChartLabel": "CPU use over the last few minutes, now {{value}} percent",
+    "ramChartLabel": "Memory use over the last few minutes, now {{value}} megabytes"
   },
   "portsTab": {
     "description": "Control which network ports this application uses and who can reach them.",
