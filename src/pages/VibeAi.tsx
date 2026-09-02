@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { AiUsageModal } from "@/components/ai/AiUsageModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
-import { getAiConfig, previewAiContext } from "@/services/aiService";
+import { getAiConfig, getAiQuota, previewAiContext } from "@/services/aiService";
 import { errorMessage } from "@/services/tauri";
 import { useAiStore } from "@/stores/aiStore";
-import type { AiConfigView, AiContextBundle, AiMode } from "@/types/ai";
+import type { AiConfigView, AiContextBundle, AiMode, AiQuota } from "@/types/ai";
 import "./pages.css";
 import "./VibeAi.css";
 
@@ -40,6 +41,8 @@ export function VibeAi() {
   const [preview, setPreview] = useState<AiContextBundle | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [quota, setQuota] = useState<AiQuota | null>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const busy = turnId !== null;
@@ -63,6 +66,18 @@ export function VibeAi() {
     const node = transcriptRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages]);
+
+  // Re-read the allowance whenever a turn ends rather than on a timer:
+  // finishing a question is the only thing that changes it from here,
+  // and polling an endpoint to watch a number the user is not looking
+  // at would be work for nothing. Null means this install uses its own
+  // API key and has no allowance to show.
+  useEffect(() => {
+    if (turnId !== null) return;
+    getAiQuota()
+      .then(setQuota)
+      .catch(() => setQuota(null));
+  }, [turnId]);
 
   async function togglePreview() {
     if (previewOpen) {
@@ -143,6 +158,17 @@ export function VibeAi() {
             </div>
 
             <div className="vibe-ai-toolbar-right">
+              {quota && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setUsageOpen(true)}
+                  title={t("aiUsage.title")}
+                >
+                  <Icon name="activity" size={14} />
+                  {t("aiUsage.chip", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })}
+                </Button>
+              )}
               {mode === "diagnose" &&
                 (context ? (
                   <Badge tone="neutral">{contextLabel ?? t("vibeAi.contextUnnamed")}</Badge>
@@ -239,6 +265,8 @@ export function VibeAi() {
           <p className="vibe-ai-disclaimer">{t("vibeAi.disclaimer")}</p>
         </div>
       )}
+
+      {usageOpen && quota && <AiUsageModal quota={quota} onClose={() => setUsageOpen(false)} />}
     </div>
   );
 }

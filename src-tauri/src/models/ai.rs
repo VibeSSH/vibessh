@@ -208,6 +208,9 @@ pub struct CloudAiQuota {
     pub limit: i32,
     /// Midnight UTC, when `used` returns to zero.
     pub resets_at: chrono::DateTime<chrono::Utc>,
+    /// Characters of prompt sent today. The allowance counts questions; this
+    /// is what a question actually cost.
+    pub prompt_chars: i64,
 }
 
 /// What a completed non-streaming turn returns.

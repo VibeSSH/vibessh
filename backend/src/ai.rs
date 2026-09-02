@@ -116,6 +116,14 @@ pub struct QuotaView {
     pub limit: i32,
     /// Midnight UTC, when `used` returns to zero.
     pub resets_at: chrono::DateTime<chrono::Utc>,
+    /// Characters of prompt sent today, across every question.
+    ///
+    /// Surfaced because the allowance is counted in questions and a
+    /// question's cost is not: a Diagnose turn carrying a Node's
+    /// configuration and forty log lines is worth many times a one-line
+    /// question. Showing both is what lets somebody see that they have
+    /// "18 of 20 left" and have still sent most of the day's actual cost.
+    pub prompt_chars: i64,
 }
 
 #[derive(Serialize)]
@@ -135,13 +143,15 @@ pub async fn quota(State(state): State<AppState>, AuthUser(user_id): AuthUser) -
     let Some(upstream) = Upstream::from_env() else {
         return Err(ApiError::NotFound("this VibeSSH backend does not offer a hosted AI model".to_string()));
     };
-    let used: Option<i32> = sqlx::query_scalar("SELECT question_count FROM ai_usage WHERE user_id = $1 AND usage_date = CURRENT_DATE")
-        .bind(user_id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|err| ApiError::Internal(format!("failed to read AI usage: {err}")))?;
+    let row: Option<(i32, i64)> =
+        sqlx::query_as("SELECT question_count, prompt_chars FROM ai_usage WHERE user_id = $1 AND usage_date = CURRENT_DATE")
+            .bind(user_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|err| ApiError::Internal(format!("failed to read AI usage: {err}")))?;
+    let (used, prompt_chars) = row.unwrap_or((0, 0));
 
-    Ok(Json(QuotaView { used: used.unwrap_or(0), limit: upstream.daily_limit, resets_at: next_midnight_utc() }))
+    Ok(Json(QuotaView { used, limit: upstream.daily_limit, resets_at: next_midnight_utc(), prompt_chars }))
 }
 
 /// Takes one question off the account's daily allowance, atomically.
@@ -223,7 +233,7 @@ pub async fn chat(
     match call_upstream(&upstream, &request.messages).await {
         Ok(content) => Ok(Json(ChatResponse {
             content,
-            quota: QuotaView { used, limit: upstream.daily_limit, resets_at: next_midnight_utc() },
+            quota: QuotaView { used, limit: upstream.daily_limit, resets_at: next_midnight_utc(), prompt_chars: prompt_chars as i64 },
         })),
         Err(err) => {
             refund_question(&state, user_id, prompt_chars as i64).await;

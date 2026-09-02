@@ -9,6 +9,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
 import { useModalDialog } from "@/hooks/useModalDialog";
+import { AiUsageModal } from "@/components/ai/AiUsageModal";
 import { getAiConfig, getAiQuota, setAiConfig, testAiConnection } from "@/services/aiService";
 import { getAppInfo } from "@/services/appService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
@@ -115,6 +116,7 @@ function AiCard() {
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [quota, setQuota] = useState<AiQuota | null>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -201,10 +203,21 @@ function AiCard() {
                 </span>
               </label>
               {provider === "vibeSshHosted" && (
-                <div className="form-note form-note-spaced">
-                  {quota
-                    ? t("settings.aiQuotaRemaining", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })
-                    : t("settings.aiQuotaUnknown")}
+                <div className="settings-preference-row">
+                  <div>
+                    <p className="settings-preference-label">{t("aiUsage.title")}</p>
+                    <p className="settings-muted">
+                      {quota
+                        ? t("settings.aiQuotaRemaining", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })
+                        : t("settings.aiQuotaUnknown")}
+                    </p>
+                  </div>
+                  {quota && (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => setUsageOpen(true)}>
+                      <Icon name="activity" size={14} />
+                      {t("aiUsage.open")}
+                    </Button>
+                  )}
                 </div>
               )}
               {provider === "openAiCompatible" && (
@@ -265,6 +278,7 @@ function AiCard() {
           </div>
         </form>
       )}
+      {usageOpen && quota && <AiUsageModal quota={quota} onClose={() => setUsageOpen(false)} />}
     </Card>
   );
 }

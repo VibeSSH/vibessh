@@ -72,6 +72,9 @@ export interface AiQuota {
   limit: number;
   /** Midnight UTC, when `used` returns to zero. */
   resetsAt: string;
+  /** Characters of prompt sent today. The allowance counts questions;
+   * this is what those questions actually cost. */
+  promptChars: number;
 }
 
 export interface AiTurnRequest {

@@ -1,0 +1,82 @@
+/* Today's use of the included model.
+ *
+ * The remaining count is the one number somebody opens this for, so it is
+ * the only thing here at display size; everything else is a supporting
+ * fact. */
+
+.ai-usage-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-usage-remaining {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Spent is a state worth seeing at a glance, and colour alone does not
+ * carry it - the sentence under the bar changes too (see `exhaustedNote`),
+ * which is what makes this legible without colour vision. */
+.ai-usage-remaining-spent {
+  color: var(--danger, var(--text-secondary));
+}
+
+.ai-usage-of {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-usage-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ai-usage-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.ai-usage-bar-fill-spent {
+  background: var(--danger, var(--accent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-usage-bar-fill {
+    transition: none;
+  }
+}
+
+.ai-usage-facts {
+  margin: 14px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-usage-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.ai-usage-fact dt {
+  color: var(--text-secondary);
+}
+
+.ai-usage-fact dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

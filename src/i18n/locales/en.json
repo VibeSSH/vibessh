@@ -1371,5 +1371,19 @@
     "seedApplicationFailed": "The Application “{{name}}” has failed. What is wrong, and how do I fix it?",
     "disclaimer": "Answers come from the model you configured and can be wrong. Vibe AI can read your setup but never changes anything.",
     "collecting": "Reading the Node…"
+  },
+  "aiUsage": {
+    "title": "Vibe AI usage",
+    "open": "View usage",
+    "chip": "{{remaining}}/{{limit}}",
+    "ofLimit": "of {{limit}} questions left today",
+    "asked": "Asked today",
+    "context": "Context sent today",
+    "contextValue": "about {{thousands}}k characters",
+    "resets": "Resets",
+    "resetsValue": "{{time}} local time, in about {{hours}} h",
+    "resetsUnknown": "at midnight UTC",
+    "note": "The limit applies to the model included with VibeSSH. Adding your own API key in Settings removes it - you then pay your own provider directly.",
+    "exhaustedNote": "You have used today's allowance for the included model. It comes back at the reset above, or you can add your own API key in Settings and carry on now."
   }
 }

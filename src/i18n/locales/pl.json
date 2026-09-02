@@ -1371,5 +1371,19 @@
     "seedApplicationFailed": "Aplikacja „{{name}}” ma status błędu. Co jest nie tak i jak to naprawić?",
     "disclaimer": "Odpowiedzi pochodzą z modelu, który skonfigurowałeś, i mogą być błędne. Vibe AI czyta Twoją konfigurację, ale niczego w niej nie zmienia.",
     "collecting": "Zbieram dane z node…"
+  },
+  "aiUsage": {
+    "title": "Zużycie Vibe AI",
+    "open": "Zobacz zużycie",
+    "chip": "{{remaining}}/{{limit}}",
+    "ofLimit": "z {{limit}} pytań na dziś",
+    "asked": "Zadane dzisiaj",
+    "context": "Wysłany kontekst",
+    "contextValue": "około {{thousands}} tys. znaków",
+    "resets": "Odnowienie",
+    "resetsValue": "{{time}} czasu lokalnego, za około {{hours}} h",
+    "resetsUnknown": "o północy UTC",
+    "note": "Limit dotyczy modelu wliczonego w VibeSSH. Dodanie własnego klucza API w Ustawieniach go znosi — płacisz wtedy bezpośrednio swojemu dostawcy.",
+    "exhaustedNote": "Wykorzystałeś dzisiejszy limit dla wliczonego modelu. Wróci o godzinie podanej wyżej, albo dodaj własny klucz API w Ustawieniach i pytaj dalej już teraz."
   }
 }
