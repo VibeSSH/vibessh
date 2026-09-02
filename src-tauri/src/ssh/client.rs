@@ -106,7 +106,21 @@ pub enum SshAuth {
 /// expensive, and every `SftpSession` method only needs `&self`, so it's
 /// opened lazily on first use and reused for every SFTP call after - see
 /// `ssh/sftp.rs`.
+/// Hands out `SshSession::id`. Monotonic and never reused, so a value that
+/// identified a dropped session can never come to mean a live one.
+static NEXT_SESSION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 pub struct SshSession {
+    /// Identifies *this* connection, for callers that want to remember
+    /// something they only had to establish once per connection.
+    ///
+    /// A server id is not enough for that: a session can be dropped and
+    /// replaced (a transport error, an idle subsystem, a Node rebooting)
+    /// while the server id stays the same, and anything remembered against
+    /// the id would then be remembered about a connection that no longer
+    /// exists. Keyed on this instead, a reconnect re-establishes whatever
+    /// it needs to, because the new session is a different session.
+    id: u64,
     handle: client::Handle<TofuHandler>,
     sftp: OnceCell<SftpSession>,
     /// CPU% and network rates are deltas between two samples, not values a
@@ -194,6 +208,7 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
         session: SshSession {
             handle,
             sftp: OnceCell::new(),
+            id: NEXT_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             metrics_sample: Mutex::new(None),
             forward_registry,
         },
@@ -202,6 +217,11 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
 }
 
 impl SshSession {
+    /// See the field's own note - unique for the life of the process.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Bounded by `COMMAND_TIMEOUT` - see that constant for why there is a
     /// bound at all, and why it is as generous as it is.
     pub async fn execute_command(&self, command: &str) -> AppResult<CommandOutput> {

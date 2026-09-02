@@ -57,6 +57,43 @@ pub mod permissions {
     pub const CHMOD: &str = "applications.files.chmod";
 }
 
+/// Which `(SSH session, application)` pairs have already had their
+/// dedicated account and file helper verified.
+///
+/// Both checks are cheap to describe and expensive to run: provisioning
+/// executes `getent`/`id` behind `sudo`, and the helper check `sudo cat`s
+/// the deployed script to compare it byte for byte. `resolve_provider` runs
+/// on *every* file operation, so opening a directory cost two extra command
+/// round trips before the listing itself - which is what walking between
+/// directories felt like.
+///
+/// Keyed on the session rather than the server: a dropped and reconnected
+/// session is a new session, so a Node that rebooted, or whose connection
+/// was replaced, is verified again without anyone having to remember to
+/// invalidate anything. Ids are monotonic and never reused, so a remembered
+/// pair can never come to mean a different connection.
+///
+/// The set is bounded rather than pruned. Entries for dead sessions are two
+/// integers each and stop being consulted the moment their session is gone;
+/// past the cap the whole thing is dropped, whose only cost is one more
+/// verification per live session.
+static FILE_ACCESS_VERIFIED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<(u64, Uuid)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+const FILE_ACCESS_VERIFIED_CAP: usize = 512;
+
+fn needs_readiness_check(session_id: u64, application_id: Uuid) -> bool {
+    !FILE_ACCESS_VERIFIED.lock().expect("file access readiness mutex poisoned").contains(&(session_id, application_id))
+}
+
+fn mark_ready(session_id: u64, application_id: Uuid) {
+    let mut verified = FILE_ACCESS_VERIFIED.lock().expect("file access readiness mutex poisoned");
+    if verified.len() >= FILE_ACCESS_VERIFIED_CAP {
+        verified.clear();
+    }
+    verified.insert((session_id, application_id));
+}
+
 pub(crate) async fn resolve_provider(
     app_repo: &ApplicationRepository,
     server_repo: &ServerRepository,
@@ -69,7 +106,7 @@ pub(crate) async fn resolve_provider(
         Some(server_id) => Some(connect_with_live_sftp(server_repo, sessions, server_id).await?),
     };
     if let Some(connection) = &connection {
-        if files::wants_dedicated_user(&detail.application, &detail.runtime_config) {
+        if files::wants_dedicated_user(&detail.application, &detail.runtime_config) && needs_readiness_check(connection.id(), application_id) {
             // Best-effort, proactive: Application Files must work for an
             // Application that opted into a dedicated account but has never
             // actually been started yet (`runtime::docker::start`/`restart`
@@ -84,11 +121,19 @@ pub(crate) async fn resolve_provider(
             // its own with a message about the file the user actually asked
             // for. But when it does, this is the reason, and without these
             // lines that reason exists nowhere.
-            if let Err(err) = crate::dedicated_user::ensure_provisioned(connection, &username).await {
+            let account = crate::dedicated_user::ensure_provisioned(connection, &username).await;
+            if let Err(err) = &account {
                 log::warn!("couldn't provision the dedicated account for application {application_id}, file access may fail: {err}");
             }
-            if let Err(err) = files::sudo_user::ensure_helper_installed(connection).await {
+            let helper = files::sudo_user::ensure_helper_installed(connection).await;
+            if let Err(err) = &helper {
                 log::warn!("couldn't install the file helper for application {application_id}, file access may fail: {err}");
+            }
+            // Only a clean pass is remembered. A failure has to be retried
+            // on the next operation, because the next operation is where
+            // somebody finds out it did not work.
+            if account.is_ok() && helper.is_ok() {
+                mark_ready(connection.id(), application_id);
             }
         }
     }
@@ -123,13 +168,53 @@ pub(crate) async fn resolve_provider(
 /// caching a wrong answer in a `OnceCell` nothing ever resets. The shared
 /// helper retries an operation that already failed; this one makes sure the
 /// operation never runs against a dead session in the first place.
+/// How long a successful probe is trusted for.
+///
+/// The probe exists to catch an SFTP channel that died on its own while the
+/// connection around it looks healthy - an idle timeout scoped tighter than
+/// the main session's, or an sshd recycling subsystem channels. Those are
+/// things that happen to an *idle* channel, so re-probing a channel that
+/// answered a second ago catches nothing and costs a round trip on every
+/// file operation. Walking through directories now probes once; coming back
+/// to the browser after a while probes again, which is when it can actually
+/// have died.
+const SFTP_PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+static SFTP_LAST_PROBE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u64, std::time::Instant>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn probe_is_still_fresh(session_id: u64) -> bool {
+    SFTP_LAST_PROBE
+        .lock()
+        .expect("sftp probe mutex poisoned")
+        .get(&session_id)
+        .is_some_and(|at| at.elapsed() < SFTP_PROBE_INTERVAL)
+}
+
+fn record_probe(session_id: u64) {
+    let mut probes = SFTP_LAST_PROBE.lock().expect("sftp probe mutex poisoned");
+    // Same bound, same reasoning, as `FILE_ACCESS_VERIFIED`.
+    if probes.len() >= FILE_ACCESS_VERIFIED_CAP {
+        probes.clear();
+    }
+    probes.insert(session_id, std::time::Instant::now());
+}
+
 async fn connect_with_live_sftp(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<Arc<SshSession>> {
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
+    if probe_is_still_fresh(connection.id()) {
+        return Ok(connection);
+    }
     if connection.canonicalize_path(".").await.is_ok() {
+        record_probe(connection.id());
         return Ok(connection);
     }
     sessions.remove(server_id).await;
-    get_or_connect(server_repo, sessions, server_id).await
+    let reconnected = get_or_connect(server_repo, sessions, server_id).await?;
+    // A fresh session's channel has just been negotiated; the next
+    // operation does not need to ask again.
+    record_probe(reconnected.id());
+    Ok(reconnected)
 }
 
 pub async fn list_directory(
@@ -653,5 +738,54 @@ mod tests {
             read_file_for_editor(&app_repo, &server_repo, &sessions, application_id, "plugins/MyPlugin.jar").await.unwrap(),
             b"jar-bytes"
         );
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+
+    /// A distinct session id per test, so tests sharing the process-wide
+    /// caches cannot see each other's entries.
+    fn fresh_session_id() -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1_000_000);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[test]
+    fn a_session_is_verified_once_and_then_remembered() {
+        let session = fresh_session_id();
+        let application = Uuid::new_v4();
+        assert!(needs_readiness_check(session, application));
+        mark_ready(session, application);
+        assert!(!needs_readiness_check(session, application));
+    }
+
+    // The account is per application: verifying one says nothing about the
+    // next one on the same Node.
+    #[test]
+    fn another_application_on_the_same_session_is_still_checked() {
+        let session = fresh_session_id();
+        let application = Uuid::new_v4();
+        mark_ready(session, application);
+        assert!(needs_readiness_check(session, Uuid::new_v4()));
+    }
+
+    // The reason this is keyed on the session rather than the server: a
+    // reconnect must re-verify, because the Node may have rebooted.
+    #[test]
+    fn a_reconnect_is_verified_again() {
+        let application = Uuid::new_v4();
+        let first = fresh_session_id();
+        mark_ready(first, application);
+        assert!(needs_readiness_check(fresh_session_id(), application));
+    }
+
+    #[test]
+    fn a_fresh_session_has_no_probe_to_trust() {
+        let session = fresh_session_id();
+        assert!(!probe_is_still_fresh(session));
+        record_probe(session);
+        assert!(probe_is_still_fresh(session));
     }
 }
