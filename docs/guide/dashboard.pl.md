@@ -8,6 +8,8 @@ order: 2
 
 Panel to jedno pytanie: czy coś wymaga mojej uwagi. Jeśli nie, wchodzisz tu na sekundę i wychodzisz.
 
+![Panel: stan zbiorczy, kafelki węzłów i alerty](images/dashboard.png)
+
 ## Nagłówek
 
 Zbiorczy stan całości: **Wszystko w porządku** albo **Wymaga uwagi**, i ile węzłów jest online. To wypadkowa alertów niżej, więc jeśli świeci ostrzegawczo, powód jest na tej samej stronie.

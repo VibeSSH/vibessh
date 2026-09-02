@@ -8,6 +8,8 @@ order: 2
 
 The dashboard answers one question: is anything asking for my attention. If nothing is, you come here for a second and leave.
 
+![The dashboard: overall state, Node tiles and alerts](images/dashboard.png)
+
 ## The header
 
 The overall state: **All good** or **Needs attention**, and how many Nodes are online. It is derived from the alerts below, so when it reads as a warning the reason is on the same page.

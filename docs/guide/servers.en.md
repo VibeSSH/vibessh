@@ -8,6 +8,8 @@ order: 1
 
 A server - also called a Node - is a machine VibeSSH manages. Everything else here (applications, files, the terminal, monitoring) happens on one of them, so adding a server is the first thing you do.
 
+![The server list with addresses and status](images/servers-list.png)
+
 ## Two connection modes
 
 **Connect over SSH** - VibeSSH connects the way a person would: over SSH, with your credentials. Nothing is installed on the server. This is the default and the best supported mode.

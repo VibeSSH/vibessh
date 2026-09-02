@@ -8,6 +8,8 @@ order: 1
 
 Serwer, nazywany też węzłem, to maszyna, którą VibeSSH obsługuje. Wszystko inne — aplikacje, pliki, terminal, monitoring — dzieje się na którymś z nich, więc dodanie serwera jest pierwszą rzeczą, jaką się tutaj robi.
 
+![Lista serwerów z ich adresami i stanem](images/servers-list.png)
+
 ## Dwa tryby połączenia
 
 **Połącz przez SSH** — VibeSSH łączy się z serwerem tak, jak zrobiłby to człowiek: po SSH, Twoimi poświadczeniami. Na serwerze nie instaluje się nic. To domyślny i najlepiej wspierany tryb.

@@ -24,6 +24,8 @@ The one thing a blueprint holds onto is ports marked **Required**: they can be e
 
 The rest of this guide is mostly about Docker, because Docker is what concepts like recreating a container and published ports come from.
 
+![An application's Overview: the console with severity-coloured lines, and resource usage beside it](images/app-overview.png)
+
 ## Operations
 
 - **Start** - no confirmation. Starting risks nothing and undoes itself with one click.

@@ -24,6 +24,8 @@ Jedyne, czego blueprint pilnuje na stałe, to porty oznaczone jako **Wymagane**:
 
 Reszta poradnika opisuje przede wszystkim Dockera, bo to on stoi za pojęciami takimi jak odtworzenie kontenera czy publikowane porty.
 
+![Przegląd aplikacji: konsola z pokolorowanymi logami i zużycie zasobów obok](images/app-overview.png)
+
 ## Operacje
 
 - **Uruchom** — bez pytania o potwierdzenie. Start niczym nie ryzykuje i cofa się jednym kliknięciem.

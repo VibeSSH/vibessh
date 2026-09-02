@@ -19,12 +19,34 @@ import "./i18n";
 // own onContextMenu handler, entirely separate from this native fallback.
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <HashRouter>
-        <App />
-      </HashRouter>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+function render() {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
+
+/**
+ * Sample data for the guide's screenshots, and for looking at a screen
+ * without a Node to hand.
+ *
+ * Dynamically imported behind `import.meta.env.DEV`, so the module is not in
+ * a production build at all, and gated on `?fixtures=1`, so even in
+ * development it does nothing unless the URL asks. It has to run before the
+ * first render, because it is what defines the bridge every service call
+ * goes through.
+ */
+async function start() {
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("fixtures")) {
+    const { installDevFixtures } = await import("./devFixtures");
+    installDevFixtures();
+  }
+  render();
+}
+
+void start();

@@ -12,6 +12,8 @@ Vibe Network is a private network joining your Nodes over a WireGuard tunnel. It
 
 The sidebar -> **Vibe Network**. Three tabs: **Nodes**, **Endpoints**, **Private DNS**.
 
+![Two Nodes in the network, both with an active tunnel and a recent handshake](images/vibe-network-nodes.png)
+
 ## Joining a Node
 
 **Add node** takes a server from the list and does the whole job on it: installs `wireguard-tools` if they are missing, generates a key pair, allocates an address on the private network, and reconciles the configuration with every other member.

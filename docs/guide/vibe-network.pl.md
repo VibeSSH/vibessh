@@ -12,6 +12,8 @@ Vibe Network to prywatna sieć łącząca Twoje węzły tunelem WireGuard. Dzię
 
 Menu boczne → **Vibe Network**. Trzy zakładki: **Node'y**, **Endpointy**, **Prywatny DNS**.
 
+![Dwa węzły w sieci, oba z aktywnym tunelem i świeżym handshake'iem](images/vibe-network-nodes.png)
+
 ## Dołączanie węzła
 
 **Dodaj node** wybiera serwer z listy i robi na nim całą robotę: instaluje `wireguard-tools`, jeśli ich nie ma, generuje parę kluczy, przydziela adres w sieci prywatnej i uzgadnia konfigurację ze wszystkimi pozostałymi węzłami.
