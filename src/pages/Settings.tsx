@@ -23,7 +23,7 @@ import "./pages.css";
 import "./Settings.css";
 import "@/components/servers/forms.css";
 import "@/components/servers/AddServerModal.css";
-import { errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage } from "@/services/tauri";
 
 const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
   en: "settings.languageEnglish",
@@ -117,6 +117,10 @@ function AiCard() {
   const [apiKey, setApiKey] = useState("");
   const [quota, setQuota] = useState<AiQuota | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
+  // Why there is no allowance to show. "Not signed in" and "this backend
+  // offers no included model" are different problems with different fixes,
+  // and collapsing them into one message told a signed-in user to sign in.
+  const [quotaReason, setQuotaReason] = useState<"signIn" | "unavailable" | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -139,8 +143,14 @@ function AiCard() {
     // included model, both resolve to "no allowance to show" rather than
     // an error over a settings form the user may not even be here for.
     getAiQuota()
-      .then(setQuota)
-      .catch(() => setQuota(null));
+      .then((loaded) => {
+        setQuota(loaded);
+        setQuotaReason(null);
+      })
+      .catch((err) => {
+        setQuota(null);
+        setQuotaReason(err instanceof CommandError && err.code === "unauthorized" ? "signIn" : "unavailable");
+      });
   }, [t]);
 
   async function handleSubmit(e: FormEvent) {
@@ -152,8 +162,14 @@ function AiCard() {
     try {
       const saved = await setAiConfig({ enabled, provider, baseUrl, model, apiKey });
       getAiQuota()
-        .then(setQuota)
-        .catch(() => setQuota(null));
+        .then((loaded) => {
+          setQuota(loaded);
+          setQuotaReason(null);
+        })
+        .catch((err) => {
+          setQuota(null);
+          setQuotaReason(err instanceof CommandError && err.code === "unauthorized" ? "signIn" : "unavailable");
+        });
       setConfig(saved);
       // Cleared as soon as it has been handed over, so the only copy is the
       // one in the OS keyring - not also sitting in React state for the rest
@@ -209,7 +225,9 @@ function AiCard() {
                     <p className="settings-muted">
                       {quota
                         ? t("settings.aiQuotaRemaining", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })
-                        : t("settings.aiQuotaUnknown")}
+                        : quotaReason === "signIn"
+                          ? t("settings.aiQuotaSignIn")
+                          : t("settings.aiQuotaUnavailable")}
                     </p>
                   </div>
                   {quota && (

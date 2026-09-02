@@ -1201,7 +1201,8 @@
     "aiProviderHosted": "Wliczony w VibeSSH",
     "aiProviderHostedNote": "Korzysta z modelu udostępnianego przez VibeSSH, na kluczu VibeSSH. Wymaga zalogowania na konto VibeSSH i ma dzienny limit pytań wspólny dla całego konta.",
     "aiQuotaRemaining": "Zostało {{remaining}} z {{limit}} pytań na dziś. Limit odnawia się o północy UTC.",
-    "aiQuotaUnknown": "Zaloguj się na konto VibeSSH, aby korzystać z wliczonego modelu."
+    "aiQuotaSignIn": "Zaloguj się na konto VibeSSH, aby korzystać z wliczonego modelu.",
+    "aiQuotaUnavailable": "Ten backend VibeSSH nie udostępnia wliczonego modelu. Zapytaj osobę, która go prowadzi, albo przełącz się wyżej na własny klucz API."
   },
   "vibeNetwork": {
     "title": "Vibe Network",

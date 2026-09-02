@@ -1201,7 +1201,8 @@
     "aiProviderHosted": "Included with VibeSSH",
     "aiProviderHostedNote": "Uses the model VibeSSH provides, on VibeSSH's key. Requires being signed in to a VibeSSH account, and has a daily question limit shared across your account.",
     "aiQuotaRemaining": "{{remaining}} of {{limit}} questions left today. Resets at midnight UTC.",
-    "aiQuotaUnknown": "Sign in to a VibeSSH account to use the included model."
+    "aiQuotaSignIn": "Sign in to a VibeSSH account to use the included model.",
+    "aiQuotaUnavailable": "This VibeSSH backend does not offer an included model. Ask whoever runs it, or switch to your own API key above."
   },
   "vibeNetwork": {
     "title": "Vibe Network",
