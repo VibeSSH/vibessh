@@ -65,6 +65,38 @@ export function vibesshEditorTheme(): Extension[] {
       },
       ".cm-selectionMatch": { backgroundColor: "var(--surface-2)" },
       ".cm-panels": { backgroundColor: "var(--surface-0)", color: "var(--text-primary)" },
+      // The search panel is the one part of the editor made of form
+      // controls, and unstyled they are the browser's own: white boxes and
+      // grey buttons on a dark editor. These give them the same surfaces the
+      // rest of the app uses.
+      ".cm-panel.cm-search": {
+        borderBottom: "1px solid var(--border)",
+        padding: "8px 10px",
+      },
+      ".cm-panel.cm-search input, .cm-panel.cm-search button": {
+        backgroundColor: "var(--surface-1)",
+        border: "1px solid var(--border)",
+        borderRadius: "6px",
+        color: "var(--text-primary)",
+        font: "inherit",
+        padding: "3px 8px",
+      },
+      ".cm-panel.cm-search input:focus-visible, .cm-panel.cm-search button:focus-visible": {
+        outline: "2px solid var(--accent)",
+        outlineOffset: "1px",
+      },
+      ".cm-panel.cm-search button:hover": { backgroundColor: "var(--surface-2)" },
+      ".cm-panel.cm-search button": { cursor: "pointer" },
+      // The modifier toggles are checkboxes with their label as loose text;
+      // without this the label sits away from its own box.
+      ".cm-panel.cm-search label": { color: "var(--text-secondary)", marginLeft: "8px" },
+      ".cm-panel.cm-search label input": { marginRight: "4px", padding: "0" },
+      ".cm-panel.cm-search [name=close]": {
+        background: "none",
+        border: "none",
+        color: "var(--text-secondary)",
+        fontSize: "16px",
+      },
       ".cm-searchMatch": {
         backgroundColor: `${TERMINAL_COLORS.yellow}33`,
         outline: `1px solid ${TERMINAL_COLORS.yellow}`,

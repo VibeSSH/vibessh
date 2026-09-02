@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { openSearchPanel } from "@codemirror/search";
+import type { EditorView } from "@codemirror/view";
+import { searchExtensions, searchPhrases } from "@/components/servers/editorSearch";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
@@ -41,6 +44,11 @@ interface ApplicationFileEditorPanelProps {
 /** A full-tab editor view, same "swap the whole content area" shape as the older Node Files editor (FileEditorPanel.tsx) - this is a separate component (not a generalization of that one) because it needs real dirty-state tracking, Ctrl+S, a close-confirmation, a backup-before-save toggle, and Version History, none of which the simpler Node Files editor needs. Reuses the same CodeMirror theme/language wiring and CSS directly rather than re-deriving them. */
 export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSaved }: ApplicationFileEditorPanelProps) {
   const { t } = useTranslation();
+  // The live editor, so the header button can reach the same panel
+  // Ctrl+F opens. Null until CodeMirror has mounted, which is why the
+  // button is disabled rather than absent before then - a control that
+  // appears late is harder to find than one that is briefly inert.
+  const editorViewRef = useRef<EditorView | null>(null);
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
@@ -50,7 +58,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   const [backupBeforeSave, setBackupBeforeSave] = useState(readBackupPreference);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name)], [entry.name]);
+  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
   const dirty = content !== savedContent;
 
   const load = useCallback(() => {
@@ -129,6 +137,13 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
           {!tooLarge && (
             <Checkbox checked={backupBeforeSave} onChange={toggleBackupPreference} label={t("applicationFileEditor.backupBeforeSave")} />
           )}
+          <IconButton
+            icon="search"
+            size="sm"
+            onClick={() => editorViewRef.current && openSearchPanel(editorViewRef.current)}
+            title={t("applicationFileEditor.searchAria")}
+            disabled={loading || tooLarge}
+          />
           <IconButton icon="history" size="sm" onClick={() => setHistoryOpen(true)} title={t("applicationFileEditor.historyAria")} />
           <IconButton icon="refresh-cw" size="sm" onClick={load} title={t("applicationFileEditor.reloadAria")} disabled={loading} />
           {!tooLarge && (
@@ -160,6 +175,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
             theme="none"
             extensions={extensions}
             onChange={setContent}
+            onCreateEditor={(view) => (editorViewRef.current = view)}
             basicSetup={{ foldGutter: true, highlightActiveLine: true }}
           />
         )}

@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { IconButton } from "@/components/ui/IconButton";
+import { openSearchPanel } from "@codemirror/search";
+import type { EditorView } from "@codemirror/view";
+import { searchExtensions, searchPhrases } from "@/components/servers/editorSearch";
 import CodeMirror from "@uiw/react-codemirror";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -29,12 +33,17 @@ interface FileEditorPanelProps {
  */
 export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelProps) {
   const { t } = useTranslation();
+  // The live editor, so the header button can reach the same panel
+  // Ctrl+F opens. Null until CodeMirror has mounted, which is why the
+  // button is disabled rather than absent before then - a control that
+  // appears late is harder to find than one that is briefly inert.
+  const editorViewRef = useRef<EditorView | null>(null);
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(!tooLarge);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name)], [entry.name]);
+  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
 
   useEffect(() => {
     if (tooLarge) return;
@@ -69,6 +78,13 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
         </button>
         <div className="file-editor-tab-actions">
           {error && <span className="file-editor-tab-error">{error}</span>}
+          <IconButton
+            icon="search"
+            size="sm"
+            onClick={() => editorViewRef.current && openSearchPanel(editorViewRef.current)}
+            title={t("fileEditor.searchAria")}
+            disabled={loading || tooLarge}
+          />
           {!tooLarge && (
             <Button onClick={handleSave} disabled={loading || saving}>
               {saving ? t("fileEditor.saving") : t("fileEditor.save")}
@@ -98,6 +114,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
             theme="none"
             extensions={extensions}
             onChange={setContent}
+            onCreateEditor={(view) => (editorViewRef.current = view)}
             basicSetup={{ foldGutter: true, highlightActiveLine: true }}
           />
         )}
