@@ -132,7 +132,39 @@ export function vibesshEditorTheme(): Extension[] {
         gap: "5px",
         whiteSpace: "nowrap",
       },
-      ".cm-panel.cm-search label input": { accentColor: "var(--accent)", margin: "0" },
+      // The modifier toggles are bare `<input type="checkbox">` with no
+      // wrapper to hang a box on, so unlike the app's own Checkbox they have
+      // to be drawn on the input itself. `accent-color` alone was not
+      // enough: it tints the checked state and leaves the unchecked box as
+      // the platform's own light grey square, which is what still stood out
+      // against the dark panel. Sized, rounded and coloured to match
+      // Checkbox.css so the two read as one control.
+      ".cm-panel.cm-search label input[type=checkbox]": {
+        appearance: "none",
+        background: "var(--surface-1)",
+        border: "1.5px solid var(--border-hover)",
+        borderRadius: "5px",
+        cursor: "pointer",
+        height: "16px",
+        margin: "0",
+        transition: "background-color 150ms ease, border-color 150ms ease",
+        width: "16px",
+      },
+      ".cm-panel.cm-search label input[type=checkbox]:hover": { borderColor: "var(--accent)" },
+      ".cm-panel.cm-search label input[type=checkbox]:checked": {
+        background: "var(--accent)",
+        borderColor: "var(--accent)",
+        // The tick has to be drawn here rather than by an icon component,
+        // and a data URI cannot read a custom property - this is
+        // `--accent-contrast` written out.
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%2304141c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='m4 8.5 2.5 2.5L12 5.5'/%3E%3C/svg%3E\")",
+        backgroundSize: "100% 100%",
+      },
+      ".cm-panel.cm-search label input[type=checkbox]:focus-visible": {
+        outline: "2px solid var(--accent)",
+        outlineOffset: "2px",
+      },
       // Pushed to the far end and drawn as a ghost control: it closes the
       // panel, which is the one thing in here nobody is aiming for.
       ".cm-panel.cm-search [name=close]": {
