@@ -1424,5 +1424,31 @@
     "dnsDeleteError": "Nie udało się usunąć aliasu.",
     "dnsSyncOk": "Zsynchronizowano DNS na wszystkich {{count}} node'ach.",
     "dnsSyncPartial": "Synchronizacja DNS nie powiodła się na {{failed}}/{{total}} node'ach."
+  },
+  "yamlError": {
+    "ALIAS_PROPS": "Alias (*nazwa) nie może mieć własnego tagu ani kotwicy.",
+    "BAD_ALIAS": "Ten alias wskazuje na kotwicę, której wyżej nie ma.",
+    "BAD_COLLECTION_TYPE": "Tego tagu nie można nadać liście ani mapie.",
+    "BAD_DIRECTIVE": "Ta dyrektywa % na początku pliku jest niepoprawna.",
+    "BAD_DQ_ESCAPE": "Niepoprawna sekwencja ucieczki w cudzysłowie.",
+    "BAD_INDENT": "Złe wcięcie: wszystkie klucze na tym poziomie muszą zaczynać się w tej samej kolumnie.",
+    "BAD_PROP_ORDER": "Tag albo kotwica muszą stać przed wartością, której dotyczą.",
+    "BAD_SCALAR_START": "Wartość nie może zaczynać się tym znakiem - ujmij ją w cudzysłów, jeśli ma być dosłowna.",
+    "BLOCK_AS_IMPLICIT_KEY": "Kluczem nie może być lista ani mapa rozpisana na kilka linii.",
+    "BLOCK_IN_FLOW": "Wcięta treść blokowa nie jest dozwolona wewnątrz [ ] ani { }.",
+    "DUPLICATE_KEY": "Ten klucz już istnieje na tym poziomie - po cichu wygrywa ten drugi.",
+    "IMPOSSIBLE": "Parser trafił w stan, który uznaje za niemożliwy - zgłoś ten plik.",
+    "KEY_OVER_1024_CHARS": "Ten klucz jest dłuższy niż dozwolone w YAML 1024 znaki.",
+    "MISSING_CHAR": "Brakuje tu znaku - zwykle dwukropka, cudzysłowu albo nawiasu zamykającego.",
+    "MULTILINE_IMPLICIT_KEY": "Klucz bez cudzysłowu nie może zajmować więcej niż jednej linii - ujmij go w cudzysłów albo domknij linię wyżej.",
+    "MULTIPLE_ANCHORS": "Jedna wartość może mieć tylko jedną kotwicę.",
+    "MULTIPLE_DOCS": "Ten plik zawiera więcej niż jeden dokument; czytany jest tylko pierwszy.",
+    "MULTIPLE_TAGS": "Jedna wartość może mieć tylko jeden tag.",
+    "NON_STRING_KEY": "Klucz musi tu być tekstem.",
+    "RESOURCE_EXHAUSTION": "Ten dokument rozwija się do większego, niż parser zbuduje - sprawdź, czy alias nie jest rekurencyjny.",
+    "TAB_AS_INDENT": "We wcięciu jest tabulator - YAML wcina się wyłącznie spacjami.",
+    "TAG_RESOLVE_FAILED": "Nieznany tag: parser nie wie, jaki to typ.",
+    "UNEXPECTED_TOKEN": "Nieoczekiwany znak - najpewniej linia wyżej jest niedokończona.",
+    "UNPARSEABLE": "Nie udało się odczytać tego pliku jako YAML."
   }
 }

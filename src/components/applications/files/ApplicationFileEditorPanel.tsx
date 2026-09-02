@@ -59,12 +59,12 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   const [backupBeforeSave, setBackupBeforeSave] = useState(readBackupPreference);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
+  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name, t), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
   const dirty = content !== savedContent;
   // A config file that does not parse is not a file worth writing: the
   // service reading it fails minutes later, somewhere else, with the
   // cause out of sight. Save is refused while that is true.
-  const blocking = useBlockingProblems(entry.name, content);
+  const blocking = useBlockingProblems(entry.name, content, t);
 
   const load = useCallback(() => {
     if (tooLarge) return;

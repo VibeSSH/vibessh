@@ -11,7 +11,41 @@ export interface YamlProblem {
   from: number;
   to: number;
   severity: "error" | "warning";
+  /** The parser's own sentence, in English. A fallback, not what is shown:
+   * see `yamlProblemMessage`. */
   message: string;
+  /** The parser's error code (`BAD_INDENT`, `DUPLICATE_KEY`, ...) - the
+   * stable thing to translate on, since the message wording is the library's
+   * and can change between releases. */
+  code: string;
+}
+
+/**
+ * The parser's sentence without the excerpt it appends.
+ *
+ * `parseDocument` prettifies its errors: after the sentence comes a blank
+ * line, the offending lines of the file and a caret under the column. That
+ * is useful in a terminal and noise in a one-line banner, where the file is
+ * already on screen underneath with the line marked.
+ */
+function firstSentence(message: string): string {
+  return message.split("\n")[0].replace(/:\s*$/, "");
+}
+
+/**
+ * A problem in the interface's language, falling back to the parser's.
+ *
+ * The messages are the `yaml` package's own and are written for somebody
+ * who knows the YAML spec: "All mapping items must start at the same
+ * column" is exactly right and is not what a person editing `spigot.yml`
+ * needs to read. Translating on the error code rather than the text keeps
+ * this working when the library rewords something, and an unknown code
+ * falls through to the English sentence - worse to read, still true.
+ */
+export function yamlProblemMessage(problem: YamlProblem, t: (key: string) => string): string {
+  const key = `yamlError.${problem.code}`;
+  const translated = t(key);
+  return translated === key || translated === "" ? problem.message : translated;
 }
 
 /**
@@ -46,15 +80,36 @@ export function yamlProblems(source: string): YamlProblem[] {
 
     const problems: YamlProblem[] = [];
     for (const error of document.errors) {
-      problems.push({ from: error.pos[0], to: Math.max(error.pos[1], error.pos[0] + 1), severity: "error", message: error.message });
+      problems.push({
+        from: error.pos[0],
+        to: Math.max(error.pos[1], error.pos[0] + 1),
+        severity: "error",
+        message: firstSentence(error.message),
+        code: error.code,
+      });
     }
     for (const warning of document.warnings) {
-      problems.push({ from: warning.pos[0], to: Math.max(warning.pos[1], warning.pos[0] + 1), severity: "warning", message: warning.message });
+      problems.push({
+        from: warning.pos[0],
+        to: Math.max(warning.pos[1], warning.pos[0] + 1),
+        severity: "warning",
+        message: firstSentence(warning.message),
+        code: warning.code,
+      });
     }
     return problems;
   } catch (err) {
     // The parser is not supposed to reach here; if it does, say so at the
     // start of the file rather than leaving the editor with no linter.
-    return [{ from: 0, to: 1, severity: "error", message: err instanceof Error ? err.message : "this file could not be parsed as YAML" }];
+    return [
+      {
+        from: 0,
+        to: 1,
+        severity: "error",
+        message: err instanceof Error ? firstSentence(err.message) : "this file could not be parsed as YAML",
+        // Not one of the parser's codes, so it has a translation of its own.
+        code: "UNPARSEABLE",
+      },
+    ];
   }
 }

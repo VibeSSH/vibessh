@@ -1423,5 +1423,31 @@
     "dnsDeleteError": "Couldn't remove the alias.",
     "dnsSyncOk": "Synced DNS to all {{count}} node(s).",
     "dnsSyncPartial": "DNS sync failed on {{failed}}/{{total}} node(s)."
+  },
+  "yamlError": {
+    "ALIAS_PROPS": "An alias (*name) can't carry a tag or an anchor of its own.",
+    "BAD_ALIAS": "This alias points at an anchor that isn't defined above it.",
+    "BAD_COLLECTION_TYPE": "This tag can't be applied to a list or a mapping.",
+    "BAD_DIRECTIVE": "This %-directive at the top of the file isn't valid.",
+    "BAD_DQ_ESCAPE": "Invalid escape sequence inside double quotes.",
+    "BAD_INDENT": "Wrong indentation: every key at this level has to start in the same column.",
+    "BAD_PROP_ORDER": "A tag or anchor has to come before the value it describes.",
+    "BAD_SCALAR_START": "A value can't start with this character - quote it if it's meant literally.",
+    "BLOCK_AS_IMPLICIT_KEY": "A key can't be a list or a mapping written across several lines.",
+    "BLOCK_IN_FLOW": "Indented block content isn't allowed inside [ ] or { }.",
+    "DUPLICATE_KEY": "This key already exists at this level - the second one silently wins.",
+    "IMPOSSIBLE": "The parser reached a state it considers impossible - please report this file.",
+    "KEY_OVER_1024_CHARS": "This key is longer than the 1024 characters YAML allows.",
+    "MISSING_CHAR": "A character is missing here - usually a colon, a quote or a closing bracket.",
+    "MULTILINE_IMPLICIT_KEY": "An unquoted key can't span more than one line - quote it, or close the line above.",
+    "MULTIPLE_ANCHORS": "One value can only carry one anchor.",
+    "MULTIPLE_DOCS": "This file holds more than one document; only the first one is read.",
+    "MULTIPLE_TAGS": "One value can only carry one tag.",
+    "NON_STRING_KEY": "A key here has to be text.",
+    "RESOURCE_EXHAUSTION": "This document expands to more than the parser will build - check for a recursive alias.",
+    "TAB_AS_INDENT": "There's a tab in the indentation - YAML only indents with spaces.",
+    "TAG_RESOLVE_FAILED": "Unknown tag: the parser doesn't know what type this is.",
+    "UNEXPECTED_TOKEN": "Unexpected character here - the line above is probably unfinished.",
+    "UNPARSEABLE": "This file couldn't be read as YAML."
   }
 }

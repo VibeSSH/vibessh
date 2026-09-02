@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { yamlProblems } from "./yamlLint";
+import { yamlProblems, yamlProblemMessage } from "./yamlLint";
 
 /**
  * A problem serious enough to stop a save, in terms the header can show.
@@ -40,11 +40,11 @@ function lineOf(source: string, offset: number): number {
  * minutes later, somewhere else, with the cause out of sight. That is the
  * one case where refusing is more helpful than obeying.
  */
-export function blockingProblems(fileName: string, source: string): BlockingProblem[] {
+export function blockingProblems(fileName: string, source: string, t: (key: string) => string): BlockingProblem[] {
   if (!isLinted(fileName)) return [];
   return yamlProblems(source)
     .filter((problem) => problem.severity === "error")
-    .map((problem) => ({ line: lineOf(source, problem.from), message: problem.message }));
+    .map((problem) => ({ line: lineOf(source, problem.from), message: yamlProblemMessage(problem, t) }));
 }
 
 /**
@@ -56,13 +56,13 @@ export function blockingProblems(fileName: string, source: string): BlockingProb
  * blocked mid-word: it is blocked once the file has settled into something
  * that does not parse.
  */
-export function useBlockingProblems(fileName: string, source: string): BlockingProblem[] {
+export function useBlockingProblems(fileName: string, source: string, t: (key: string) => string): BlockingProblem[] {
   const [problems, setProblems] = useState<BlockingProblem[]>([]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setProblems(blockingProblems(fileName, source)), 300);
+    const timer = window.setTimeout(() => setProblems(blockingProblems(fileName, source, t)), 300);
     return () => window.clearTimeout(timer);
-  }, [fileName, source]);
+  }, [fileName, source, t]);
 
   return problems;
 }

@@ -46,8 +46,8 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const [error, setError] = useState<string | null>(null);
   // See ApplicationFileEditorPanel: a file that does not parse is not a
   // file worth writing.
-  const blocking = useBlockingProblems(entry.name, content);
-  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
+  const blocking = useBlockingProblems(entry.name, content, t);
+  const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name, t), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
 
   useEffect(() => {
     if (tooLarge) return;

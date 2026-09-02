@@ -3,7 +3,7 @@ import { StreamLanguage } from "@codemirror/language";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { linter, lintGutter } from "@codemirror/lint";
-import { yamlProblems } from "./yamlLint";
+import { yamlProblems, yamlProblemMessage } from "./yamlLint";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
@@ -31,18 +31,19 @@ import { toml } from "@codemirror/legacy-modes/mode/toml";
  * a linter on a delay after typing stops rather than on every keystroke, so
  * this costs one parse per pause.
  */
-const yamlLinter = linter((view) =>
-  yamlProblems(view.state.doc.toString()).map((problem) => ({
-    from: Math.min(problem.from, view.state.doc.length),
-    // Clamped: a parser position past the end of the document - which a
-    // truncated file can produce - makes CodeMirror throw, and a linter
-    // that can take the editor down is worse than no linter.
-    to: Math.min(problem.to, view.state.doc.length),
-    severity: problem.severity,
-    message: problem.message,
-    source: "YAML",
-  })),
-);
+const yamlLinter = (t: (key: string) => string) =>
+  linter((view) =>
+    yamlProblems(view.state.doc.toString()).map((problem) => ({
+      from: Math.min(problem.from, view.state.doc.length),
+      // Clamped: a parser position past the end of the document - which a
+      // truncated file can produce - makes CodeMirror throw, and a linter
+      // that can take the editor down is worse than no linter.
+      to: Math.min(problem.to, view.state.doc.length),
+      severity: problem.severity,
+      message: yamlProblemMessage(problem, t),
+      source: "YAML",
+    })),
+  );
 
 /**
  * Picks a CodeMirror language extension from a remote file's name - by
@@ -50,8 +51,11 @@ const yamlLinter = linter((view) =>
  * (Dockerfile, nginx site configs, systemd units) that don't carry one.
  * Returns an empty array (plain text, still gets the editor's theme/line
  * numbers) for anything unrecognized rather than guessing.
+ *
+ * Takes the translator because the YAML linter's messages are read by a
+ * person, not by the editor - see `yamlProblemMessage`.
  */
-export function languageExtensionFor(fileName: string): Extension[] {
+export function languageExtensionFor(fileName: string, t: (key: string) => string): Extension[] {
   const lower = fileName.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
   const ext = base.includes(".") ? base.slice(base.lastIndexOf(".") + 1) : "";
@@ -64,7 +68,7 @@ export function languageExtensionFor(fileName: string): Extension[] {
       // `lintGutter` puts a marker beside the line number: the
       // underline only exists where the text is, and a config file is
       // usually longer than the window.
-      return [yaml(), yamlLinter, lintGutter()];
+      return [yaml(), yamlLinter(t), lintGutter()];
     case "js":
     case "mjs":
     case "cjs":
