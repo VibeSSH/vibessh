@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,6 +13,7 @@ import {
   listApplications,
   listApplicationLinks,
 } from "@/services/applicationService";
+import { queryKeys } from "@/services/queryKeys";
 import { errorMessage } from "@/services/tauri";
 import type { Application, ApplicationDetail } from "@/types/application";
 
@@ -37,38 +39,42 @@ interface ConnectionsCardProps {
  * not span hosts, and a systemd unit or bare process is not on one at all. */
 export function ConnectionsCard({ application }: ConnectionsCardProps) {
   const { t } = useTranslation();
-  const [links, setLinks] = useState<string[]>([]);
-  const [candidates, setCandidates] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [current, all] = await Promise.all([listApplicationLinks(application.id), listApplications()]);
-      setLinks(current);
-      setCandidates(
-        all.filter(
-          (other) =>
-            other.id !== application.id &&
-            other.runtimeType === "docker" &&
-            other.serverId !== null &&
-            other.serverId === application.serverId,
-        ),
-      );
-      setError(null);
-    } catch (err) {
-      setError(errorMessage(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [application.id, application.serverId, t]);
+  // Two queries rather than one `Promise.all`: the list of applications is
+  // the same answer every card on this page needs, so sharing its key means
+  // it is fetched once and reused, while this card's own links stay keyed to
+  // this application.
+  const [linksQuery, applicationsQuery] = useQueries({
+    queries: [
+      { queryKey: queryKeys.applicationLinks(application.id), queryFn: () => listApplicationLinks(application.id) },
+      { queryKey: queryKeys.applications(), queryFn: () => listApplications() },
+    ],
+  });
 
-  useEffect(() => {
-    void reload();
-  }, [reload]);
+  const links = useMemo(() => linksQuery.data ?? [], [linksQuery.data]);
+  const loading = linksQuery.isPending || applicationsQuery.isPending;
+  const loadError = linksQuery.error ?? applicationsQuery.error;
+  const error = actionError ?? (loadError ? errorMessage(loadError, t) : null);
+
+  const candidates = useMemo(
+    () =>
+      (applicationsQuery.data ?? []).filter(
+        (other: Application) =>
+          other.id !== application.id &&
+          other.runtimeType === "docker" &&
+          other.serverId !== null &&
+          other.serverId === application.serverId,
+      ),
+    [applicationsQuery.data, application.id, application.serverId],
+  );
+
+  async function reload() {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.applicationLinks(application.id) });
+  }
 
   const byId = useMemo(() => new Map(candidates.map((app) => [app.id, app])), [candidates]);
   const connected = useMemo(() => links.map((id) => byId.get(id)).filter((app): app is Application => app !== undefined), [links, byId]);
@@ -76,13 +82,13 @@ export function ConnectionsCard({ application }: ConnectionsCardProps) {
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
-    setError(null);
+    setActionError(null);
     try {
       await action();
       await reload();
       setSelected("");
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     } finally {
       setBusy(false);
     }

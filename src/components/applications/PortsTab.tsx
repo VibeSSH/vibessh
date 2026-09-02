@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
+import { queryKeys } from "@/services/queryKeys";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -70,9 +72,19 @@ function visibilityTone(visibility: PortVisibility): "neutral" | "success" | "wa
 /** Declared ports are documentation of intent, not a live guarantee - see applicationService.listApplicationPorts's own doc comment. A "required" port (blueprint-declared, none of the built-in blueprints set one up yet) can be edited but not removed here, same rule the backend itself enforces. */
 export function PortsTab({ applicationId, application }: PortsTabProps) {
   const { t } = useTranslation();
-  const [ports, setPorts] = useState<ApplicationPort[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // Cached, so coming back to this tab paints the list it had rather than a
+  // skeleton over a fresh round trip. `isPending` is only the first load:
+  // a background refresh leaves the rows on screen.
+  const {
+    data: ports = [],
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: queryKeys.applicationPorts(applicationId),
+    queryFn: () => listApplicationPorts(applicationId),
+  });
+  const error = loadError ? errorMessage(loadError, t) : null;
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingPort, setEditingPort] = useState<ApplicationPort | null>(null);
@@ -99,16 +111,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     }
   }
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    listApplicationPorts(applicationId)
-      .then(setPorts)
-      .catch((err) => setError(errorMessage(err, t)))
-      .finally(() => setLoading(false));
-  }, [applicationId, t]);
-
-  useEffect(reload, [reload]);
+  /** After a change the Node has already accepted - the next read is the
+   * authoritative one, and it happens in the background with the old rows
+   * still on screen. */
+  const reload = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.applicationPorts(applicationId) });
+  };
 
   async function handleConfirmDelete() {
     if (!deletingPort) return;

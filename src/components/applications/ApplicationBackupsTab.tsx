@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
@@ -48,9 +50,10 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
   const { t } = useTranslation();
   const isStopped = applicationStatus === "stopped" || applicationStatus === "unknown" || applicationStatus === "failed";
 
-  const [backups, setBackups] = useState<ApplicationBackup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // See DatabasesTab: the list's own failure and an action's failure are
+  // different sentences and must not overwrite each other.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -68,29 +71,33 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    listApplicationBackups(applicationId)
-      .then(setBackups)
-      .catch((err) => setError(errorMessage(err, t)))
-      .finally(() => setLoading(false));
-  }, [applicationId, t]);
+  const {
+    data: backups = [],
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: queryKeys.applicationBackups(applicationId),
+    queryFn: () => listApplicationBackups(applicationId),
+  });
 
-  useEffect(reload, [reload]);
+  const error = actionError ?? (loadError ? errorMessage(loadError, t) : null);
+
+  const reload = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.applicationBackups(applicationId) });
+  };
   useEffect(() => {
     getApplicationBackupSchedule(applicationId).then(setSchedule).catch(() => {});
   }, [applicationId]);
 
   async function handleCreate() {
     setCreating(true);
-    setError(null);
+    setActionError(null);
     try {
       await createApplicationBackup(applicationId);
       toastSuccess(t("applicationBackups.createdToast"));
       reload();
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     } finally {
       setCreating(false);
     }
@@ -104,7 +111,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
       await downloadApplicationFile(applicationId, backupPath(backup), localDest, crypto.randomUUID());
       toastSuccess(t("applicationBackups.downloadedToast"));
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     } finally {
       setDownloadingId(null);
     }

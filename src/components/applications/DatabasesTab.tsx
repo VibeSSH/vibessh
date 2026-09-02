@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/services/queryKeys";
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-shell";
@@ -31,10 +33,11 @@ interface DatabasesTabProps {
 /** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, per-row regenerate/remove, and "Open in phpMyAdmin" (only shown once a host has one linked - see DatabaseHosts.tsx) which opens the deployed instance in the system browser with the database name pre-filled. Login itself still happens in phpMyAdmin's own form - real SSO would need phpMyAdmin's `signon` auth mode configured against something, out of scope for this first pass (Section 12.2). */
 export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const { t } = useTranslation();
-  const [databases, setDatabases] = useState<ApplicationDatabase[]>([]);
-  const [hosts, setHosts] = useState<DatabaseHost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // The load and the actions report separately: a failed "create database"
+  // must not read as "this list could not be loaded", and clearing one must
+  // not clear the other.
+  const [actionError, setActionError] = useState<string | null>(null);
   /** Set when a database operation failed only because the node has no
    * database server yet. Installing one is a real change to the machine, so
    * the offer is a button rather than something that already happened. */
@@ -59,25 +62,29 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingDatabase(null), { labelledBy: "databasestab-dialog-title-2" });
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    listApplicationDatabases(applicationId)
-      .then(setDatabases)
-      .catch((err) => setError(errorMessage(err, t)))
-      .finally(() => setLoading(false));
-  }, [applicationId, t]);
+  const {
+    data: databases = [],
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: queryKeys.applicationDatabases(applicationId),
+    queryFn: () => listApplicationDatabases(applicationId),
+  });
 
-  useEffect(reload, [reload]);
+  // Database hosts belong to the installation, not to this application, so
+  // they are keyed on their own and shared by every tab that asks.
+  const { data: hosts = [] } = useQuery({ queryKey: ["databaseHosts"], queryFn: listDatabaseHosts });
 
-  useEffect(() => {
-    listDatabaseHosts()
-      .then((loaded) => {
-        setHosts(loaded);
-        setDatabaseHostId((current) => current || loaded[0]?.id || "");
-      })
-      .catch(() => setHosts([]));
-  }, []);
+  const error = actionError ?? (loadError ? errorMessage(loadError, t) : null);
+  // The first host is the default choice until the user picks one. Derived
+  // rather than written into state on load: the hosts now arrive from the
+  // cache, which can hand them over on the very first render, and a state
+  // write in that path is a render loop waiting to happen.
+  const effectiveHostId = databaseHostId || hosts[0]?.id || "";
+
+  const reload = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.applicationDatabases(applicationId) });
+  };
 
   function hostFor(databaseHostId: string): DatabaseHost | undefined {
     return hosts.find((h) => h.id === databaseHostId);
@@ -85,18 +92,18 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!databaseHostId) return;
+    if (!effectiveHostId) return;
     setCreating(true);
-    setError(null);
+    setActionError(null);
     try {
-      await createApplicationDatabase(applicationId, databaseHostId, purpose.trim() || undefined);
+      await createApplicationDatabase(applicationId, effectiveHostId, purpose.trim() || undefined);
       setPurpose("");
       setInstallHostId(null);
       reload();
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
       if (err instanceof CommandError && err.code === "database_server_unavailable") {
-        setInstallHostId(databaseHostId);
+        setInstallHostId(effectiveHostId);
       }
     } finally {
       setCreating(false);
@@ -106,7 +113,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   async function handleInstallServer() {
     if (!installHostId) return;
     setInstalling(true);
-    setError(null);
+    setActionError(null);
     try {
       await installDatabaseServer(installHostId);
       setInstallHostId(null);
@@ -114,7 +121,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       // silently performing the original request on the back of it is the
       // habit this whole change exists to break.
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     } finally {
       setInstalling(false);
     }
@@ -260,7 +267,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       ) : (
         <form className="databases-tab-create-form" onSubmit={handleCreate}>
           <div className="form-row">
-            <select className="form-input" value={databaseHostId} onChange={(e) => setDatabaseHostId(e.target.value)}>
+            <select className="form-input" value={effectiveHostId} onChange={(e) => setDatabaseHostId(e.target.value)}>
               {hosts.map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.name}
@@ -273,7 +280,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
             />
-            <Button type="submit" disabled={creating || !databaseHostId}>
+            <Button type="submit" disabled={creating || !effectiveHostId}>
               <Icon name="plus" size={14} />
               {creating ? t("common.loading") : t("databasesTab.newDatabase")}
             </Button>

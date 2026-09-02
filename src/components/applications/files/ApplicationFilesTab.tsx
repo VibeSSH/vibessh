@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
@@ -76,9 +78,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
 
   const [path, setPath] = useState(ROOT_PATH);
   const [filter, setFilter] = useState("");
-  const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(null);
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ entry: RemoteFileEntry; mode: "rename" | "move" | "copy" } | null>(null);
@@ -91,6 +91,51 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntry(null), { labelledBy: "applicationfilestab-dialog-title-1" });
   const contextMenu = useContextMenu();
 
+  const addTransfer = useFileTransferStore((s) => s.addTransfer);
+  const updateProgress = useFileTransferStore((s) => s.updateProgress);
+  const markDone = useFileTransferStore((s) => s.markDone);
+  const markError = useFileTransferStore((s) => s.markError);
+
+  const queryClient = useQueryClient();
+
+  // One cached answer per directory. Walking back up a tree you have already
+  // walked down is now instant - the listing is on screen before the Node is
+  // asked whether anything changed.
+  const {
+    data: entries = [],
+    isPending: loading,
+    error: loadError,
+  } = useQuery({
+    queryKey: queryKeys.applicationFiles(applicationId, path),
+    queryFn: () => listApplicationFiles(applicationId, path),
+  });
+
+  const error = actionError ?? (loadError ? errorMessage(loadError, t) : null);
+
+  /**
+   * Navigate, or refresh where we already are.
+   *
+   * Changing the path is enough to change what is displayed, because the
+   * path is part of the query key. Asking for the directory already shown
+   * means somebody wants it read again, which is an invalidation.
+   *
+   * A directory that fails to list now leaves you in it, with the error and
+   * an empty list, rather than silently keeping you in the previous one -
+   * the breadcrumb and the message then agree about which directory could
+   * not be read.
+   */
+  const load = useCallback(
+    (targetPath: string) => {
+      setActionError(null);
+      if (targetPath === path) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.applicationFiles(applicationId, targetPath) });
+        return;
+      }
+      setPath(targetPath);
+    },
+    [applicationId, path, queryClient],
+  );
+
   // Same reasoning as the Node Files page: a directory can hold tens of
   // thousands of entries and rendering a row each locks the window up, but
   // a bare cap would make distant entries unreachable. Cap plus filter.
@@ -102,29 +147,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
   const truncated = matchingEntries.length > visibleEntries.length;
 
-  const addTransfer = useFileTransferStore((s) => s.addTransfer);
-  const updateProgress = useFileTransferStore((s) => s.updateProgress);
-  const markDone = useFileTransferStore((s) => s.markDone);
-  const markError = useFileTransferStore((s) => s.markError);
-
-  const load = useCallback(
-    (targetPath: string) => {
-      setLoading(true);
-      setError(null);
-      listApplicationFiles(applicationId, targetPath)
-        .then((loaded) => {
-          setEntries(loaded);
-          setPath(targetPath);
-        })
-        .catch((err) => setError(errorMessage(err, t)))
-        .finally(() => setLoading(false));
-    },
-    [applicationId, t],
-  );
-
+  // Back to the top when the application changes - the previous one's tree
+  // says nothing about this one.
   useEffect(() => {
-    load(ROOT_PATH);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPath(ROOT_PATH);
   }, [applicationId]);
 
   const segments = path === ROOT_PATH ? [] : path.split("/").filter(Boolean);
@@ -241,25 +267,25 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
 
   async function handleExtract(entry: RemoteFileEntry) {
     setExtractingPath(entry.path);
-    setError(null);
+    setActionError(null);
     try {
       const count = await extractApplicationArchive(applicationId, entry.path, path);
       toastSuccess(t("applicationFilesTab.extractedToast", { count }));
       load(path);
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     } finally {
       setExtractingPath(null);
     }
   }
 
   async function openQuickFile(quickFile: KnownFile) {
-    setError(null);
+    setActionError(null);
     try {
       const entry = await getApplicationFileMetadata(applicationId, quickFile.path);
       setOpenFile(entry);
     } catch (err) {
-      setError(errorMessage(err, t));
+      setActionError(errorMessage(err, t));
     }
   }
 
