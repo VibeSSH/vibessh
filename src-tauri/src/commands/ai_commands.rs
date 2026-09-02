@@ -1,10 +1,19 @@
 //! Tauri command bridge for the Vibe AI assistant.
 //!
-//! Each turn gets its own event triple - `ai://{turn_id}/delta`,
-//! `ai://{turn_id}/done` and `ai://{turn_id}/error` - rather than one shared
-//! name, the same shape `terminal_commands` uses and for the same reason:
-//! the panel can be left mid-answer while another turn is started elsewhere,
-//! and two answers interleaving into one event name would be unreadable.
+//! Each turn gets its own set of events - `ai://{turn_id}/delta`,
+//! `ai://{turn_id}/done`, `ai://{turn_id}/error` and `ai://{turn_id}/phase` -
+//! rather than one shared name, the same shape `terminal_commands` uses and
+//! for the same reason: the panel can be left mid-answer while another turn
+//! is started elsewhere, and two answers interleaving into one event name
+//! would be unreadable.
+//!
+//! `phase` exists because a Diagnose turn does two very different things
+//! before a single token arrives: it reads the Node over SSH, then it waits
+//! on a model. Both used to render as "Thinking...", so a slow or
+//! unresponsive Node was indistinguishable from a slow model - and the first
+//! time that happened in practice, it was read as the model being slow when
+//! the request had not reached one. The probes are bounded now
+//! (`ai::context::PROBE_TIMEOUT`); this says which of the two is happening.
 //!
 //! **The provider is only ever reached from here inward.** The frontend can
 //! ask for a turn; it cannot supply an endpoint, a key, a system prompt or a
@@ -110,6 +119,7 @@ pub async fn send_ai_turn(app: AppHandle, turns: State<'_, AiTurnManager>, turn_
     let dir = config_dir(&app)?;
     let (config, provider) = services::resolve_ai_provider(&dir)?;
 
+    let phase_event = format!("ai://{turn_id}/phase");
     let delta_event = format!("ai://{turn_id}/delta");
     let done_event = format!("ai://{turn_id}/done");
     let error_event = format!("ai://{turn_id}/error");
@@ -118,6 +128,10 @@ pub async fn send_ai_turn(app: AppHandle, turns: State<'_, AiTurnManager>, turn_
         let app = app.clone();
         let turn_id = turn_id.clone();
         async move {
+            // Announced before the first SSH round trip rather than after, so
+            // the panel is never silently in a phase it has not been told
+            // about.
+            emit(&app, &phase_event, "collecting");
             let context = services::build_ai_context(
                 &app.state::<ApplicationRepository>(),
                 &app.state::<ServerRepository>(),
@@ -130,6 +144,8 @@ pub async fn send_ai_turn(app: AppHandle, turns: State<'_, AiTurnManager>, turn_
                 request.context,
             )
             .await;
+
+            emit(&app, &phase_event, "waiting");
 
             let knowledge = app.state::<KeywordKnowledgeService>();
             let sink = {

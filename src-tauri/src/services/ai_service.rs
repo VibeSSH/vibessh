@@ -25,6 +25,7 @@ use crate::ai::knowledge::KnowledgeSource;
 use crate::ai::openai_compatible::OpenAiCompatibleProvider;
 use crate::ai::prompt;
 use crate::ai::provider::{AiProvider, AiRequest};
+use crate::ai::skills;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     AiConfig, AiConfigView, AiContextBundle, AiContextRef, AiMode, AiProviderKind, AiRole, AiTurnRequest, SetAiConfigInput,
@@ -51,6 +52,16 @@ const TEMPERATURE: f32 = 0.2;
 
 /// How many documentation passages to attach.
 const KNOWLEDGE_SNIPPETS: usize = 3;
+
+/// How many diagnostic playbooks to attach.
+///
+/// Two, not five. The failure this feature had on its first real use was an
+/// answer that surveyed every possible cause instead of naming the one the
+/// log identified; handing the model five playbooks would invite exactly
+/// that, in a more authoritative voice. Two leaves room for a genuine
+/// ambiguity - a crash that is either memory or a plugin - without inviting
+/// a list.
+const PLAYBOOKS: usize = 2;
 
 /// The current settings, plus whether a key is stored.
 pub fn ai_config_view(config_dir: &Path) -> AppResult<AiConfigView> {
@@ -157,6 +168,20 @@ pub async fn build_ai_context(
     Some(builder.build(reference).await)
 }
 
+/// Pulls the blueprint id back out of the collected summary.
+///
+/// The context is built as text on purpose - it is what the model reads and
+/// what the user previews - so this reads the one line it needs rather than
+/// threading a second, structured copy of the same fact through every layer
+/// that would then have to be kept in step with it.
+fn blueprint_from_summary(summary: &str) -> Option<String> {
+    summary
+        .lines()
+        .find_map(|line| line.strip_prefix("Blueprint: "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .map(str::to_string)
+}
+
 /// Assembles and runs one turn.
 ///
 /// Takes the provider and the knowledge source as trait objects rather than
@@ -185,7 +210,16 @@ pub async fn run_turn(
     let snippets: Vec<String> =
         knowledge.search(last_user_message, KNOWLEDGE_SNIPPETS).iter().map(|snippet| snippet.to_prompt_text()).collect();
 
-    let messages = prompt::build_messages(context, &snippets, &request.messages);
+    // Matched against the collected snapshot, which is where the logs are -
+    // a playbook fires on a signature in the evidence, not on the topic. The
+    // blueprint is read out of the summary rather than passed separately so
+    // that `Ask` turns, which have no context at all, cannot accidentally
+    // pull in blueprint-scoped advice about an Application nobody mentioned.
+    let summary = context.map(|bundle| bundle.summary.as_str());
+    let blueprint = summary.and_then(blueprint_from_summary);
+    let playbooks = skills::match_skills(summary, last_user_message, blueprint.as_deref(), PLAYBOOKS);
+
+    let messages = prompt::build_messages(context, &playbooks, &snippets, &request.messages);
     let ai_request =
         AiRequest { model: model.to_string(), messages, max_tokens: Some(MAX_ANSWER_TOKENS), temperature: Some(TEMPERATURE) };
 
@@ -240,6 +274,12 @@ mod tests {
             }
         }
     }
+
+    /// The section header, not the bare word: the system prompt itself
+    /// explains what to do when a PLAYBOOKS section is present, so searching
+    /// the whole request for the word matches even when nothing was
+    /// attached. That false pass is exactly what this caught.
+    const PLAYBOOK_HEADING: &str = "PLAYBOOKS (a known cause";
 
     struct NoKnowledge;
 
@@ -321,6 +361,63 @@ mod tests {
         let answer = run_turn(&provider, &NoKnowledge, "m", None, &ask("hi"), &sink).await.unwrap();
         assert_eq!(answer, "hello");
         assert_eq!(*seen.lock().unwrap(), vec!["hello".to_string()]);
+    }
+
+    /// The regression this whole `skills` module exists for. The first real
+    /// Diagnose turn produced a long answer surveying every cause of a
+    /// Minecraft server that will not start, while the log in front of it
+    /// said `level.dat`. The playbook has to reach the request, and it has to
+    /// be selected from the log rather than from the question.
+    #[tokio::test]
+    async fn a_corrupt_world_in_the_logs_attaches_its_playbook() {
+        let provider = MockProvider::answering("ok");
+        let bundle = AiContextBundle {
+            summary: "Application
+Name: survival
+Blueprint: paper (version 1)
+
+Recent log lines
+[12:00:01] [Server thread/ERROR]: Failed to load level.dat"
+                .to_string(),
+            sources: vec!["Application".to_string(), "Logs".to_string()],
+            notes: vec![],
+        };
+        run_turn(&provider, &NoKnowledge, "m", Some(&bundle), &ask("nie dziala"), &no_deltas()).await.unwrap();
+
+        let joined: String = provider.last_request().messages.iter().map(|m| m.content.clone()).collect();
+        assert!(joined.contains(PLAYBOOK_HEADING));
+        assert!(joined.contains("level.dat_old"), "the world-corruption playbook should have been attached");
+    }
+
+    /// The mirror image, and the more important half: an Application that is
+    /// simply running must not drag in a playbook. Attaching one would push
+    /// the model toward diagnosing a problem that is not there.
+    #[tokio::test]
+    async fn a_healthy_application_attaches_no_playbook() {
+        let provider = MockProvider::answering("ok");
+        let bundle = AiContextBundle {
+            summary: "Application
+Name: survival
+Blueprint: paper (version 1)
+Stored status: running".to_string(),
+            sources: vec!["Application".to_string()],
+            notes: vec![],
+        };
+        run_turn(&provider, &NoKnowledge, "m", Some(&bundle), &ask("how do I add a plugin?"), &no_deltas()).await.unwrap();
+
+        let joined: String = provider.last_request().messages.iter().map(|m| m.content.clone()).collect();
+        assert!(!joined.contains(PLAYBOOK_HEADING), "a running Application should not have had a playbook attached");
+    }
+
+    #[test]
+    fn the_blueprint_is_read_back_out_of_the_summary() {
+        assert_eq!(blueprint_from_summary("Name: x
+Blueprint: paper (version 1)
+").as_deref(), Some("paper"));
+        assert_eq!(blueprint_from_summary("Name: x
+Blueprint: nodejs-bot (version 2)").as_deref(), Some("nodejs-bot"));
+        assert_eq!(blueprint_from_summary("Node
+Name: vps"), None);
     }
 
     #[tokio::test]

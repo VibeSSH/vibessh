@@ -1364,6 +1364,7 @@
     "clear": "Clear",
     "askAction": "Ask Vibe AI",
     "seedApplicationFailed": "The Application “{{name}}” has failed. What is wrong, and how do I fix it?",
-    "disclaimer": "Answers come from the model you configured and can be wrong. Vibe AI can read your setup but never changes anything."
+    "disclaimer": "Answers come from the model you configured and can be wrong. Vibe AI can read your setup but never changes anything.",
+    "collecting": "Reading the Node…"
   }
 }

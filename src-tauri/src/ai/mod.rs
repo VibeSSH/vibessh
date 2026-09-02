@@ -16,3 +16,4 @@ pub mod openai_compatible;
 pub mod prompt;
 pub mod provider;
 pub mod sanitizer;
+pub mod skills;

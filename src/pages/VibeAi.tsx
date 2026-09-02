@@ -31,7 +31,7 @@ const MODES: AiMode[] = ["ask", "diagnose"];
  */
 export function VibeAi() {
   const { t } = useTranslation();
-  const { messages, mode, context, contextLabel, turnId, error, setMode, clearConversation, send, stop, consumePendingQuestion } =
+  const { messages, mode, context, contextLabel, turnId, error, phase, setMode, clearConversation, send, stop, consumePendingQuestion } =
     useAiStore();
 
   const [config, setConfig] = useState<AiConfigView | null>(null);
@@ -197,7 +197,9 @@ export function VibeAi() {
                   <div className="vibe-ai-bubble">
                     {message.content}
                     {message.pending && <span className="vibe-ai-caret" aria-hidden="true" />}
-                    {message.pending && message.content === "" && <span className="vibe-ai-thinking">{t("vibeAi.thinking")}</span>}
+                    {message.pending && message.content === "" && (
+                      <span className="vibe-ai-thinking">{phase === "collecting" ? t("vibeAi.collecting") : t("vibeAi.thinking")}</span>
+                    )}
                   </div>
                   {message.stopped && <p className="vibe-ai-stopped">{t("vibeAi.stoppedNote")}</p>}
                 </div>

@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Handlers registered by the store, so a test can drive the stream. */
 const listeners: {
+  phase?: (phase: string) => void;
   delta?: (delta: string) => void;
   done?: (answer: string) => void;
   error?: (payload: unknown) => void;
@@ -24,6 +25,10 @@ const stopAiTurn = vi.fn(async () => true);
 vi.mock("@/services/aiService", () => ({
   sendAiTurn: (...args: unknown[]) => sendAiTurn(...(args as [])),
   stopAiTurn: (...args: unknown[]) => stopAiTurn(...(args as [])),
+  onAiPhase: async (_id: string, handler: (phase: string) => void) => {
+    listeners.phase = handler;
+    return () => {};
+  },
   onAiDelta: async (_id: string, handler: (delta: string) => void) => {
     listeners.delta = handler;
     return () => {};
@@ -49,7 +54,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("aiStore", () => {
   beforeEach(() => {
-    useAiStore.setState({ messages: [], mode: "ask", context: null, contextLabel: null, turnId: null, error: null, pendingQuestion: null });
+    useAiStore.setState({ messages: [], mode: "ask", context: null, contextLabel: null, turnId: null, error: null, pendingQuestion: null, phase: null });
+    listeners.phase = undefined;
     listeners.delta = undefined;
     listeners.done = undefined;
     listeners.error = undefined;
@@ -177,6 +183,27 @@ describe("aiStore", () => {
 
     const [, request] = sendAiTurn.mock.calls[0] as unknown as [string, { context: unknown }];
     expect(request.context).toBeNull();
+  });
+
+  /**
+   * The bug this exists for: a Diagnose turn reads the Node over SSH before
+   * it ever reaches a model, and both waits used to render as "Thinking…" -
+   * so an unresponsive Node looked like a slow model. The phase is what the
+   * panel uses to tell them apart, and it must start as collecting rather
+   * than waiting for the backend to say so.
+   */
+  it("reports the collection phase before the model is reached", async () => {
+    useAiStore.setState({ mode: "diagnose", context: { kind: "application", id: "app-1" } });
+    const turn = useAiStore.getState().send("what is wrong?");
+    expect(useAiStore.getState().phase).toBe("collecting");
+    await settle();
+
+    listeners.phase?.("waiting");
+    expect(useAiStore.getState().phase).toBe("waiting");
+
+    listeners.done?.("Fixed.");
+    await turn;
+    expect(useAiStore.getState().phase).toBeNull();
   });
 
   it("seeds a diagnose conversation from a quick action", () => {

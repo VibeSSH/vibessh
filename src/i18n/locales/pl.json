@@ -1364,6 +1364,7 @@
     "clear": "Wyczyść",
     "askAction": "Zapytaj Vibe AI",
     "seedApplicationFailed": "Aplikacja „{{name}}” ma status błędu. Co jest nie tak i jak to naprawić?",
-    "disclaimer": "Odpowiedzi pochodzą z modelu, który skonfigurowałeś, i mogą być błędne. Vibe AI czyta Twoją konfigurację, ale niczego w niej nie zmienia."
+    "disclaimer": "Odpowiedzi pochodzą z modelu, który skonfigurowałeś, i mogą być błędne. Vibe AI czyta Twoją konfigurację, ale niczego w niej nie zmienia.",
+    "collecting": "Zbieram dane z node…"
   }
 }

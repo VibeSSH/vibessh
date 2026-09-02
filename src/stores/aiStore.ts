@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { onAiDelta, onAiDone, onAiError, sendAiTurn, stopAiTurn } from "@/services/aiService";
+import { onAiDelta, onAiDone, onAiError, onAiPhase, sendAiTurn, stopAiTurn } from "@/services/aiService";
 import { normalizeError } from "@/services/tauri";
 import type { AiContextRef, AiMessage, AiMode } from "@/types/ai";
 
@@ -55,6 +55,9 @@ interface AiState {
   error: unknown | null;
   /** Seeded by a quick action, consumed by the panel on mount. */
   pendingQuestion: string | null;
+  /** Which wait the running turn is in - see `onAiPhase`. Null between
+   * turns. */
+  phase: "collecting" | "waiting" | null;
 
   setMode: (mode: AiMode) => void;
   setContext: (context: AiContextRef | null, label: string | null) => void;
@@ -78,6 +81,7 @@ export const useAiStore = create<AiState>((set, get) => ({
   turnId: null,
   error: null,
   pendingQuestion: null,
+  phase: null,
 
   setMode: (mode) => set({ mode }),
   setContext: (context, label) => set({ context, contextLabel: label }),
@@ -118,7 +122,10 @@ export const useAiStore = create<AiState>((set, get) => ({
     const answer: AiChatMessage = { id: answerId, role: "assistant", content: "", pending: true };
 
     const history: AiMessage[] = [...get().messages, userMessage].map((message) => ({ role: message.role, content: message.content }));
-    set({ messages: [...get().messages, userMessage, answer], turnId, error: null });
+    // `collecting` up front rather than waiting for the backend's first
+    // phase event: a Diagnose turn starts reading the Node immediately, and
+    // a gap here would render as the model already thinking.
+    set({ messages: [...get().messages, userMessage, answer], turnId, error: null, phase: get().mode === "diagnose" ? "collecting" : "waiting" });
 
     /** Writes into the streaming bubble, or does nothing if it is gone -
      * which is what happens when the conversation was cleared mid-turn. */
@@ -138,6 +145,9 @@ export const useAiStore = create<AiState>((set, get) => ({
     let unlisteners: UnlistenFn[] = [];
     try {
       unlisteners = await Promise.all([
+        onAiPhase(turnId, (phase) => {
+          if (phase === "collecting" || phase === "waiting") set({ phase });
+        }),
         onAiDelta(turnId, (delta) => updateAnswer((message) => ({ ...message, content: message.content + delta }))),
         // `done` carries the whole answer and is authoritative: a delta
         // dropped by a busy event loop would otherwise leave a hole in the
@@ -164,7 +174,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     } finally {
       unlisteners.forEach((off) => off());
       if (activeTurn?.id === turnId) activeTurn = null;
-      set((state) => (state.turnId === turnId ? { turnId: null } : {}));
+      set((state) => (state.turnId === turnId ? { turnId: null, phase: null } : {}));
       // An answer that ended with nothing in it - an immediate provider
       // error - leaves an empty bubble, which reads as the model having
       // said nothing rather than as a failure. The error banner carries the
@@ -186,6 +196,7 @@ export const useAiStore = create<AiState>((set, get) => ({
       // thing for the panel to do is stop waiting.
     }
     set((state) => ({
+      phase: null,
       messages: state.messages.map((message) => (message.pending ? { ...message, pending: false, stopped: true } : message)),
     }));
     // No `done` or `error` event follows an abort, so this is what lets

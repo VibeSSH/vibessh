@@ -54,6 +54,18 @@ export function onAiDone(turnId: string, handler: (answer: string) => void): Pro
 }
 
 /**
+ * Which of a turn's two waits is currently happening: `collecting` while the
+ * Node is being read over SSH, `waiting` once the request is with the model.
+ *
+ * Both used to render as "Thinking...", which made an unresponsive Node look
+ * like a slow model - the panel said the model was thinking when the request
+ * had not reached one.
+ */
+export function onAiPhase(turnId: string, handler: (phase: string) => void): Promise<UnlistenFn> {
+  return listen<string>(`ai://${turnId}/phase`, (event) => handler(event.payload)).catch(() => () => {});
+}
+
+/**
  * The payload is a serialized `AppError`, so it carries `code` and `params`
  * and the panel renders a translated sentence. It is never the provider's own
  * response body - that stops in Rust and goes to the log.

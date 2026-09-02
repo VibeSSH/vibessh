@@ -26,9 +26,11 @@
 //! will not connect.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use uuid::Uuid;
 
+use crate::errors::AppResult;
 use crate::models::{AiContextBundle, AiContextRef, ApplicationStatus};
 use crate::runtime::local_process::LocalProcessManager;
 use crate::services;
@@ -51,6 +53,22 @@ const LOG_TAIL_LINES: u32 = 40;
 /// The longest single log line worth sending. One line can be an entire
 /// serialised request; past this it is noise that costs tokens.
 const MAX_LOG_LINE_CHARS: usize = 400;
+
+/// How long any single remote probe may take before it is given up on and
+/// recorded as a gap.
+///
+/// This exists because `ssh::client::COMMAND_TIMEOUT` is ten minutes, which
+/// is the right budget for a deliberate operation the user is watching - an
+/// archive extraction, a package install - and completely wrong for a
+/// best-effort probe feeding a chat message. Without a bound of its own, one
+/// unresponsive Node held a whole turn for ten minutes while the panel said
+/// "Thinking...", which reads as a slow model rather than a stuck probe.
+///
+/// The value is a judgement about what is worth waiting for: a Node that
+/// cannot answer `docker inspect` in twelve seconds is itself the diagnosis,
+/// and saying so beats blocking on it. Every expiry becomes a note, so the
+/// model is told what is missing rather than left to assume it was fine.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// A ceiling on the whole collected snapshot, applied last.
 ///
@@ -139,6 +157,27 @@ fn status_word(status: ApplicationStatus) -> &'static str {
     }
 }
 
+/// Runs one best-effort probe under `PROBE_TIMEOUT`.
+///
+/// Collapses the two failure modes a probe has - it answered with an error,
+/// or it did not answer at all - into the same `Result`, because the context
+/// builder treats them identically: both become a note, and neither fails
+/// the turn. `label` names the probe in that note, so the model is told
+/// which specific thing is missing.
+async fn probe<T>(label: &str, future: impl std::future::Future<Output = AppResult<T>>) -> Result<T, String> {
+    match tokio::time::timeout(PROBE_TIMEOUT, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(err)) => Err(format!("{label}: {err}")),
+        Err(_) => {
+            // Logged as well as noted: a probe that times out repeatedly is
+            // a real problem with the Node, and the note only reaches the
+            // model, not the operator.
+            log::warn!("the AI context probe \"{label}\" gave up after {}s", PROBE_TIMEOUT.as_secs());
+            Err(format!("{label}: the Node did not answer within {} seconds", PROBE_TIMEOUT.as_secs()))
+        }
+    }
+}
+
 impl AiContextBuilder<'_> {
     pub async fn build(&self, reference: AiContextRef) -> AiContextBundle {
         match reference {
@@ -191,9 +230,14 @@ impl AiContextBuilder<'_> {
         // diagnosis and the most likely to fail, which is exactly why its
         // failure is reported rather than swallowed - a refusal from the
         // Docker daemon *is* the answer surprisingly often.
-        match services::refresh_application_status(self.applications, self.servers, self.ssh_sessions, self.local_processes, id).await {
+        match probe(
+            "the live status could not be checked",
+            services::refresh_application_status(self.applications, self.servers, self.ssh_sessions, self.local_processes, id),
+        )
+        .await
+        {
             Ok(status) => out.line(format!("Live status right now: {}", status_word(status))),
-            Err(err) => out.note(format!("the live status could not be checked: {err}")),
+            Err(note) => out.note(note),
         }
 
         out.line(format!("Health check: {:?}", app.health_check_type));
@@ -259,14 +303,17 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading(&format!("Recent log lines (up to {LOG_TAIL_LINES}, oldest first)"));
-        match services::application_logs(
-            self.applications,
-            self.servers,
-            self.ssh_sessions,
-            self.local_processes,
-            self.log_capture,
-            id,
-            LOG_TAIL_LINES,
+        match probe(
+            "the logs could not be read",
+            services::application_logs(
+                self.applications,
+                self.servers,
+                self.ssh_sessions,
+                self.local_processes,
+                self.log_capture,
+                id,
+                LOG_TAIL_LINES,
+            ),
         )
         .await
         {
@@ -278,7 +325,7 @@ impl AiContextBuilder<'_> {
                     out.line(clipped);
                 }
             }
-            Err(err) => out.note(format!("the logs could not be read: {err}")),
+            Err(note) => out.note(note),
         }
 
         out.finish()
@@ -324,7 +371,9 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading("Live resource usage");
-        match services::get_server_metrics(self.servers, self.ssh_sessions, id).await {
+        match probe("live CPU/memory/disk could not be read from this Node", services::get_server_metrics(self.servers, self.ssh_sessions, id))
+            .await
+        {
             Ok(metrics) => {
                 out.sources.push("Metrics".to_string());
                 out.line(format!("CPU: {:.1}%", metrics.cpu_usage_percent));
@@ -343,7 +392,7 @@ impl AiContextBuilder<'_> {
                 out.line(format!("Load average (1m): {:.2}", metrics.load_average_1m));
                 out.line(format!("Uptime: {} hours", metrics.uptime_seconds / 3600));
             }
-            Err(err) => out.note(format!("live CPU/memory/disk could not be read from this Node: {err}")),
+            Err(note) => out.note(note),
         }
 
         out.heading("Vibe Network");
@@ -356,8 +405,11 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading("Firewall");
-        match services::node_firewall_overview(self.applications, self.servers, self.networks, self.firewall_rules, self.ssh_sessions, id)
-            .await
+        match probe(
+            "the firewall status could not be read from this Node",
+            services::node_firewall_overview(self.applications, self.servers, self.networks, self.firewall_rules, self.ssh_sessions, id),
+        )
+        .await
         {
             Ok(overview) => {
                 out.sources.push("Firewall".to_string());
@@ -367,7 +419,7 @@ impl AiContextBuilder<'_> {
                 }
                 out.line(format!("Rules VibeSSH wants in place: {}", overview.rules.len()));
             }
-            Err(err) => out.note(format!("the firewall status could not be read from this Node: {err}")),
+            Err(note) => out.note(note),
         }
 
         out.heading("Applications on this Node");
