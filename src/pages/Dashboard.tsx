@@ -416,34 +416,45 @@ export function Dashboard() {
                 </ul>
               ))}
 
-            <button type="button" className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)} aria-expanded={tasksExpanded}>
-              <span className="dashboard-ops-label">
-                <Icon name="list-checks" size={14} />
-                {t("dashboard.sectionTasks")}
-              </span>
-              <Badge tone={outOfSyncAgentIds.length > 0 ? "warning" : "success"}>{outOfSyncAgentIds.length}</Badge>
-            </button>
-            {tasksExpanded &&
-              (outOfSyncAgentIds.length === 0 ? (
-                <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">
-                  <span className="dashboard-empty-row-icon">
-                    <Icon name="check" size={12} />
+            {/* Only shown when there is something that could ever be out of
+                sync. `reconcile` is Agent-mode only - it rejects SSH Nodes
+                outright - so on an SSH-only install this section can never
+                report anything but zero, and a permanently empty panel reads
+                as a feature that is broken rather than one that does not
+                apply. The sync poll is already disabled on the same
+                condition. */}
+            {agentServerIds.length > 0 && (
+              <>
+                <button type="button" className="dashboard-ops-row" onClick={() => setTasksExpanded((v) => !v)} aria-expanded={tasksExpanded}>
+                  <span className="dashboard-ops-label">
+                    <Icon name="list-checks" size={14} />
+                    {t("dashboard.sectionTasks")}
                   </span>
-                  {t("dashboard.tasksEmpty")}
-                </p>
-              ) : (
-                <div className="dashboard-ops-expanded">
-                  {outOfSyncAgentIds.map((id) => (
-                    <div key={id} className="dashboard-task-row">
-                      <span className="dashboard-task-label">{serverName(id)}</span>
-                      <Button variant="secondary" size="sm" onClick={() => handleReconcile(id)} disabled={reconcilingId === id}>
-                        <Icon name="refresh-cw" size={14} />
-                        {t("dashboard.taskReconcileAction")}
-                      </Button>
+                  <Badge tone={outOfSyncAgentIds.length > 0 ? "warning" : "success"}>{outOfSyncAgentIds.length}</Badge>
+                </button>
+                {tasksExpanded &&
+                  (outOfSyncAgentIds.length === 0 ? (
+                    <p className="dashboard-empty-row dashboard-empty-row-ok dashboard-ops-expanded">
+                      <span className="dashboard-empty-row-icon">
+                        <Icon name="check" size={12} />
+                      </span>
+                      {t("dashboard.tasksEmpty")}
+                    </p>
+                  ) : (
+                    <div className="dashboard-ops-expanded">
+                      {outOfSyncAgentIds.map((id) => (
+                        <div key={id} className="dashboard-task-row">
+                          <span className="dashboard-task-label">{serverName(id)}</span>
+                          <Button variant="secondary" size="sm" onClick={() => handleReconcile(id)} disabled={reconcilingId === id}>
+                            <Icon name="refresh-cw" size={14} />
+                            {t("dashboard.taskReconcileAction")}
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   ))}
-                </div>
-              ))}
+              </>
+            )}
           </Card>
 
           <div className="dashboard-footer-bar">
