@@ -45,6 +45,44 @@ pub async fn authorize(db: &PgPool, team_id: Uuid, user_id: Uuid, permission: &s
     Ok(())
 }
 
+/// Allowed if the member holds **any** of `permissions`.
+///
+/// This is how a permission gets split without taking anything away. When
+/// `team.roles.assign` was carved out of `team.roles.manage`, every role
+/// already holding the wider one had to keep working - so the call sites
+/// ask for either, and the narrower permission becomes a way to grant less,
+/// never a new requirement. A split that tightened instead would silently
+/// revoke access from every team that had already configured its roles.
+pub async fn authorize_any(db: &PgPool, team_id: Uuid, user_id: Uuid, permissions_wanted: &[&str]) -> ApiResult<()> {
+    for permission in permissions_wanted {
+        debug_assert!(
+            permissions::is_known_permission(permission),
+            "authorize_any() called with a permission key not in the catalog: {permission}"
+        );
+    }
+
+    let keys: Vec<String> = permissions_wanted.iter().map(|key| (*key).to_string()).collect();
+    let granted: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM member_roles mr
+            JOIN role_permissions rp ON rp.role_id = mr.role_id
+            WHERE mr.team_id = $1 AND mr.user_id = $2 AND rp.permission_key = ANY($3)
+        )",
+    )
+    .bind(team_id)
+    .bind(user_id)
+    .bind(&keys)
+    .fetch_one(db)
+    .await?;
+
+    if !granted {
+        // Named in full: "missing permission: a" would be a lie when any of
+        // several would have done.
+        return Err(ApiError::Forbidden(format!("missing permission: one of {}", keys.join(", "))));
+    }
+    Ok(())
+}
+
 /// Every permission the union of a member's assigned roles grants them on a
 /// team - what a client-side `can(permission)` check (UX-only hiding/
 /// disabling, never the actual enforcement - that's always this module's

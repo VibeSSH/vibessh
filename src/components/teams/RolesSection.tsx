@@ -17,6 +17,7 @@ import {
 } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudRoleWithPermissions } from "@/types/cloud";
+import { groupPermissions } from "./permissionCatalog";
 import "./RolesSection.css";
 import { errorMessage } from "@/services/tauri";
 
@@ -31,9 +32,35 @@ function emptyForm(): RoleFormState {
   return { id: null, name: "", description: "", permissions: new Set() };
 }
 
+type Translate = (key: string, opts?: Record<string, unknown>) => string;
+
 /** Permission keys are the backend's stable catalog strings (e.g. "team.roles.manage") - not meant to be read directly, so every one needs an entry under roles.permissionLabels in each locale file (falls back to the raw key if a new permission ships before its translation does). */
-function permissionLabel(t: (key: string, opts?: Record<string, unknown>) => string, permission: string): string {
+function permissionLabel(t: Translate, permission: string): string {
   return t(`roles.permissionLabels.${permission}`, { defaultValue: permission });
+}
+
+/** A sentence saying what the permission actually lets somebody do. Optional:
+ * a permission with no hint yet simply has no tooltip. */
+function permissionHint(t: Translate, permission: string): string | undefined {
+  return t(`roles.permissionHints.${permission}`, { defaultValue: "" }) || undefined;
+}
+
+/**
+ * A built-in role's name and description, in the reader's language.
+ *
+ * The backend writes them once, in English, as a row created with the team -
+ * so the stored text is an identifier as much as it is prose, and showing it
+ * verbatim is what put "Full control over the team..." in a Polish
+ * interface. Translated by that stable name, falling back to what is stored
+ * for anything this app has not been taught.
+ */
+function roleName(t: Translate, role: CloudRoleWithPermissions): string {
+  return role.isSystem ? t(`roles.systemNames.${role.name}`, { defaultValue: role.name }) : role.name;
+}
+
+function roleDescription(t: Translate, role: CloudRoleWithPermissions): string {
+  if (!role.isSystem) return role.description ?? "";
+  return t(`roles.systemDescriptions.${role.name}`, { defaultValue: role.description ?? "" });
 }
 
 export function RolesSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
@@ -120,13 +147,20 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
             <li key={role.id} className="roles-list-item">
               <div className="roles-list-main">
                 <div className="roles-list-name-row">
-                  <span className="roles-list-name" title={role.name}>{role.name}</span>
+                  <span className="roles-list-name" title={roleName(t, role)}>
+                    {roleName(t, role)}
+                  </span>
                   {role.isSystem && <Badge tone="neutral">{t("roles.builtIn")}</Badge>}
+                  <span className="roles-list-count">
+                    {role.permissions.length === 0
+                      ? t("roles.noPermissions")
+                      : t("roles.permissionsChosen", { count: role.permissions.length })}
+                  </span>
                 </div>
-                {role.description && <p className="roles-list-description">{role.description}</p>}
+                {roleDescription(t, role) && <p className="roles-list-description">{roleDescription(t, role)}</p>}
                 <div className="roles-permission-chips">
                   {role.permissions.map((permission) => (
-                    <span key={permission} className="roles-permission-chip">
+                    <span key={permission} className="roles-permission-chip" title={permissionHint(t, permission)}>
                       {permissionLabel(t, permission)}
                     </span>
                   ))}
@@ -150,6 +184,12 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
 
       {!canManage ? null : form ? (
         <form className="roles-form" onSubmit={handleSubmit}>
+          {/* Which of the two things this form is doing. Without it, editing
+              a role and creating one looked identical, and the only clue was
+              whether the fields happened to be filled in. */}
+          <p className="roles-form-title">
+            {form.id === null ? t("roles.createTitle") : t("roles.editTitle", { name: form.name || t("roles.namePlaceholder") })}
+          </p>
           <label className="form-field">
             <span className="form-label">{t("roles.name")}</span>
             <input
@@ -171,16 +211,27 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
           </label>
           <div className="form-field">
             <span className="form-label">{t("roles.permissions")}</span>
-            <div className="roles-permission-grid">
-              {allPermissions.map((permission) => (
-                <Checkbox
-                  key={permission}
-                  checked={form.permissions.has(permission)}
-                  onChange={() => togglePermission(permission)}
-                  label={permissionLabel(t, permission)}
-                />
-              ))}
-            </div>
+            {/* Grouped by what each permission acts on. A single undivided
+                grid of them is a list to read; four short groups is a set of
+                decisions to make. */}
+            {groupPermissions(allPermissions).map(({ group, permissions }) => (
+              <div key={group} className="roles-permission-group">
+                <p className="roles-permission-group-title">{t(`roles.groups.${group}`, { defaultValue: group })}</p>
+                <div className="roles-permission-grid">
+                  {permissions.map((permission) => (
+                    <div key={permission} className="roles-permission-option">
+                      <Checkbox
+                        checked={form.permissions.has(permission)}
+                        onChange={() => togglePermission(permission)}
+                        label={permissionLabel(t, permission)}
+                      />
+                      {permissionHint(t, permission) && <p className="roles-permission-hint">{permissionHint(t, permission)}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="form-note roles-permission-summary">{t("roles.permissionsChosen", { count: form.permissions.size })}</p>
           </div>
           <div className="form-actions">
             <Button type="button" variant="secondary" onClick={() => setForm(null)} disabled={saving}>

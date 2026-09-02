@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::{authorize, ensure_can_grant};
+use crate::authorize::{authorize_any, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{CreateInvitationRequest, CreatedInvitation, Invitation, Team};
 use crate::teams::team_for_member;
@@ -52,7 +52,7 @@ pub async fn create_invitation(
     Json(body): Json<CreateInvitationRequest>,
 ) -> ApiResult<impl IntoResponse> {
     team_for_member(&state.db, team_id, user_id).await?;
-    authorize(&state.db, team_id, user_id, permissions::TEAM_MEMBERS_ADD).await?;
+    authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_MEMBERS_ADD, permissions::TEAM_INVITATIONS_MANAGE]).await?;
 
     let email = body.email.trim().to_lowercase();
     if email.split_once('@').is_none_or(|(local, domain)| local.is_empty() || domain.is_empty() || !domain.contains('.')) {
@@ -139,7 +139,7 @@ pub async fn list_invitations(
     Path(team_id): Path<Uuid>,
 ) -> ApiResult<Json<Vec<Invitation>>> {
     team_for_member(&state.db, team_id, user_id).await?;
-    authorize(&state.db, team_id, user_id, permissions::TEAM_MEMBERS_ADD).await?;
+    authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_MEMBERS_ADD, permissions::TEAM_INVITATIONS_MANAGE]).await?;
 
     let invitations: Vec<Invitation> =
         sqlx::query_as(&format!("{SELECT_INVITATION} WHERE team_id = $1 ORDER BY created_at DESC")).bind(team_id).fetch_all(&state.db).await?;
@@ -152,7 +152,7 @@ pub async fn revoke_invitation(
     Path((team_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
     team_for_member(&state.db, team_id, user_id).await?;
-    authorize(&state.db, team_id, user_id, permissions::TEAM_MEMBERS_ADD).await?;
+    authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_MEMBERS_ADD, permissions::TEAM_INVITATIONS_MANAGE]).await?;
 
     let invitation = invitation_for_team(&state.db, team_id, invitation_id).await?;
     if invitation.status != "pending" {

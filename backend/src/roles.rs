@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::{authorize, effective_permissions, ensure_can_grant};
+use crate::authorize::{authorize, authorize_any, effective_permissions, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult};
 use crate::models::{AssignRoleRequest, CreateRoleRequest, Role, RoleWithPermissions, UpdateRoleRequest};
 use crate::permissions;
@@ -293,7 +293,7 @@ pub async fn assign_role(
     Json(body): Json<AssignRoleRequest>,
 ) -> ApiResult<StatusCode> {
     team_for_member(&state.db, team_id, user_id).await?;
-    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
+    authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_ROLES_MANAGE, permissions::TEAM_ROLES_ASSIGN]).await?;
     // Confirms both that the role really belongs to this team and that the
     // target is really a member of it, so the insert below fails with a
     // clear ApiError instead of a raw foreign-key-violation.
@@ -336,7 +336,7 @@ pub async fn unassign_role(
     Path((team_id, target_user_id, role_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
     let team = team_for_member(&state.db, team_id, user_id).await?;
-    authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
+    authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_ROLES_MANAGE, permissions::TEAM_ROLES_ASSIGN]).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system && target_user_id == team.owner_id {
         return Err(ApiError::Conflict("the owner's built-in role can't be unassigned".to_string()));
