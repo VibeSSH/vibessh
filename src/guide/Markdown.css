@@ -4,31 +4,73 @@
  * A manual is read, not scanned, so this is the one place in the app with a
  * measure limit and generous line height - the rest of the UI is dense on
  * purpose and would be tiring at length.
+ *
+ * **Body text sits one step below the headings, not level with them.** The
+ * first version painted everything in `--text-primary`, so a heading was
+ * distinguished only by being slightly larger, and a page of it read as one
+ * undifferentiated wall - reported, correctly, as everything blending
+ * together. Calming the prose is what makes the headings carry; making the
+ * headings brighter could not, because they were already as bright as it
+ * gets.
  */
 .guide-md {
-  max-width: 78ch;
-  color: var(--text-primary);
+  max-width: 74ch;
+  color: var(--text-secondary);
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.7;
+}
+
+/*
+ * Bold is the second level of emphasis, and it works now that it has
+ * somewhere to go: the guide leans on it for field names and states, and
+ * against calmer prose it reads as a lift rather than as more of the same.
+ */
+.guide-md strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .guide-md-h {
-  margin: 28px 0 10px;
-  font-weight: 600;
-  line-height: 1.3;
+  margin: 34px 0 12px;
+  color: var(--text-primary);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  /* A heading belongs to what comes after it, so it may not be left
+     stranded at the bottom of a column or a page. */
+  break-after: avoid;
 }
 .guide-md .guide-md-h:first-child {
   margin-top: 0;
 }
+
 .guide-md-h1 {
-  font-size: 22px;
+  font-size: 23px;
 }
+
+/*
+ * The section rule.
+ *
+ * In a page of a dozen sections, size alone is not enough of a break - the
+ * hairline is what tells the eye where one subject ends. Only on `h2`,
+ * which is the level the guide actually divides on; putting it on every
+ * heading would turn the page into a grid.
+ */
 .guide-md-h2 {
-  font-size: 17px;
+  font-size: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
+.guide-md .guide-md-h2:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* A step down again, and no rule: `h3` divides within a section rather
+   than between sections. */
 .guide-md-h3 {
+  margin-top: 24px;
   font-size: 15px;
-  color: var(--text-secondary);
 }
 
 .guide-md-p {
@@ -81,6 +123,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--text-primary);
+  line-height: 1.6;
 }
 
 .guide-md-table-scroll {
@@ -100,9 +143,19 @@
   vertical-align: top;
 }
 .guide-md-table th {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Cells carry field names and values - the things somebody came to the
+   table to read - so they sit at reading brightness rather than at the
+   prose's. */
+.guide-md-table td {
+  color: var(--text-secondary);
+}
+.guide-md-table td:first-child {
+  color: var(--text-primary);
 }
 
 /*
