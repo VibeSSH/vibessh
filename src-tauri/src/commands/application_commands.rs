@@ -253,6 +253,23 @@ async fn mark_new_log_session(log_capture: &LogCaptureStore, id: Uuid) {
     }
 }
 
+/// Ends a stream that has been displaced or asked to stop.
+///
+/// Its own function because the two transports end differently and every
+/// path out of a console has to take one of them - a missed one is a
+/// `docker logs -f` running on somebody's Node and, over SSH, one of the ten
+/// sessions `sshd` allows per connection.
+async fn end_follow(agents: &AgentSessionManager, follow: LogFollow) {
+    match follow {
+        // Dropping the handle closes the channel.
+        LogFollow::Ssh(_) => {}
+        LogFollow::Agent { server_id, follow_id } => {
+            agents.unsubscribe_logs(follow_id).await;
+            agents.send_command(server_id, DesktopCommand::StopFollowingLogs { follow_id }).await;
+        }
+    }
+}
+
 /// Opens a live console stream. Returns as soon as the follow is running;
 /// output arrives on `applog://{follow_id}/line` and the stream's end on
 /// `applog://{follow_id}/closed`.
@@ -321,7 +338,12 @@ pub async fn follow_application_logs(
                 }
             });
 
-            follows.insert(follow_id, LogFollow::Agent { server_id, follow_id: parsed }).await;
+            // Keyed by Application: this ends whatever console was open on
+            // it, which is what stops an abandoned follow surviving a
+            // remount or a reconnect.
+            if let Some(previous) = follows.replace(id, LogFollow::Agent { server_id, follow_id: parsed }).await {
+                end_follow(&agents, previous).await;
+            }
             return Ok(());
         }
     }
@@ -348,29 +370,29 @@ pub async fn follow_application_logs(
     )
     .await?;
 
-    follows.insert(follow_id, LogFollow::Ssh(handle)).await;
+    if let Some(previous) = follows.replace(id, LogFollow::Ssh(handle)).await {
+        end_follow(&agents, previous).await;
+    }
     log::info!("live console streaming over SSH for application {id}");
     Ok(())
 }
 
-/// Stops a live console stream. `false` means it had already ended.
+/// Stops the console stream on an Application. `false` means there was
+/// nothing running, which is a race rather than an error.
 ///
-/// Not optional bookkeeping. An SSH follow ends when its handle drops; an
-/// Agent follow ends only when the Agent is told, and skipping that leaves
-/// `docker logs -f` running on the Node for the life of its process.
+/// Takes the Application rather than the follow id, matching the registry:
+/// one Application has one console, and a caller that has lost track of
+/// which follow it started can still end it.
 #[tauri::command]
 pub async fn stop_following_application_logs(
     agents: State<'_, AgentSessionManager>,
     follows: State<'_, LogFollowManager>,
-    follow_id: String,
+    id: Uuid,
 ) -> AppResult<bool> {
-    match follows.take(&follow_id).await {
+    match follows.take(id).await {
         None => Ok(false),
-        // Dropping the handle closes the channel.
-        Some(LogFollow::Ssh(_)) => Ok(true),
-        Some(LogFollow::Agent { server_id, follow_id }) => {
-            agents.unsubscribe_logs(follow_id).await;
-            agents.send_command(server_id, DesktopCommand::StopFollowingLogs { follow_id }).await;
+        Some(follow) => {
+            end_follow(&agents, follow).await;
             Ok(true)
         }
     }

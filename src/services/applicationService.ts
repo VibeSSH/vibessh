@@ -276,10 +276,16 @@ export function followApplicationLogs(applicationId: string, followId: string, t
   return callCommand<void>("follow_application_logs", { id: applicationId, followId, tail });
 }
 
-/** Stops a live stream. Not optional: this is what closes the channel and
- * ends `docker logs -f` on the Node. */
-export function stopFollowingApplicationLogs(followId: string): Promise<boolean> {
-  return callCommand<boolean>("stop_following_application_logs", { followId });
+/**
+ * Stops the console stream on an Application.
+ *
+ * Takes the Application, not the follow id: the backend keeps one stream per
+ * Application, so a caller that has lost track of which follow it started -
+ * a remount, a reconnect - can still end it. Not optional bookkeeping; this
+ * is what closes the SSH channel, and `sshd` allows ten per connection.
+ */
+export function stopFollowingApplicationLogs(applicationId: string): Promise<boolean> {
+  return callCommand<boolean>("stop_following_application_logs", { id: applicationId });
 }
 
 /** Same not-in-a-Tauri-webview guard as the terminal helpers. */

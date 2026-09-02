@@ -139,7 +139,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           // the follow registers a moment later with nobody left to stop
           // it: `docker logs -f` running on the Node for the life of the
           // process.
-          void stopFollowingApplicationLogs(followId).catch(() => {});
+          void stopFollowingApplicationLogs(applicationId).catch(() => {});
           return;
         }
         attempt = 0;
@@ -185,7 +185,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       dropListeners();
       // Fire and forget: the component is going away either way, and the
       // backend treats an unknown id as a no-op.
-      if (live) void stopFollowingApplicationLogs(live).catch(() => {});
+      void stopFollowingApplicationLogs(applicationId).catch(() => {});
       setSource("deciding");
     };
   }, [applicationId]);
