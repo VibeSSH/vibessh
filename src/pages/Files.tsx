@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useDeferredValue, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -118,11 +118,21 @@ export function FilesPage() {
   // with a filter. Together they are more useful than virtualisation would
   // be here: finding a known filename by typing part of it beats scrolling
   // to it.
+  /**
+   * The filter the list is built from, one step behind the input.
+   *
+   * `useDeferredValue` keeps the text field responding to every keystroke
+   * while the two hundred rows underneath it are re-rendered at a lower
+   * priority. Without it each character re-rendered the whole list before
+   * the character appeared, which is exactly what "typing here lags" is.
+   */
+  const deferredFilter = useDeferredValue(filter);
+
   const matchingEntries = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
+    const needle = deferredFilter.trim().toLowerCase();
     if (!needle) return entries;
     return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
-  }, [entries, filter]);
+  }, [entries, deferredFilter]);
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
   const truncated = matchingEntries.length > visibleEntries.length;
 

@@ -14,7 +14,17 @@ export interface OverflowMenuItem {
 }
 
 interface OverflowMenuProps {
-  items: OverflowMenuItem[];
+  /**
+   * The menu's contents, or a function returning them.
+   *
+   * A function is the form to use in a long list. Every item carries a
+   * translated label, and building them eagerly means one `t()` call per
+   * item per row on every render - in the file browser that was about
+   * twelve hundred translations per keystroke in the filter box, for menus
+   * that were all closed. Passed as a function, the labels are built when
+   * somebody opens one.
+   */
+  items: OverflowMenuItem[] | (() => OverflowMenuItem[]);
   ariaLabel: string;
 }
 
@@ -28,6 +38,8 @@ const MENU_GAP = 4;
 export function OverflowMenu({ items, ariaLabel }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  // Only ever resolved while the menu is on screen.
+  const resolvedItems = open ? (typeof items === "function" ? items() : items) : [];
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +80,7 @@ export function OverflowMenu({ items, ariaLabel }: OverflowMenuProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            {items.map((item) => (
+            {resolvedItems.map((item) => (
               <button
                 key={item.label}
                 type="button"

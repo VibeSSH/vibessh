@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
@@ -42,6 +42,7 @@ import { TransferQueuePanel } from "./TransferQueuePanel";
 import "@/components/servers/forms.css";
 import "@/pages/Files.css";
 import "./ApplicationFiles.css";
+import { formatShortDate } from "@/utils/formatShortDate";
 import { errorMessage } from "@/services/tauri";
 
 /// Matches the Node Files page and the Actions page.
@@ -72,7 +73,7 @@ interface ApplicationFilesTabProps {
 
 /** design brief's "Application Files / SFTP" section, in full: browser (breadcrumbs/list/toolbar), a real transfer queue, the CodeMirror editor (dirty state, Ctrl+S, backup-before-save, Version History), rename/move/copy/chmod, zip extraction, Quick Files, and the JAR-replace warning. Deliberately not built here (documented, not silently dropped): drag & drop upload (native picker only - still real streaming, just not drag-initiated), and "compress selection into a new archive" (only *extracting* an existing one is implemented; the backend has no ZipWriter-based create-archive path yet). */
 export function ApplicationFilesTab({ applicationId, application, knownFiles }: ApplicationFilesTabProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const currentJarName = extractCurrentJarName(application.runtimeConfig);
   const isRunning = application.status === "running";
 
@@ -139,11 +140,21 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   // Same reasoning as the Node Files page: a directory can hold tens of
   // thousands of entries and rendering a row each locks the window up, but
   // a bare cap would make distant entries unreachable. Cap plus filter.
+  /**
+   * The filter the list is built from, one step behind the input.
+   *
+   * `useDeferredValue` keeps the text field responding to every keystroke
+   * while the two hundred rows underneath it are re-rendered at a lower
+   * priority. Without it each character re-rendered the whole list before
+   * the character appeared, which is exactly what "typing here lags" is.
+   */
+  const deferredFilter = useDeferredValue(filter);
+
   const matchingEntries = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
+    const needle = deferredFilter.trim().toLowerCase();
     if (!needle) return entries;
     return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
-  }, [entries, filter]);
+  }, [entries, deferredFilter]);
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
   const truncated = matchingEntries.length > visibleEntries.length;
 
@@ -396,7 +407,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
                 </button>
                 <div className="application-files-entry-meta">
                   {!entry.isDir && <span>{formatSize(entry.size)}</span>}
-                  {entry.modifiedAt && <span>{new Date(entry.modifiedAt).toLocaleDateString()}</span>}
+                  {entry.modifiedAt && <span>{formatShortDate(entry.modifiedAt, i18n.language)}</span>}
                   {entry.permissions !== undefined && <span>{formatOctal(entry.permissions)}</span>}
                 </div>
                 {!entry.isDir && (
@@ -407,7 +418,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
                     onClick={() => runDownload(entry)}
                   />
                 )}
-                <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={buildMenuItems(entry)} />
+                {/* Built on open, not on render - see OverflowMenu's own note. This
+                    list can be two hundred rows, each with six translated
+                    menu labels nobody has asked to see. */}
+                <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={() => buildMenuItems(entry)} />
               </li>
             ))}
           </ul>
