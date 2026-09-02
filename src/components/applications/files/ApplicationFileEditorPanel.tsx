@@ -148,7 +148,15 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
           <CodeMirror
             className="file-editor-tab-codemirror"
             value={content}
-            height="100%"
+            // Not `height="100%"`: that resolves against the parent, and the
+            // parent only has a height on the full-page Files view. Inside the
+            // Application tab it resolved to auto, so the editor took the height
+            // of the file and the window became the only scrollbar.
+            //
+            // A max height set on the editor itself is what makes CodeMirror
+            // turn its own scroller on, whatever is above it.
+            minHeight="320px"
+            maxHeight="calc(100vh - 300px)"
             theme="none"
             extensions={extensions}
             onChange={setContent}
