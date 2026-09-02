@@ -122,22 +122,34 @@ export function ApplicationDetail() {
 
   const poll = useCallback(async () => {
     if (!id) return;
-    try {
-      const nextApplication = await getApplication(id);
-      setApplication(nextApplication);
+
+    // Both at once, not one after the other.
+    //
+    // These were sequential, so every tick cost the status probe *plus* the
+    // usage probe - and the usage probe runs `docker stats --no-stream`,
+    // which waits for Docker's own sampling and is the slowest single
+    // command in the app. Five seconds of interval spent holding the SSH
+    // session is also five seconds during which anything the user clicks
+    // queues behind it, which is why the whole page felt sluggish rather
+    // than just this reading.
+    //
+    // `allSettled`, not `all`: they still fail independently. Resource usage
+    // can fail on a temporarily unreachable Node without that meaning the
+    // Application failed to load - bundling both into one `Promise.all` used
+    // to throw away an already-successful `getApplication` result and leave
+    // the page stuck on a bare id with nothing usable on it.
+    const [applicationResult, usageResult] = await Promise.allSettled([getApplication(id), getApplicationResourceUsage(id)]);
+
+    if (applicationResult.status === "fulfilled") {
+      setApplication(applicationResult.value);
       setLoadError(null);
-    } catch (err) {
-      setLoadError(errorMessage(err, t));
+    } else {
+      setLoadError(errorMessage(applicationResult.reason, t));
       return;
     }
-    // A separate try/catch on purpose - resource usage (a Remote Process
-    // over SSH, in particular) can fail on its own (a temporarily
-    // unreachable Node) without that meaning the Application itself failed
-    // to load. Bundling both into one Promise.all used to throw away an
-    // already-successful `getApplication` result and leave the whole page
-    // stuck on a bare id with nothing usable on it.
-    try {
-      const usage = await getApplicationResourceUsage(id);
+
+    if (usageResult.status === "fulfilled") {
+      const usage = usageResult.value;
       setResourceUsage(usage);
       setHistory((previous) => {
         const next = [...previous, { cpu: usage.cpuPercent ?? 0, ram: usage.ramBytes ?? 0 }];
@@ -146,11 +158,10 @@ export function ApplicationDetail() {
         // now rather than about the whole session.
         return next.length > HISTORY_SAMPLES ? next.slice(next.length - HISTORY_SAMPLES) : next;
       });
-    } catch {
-      // Leave the last-known usage in place rather than clearing it - this
-      // tab already shows its own errors where it matters (Console, Logs,
-      // ...), no need for a second banner here.
     }
+    // A failed usage probe leaves the last-known reading in place rather
+    // than clearing it - this page already shows its own errors where they
+    // matter (Console, Logs, ...), no need for a second banner here.
   }, [id, t]);
 
   usePolling(poll, POLL_INTERVALS.applicationDetail, { enabled: Boolean(id) });
