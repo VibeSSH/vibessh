@@ -282,7 +282,33 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
   const reachable = status?.reachable ?? false;
   const peers = status?.peers ?? [];
   const latencyMs = usePingStore((s) => s.latencies[member.serverId]);
-  const lastSyncUnix = peers.length > 0 ? Math.max(...peers.map((p) => p.latestHandshakeUnix)) : 0;
+  const lastHandshakeUnix = peers.length > 0 ? Math.max(...peers.map((p) => p.latestHandshakeUnix)) : 0;
+
+  /**
+   * What to say about the tunnel, which is not what SSH says about the Node.
+   *
+   * This row used to read `reachable ? "active" : "inactive"` - an SSH fact
+   * dressed up as a WireGuard one. A Node whose interface had never been
+   * brought up reported "Connection: active" and "last handshake: never",
+   * side by side, and the pair was read as a bug in the sync button.
+   *
+   * WireGuard is only ever asked, never assumed: the config sets
+   * `PersistentKeepalive = 25`, so a working tunnel handshakes within half a
+   * minute of coming up whether or not anybody sends traffic. A tunnel that
+   * is up and has still never handshaked is therefore a real finding, and it
+   * says so rather than being flattened into "inactive".
+   */
+  const tunnel = status?.tunnel ?? "unknown";
+  const connectionLabel = (() => {
+    if (tunnel === "unreachable") return t("vibeNetwork.tunnelUnreachable");
+    if (tunnel === "unknown") return t("vibeNetwork.tunnelUnknown");
+    if (tunnel === "down") return t("vibeNetwork.tunnelDown");
+    if (lastHandshakeUnix === 0) return t("vibeNetwork.tunnelNoTraffic");
+    // WireGuard rekeys well inside three minutes on a live tunnel, so an
+    // older handshake than that means the peer has gone quiet.
+    return nowSeconds - lastHandshakeUnix < 180 ? t("vibeNetwork.connectionActive") : t("vibeNetwork.tunnelIdle");
+  })();
+  const connectionIsGood = tunnel === "up" && lastHandshakeUnix > 0 && nowSeconds - lastHandshakeUnix < 180;
 
   const [endpointCount, setEndpointCount] = useState<number | null>(null);
   useEffect(() => {
@@ -323,8 +349,27 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
         )}
         <div className="vibe-network-fact">
           <span className="form-label">{t("vibeNetwork.connectionLabel")}</span>
-          <span className="vibe-network-fact-value">{reachable ? t("vibeNetwork.connectionActive") : t("vibeNetwork.connectionInactive")}</span>
+          <span className={`vibe-network-fact-value${connectionIsGood ? "" : " vibe-network-fact-value-warn"}`}>{connectionLabel}</span>
         </div>
+        {status?.tunnelError && tunnel !== "unreachable" && (
+          <div className="vibe-network-fact">
+            <span className="form-label">{t("vibeNetwork.tunnelErrorLabel")}</span>
+            {/* The row ellipsises, and the Node's own words are exactly what
+                somebody needs in full - `title` is where the rest of them
+                live. */}
+            <span className="vibe-network-fact-value vibe-network-fact-value-warn" title={status.tunnelError}>
+              {status.tunnelError}
+            </span>
+          </div>
+        )}
+        {(status?.unknownPeers ?? 0) > 0 && (
+          <div className="vibe-network-fact">
+            <span className="form-label">{t("vibeNetwork.unknownPeersLabel")}</span>
+            <span className="vibe-network-fact-value vibe-network-fact-value-warn">
+              {t("vibeNetwork.unknownPeersValue", { count: status?.unknownPeers ?? 0 })}
+            </span>
+          </div>
+        )}
         {typeof latencyMs === "number" && (
           <div className="vibe-network-fact">
             <span className="form-label">{t("vibeNetwork.latencyLabel")}</span>
@@ -340,8 +385,14 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
           <span className="vibe-network-fact-value">{endpointCount ?? "—"}</span>
         </div>
         <div className="vibe-network-fact">
-          <span className="form-label">{t("vibeNetwork.lastSyncLabel")}</span>
-          <span className="vibe-network-fact-value">{lastSyncUnix > 0 ? formatRelativeTime(lastSyncUnix * 1000, t) : t("vibeNetwork.neverHandshaked")}</span>
+          {/* "Last sync" was the wrong name for this: it is WireGuard's own
+              last handshake, and nothing about it is driven by the
+              Synchronize button - which is why "sync succeeded" and "last
+              sync: never" could sit on the same card and look like a lie. */}
+          <span className="form-label">{t("vibeNetwork.lastHandshakeLabel")}</span>
+          <span className="vibe-network-fact-value">
+            {lastHandshakeUnix > 0 ? formatRelativeTime(lastHandshakeUnix * 1000, t) : t("vibeNetwork.neverHandshaked")}
+          </span>
         </div>
       </div>
 

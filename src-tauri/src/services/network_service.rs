@@ -169,6 +169,28 @@ pub struct PeerHandshake {
     pub tx_bytes: u64,
 }
 
+/// What the tunnel on one Node is doing - which is not the same question as
+/// whether the Node answered SSH.
+///
+/// This exists because those two were the same field. `reachable` is an SSH
+/// fact, and the UI drew "Connection: active" from it while the WireGuard
+/// interface might not have existed at all; every case that produced no peer
+/// list then rendered as "last handshake: never", including the cases where
+/// nothing had been read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TunnelState {
+    /// `wg show` ran and reported the peers in `peers`.
+    Up,
+    /// The interface is not on this Node - it has not joined, or has not
+    /// been reconciled since joining.
+    Down,
+    /// The interface could not be read; see `tunnel_error`.
+    Unknown,
+    /// The Node itself did not answer, so nothing could be asked of it.
+    Unreachable,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeMeshStatus {
@@ -177,7 +199,16 @@ pub struct NodeMeshStatus {
     /// was collected - the closest thing to "online" this module claims
     /// without a live, continuously-updated connection to base it on.
     pub reachable: bool,
+    pub tunnel: TunnelState,
+    /// Why the tunnel could not be read, when `tunnel` is `Unknown`.
+    pub tunnel_error: Option<String>,
     pub peers: Vec<PeerHandshake>,
+    /// Peers `wg` reported whose public key belongs to no known member.
+    ///
+    /// Not noise: it is what a Node re-keyed behind the app's back looks
+    /// like. Without it, that Node's peers are silently dropped and the card
+    /// reads exactly like a tunnel that has never handshaked.
+    pub unknown_peers: usize,
 }
 
 /// Real, current mesh state for every member - each Node is asked for its
@@ -196,8 +227,9 @@ pub async fn mesh_status(network_repo: &NodeNetworkRepository, server_repo: &Ser
     for member in &members {
         let status = match get_or_connect(server_repo, sessions, member.server_id).await {
             Ok(connection) => match wireguard::show_peers(&connection).await {
-                Ok(peers) => {
-                    let resolved = peers
+                Ok(wireguard::InterfaceState::Up(peers)) => {
+                    let total = peers.len();
+                    let resolved: Vec<PeerHandshake> = peers
                         .into_iter()
                         .filter_map(|peer| {
                             by_public_key.get(peer.public_key.as_str()).map(|&server_id| PeerHandshake {
@@ -208,11 +240,50 @@ pub async fn mesh_status(network_repo: &NodeNetworkRepository, server_repo: &Ser
                             })
                         })
                         .collect();
-                    NodeMeshStatus { server_id: member.server_id, reachable: true, peers: resolved }
+                    NodeMeshStatus {
+                        server_id: member.server_id,
+                        reachable: true,
+                        tunnel: TunnelState::Up,
+                        tunnel_error: None,
+                        unknown_peers: total - resolved.len(),
+                        peers: resolved,
+                    }
                 }
-                Err(_) => NodeMeshStatus { server_id: member.server_id, reachable: true, peers: vec![] },
+                Ok(wireguard::InterfaceState::Missing) => NodeMeshStatus {
+                    server_id: member.server_id,
+                    reachable: true,
+                    tunnel: TunnelState::Down,
+                    tunnel_error: None,
+                    peers: vec![],
+                    unknown_peers: 0,
+                },
+                // The Node answered and told us why, so pass that on rather
+                // than turning it into an empty list the UI reads as "never".
+                Ok(wireguard::InterfaceState::Unreadable(detail)) => NodeMeshStatus {
+                    server_id: member.server_id,
+                    reachable: true,
+                    tunnel: TunnelState::Unknown,
+                    tunnel_error: Some(detail),
+                    peers: vec![],
+                    unknown_peers: 0,
+                },
+                Err(err) => NodeMeshStatus {
+                    server_id: member.server_id,
+                    reachable: true,
+                    tunnel: TunnelState::Unknown,
+                    tunnel_error: Some(err.to_string()),
+                    peers: vec![],
+                    unknown_peers: 0,
+                },
             },
-            Err(_) => NodeMeshStatus { server_id: member.server_id, reachable: false, peers: vec![] },
+            Err(err) => NodeMeshStatus {
+                server_id: member.server_id,
+                reachable: false,
+                tunnel: TunnelState::Unreachable,
+                tunnel_error: Some(err.to_string()),
+                peers: vec![],
+                unknown_peers: 0,
+            },
         };
         results.push(status);
     }

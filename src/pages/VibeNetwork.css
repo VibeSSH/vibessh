@@ -99,3 +99,14 @@
 .vibe-network-hostname-row .form-input {
   flex: 1;
 }
+
+/*
+ * A fact that is not the healthy answer.
+ *
+ * Only ever paired with wording that already says what is wrong - the
+ * colour is a second signal, never the only one, so a card still reads
+ * correctly to somebody who cannot separate these two from each other.
+ */
+.vibe-network-fact-value-warn {
+  color: var(--warning);
+}

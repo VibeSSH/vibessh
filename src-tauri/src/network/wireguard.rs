@@ -283,15 +283,55 @@ fn parse_wg_dump(output: &str) -> Vec<PeerStatus> {
         .collect()
 }
 
-/// This Node's own live view of its peers - real `wg show` output, not a
-/// synthetic probe. Empty (not an error) if the interface doesn't exist
-/// yet (this Node hasn't joined, or hasn't been reconciled since joining).
-pub async fn show_peers(connection: &SshSession) -> AppResult<Vec<PeerStatus>> {
-    let output = connection.execute_command(&format!("sudo wg show {INTERFACE} dump 2>/dev/null")).await?;
-    if output.exit_code != 0 {
-        return Ok(vec![]);
+/// What this Node's tunnel is actually doing, as distinct from what we
+/// managed to find out about it.
+///
+/// The three cases used to collapse into one empty peer list, and the UI
+/// rendered all of them as "last handshake: never". A Node whose interface
+/// was never brought up, a Node whose `wg show` we could not run, and a
+/// healthy tunnel that has genuinely not passed traffic are three different
+/// problems with three different remedies, and telling somebody "never" for
+/// the middle one is telling them something we do not know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InterfaceState {
+    /// `wg show` ran and reported these peers.
+    Up(Vec<PeerStatus>),
+    /// The interface does not exist on this Node - it has not joined, or
+    /// has not been reconciled since joining.
+    Missing,
+    /// The interface could not be read: `wg` is not installed, sudo was
+    /// refused, the command failed. The string is the Node's own stderr.
+    Unreadable(String),
+}
+
+/// This Node's own live view of its tunnel - real `wg show` output, not a
+/// synthetic probe.
+///
+/// stderr is captured rather than discarded (it used to go to `/dev/null`),
+/// because it is the only thing that separates "no such device" from every
+/// other reason the command can fail, and that distinction is the whole
+/// point of the return type.
+pub async fn show_peers(connection: &SshSession) -> AppResult<InterfaceState> {
+    let output = connection.execute_command(&format!("sudo wg show {INTERFACE} dump")).await?;
+    Ok(classify_show_output(output.exit_code, &output.stdout, &output.stderr))
+}
+
+/// Pure, so the three cases can be tested without a Node - same split the
+/// rest of this module uses for its script builders.
+fn classify_show_output(exit_code: i32, stdout: &str, stderr: &str) -> InterfaceState {
+    if exit_code == 0 {
+        return InterfaceState::Up(parse_wg_dump(stdout));
     }
-    Ok(parse_wg_dump(&output.stdout))
+
+    let detail = stderr.trim();
+    // What `wg` says for an interface that isn't there. Matched loosely
+    // because the wording differs between `wg` and the kernel underneath it,
+    // and because being wrong here only costs a less specific message.
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("no such device") || lower.contains("unable to access interface") || lower.contains("no such file or directory") {
+        return InterfaceState::Missing;
+    }
+    InterfaceState::Unreadable(if detail.is_empty() { format!("wg show exited with {exit_code}") } else { detail.to_string() })
 }
 
 /// Tears the interface down and removes its config - used both by an
@@ -446,3 +486,45 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod show_output_tests {
+    use super::*;
+
+    #[test]
+    fn a_successful_dump_is_the_peer_list() {
+        let dump = "privkey\tpubkeyA=\t51820\toff\npubkeyB=\t(none)\t203.0.113.20:51820\t10.77.0.2/32\t1700000000\t1024\t2048\t25\n";
+        assert_eq!(
+            classify_show_output(0, dump, ""),
+            InterfaceState::Up(vec![PeerStatus {
+                public_key: "pubkeyB=".into(),
+                latest_handshake_unix: 1700000000,
+                rx_bytes: 1024,
+                tx_bytes: 2048,
+            }])
+        );
+    }
+
+    // The case the UI used to render as "last handshake: never" - the Node
+    // never brought the interface up at all.
+    #[test]
+    fn a_missing_interface_is_not_an_empty_peer_list() {
+        assert_eq!(classify_show_output(1, "", "Unable to access interface: No such device"), InterfaceState::Missing);
+        assert_eq!(classify_show_output(1, "", "wg-vibessh0: No such device"), InterfaceState::Missing);
+    }
+
+    // Every other failure keeps the Node's own words, because they are the
+    // difference between "nothing to report" and "we could not look".
+    #[test]
+    fn any_other_failure_keeps_the_reason() {
+        assert_eq!(
+            classify_show_output(1, "", "sudo: a password is required"),
+            InterfaceState::Unreadable("sudo: a password is required".into())
+        );
+    }
+
+    #[test]
+    fn a_failure_with_nothing_on_stderr_still_says_something() {
+        assert_eq!(classify_show_output(127, "", "  "), InterfaceState::Unreadable("wg show exited with 127".into()));
+    }
+}

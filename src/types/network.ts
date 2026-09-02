@@ -14,11 +14,30 @@ export interface PeerHandshake {
   txBytes: number;
 }
 
+/**
+ * What one Node's tunnel is doing - deliberately not the same question as
+ * whether the Node answered SSH. Mirrors the Rust `TunnelState`.
+ */
+export type TunnelState =
+  /** `wg show` ran and reported the peers in `peers`. */
+  | "up"
+  /** The interface is not on this Node. */
+  | "down"
+  /** The interface could not be read; `tunnelError` says why. */
+  | "unknown"
+  /** The Node itself did not answer. */
+  | "unreachable";
+
 /** Mirrors the Rust `NodeMeshStatus` DTO. */
 export interface NodeMeshStatus {
   serverId: string;
   reachable: boolean;
+  tunnel: TunnelState;
+  tunnelError: string | null;
   peers: PeerHandshake[];
+  /** Peers `wg` reported whose key belongs to no known member - what a Node
+   * re-keyed behind the app's back looks like. */
+  unknownPeers: number;
 }
 
 /** Mirrors the Rust `NodeEndpoint` DTO - the "Endpoints" view, a Node-scoped read over existing Application ports. */
