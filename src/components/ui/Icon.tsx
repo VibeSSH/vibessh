@@ -27,6 +27,9 @@ ensureRegistered();
  */
 const NAME_TO_LUCIDE: Record<string, string> = {
   "layout-grid": "layout-grid",
+  "book-open": "book-open",
+  // lucide renamed this one; the app's own name for it stays put.
+  "help-circle": "circle-question-mark",
   server: "server",
   settings: "settings",
   terminal: "terminal",

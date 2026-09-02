@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { queryKeys } from "@/services/queryKeys";
+import { GuideLink } from "@/guide/GuideLink";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -144,16 +145,22 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
             <h3 className="card-title">{t("portsTab.title")}</h3>
             <p className="card-subtitle">{t("portsTab.description")}</p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditingPort(null);
-              setFormOpen(true);
-            }}
-          >
-            <Icon name="plus" size={14} />
-            {t("portsTab.addPort")}
-          </Button>
+          <div className="application-detail-actions">
+            {/* Next to the feature, not buried in a menu: somebody who does
+                not know what "Vibe Network only" means is looking at the
+                thing, not searching for its name. */}
+            <GuideLink topic="ports" />
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingPort(null);
+                setFormOpen(true);
+              }}
+            >
+              <Icon name="plus" size={14} />
+              {t("portsTab.addPort")}
+            </Button>
+          </div>
         </div>
 
         {loading ? (

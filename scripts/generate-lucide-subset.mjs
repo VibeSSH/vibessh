@@ -14,6 +14,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const ICON_NAMES = [
+  // The guide: its own place in the rail, and the "what is this?"
+  // button that sits next to a feature.
+  "book-open",
+  "circle-question-mark",
   "layout-grid",
   "server",
   "settings",

@@ -1,0 +1,92 @@
+/*
+ * A manual reads differently from the rest of the app: a fixed list of
+ * topics on the left, one long column on the right. The list does not
+ * scroll with the text, because losing your place in the contents while
+ * reading a page is exactly what makes documentation feel like a maze.
+ */
+.guide-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .guide-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.guide-sidebar {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.guide-search {
+  width: 100%;
+}
+
+.guide-sidebar-heading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.guide-sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-sidebar-item {
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.guide-sidebar-item:hover {
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+.guide-sidebar-item-active {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.guide-no-results {
+  margin: 0;
+}
+
+.guide-reader-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.guide-reader-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

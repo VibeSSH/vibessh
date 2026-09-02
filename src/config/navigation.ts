@@ -53,6 +53,9 @@ export const sidebarGroups: SidebarGroup[] = [
   {
     id: "other",
     labelKey: "nav.groupOther",
-    items: [{ id: "settings", labelKey: "nav.settings", path: "/settings", icon: "settings" }],
+    items: [
+      { id: "guide", labelKey: "nav.guide", path: "/guide", icon: "book-open" },
+      { id: "settings", labelKey: "nav.settings", path: "/settings", icon: "settings" },
+    ],
   },
 ];

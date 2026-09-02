@@ -319,6 +319,15 @@ fn parse_ss_output(output: &str) -> Vec<ListeningSocket> {
             let fields: Vec<&str> = line.split_whitespace().collect();
             let local_address = fields.get(3)?;
             let port: u16 = local_address.rsplit(':').next()?.parse().ok()?;
+            // Nothing listens on port 0. A zero here means the field parsed
+            // as a number without being an address at all - `split_whitespace`
+            // splits on every Unicode space, so a line of unexpected text can
+            // put a bare "0" in the address column. The resulting socket
+            // would compare equal to no real port and so silently never
+            // collide with one, which is worse than not reporting it.
+            if port == 0 {
+                return None;
+            }
             let process = line.find("users:((").and_then(|start| {
                 let rest = &line[start + "users:((".len()..];
                 rest.split('"').nth(1).map(str::to_string)
@@ -635,6 +644,18 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
         assert_eq!(sockets[1].port, 53);
         assert_eq!(sockets[1].process.as_deref(), Some("systemd-resolve"));
         assert_eq!(sockets[2].port, 22);
+    }
+
+    /// Found by the property test in this module, which shrank to
+    /// `"¡\u{a0}0 a\u{2000}0"`. `split_whitespace` splits on every Unicode
+    /// space, so a line of unexpected text can leave a bare "0" in the
+    /// column the local address should be in.
+    #[test]
+    fn parse_ss_output_does_not_invent_a_socket_on_port_zero() {
+        assert!(parse_ss_output("¡\u{a0}0 a\u{2000}0").is_empty());
+        assert!(parse_ss_output("a b c 0").is_empty());
+        // The same shape with a real port is still read.
+        assert_eq!(parse_ss_output("LISTEN 0 4096 0.0.0.0:22").len(), 1);
     }
 
     #[test]

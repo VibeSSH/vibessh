@@ -153,6 +153,20 @@ impl KeywordKnowledgeService {
     /// behaviour.
     pub fn with_builtin_docs() -> Self {
         let documents: &[(&'static str, &'static str)] = &[
+            // The in-app guide, in both languages it is written in.
+            //
+            // The same files the Guide page renders (`src/guide/guideDocs.ts`
+            // loads this directory), so an answer here and a page there
+            // cannot describe the app differently - there is one description
+            // and two readers of it. Both languages are included on purpose:
+            // scoring is by keyword, so a question asked in Polish matches
+            // the Polish text without anything having to translate anything.
+            //
+            // A new topic is two files and two lines here.
+            // `every_guide_document_is_in_the_corpus` fails if the second
+            // pair is forgotten.
+            ("Guide - Ports", include_str!("../../../docs/guide/ports.en.md")),
+            ("Poradnik - Porty", include_str!("../../../docs/guide/ports.pl.md")),
             ("Applications architecture", include_str!("../../../docs/APPLICATIONS_ARCHITECTURE.md")),
             ("Threat model", include_str!("../../../docs/threat-model.md")),
             ("Agent privileges", include_str!("../../../docs/agent-privileges.md")),
@@ -351,5 +365,48 @@ mod tests {
         assert_eq!(sections[0].body, "intro text");
         assert_eq!(sections[1].title, "Ports");
         assert_eq!(sections[2].title, "Visibility");
+    }
+}
+
+#[cfg(test)]
+mod guide_corpus_tests {
+    use super::*;
+
+    /// Every guide topic reaches the assistant.
+    ///
+    /// The Guide page loads `docs/guide` as a directory, so adding a file is
+    /// all it takes there. The corpus needs an `include_str!` per file,
+    /// because a packaged binary has no repository to read from - which
+    /// means the two can drift, and the failure would be silent: the page
+    /// documents a feature and the assistant has never heard of it.
+    ///
+    /// Matched on each file's own `title:` line, which is unique per file
+    /// (the two languages of a topic have different titles) and sits in the
+    /// first section's body, ahead of any truncation.
+    #[test]
+    fn every_guide_document_is_in_the_corpus() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/guide");
+        let service = KeywordKnowledgeService::with_builtin_docs();
+        let corpus: String = service.sections.iter().map(|section| section.body.as_str()).collect::<Vec<_>>().join("\n");
+
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&dir).expect("docs/guide should exist") {
+            let path = entry.expect("readable entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("readable guide file");
+            let title = text
+                .lines()
+                .find(|line| line.starts_with("title:"))
+                .unwrap_or_else(|| panic!("{} has no `title:` in its frontmatter", path.display()));
+            assert!(
+                corpus.contains(title),
+                "{} is not in the AI corpus - add an `include_str!` for it in `with_builtin_docs`",
+                path.display()
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no guide documents were found to check");
     }
 }
