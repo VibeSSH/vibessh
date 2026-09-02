@@ -25,6 +25,14 @@ pub struct LogLine {
     pub source: String,
     pub line: String,
     pub timestamp: DateTime<Utc>,
+    /// Which `DesktopCommand::FollowLogs` this line belongs to.
+    ///
+    /// Optional so an Agent built before follows existed still
+    /// deserialises - it simply never sets it, and the Desktop has nothing
+    /// to route such a line to, which is the correct outcome rather than a
+    /// parse failure that would take the whole connection down.
+    #[serde(default)]
+    pub follow_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,8 +1,12 @@
 use axum::extract::ws::{Message, WebSocket};
+use chrono::Utc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::mpsc;
+use uuid::Uuid;
 use tokio::time::{interval, timeout, Duration, MissedTickBehavior};
 
 use vibessh_protocol::{
-    DesktopCommand, HandshakeRequest, HandshakeResponse, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
+    DesktopCommand, HandshakeRequest, HandshakeResponse, LogLine, ProtocolErrorCode, ServerEvent, PROTOCOL_VERSION,
 };
 
 use crate::metrics::MetricsCollector;
@@ -25,9 +29,27 @@ pub async fn handle(mut socket: WebSocket, state: SharedState) {
     // one shared sample to multiple simultaneous viewers is a real future
     // optimization, not something worth building before anything needs it.
     let mut metrics = MetricsCollector::new();
+    // Follows write here rather than to the socket: the socket is only ever
+    // touched by this loop, which is what keeps heartbeats and metrics
+    // flowing while a container is producing output.
+    let (lines_tx, mut lines_rx) = mpsc::unbounded_channel::<LogLine>();
+    let mut follows: FollowRegistry = FollowRegistry::new();
 
     loop {
         tokio::select! {
+            line = lines_rx.recv() => {
+                match line {
+                    Some(line) => {
+                        if !send_event(&mut socket, &ServerEvent::LogsLine(line)).await {
+                            log::info!("agent: client disconnected (log line send failed)");
+                            return;
+                        }
+                    }
+                    // `lines_tx` is held by this function for the whole
+                    // connection, so this only happens at shutdown.
+                    None => return,
+                }
+            }
             _ = heartbeat.tick() => {
                 if !send_event(&mut socket, &ServerEvent::Heartbeat).await {
                     log::info!("agent: client disconnected (heartbeat send failed)");
@@ -57,7 +79,7 @@ pub async fn handle(mut socket: WebSocket, state: SharedState) {
                         // silently hanging up.
                         match serde_json::from_str::<DesktopCommand>(&text) {
                             Ok(command) => {
-                                if !handle_command(&mut socket, command).await {
+                                if !handle_command(&mut socket, command, &mut follows, &lines_tx).await {
                                     log::info!("agent: client disconnected (command result send failed)");
                                     return;
                                 }
@@ -207,6 +229,62 @@ async fn send_handshake_rejection(
     send_json(socket, &response).await
 }
 
+/// The `docker logs -f` processes this connection has running, by the
+/// Desktop's follow id.
+///
+/// Killed when the connection ends, not just when the Desktop asks. A
+/// dropped connection is the common case - a laptop closing, a network
+/// blip - and without this every disconnect would leave a `docker logs -f`
+/// running on the Node until somebody noticed. That is the same class of
+/// leftover `runtime::docker`'s teardown exists to prevent.
+type FollowRegistry = std::collections::HashMap<Uuid, tokio::process::Child>;
+
+/// Starts one follow, streaming its output into `lines_tx`.
+///
+/// The child's stdout is read here rather than by the caller because the
+/// caller owns the socket and must stay free to serve heartbeats and
+/// metrics while a container is quiet - or noisy.
+///
+/// stderr is merged into stdout by `2>&1` for the same reason the Desktop's
+/// SSH path does it: `docker logs` writes a container's stderr there, and
+/// separating them would drop half of what a crashing process said.
+fn start_follow(follow_id: Uuid, container: &str, tail: u32, lines_tx: mpsc::UnboundedSender<LogLine>) -> std::io::Result<tokio::process::Child> {
+    let mut child = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("docker logs --tail {} -f {} 2>&1", tail.clamp(1, 5000), shell_quote(container)))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()?;
+
+    let Some(stdout) = child.stdout.take() else {
+        return Ok(child);
+    };
+
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            // A closed receiver means the connection ended; stop reading
+            // rather than filling a channel nobody drains.
+            if lines_tx.send(LogLine { source: "docker".to_string(), line, timestamp: Utc::now(), follow_id: Some(follow_id) }).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(child)
+}
+
+/// POSIX single-quoting for the one value that reaches a shell here.
+///
+/// The container name comes from the Desktop over the network, and this is
+/// the Agent's side of `AGENTS.md` §1 - nothing built into a command line
+/// goes in unquoted, whoever it came from. The Desktop validates the name
+/// too; neither end relies on the other having done it.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 /// Applies one `DesktopCommand` and reports the result back - Etap M3's
 /// `ApplyDesiredState` carries an empty `NodeDesiredState`, so there is
 /// nothing yet that could actually fail to apply; this always acks `ok:
@@ -216,13 +294,42 @@ async fn send_handshake_rejection(
 /// "dumb applier" per the control-plane design (Desktop is the only place
 /// that decides whether a Node is in or out of sync), it never second-
 /// guesses or re-derives what it was asked to apply.
-async fn handle_command(socket: &mut WebSocket, command: DesktopCommand) -> bool {
-    let result = match command {
+async fn handle_command(
+    socket: &mut WebSocket,
+    command: DesktopCommand,
+    follows: &mut FollowRegistry,
+    lines_tx: &mpsc::UnboundedSender<LogLine>,
+) -> bool {
+    match command {
         DesktopCommand::ApplyDesiredState { revision, .. } => {
-            ServerEvent::StateApplied { revision, ok: true, error: None }
+            send_event(socket, &ServerEvent::StateApplied { revision, ok: true, error: None }).await
         }
-    };
-    send_event(socket, &result).await
+        DesktopCommand::FollowLogs { follow_id, container, tail } => {
+            // Replacing rather than refusing: a Desktop that reconnects and
+            // re-asks for the same follow would otherwise leave the first
+            // process running and receive every line twice.
+            if let Some(mut previous) = follows.remove(&follow_id) {
+                let _ = previous.kill().await;
+            }
+            match start_follow(follow_id, &container, tail, lines_tx.clone()) {
+                Ok(child) => {
+                    follows.insert(follow_id, child);
+                }
+                // Not fatal to the connection: one console failing to open
+                // must not disconnect a Node. The Desktop sees no lines and
+                // falls back, which is the same outcome as a runtime with
+                // no follow at all.
+                Err(err) => log::warn!("agent: couldn't follow logs for {container}: {err}"),
+            }
+            true
+        }
+        DesktopCommand::StopFollowingLogs { follow_id } => {
+            if let Some(mut child) = follows.remove(&follow_id) {
+                let _ = child.kill().await;
+            }
+            true
+        }
+    }
 }
 
 async fn send_event(socket: &mut WebSocket, event: &ServerEvent) -> bool {

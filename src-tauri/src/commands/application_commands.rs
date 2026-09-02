@@ -4,15 +4,17 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::blueprints::BlueprintRegistry;
-use crate::errors::AppResult;
+use crate::errors::{AppError, AppResult};
 use crate::models::{
-    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, CreateApplicationFromBlueprintInput, EnvironmentVariable,
-    PortInput, RegistryCredential, SetHealthCheckInput, SetRegistryCredentialInput, SetResourceLimitsInput,
+    Application, ApplicationDetail, ApplicationPort, ApplicationStatus, Blueprint, ConnectionMode,
+    CreateApplicationFromBlueprintInput, EnvironmentVariable, PortInput, RegistryCredential, RuntimeType, SetHealthCheckInput,
+    SetRegistryCredentialInput, SetResourceLimitsInput,
 };
 use crate::runtime::local_process::LocalProcessManager;
+use vibessh_protocol::DesktopCommand;
 use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
-use crate::state::{DnsSuffixState, LogFollowManager, SshSessionManager};
+use crate::state::{AgentSessionManager, DnsSuffixState, LogFollow, LogFollowManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
@@ -255,15 +257,25 @@ async fn mark_new_log_session(log_capture: &LogCaptureStore, id: Uuid) {
 /// output arrives on `applog://{follow_id}/line` and the stream's end on
 /// `applog://{follow_id}/closed`.
 ///
-/// One event pair per follow rather than per Application, so two consoles
-/// open on the same Application - a second window, a stale tab - do not
-/// interleave into one name. Same shape `terminal_commands` uses.
+/// **Two transports, one contract.** An Agent-mode Node already holds a
+/// persistent connection, so the Agent runs the follow and pushes lines
+/// over it - one connection per Node however many consoles are open, which
+/// is how Pterodactyl's Wings does it and why that feels instant. An
+/// SSH-mode Node has no such channel, so the Desktop opens its own and runs
+/// `docker logs -f` there: one remote process per console, the best SSH
+/// allows.
+///
+/// The frontend sees no difference. Both paths emit the same events under
+/// the same id, so the console component contains no transport knowledge at
+/// all - and neither will the next thing that wants live output.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn follow_application_logs(
     app: AppHandle,
     repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
+    agents: State<'_, AgentSessionManager>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
     follows: State<'_, LogFollowManager>,
     id: Uuid,
@@ -273,6 +285,47 @@ pub async fn follow_application_logs(
     let line_event = format!("applog://{follow_id}/line");
     let closed_event = format!("applog://{follow_id}/closed");
 
+    let detail = services::get_application(&repo, id)?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("live output is only available for Docker applications".to_string()));
+    }
+
+    // Agent-mode: ask the Node's own daemon to do the following.
+    if let Some(server_id) = detail.application.server_id {
+        let server = server_repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
+        if server.connection_mode == ConnectionMode::Agent {
+            let parsed = Uuid::parse_str(&follow_id).map_err(|_| AppError::InvalidInput("the follow id must be a UUID".to_string()))?;
+            let mut lines = agents.subscribe_logs(parsed).await;
+            let container = format!("vibessh-app-{id}");
+            if !agents
+                .send_command(server_id, DesktopCommand::FollowLogs { follow_id: parsed, container, tail })
+                .await
+            {
+                agents.unsubscribe_logs(parsed).await;
+                return Err(AppError::Connection("this Node's agent isn't connected".to_string()));
+            }
+
+            tokio::spawn(async move {
+                while let Some(line) = lines.recv().await {
+                    if let Err(err) = app.emit(&line_event, line) {
+                        log::warn!("couldn't deliver a console line to the UI: {err}");
+                        break;
+                    }
+                }
+                // The sink closed - the console unsubscribed, or the app is
+                // shutting down. Telling the UI keeps its "live" label
+                // honest instead of leaving it claiming a stream that ended.
+                if let Err(err) = app.emit(&closed_event, None::<String>) {
+                    log::warn!("couldn't tell the UI the console stream ended: {err}");
+                }
+            });
+
+            follows.insert(follow_id, LogFollow::Agent { server_id, follow_id: parsed }).await;
+            return Ok(());
+        }
+    }
+
+    // SSH-mode: the Desktop runs the follow itself.
     let app_for_lines = app.clone();
     let handle = services::follow_application_logs(
         &repo,
@@ -294,17 +347,31 @@ pub async fn follow_application_logs(
     )
     .await?;
 
-    follows.insert(follow_id, handle).await;
+    follows.insert(follow_id, LogFollow::Ssh(handle)).await;
     Ok(())
 }
 
 /// Stops a live console stream. `false` means it had already ended.
 ///
-/// Not optional bookkeeping: dropping the handle is what closes the remote
-/// channel, and skipping it leaves `docker logs -f` running on the Node.
+/// Not optional bookkeeping. An SSH follow ends when its handle drops; an
+/// Agent follow ends only when the Agent is told, and skipping that leaves
+/// `docker logs -f` running on the Node for the life of its process.
 #[tauri::command]
-pub async fn stop_following_application_logs(follows: State<'_, LogFollowManager>, follow_id: String) -> AppResult<bool> {
-    Ok(follows.stop(&follow_id).await)
+pub async fn stop_following_application_logs(
+    agents: State<'_, AgentSessionManager>,
+    follows: State<'_, LogFollowManager>,
+    follow_id: String,
+) -> AppResult<bool> {
+    match follows.take(&follow_id).await {
+        None => Ok(false),
+        // Dropping the handle closes the channel.
+        Some(LogFollow::Ssh(_)) => Ok(true),
+        Some(LogFollow::Agent { server_id, follow_id }) => {
+            agents.unsubscribe_logs(follow_id).await;
+            agents.send_command(server_id, DesktopCommand::StopFollowingLogs { follow_id }).await;
+            Ok(true)
+        }
+    }
 }
 
 #[tauri::command]

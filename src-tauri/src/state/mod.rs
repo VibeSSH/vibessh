@@ -17,7 +17,7 @@ pub use backup_destination_state::BackupDestinationState;
 pub use cloud_session::CloudState;
 pub use dns_suffix_state::DnsSuffixState;
 pub use file_transfers::FileTransferManager;
-pub use log_follows::LogFollowManager;
+pub use log_follows::{LogFollow, LogFollowManager};
 pub use migration_locks::MigrationLockManager;
 pub use pairing_session::PairingSession;
 pub use port_forward_sessions::PortForwardManager;

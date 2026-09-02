@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::{mpsc, watch, Mutex};
@@ -47,12 +48,36 @@ struct Session {
 /// long as the app keeps running.
 #[derive(Default)]
 pub struct AgentSessionManager {
+    /// Where a follow's lines go, by the follow id the Desktop chose.
+    ///
+    /// On the manager rather than per session because the drain task that
+    /// receives events outlives any single `ensure_connected` call and owns
+    /// no reference to the manager - it gets an `Arc` of this instead.
+    log_sinks: Arc<Mutex<HashMap<Uuid, mpsc::UnboundedSender<String>>>>,
     sessions: Mutex<HashMap<Uuid, Session>>,
 }
 
 impl AgentSessionManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Registers a destination for the lines of one follow.
+    ///
+    /// Keyed by follow id rather than by server: one Node can have several
+    /// consoles open over its single connection, and the lines only differ
+    /// by the id the Desktop chose when it asked.
+    pub async fn subscribe_logs(&self, follow_id: Uuid) -> mpsc::UnboundedReceiver<String> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.log_sinks.lock().await.insert(follow_id, tx);
+        rx
+    }
+
+    /// Drops a destination. The Agent is told separately - this only stops
+    /// the Desktop listening, and forgetting the other half would leave
+    /// `docker logs -f` running on the Node.
+    pub async fn unsubscribe_logs(&self, follow_id: Uuid) {
+        self.log_sinks.lock().await.remove(&follow_id);
     }
 
     /// A second call for a `server_id` that's already connected is a safe
@@ -64,6 +89,7 @@ impl AgentSessionManager {
             return;
         }
 
+        let log_sinks = Arc::clone(&self.log_sinks);
         let (events_tx, mut events_rx) = mpsc::channel(16);
         let (state_tx, state_rx) = watch::channel(AgentConnectionState::Connecting);
         let (command_tx, command_rx) = mpsc::channel(16);
@@ -78,8 +104,27 @@ impl AgentSessionManager {
         // out anywhere yet).
         tokio::spawn(async move {
             while let Some(event) = events_rx.recv().await {
-                if let ServerEvent::StateApplied { revision, ok, error } = event {
-                    let _ = applied_tx.send(Some(AppliedAck { revision, ok, error }));
+                match event {
+                    ServerEvent::StateApplied { revision, ok, error } => {
+                        let _ = applied_tx.send(Some(AppliedAck { revision, ok, error }));
+                    }
+                    // A line with no follow id comes from an Agent built
+                    // before follows existed; there is nothing to route it
+                    // to, and dropping it is correct rather than an error.
+                    ServerEvent::LogsLine(line) => {
+                        if let Some(follow_id) = line.follow_id {
+                            let sinks = log_sinks.lock().await;
+                            if let Some(sink) = sinks.get(&follow_id) {
+                                // A closed receiver means the console went
+                                // away without unsubscribing; the entry is
+                                // left for `unsubscribe_logs` to remove
+                                // rather than mutating the map while it is
+                                // only borrowed for reading.
+                                let _ = sink.send(line.line);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         });
@@ -200,7 +245,12 @@ mod tests {
             ws.send(Message::Text(serde_json::to_string(&response).unwrap())).await.unwrap();
 
             let Some(Ok(Message::Text(text))) = ws.next().await else { return };
-            let DesktopCommand::ApplyDesiredState { revision, .. } = serde_json::from_str(&text).unwrap();
+            // Only the apply command is exercised here; the follow
+            // commands share the channel but have their own tests in
+            // `protocol`, and a stub that acked them would prove nothing.
+            let DesktopCommand::ApplyDesiredState { revision, .. } = serde_json::from_str(&text).unwrap() else {
+                return;
+            };
             let ack = ServerEvent::StateApplied { revision, ok: true, error: None };
             ws.send(Message::Text(serde_json::to_string(&ack).unwrap())).await.unwrap();
 

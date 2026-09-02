@@ -10,7 +10,11 @@ name = "vibe-agent"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "time", "net"] }
+# "process" and "io-util" are for streaming container output: the Agent
+# spawns `docker logs -f` and reads its stdout line by line (see
+# transport::connection::start_follow). "sync" carries those lines back
+# to the single task that owns the socket.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "time", "net", "process", "io-util", "sync"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

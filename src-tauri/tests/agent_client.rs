@@ -58,6 +58,10 @@ async fn connects_swallows_heartbeats_and_forwards_real_events() {
             source: "test".into(),
             line: "hello from mock agent".into(),
             timestamp: chrono::Utc::now(),
+            // No follow id: this asserts the transport carries a log event
+            // at all, which predates follows and must keep working for an
+            // Agent that never asks for one.
+            follow_id: None,
         });
         ws.send(Message::Text(serde_json::to_string(&log_event).unwrap()))
             .await
@@ -169,7 +173,9 @@ async fn a_command_sent_before_the_connection_exists_is_queued_and_delivered_onc
         .expect("websocket error");
     let Message::Text(text) = received else { panic!("expected a text frame") };
     let command: DesktopCommand = serde_json::from_str(&text).unwrap();
-    let DesktopCommand::ApplyDesiredState { revision, .. } = command;
+    let DesktopCommand::ApplyDesiredState { revision, .. } = command else {
+        panic!("expected state.apply, got {command:?}")
+    };
     assert_eq!(revision, 3);
 
     let _ = state_rx.changed().await;
