@@ -390,6 +390,9 @@ impl SshSession {
         tokio::spawn(async move {
             let mut buffer = String::new();
             let mut exit_failure: Option<u32> = None;
+            // How much arrived before it ended - the difference between "it
+            // never produced anything" and "it worked and then stopped".
+            let mut lines_seen: u64 = 0;
             let close_reason = loop {
                 tokio::select! {
                     // The handle was dropped - the UI closed the console, or
@@ -409,6 +412,7 @@ impl SshSession {
                                 while let Some(newline) = buffer.find('\n') {
                                     let line = buffer[..newline].trim_end_matches('\r').to_string();
                                     buffer.drain(..=newline);
+                                    lines_seen += 1;
                                     on_line(line);
                                 }
                             }
@@ -436,8 +440,14 @@ impl SshSession {
                 on_line(buffer);
             }
             let close_reason = close_reason.or_else(|| exit_failure.map(|code| format!("the command exited with status {code}")));
-            if let Some(reason) = &close_reason {
-                log::warn!("a log follow ended: {reason}");
+            // Logged whether or not there is a reason. A follow that ends
+            // "normally" still ends, and the caller still falls back - so
+            // logging only the explained endings left the common case
+            // invisible, which is precisely the case that needed
+            // explaining.
+            match &close_reason {
+                Some(reason) => log::warn!("a log follow ended after {lines_seen} line(s): {reason}"),
+                None => log::info!("a log follow ended normally after {lines_seen} line(s)"),
             }
             on_closed(close_reason);
         });
