@@ -253,7 +253,7 @@ async fn call_upstream(upstream: &Upstream, messages: &[ChatMessage]) -> Result<
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(UPSTREAM_TIMEOUT_SECS))
         .build()
-        .map_err(|err| ApiError::Internal(format!("failed to build the AI HTTP client: {err}")))?;
+        .map_err(|err| ApiError::UpstreamFailure(format!("failed to build the AI HTTP client: {err}")))?;
 
     let body = json!({
         "model": upstream.model,
@@ -269,7 +269,7 @@ async fn call_upstream(upstream: &Upstream, messages: &[ChatMessage]) -> Result<
         .json(&body)
         .send()
         .await
-        .map_err(|err| ApiError::Internal(format!("couldn't reach the AI provider: {err}")))?;
+        .map_err(|err| ApiError::UpstreamFailure(format!("couldn't reach the AI provider: {err}")))?;
 
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
@@ -278,15 +278,15 @@ async fn call_upstream(upstream: &Upstream, messages: &[ChatMessage]) -> Result<
         // not put a megabyte in the log.
         let excerpt: String = text.chars().take(600).collect();
         log::warn!("the AI provider answered {status}: {excerpt}");
-        return Err(ApiError::Internal(format!("the AI provider answered {status}")));
+        return Err(ApiError::UpstreamFailure(format!("the AI provider answered {status}")));
     }
 
     let parsed: serde_json::Value =
-        serde_json::from_str(&text).map_err(|err| ApiError::Internal(format!("the AI provider's response didn't parse: {err}")))?;
+        serde_json::from_str(&text).map_err(|err| ApiError::UpstreamFailure(format!("the AI provider's response didn't parse: {err}")))?;
     parsed["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_string)
-        .ok_or_else(|| ApiError::Internal("the AI provider returned no answer".to_string()))
+        .ok_or_else(|| ApiError::UpstreamFailure("the AI provider returned no answer".to_string()))
 }
 
 #[cfg(test)]

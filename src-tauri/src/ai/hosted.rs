@@ -38,21 +38,46 @@ impl HostedProvider {
 
     /// The account's usage today, without spending any of it.
     pub async fn quota(&self) -> AppResult<CloudAiQuota> {
-        self.client.ai_quota(&self.access_token).await.map_err(hosted_model_missing)
+        self.client.ai_quota(&self.access_token).await.map_err(hosted_error)
     }
 }
 
-/// Turns the backend's 404 into something the interface can translate.
+/// Turns the backend's answer into something the interface can translate.
 ///
-/// `/ai/chat` and `/ai/quota` answer 404 for exactly one reason - this
-/// deployment has no `AI_UPSTREAM_*` configured - so the mapping is
-/// unambiguous here. It is deliberately *not* done in `CloudClient`,
-/// where a 404 from `/teams/:id` means a missing team and remapping it
-/// would break every other cloud call.
-fn hosted_model_missing(err: AppError) -> AppError {
+/// `/ai/chat` and `/ai/quota` have a small, known error surface, and every
+/// case in it deserves a different sentence:
+///
+/// - 404 means this deployment has no `AI_UPSTREAM_*` configured;
+/// - 401 means the cloud session expired, which routes to a login;
+/// - 429 is the daily allowance, already its own code;
+/// - 400 is a prompt too large, whose message names the limit;
+/// - anything else is the upstream provider failing, and there is nothing
+///   the user can do about it beyond using their own key.
+///
+/// That last bucket is why this exists. Without it a provider rejecting
+/// VibeSSH's key surfaced as `internal error: cloud backend returned 500
+/// Internal Server Error: an internal error occurred` - the untranslated
+/// fallback, saying nothing three times over. The coarse codes have no
+/// translations by design (they are the floor for errors nobody has
+/// classified yet), so anything reaching them here is a classification this
+/// module failed to do.
+///
+/// Deliberately *not* done in `CloudClient`: a 404 from `/teams/:id` means
+/// a missing team, and remapping every status there would break every other
+/// cloud call.
+fn hosted_error(err: AppError) -> AppError {
     match err {
         AppError::NotFound(_) => AppError::AiHostedUnavailable,
-        other => other,
+        // Pass through the ones that are already right.
+        unauthorized @ AppError::Unauthorized(_) => unauthorized,
+        quota @ AppError::AiQuotaExhausted => quota,
+        invalid @ AppError::InvalidInput(_) => invalid,
+        other => {
+            // The detail is the backend's, already logged there; this keeps
+            // a local trace of which turn it belonged to.
+            log::warn!("the hosted AI call failed: {other}");
+            AppError::AiProviderUnavailable
+        }
     }
 }
 
@@ -79,7 +104,7 @@ impl AiProvider for HostedProvider {
                 .collect(),
         );
 
-        let answer = self.client.ai_chat(&self.access_token, &messages).await.map_err(hosted_model_missing)?;
+        let answer = self.client.ai_chat(&self.access_token, &messages).await.map_err(hosted_error)?;
         if answer.content.trim().is_empty() {
             log::warn!("the hosted AI returned an empty answer");
             return Err(AppError::AiProviderUnavailable);

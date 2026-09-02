@@ -18,6 +18,13 @@ pub enum ApiError {
     /// refreshing tokens would just get the same 403 again).
     Forbidden(String),
     Conflict(String),
+    /// The configured upstream AI provider failed or refused us.
+    ///
+    /// Not `Internal`: nothing in this service went wrong, and reporting it
+    /// as a 500 tells an operator's monitoring to look in the wrong place.
+    /// It is also not the caller's fault, which is why the message they get
+    /// stays generic while the detail goes to this server's log.
+    UpstreamFailure(String),
     /// A per-account allowance is spent. Its own variant rather than
     /// `Forbidden` because the two mean opposite things to a client: a 403
     /// will never succeed however long you wait, and this one succeeds
@@ -39,6 +46,7 @@ impl std::fmt::Display for ApiError {
             ApiError::Forbidden(msg) => write!(f, "forbidden: {msg}"),
             ApiError::Conflict(msg) => write!(f, "conflict: {msg}"),
             ApiError::TooManyRequests(msg) => write!(f, "too many requests: {msg}"),
+            ApiError::UpstreamFailure(msg) => write!(f, "upstream failure: {msg}"),
             ApiError::NotFound(msg) => write!(f, "not found: {msg}"),
             ApiError::Internal(msg) => write!(f, "internal error: {msg}"),
         }
@@ -63,6 +71,14 @@ impl IntoResponse for ApiError {
             // The message is safe to show: it names the limit, which is the
             // one thing the user needs in order to understand the refusal.
             ApiError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests", msg),
+            // 502, because that is what it is: a gateway got an unusable
+            // answer from the service behind it. The message is withheld
+            // like `Internal`'s - an upstream body is where a key gets
+            // echoed back.
+            ApiError::UpstreamFailure(msg) => {
+                log::error!("{msg}");
+                (StatusCode::BAD_GATEWAY, "upstream_failure", "the AI provider could not be used".to_string())
+            }
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, "not_found", msg),
             ApiError::Internal(msg) => {
                 log::error!("{msg}");
