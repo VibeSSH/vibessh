@@ -17,6 +17,7 @@ import { useToastStore } from "@/stores/toastStore";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import "./Rail.css";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 interface RailButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon: string;
@@ -218,11 +219,7 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
             rail's generic glyphs are indistinguishable, and the name only
             appears on hover. A custom image replaces the glyph entirely
             rather than sitting beside it - there is no room for both. */}
-        {server.icon ? (
-          <img src={server.icon} alt="" className="rail-instance-icon" />
-        ) : (
-          <Icon name={isAgent ? "zap" : "server"} size={16} />
-        )}
+        <NodeIcon server={server} size={16} />
         {/* No room for the word on a 40px button, so this is the one place
             the dot carries the status on its own - as a shape plus an
             accessible name, not as a colour. */}

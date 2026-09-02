@@ -96,7 +96,6 @@
 }
 
 
-
 /* Overrides the shared `.host-address`'s own (tighter, generic) flex/gap
    defaults - source order wins them on equal specificity, since this file
    is imported after HostAddress's own CSS. */
@@ -278,17 +277,4 @@
   font-size: 10px;
   color: var(--text-tertiary);
   white-space: nowrap;
-}
-
-/* A custom node icon fills its whole 36px button, the way a launcher icon
-   fills its tile. It replaced a generic glyph, so it was first sized like one
-   - 20px inside a 36px button, which left it too small to identify a node at
-   a glance, which is the entire reason the feature exists. The status dot
-   still sits on top at the corner. */
-.rail-instance-icon {
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-md);
-  object-fit: cover;
-  display: block;
 }

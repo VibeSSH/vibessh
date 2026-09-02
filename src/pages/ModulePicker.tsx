@@ -12,6 +12,7 @@ import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 interface ModulePickerProps {
   titleKey: string;
@@ -68,7 +69,7 @@ export function ModulePicker({ titleKey, subtitleKey, icon, routePrefix }: Modul
             {servers.map((server) => (
               <li key={server.id} className="server-list-item">
                 <div className="server-list-icon">
-                  {server.icon ? <img src={server.icon} alt="" className="server-list-icon-image" /> : <Icon name={icon} size={16} />}
+                  <NodeIcon server={server} size={16} fallback={icon} />
                 </div>
                 <button className="files-entry-name" title={server.name} onClick={() => navigate(`${routePrefix}/${server.id}`)}>
                   {server.name}

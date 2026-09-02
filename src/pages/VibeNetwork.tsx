@@ -43,6 +43,7 @@ import "./Servers.css";
 import "./pages.css";
 import "./VibeNetwork.css";
 import { errorMessage } from "@/services/tauri";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 type Tab = "nodes" | "endpoints" | "dns";
 
@@ -272,6 +273,10 @@ interface NodeCardProps {
 }
 
 function NodeCard({ member, name, status, dnsName, serverName, advanced, applicationCount, onLeave }: NodeCardProps) {
+  // Read here rather than passed down: the card already knows its
+  // `member.serverId`, and threading the whole server list through the props
+  // of every intermediate component to reach one icon is worse.
+  const node = useServersStore((state) => state.servers.find((server) => server.id === member.serverId));
   const { t } = useTranslation();
   const nowSeconds = Date.now() / 1000;
   const reachable = status?.reachable ?? false;
@@ -294,7 +299,9 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
     <Card>
       <div className="vibe-network-node-header">
         <div className="server-card-avatar glossy-tile">
-          <Icon name="server" size={16} />
+          {/* The node's own icon, so a mesh member is recognisable here by
+              the same mark as everywhere else. */}
+          <NodeIcon server={node} size={16} />
         </div>
         <div className="vibe-network-node-title">
           <p className="server-card-name">{name}</p>

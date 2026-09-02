@@ -1,0 +1,10 @@
+/* Fills whatever tile it is dropped into. Every call site draws this inside a
+   square container that already has the right radius, so it inherits rather
+   than picking one. */
+.node-icon-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}

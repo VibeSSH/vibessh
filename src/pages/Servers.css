@@ -83,13 +83,3 @@
   flex: 1;
   max-width: 280px;
 }
-
-/* A node's own icon inside `.server-list-icon`, full-bleed for the same
-   reason as `.rail-instance-icon`. */
-.server-list-icon-image {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  object-fit: cover;
-  display: block;
-}

@@ -7,6 +7,7 @@ import type { ManagedServer } from "@/stores/serversStore";
 import type { ServerMetrics } from "@/types/serverEvent";
 import "./NodeMiniCard.css";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
@@ -100,11 +101,7 @@ export function NodeMiniCard({ server, metrics, history, syncStatus, selected, o
     >
       <div className="node-mini-card-header">
         <div className={`node-mini-card-avatar glossy-tile ${isAgent ? "node-mini-card-avatar-agent" : ""}`}>
-          {server.icon ? (
-            <img src={server.icon} alt="" className="node-mini-card-icon-image" />
-          ) : (
-            <Icon name={isAgent ? "zap" : "server"} size={14} />
-          )}
+          <NodeIcon server={server} size={14} />
         </div>
         <div className="node-mini-card-title-col">
           <div className="node-mini-card-title-row">

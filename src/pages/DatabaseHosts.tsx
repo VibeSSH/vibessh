@@ -19,6 +19,7 @@ import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./pages.css";
 import { errorMessage } from "@/services/tauri";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 /**
  * Global admin list of MySQL/MariaDB engines VibeSSH can provision
@@ -98,7 +99,11 @@ export function DatabaseHosts() {
               return (
                 <li key={host.id} className="server-list-item">
                   <div className="server-list-icon">
-                    <Icon name="database" size={16} />
+                    {/* The node's icon when the host lives on one, so the row
+                        says *where* at a glance; the database glyph when it
+                        does not, which is the honest answer for an external
+                        server VibeSSH only holds credentials for. */}
+                    <NodeIcon server={servers.find((s) => s.id === host.serverId)} size={16} fallback="database" />
                   </div>
                   <div className="server-list-main">
                     <span className="server-list-name" title={host.name}>

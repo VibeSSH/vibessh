@@ -81,6 +81,79 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane do samego jara proxy." },
     },
   },
+  mariadb: {
+    name: "MariaDB",
+    description:
+      "Samodzielny serwer bazy MariaDB - dane leżą we własnym katalogu roboczym tej aplikacji. Zanim go uruchomisz, ustaw MYSQL_ROOT_PASSWORD (oraz ewentualnie MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD, jeśli chcesz je utworzyć od razu) w zakładce Środowisko.",
+    fields: {
+      mariadbVersion: { label: "Wersja MariaDB", helpText: "Tag z Docker Huba, np. 11, 10.11, 10.6 albo lts." },
+    },
+  },
+  redis: {
+    name: "Redis",
+    description: "Samodzielna instancja Redisa z trwałością append-only - dane leżą we własnym katalogu roboczym tej aplikacji.",
+    fields: {
+      redisVersion: { label: "Wersja Redisa", helpText: "Tag z Docker Huba, np. 7, 8 albo alpine." },
+      requirePassword: {
+        label: "Hasło",
+        helpText:
+          "Ustawia --requirepass. Puste znaczy bez uwierzytelniania - bezpieczne tylko wtedy, gdy ten port pozostaje prywatny (zobacz widoczność w zakładce Porty).",
+      },
+    },
+  },
+  phpmyadmin: {
+    name: "phpMyAdmin",
+    description:
+      "Webowy interfejs do zarządzania serwerem MySQL/MariaDB - wskaż mu dowolny osiągalny serwer (host bazy albo aplikację MariaDB w Vibe Network), ustawiając PMA_HOST (i PMA_PORT, jeśli inny niż 3306) w zakładce Środowisko.",
+    fields: {
+      phpMyAdminVersion: { label: "Wersja phpMyAdmin", helpText: "Tag z Docker Huba, np. latest albo konkretna wersja." },
+    },
+  },
+  "nodejs-bot": {
+    name: "Bot Node.js",
+    description: "Uruchamia skrypt lub bota w Node.js - przed każdym startem instaluje zależności npm z package.json, jeśli plik istnieje.",
+    fields: {
+      entryFile: { label: "Plik wejściowy", helpText: "Ścieżka do skryptu względem katalogu roboczego, np. index.js albo src/bot.js." },
+      nodeVersion: { label: "Wersja Node.js", helpText: "Tag z Docker Huba, np. 22, 20 albo 18." },
+      programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane samemu skryptowi." },
+    },
+  },
+  "python-bot": {
+    name: "Bot Python",
+    description: "Uruchamia skrypt lub bota w Pythonie - przed każdym startem instaluje zależności pip z requirements.txt, jeśli plik istnieje.",
+    fields: {
+      entryFile: { label: "Plik wejściowy", helpText: "Ścieżka do skryptu względem katalogu roboczego, np. bot.py albo src/main.py." },
+      pythonVersion: { label: "Wersja Pythona", helpText: "Tag z Docker Huba, np. 3.13, 3.12 albo 3.11." },
+      programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane samemu skryptowi." },
+    },
+  },
+  purpur: {
+    name: "Purpur",
+    description: "Fork Papera z dodatkowymi opcjami wydajności i rozgrywki - plik jar serwera jest pobierany i aktualizowany automatycznie.",
+    fields: {
+      purpurVersion: { label: "Wersja Minecrafta", helpText: "Pasujący plik jar serwera Purpur zostanie pobrany automatycznie." },
+      eulaAccepted: { label: "Akceptuję EULA Minecrafta (https://www.minecraft.net/eula)" },
+      javaVersion: {
+        label: "Wersja Javy",
+        helpText: "Dowolna główna wersja Javy dostępna jako obraz eclipse-temurin, np. 25, 21, 17 albo 11 - wybiera pasujący obraz Dockera.",
+      },
+      jvmArgs: { label: "Argumenty JVM", helpText: "Flagi przekazywane samej maszynie wirtualnej, przed -jar - np. -Xmx2G." },
+      programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane serwerowi." },
+    },
+  },
+  waterfall: {
+    name: "Waterfall",
+    description: "Proxy Minecrafta oparte na BungeeCordzie - plik jar jest pobierany i aktualizowany automatycznie.",
+    fields: {
+      waterfallVersion: { label: "Wersja Waterfalla", helpText: "Pasujący plik jar zostanie pobrany automatycznie." },
+      javaVersion: {
+        label: "Wersja Javy",
+        helpText: "Dowolna główna wersja Javy dostępna jako obraz eclipse-temurin, np. 25, 21, 17 albo 11 - wybiera pasujący obraz Dockera.",
+      },
+      jvmArgs: { label: "Argumenty JVM", helpText: "Flagi przekazywane samej maszynie wirtualnej, przed -jar - np. -Xmx2G." },
+      programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane proxy." },
+    },
+  },
 };
 
 /** Applies the Polish overlay above to a Blueprint fetched from the backend - a no-op for any other language, or for a blueprint id this table doesn't recognize. */

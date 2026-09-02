@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HostAddress } from "@/components/ui/HostAddress";
-import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { usePingStore } from "@/stores/pingStore";
 import { getNodeSyncStatus, reconcileAgentNode, type NodeSyncStatus } from "@/services/serverService";
@@ -9,6 +8,7 @@ import type { ManagedServer } from "@/stores/serversStore";
 import "./ServerCard.css";
 import { errorMessage } from "@/services/tauri";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { NodeIcon } from "@/components/servers/NodeIcon";
 
 /**
  * Etap M3 - only meaningful for an Agent-mode Node (SSH-mode has no
@@ -126,11 +126,7 @@ export function ServerCard({ server, onOpenTerminal, onOpenFiles, onOpenMonitor,
       <div className="server-card-body">
         <div className="server-card-header">
           <div className={`server-card-avatar glossy-tile ${isAgent ? "server-card-avatar-agent" : ""}`}>
-            {server.icon ? (
-              <img src={server.icon} alt="" className="server-card-icon-image" />
-            ) : (
-              <Icon name={isAgent ? "zap" : "server"} size={16} />
-            )}
+            <NodeIcon server={server} size={16} />
           </div>
           <div className="server-card-title-col">
             <div className="server-card-title-row">
