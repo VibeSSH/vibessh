@@ -40,6 +40,7 @@ mod paper;
 mod phpmyadmin;
 mod purpur;
 mod python_bot;
+mod nats;
 mod redis;
 mod velocity;
 mod waterfall;
@@ -53,6 +54,7 @@ pub use paper::PaperBlueprint;
 pub use phpmyadmin::PhpMyAdminBlueprint;
 pub use purpur::PurpurBlueprint;
 pub use python_bot::PythonBotBlueprint;
+pub use nats::NatsBlueprint;
 pub use redis::RedisBlueprint;
 pub use velocity::VelocityBlueprint;
 pub use waterfall::WaterfallBlueprint;
@@ -235,6 +237,8 @@ impl BlueprintRegistry {
         handlers.insert(mariadb.blueprint().id.clone(), Box::new(mariadb));
         let redis = RedisBlueprint::new();
         handlers.insert(redis.blueprint().id.clone(), Box::new(redis));
+        let nats = NatsBlueprint::new();
+        handlers.insert(nats.blueprint().id.clone(), Box::new(nats));
         let phpmyadmin = PhpMyAdminBlueprint::new();
         handlers.insert(phpmyadmin.blueprint().id.clone(), Box::new(phpmyadmin));
         let nodejs_bot = NodejsBotBlueprint::new();
@@ -326,6 +330,7 @@ mod tests {
         assert!(registry.get("waterfall").is_some());
         assert!(registry.get("mariadb").is_some());
         assert!(registry.get("redis").is_some());
+        assert!(registry.get("nats").is_some());
         assert!(registry.get("phpmyadmin").is_some());
         assert!(registry.get("nodejs-bot").is_some());
         assert!(registry.get("python-bot").is_some());
@@ -339,6 +344,7 @@ mod tests {
                 "generic-docker",
                 "generic-java",
                 "mariadb",
+                "nats",
                 "nodejs-bot",
                 "paper",
                 "phpmyadmin",

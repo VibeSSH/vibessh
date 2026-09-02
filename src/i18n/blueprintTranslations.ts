@@ -81,6 +81,24 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane do samego jara proxy." },
     },
   },
+  nats: {
+    name: "NATS",
+    description:
+      "Samodzielny serwer NATS - lekki broker wiadomości do pub/sub, request/reply i kolejek zadań między aplikacjami. Włącz JetStream, żeby mieć trwałość; dane leżą we własnym katalogu roboczym tej aplikacji.",
+    fields: {
+      natsVersion: { label: "Wersja NATS", helpText: "Tag z Docker Huba, np. 2, 2.10 albo alpine." },
+      jetStream: {
+        label: "Włącz JetStream (trwałość)",
+        helpText:
+          "Zapisuje strumienie we własnym katalogu roboczym tej aplikacji, więc przeżywają odtworzenie kontenera. Wyłączone znaczy, że wiadomości istnieją tylko w pamięci.",
+      },
+      authToken: {
+        label: "Token uwierzytelniający",
+        helpText:
+          "Ustawia --auth. Puste znaczy, że serwer przyjmie każdego klienta - bezpieczne tylko wtedy, gdy ten port pozostaje prywatny (zobacz widoczność w zakładce Porty).",
+      },
+    },
+  },
   mariadb: {
     name: "MariaDB",
     description:
