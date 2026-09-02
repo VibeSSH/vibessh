@@ -103,10 +103,22 @@
 /*
  * A fact that is not the healthy answer.
  *
- * Only ever paired with wording that already says what is wrong - the
- * colour is a second signal, never the only one, so a card still reads
- * correctly to somebody who cannot separate these two from each other.
+ * `--warning` was too loud for it: amber against this card's blue-greys is
+ * the brightest thing on the page, and "the tunnel has not been used yet"
+ * does not deserve to shout over the Node's own name. The wording already
+ * carries the meaning - the colour only has to stop the row reading as a
+ * normal value, which a step down from `--text-primary` does.
  */
 .vibe-network-fact-value-warn {
-  color: var(--warning);
+  color: var(--text-secondary);
+}
+
+/*
+ * Reserved for what actually failed: the tunnel could not be read, or a
+ * peer's key belongs to nobody here. `--danger-text` is the palette's own
+ * softened red, used the same way `.form-note-danger` uses it, rather than
+ * the full `--danger` that buttons and badges get.
+ */
+.vibe-network-fact-value-bad {
+  color: var(--danger-text);
 }

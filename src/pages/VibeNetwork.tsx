@@ -363,7 +363,7 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
             {/* The row ellipsises, and the Node's own words are exactly what
                 somebody needs in full - `title` is where the rest of them
                 live. */}
-            <span className="vibe-network-fact-value vibe-network-fact-value-warn" title={status.tunnelError}>
+            <span className="vibe-network-fact-value vibe-network-fact-value-bad" title={status.tunnelError}>
               {status.tunnelError}
             </span>
           </div>
@@ -371,7 +371,7 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
         {(status?.unknownPeers ?? 0) > 0 && (
           <div className="vibe-network-fact">
             <span className="form-label">{t("vibeNetwork.unknownPeersLabel")}</span>
-            <span className="vibe-network-fact-value vibe-network-fact-value-warn">
+            <span className="vibe-network-fact-value vibe-network-fact-value-bad">
               {t("vibeNetwork.unknownPeersValue", { count: status?.unknownPeers ?? 0 })}
             </span>
           </div>
