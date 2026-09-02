@@ -51,8 +51,8 @@ impl HostedProvider {
 /// - 401 means the cloud session expired, which routes to a login;
 /// - 429 is the daily allowance, already its own code;
 /// - 400 is a prompt too large, whose message names the limit;
-/// - anything else is the upstream provider failing, and there is nothing
-///   the user can do about it beyond using their own key.
+/// - anything else is the included model's provider failing, and there is
+///   nothing the user can do about it beyond using their own key.
 ///
 /// That last bucket is why this exists. Without it a provider rejecting
 /// VibeSSH's key surfaced as `internal error: cloud backend returned 500
@@ -76,7 +76,7 @@ fn hosted_error(err: AppError) -> AppError {
             // The detail is the backend's, already logged there; this keeps
             // a local trace of which turn it belonged to.
             log::warn!("the hosted AI call failed: {other}");
-            AppError::AiProviderUnavailable
+            AppError::AiHostedFailed
         }
     }
 }

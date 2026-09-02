@@ -81,6 +81,15 @@ pub enum ErrorCode {
     /// the three because the user's next step is the same for all of
     /// them, and none of them is their fault.
     AiProviderUnavailable,
+    /// The included model's own provider failed or refused the backend.
+    ///
+    /// Separate from `AiProviderUnavailable`, which tells the user to check
+    /// the endpoint address and their connection - correct advice when it
+    /// is *their* endpoint, and actively misleading here, where the address
+    /// and the key are the backend operator's and were reached perfectly
+    /// well before being refused. Nothing in the user's own configuration
+    /// can fix this; their only move is a personal API key.
+    AiHostedFailed,
     /// This VibeSSH backend has no included model configured. Not the
     /// user's problem to fix and not a connection failure: the backend
     /// answered perfectly well and said it offers no model. Their only
@@ -173,6 +182,9 @@ pub enum AppError {
     #[error("this VibeSSH backend doesn't offer an included AI model")]
     AiHostedUnavailable,
 
+    #[error("the included AI model couldn't be used")]
+    AiHostedFailed,
+
     #[error("today's allowance for the included AI model is used up")]
     AiQuotaExhausted,
 }
@@ -200,6 +212,7 @@ impl AppError {
             AppError::AiRateLimited => ErrorCode::AiRateLimited,
             AppError::AiProviderUnavailable => ErrorCode::AiProviderUnavailable,
             AppError::AiHostedUnavailable => ErrorCode::AiHostedUnavailable,
+            AppError::AiHostedFailed => ErrorCode::AiHostedFailed,
             AppError::AiQuotaExhausted => ErrorCode::AiQuotaExhausted,
         }
     }
@@ -263,6 +276,7 @@ impl Serialize for AppError {
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",
             ErrorCode::AiHostedUnavailable | ErrorCode::AiQuotaExhausted => "invalid_input",
+            ErrorCode::AiHostedFailed => "connection",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
@@ -301,6 +315,7 @@ mod tests {
             AppError::AiRateLimited,
             AppError::AiProviderUnavailable,
             AppError::AiHostedUnavailable,
+            AppError::AiHostedFailed,
             AppError::AiQuotaExhausted,
         ] {
             let value = json(&error);

@@ -30,6 +30,7 @@ export type ErrorCode =
   | "ai_rate_limited"
   | "ai_provider_unavailable"
   | "ai_hosted_unavailable"
+  | "ai_hosted_failed"
   | "ai_quota_exhausted";
 
 /**
