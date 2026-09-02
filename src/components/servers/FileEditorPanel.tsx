@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { vibesshEditorTheme } from "./cmTheme";
 import { languageExtensionFor } from "./editorLanguage";
+import { useBlockingProblems } from "./fileProblems";
 import { bytesToText, readRemoteFile, textToBytes, writeRemoteFile } from "@/services/filesService";
 import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
@@ -43,6 +44,9 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const [loading, setLoading] = useState(!tooLarge);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // See ApplicationFileEditorPanel: a file that does not parse is not a
+  // file worth writing.
+  const blocking = useBlockingProblems(entry.name, content);
   const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
 
   useEffect(() => {
@@ -57,6 +61,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   }, [serverId, entry.path]);
 
   async function handleSave() {
+    if (blocking.length > 0) return;
     setSaving(true);
     setError(null);
     try {
@@ -86,12 +91,19 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
             disabled={loading || tooLarge}
           />
           {!tooLarge && (
-            <Button onClick={handleSave} disabled={loading || saving}>
+            <Button onClick={handleSave} disabled={loading || saving || blocking.length > 0}>
               {saving ? t("fileEditor.saving") : t("fileEditor.save")}
             </Button>
           )}
         </div>
       </div>
+
+      {blocking.length > 0 && (
+        <p className="file-editor-tab-blocked">
+          <Icon name="alert-triangle" size={14} />
+          {t("fileEditor.blockedBySyntax", { line: blocking[0].line, message: blocking[0].message, count: blocking.length })}
+        </p>
+      )}
 
       <div className="file-editor-tab-body">
         {tooLarge ? (

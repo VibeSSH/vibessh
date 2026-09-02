@@ -2,7 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { StreamLanguage } from "@codemirror/language";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
-import { linter } from "@codemirror/lint";
+import { linter, lintGutter } from "@codemirror/lint";
 import { yamlProblems } from "./yamlLint";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -61,7 +61,10 @@ export function languageExtensionFor(fileName: string): Extension[] {
       return [json()];
     case "yml":
     case "yaml":
-      return [yaml(), yamlLinter];
+      // `lintGutter` puts a marker beside the line number: the
+      // underline only exists where the text is, and a config file is
+      // usually longer than the window.
+      return [yaml(), yamlLinter, lintGutter()];
     case "js":
     case "mjs":
     case "cjs":

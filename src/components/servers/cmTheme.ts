@@ -188,6 +188,44 @@ export function vibesshEditorTheme(): Extension[] {
         outline: `1px solid ${TERMINAL_COLORS.yellow}`,
       },
       ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: `${TERMINAL_COLORS.yellow}55` },
+      // Lint marks, loud enough to find.
+      //
+      // CodeMirror's default is a thin wavy underline in `#d11` - a dark red
+      // that on this background reads as a faint smudge under one word, and
+      // was reported as "barely visible". The range is tinted as well as
+      // underlined, the underline is drawn in the app's own `--danger`, and
+      // the gutter carries a marker so a problem scrolled off screen is
+      // still findable.
+      ".cm-lintRange-error": {
+        backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath fill='none' stroke='%23ef4444' stroke-width='1.2' d='m0 3 1.5-2 1.5 2 1.5-2 1.5 2'/%3E%3C/svg%3E\")",
+        backgroundRepeat: "repeat-x",
+        backgroundPosition: "left bottom",
+        paddingBottom: "1px",
+      },
+      ".cm-lintRange-warning": {
+        backgroundColor: "color-mix(in srgb, #f59e0b 15%, transparent)",
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath fill='none' stroke='%23f59e0b' stroke-width='1.2' d='m0 3 1.5-2 1.5 2 1.5-2 1.5 2'/%3E%3C/svg%3E\")",
+        backgroundRepeat: "repeat-x",
+        backgroundPosition: "left bottom",
+      },
+      ".cm-lint-marker-error": { color: "#ef4444" },
+      ".cm-lint-marker-warning": { color: "#f59e0b" },
+      ".cm-tooltip-lint": {
+        background: "var(--surface-1)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-sm)",
+      },
+      ".cm-diagnostic": {
+        borderLeft: "3px solid transparent",
+        fontFamily: "inherit",
+        fontSize: "12.5px",
+        padding: "6px 10px",
+      },
+      ".cm-diagnostic-error": { borderLeftColor: "#ef4444" },
+      ".cm-diagnostic-warning": { borderLeftColor: "#f59e0b" },
       ".cm-tooltip": {
         backgroundColor: "var(--surface-1)",
         border: "1px solid var(--border)",

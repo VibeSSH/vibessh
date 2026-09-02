@@ -653,6 +653,8 @@
   },
   "fileEditor": {
     "backAria": "Back to file list",
+    "blockedBySyntax": "Not saved: line {{line}} - {{message}}",
+    "blockedBySyntax_other": "Not saved: {{count}} syntax errors, first on line {{line}} - {{message}}",
     "couldntRead": "Couldn't read this file.",
     "couldntSave": "Couldn't save this file.",
     "loading": "Loading...",

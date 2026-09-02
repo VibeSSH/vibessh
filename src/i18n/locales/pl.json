@@ -653,6 +653,9 @@
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",
+    "blockedBySyntax": "Nie zapisano: linia {{line}} - {{message}}",
+    "blockedBySyntax_few": "Nie zapisano: {{count}} błędy składni, pierwszy w linii {{line}} - {{message}}",
+    "blockedBySyntax_many": "Nie zapisano: {{count}} błędów składni, pierwszy w linii {{line}} - {{message}}",
     "couldntRead": "Nie udało się odczytać tego pliku.",
     "couldntSave": "Nie udało się zapisać tego pliku.",
     "loading": "Ładowanie...",

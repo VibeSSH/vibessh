@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { vibesshEditorTheme } from "@/components/servers/cmTheme";
 import { languageExtensionFor } from "@/components/servers/editorLanguage";
+import { useBlockingProblems } from "@/components/servers/fileProblems";
 import { bytesToText, textToBytes } from "@/services/filesService";
 import { readApplicationFile, saveApplicationFile } from "@/services/applicationFilesService";
 import { toastSuccess } from "@/stores/toastStore";
@@ -60,6 +61,10 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
   const dirty = content !== savedContent;
+  // A config file that does not parse is not a file worth writing: the
+  // service reading it fails minutes later, somewhere else, with the
+  // cause out of sight. Save is refused while that is true.
+  const blocking = useBlockingProblems(entry.name, content);
 
   const load = useCallback(() => {
     if (tooLarge) return;
@@ -78,7 +83,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   useEffect(load, [load]);
 
   const handleSave = useCallback(async () => {
-    if (loading || saving || tooLarge) return;
+    if (loading || saving || tooLarge || blocking.length > 0) return;
     setSaving(true);
     setError(null);
     try {
@@ -91,7 +96,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     } finally {
       setSaving(false);
     }
-  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, saving, tooLarge, onSaved, t]);
+  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, saving, tooLarge, blocking.length, onSaved, t]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -147,12 +152,19 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
           <IconButton icon="history" size="sm" onClick={() => setHistoryOpen(true)} title={t("applicationFileEditor.historyAria")} />
           <IconButton icon="refresh-cw" size="sm" onClick={load} title={t("applicationFileEditor.reloadAria")} disabled={loading} />
           {!tooLarge && (
-            <Button onClick={handleSave} disabled={loading || saving || !dirty}>
+            <Button onClick={handleSave} disabled={loading || saving || !dirty || blocking.length > 0}>
               {saving ? t("applicationFileEditor.saving") : t("applicationFileEditor.save")}
             </Button>
           )}
         </div>
       </div>
+
+      {blocking.length > 0 && (
+        <p className="file-editor-tab-blocked">
+          <Icon name="alert-triangle" size={14} />
+          {t("fileEditor.blockedBySyntax", { line: blocking[0].line, message: blocking[0].message, count: blocking.length })}
+        </p>
+      )}
 
       <div className="file-editor-tab-body">
         {tooLarge ? (
