@@ -4,6 +4,7 @@ import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
+import { GuideLink } from "@/guide/GuideLink";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -354,6 +355,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       <div className="application-files-breadcrumb-row">
         <Breadcrumbs segments={segments} onNavigate={load} rootPath={ROOT_PATH} />
         <div className="application-files-toolbar">
+          <GuideLink topic="application-files" />
           <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
             <Icon name="folder-plus" size={14} />
             {t("applicationFilesTab.newFolder")}

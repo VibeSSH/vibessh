@@ -165,8 +165,16 @@ impl KeywordKnowledgeService {
             // A new topic is two files and two lines here.
             // `every_guide_document_is_in_the_corpus` fails if the second
             // pair is forgotten.
+            ("Guide - Applications", include_str!("../../../docs/guide/applications.en.md")),
+            ("Poradnik - Aplikacje", include_str!("../../../docs/guide/applications.pl.md")),
+            ("Guide - Application files", include_str!("../../../docs/guide/application-files.en.md")),
+            ("Poradnik - Pliki aplikacji", include_str!("../../../docs/guide/application-files.pl.md")),
             ("Guide - Ports", include_str!("../../../docs/guide/ports.en.md")),
             ("Poradnik - Porty", include_str!("../../../docs/guide/ports.pl.md")),
+            ("Guide - Vibe Network", include_str!("../../../docs/guide/vibe-network.en.md")),
+            ("Poradnik - Vibe Network", include_str!("../../../docs/guide/vibe-network.pl.md")),
+            ("Guide - Backups", include_str!("../../../docs/guide/backups.en.md")),
+            ("Poradnik - Backupy", include_str!("../../../docs/guide/backups.pl.md")),
             ("Applications architecture", include_str!("../../../docs/APPLICATIONS_ARCHITECTURE.md")),
             ("Threat model", include_str!("../../../docs/threat-model.md")),
             ("Agent privileges", include_str!("../../../docs/agent-privileges.md")),

@@ -4,6 +4,7 @@ import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
+import { GuideLink } from "@/guide/GuideLink";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -238,6 +239,7 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
 
       <Card title={t("applicationBackups.title")}>
         <div className="application-backups-toolbar">
+          <GuideLink topic="backups" />
           <Button size="sm" onClick={handleCreate} disabled={creating}>
             <Icon name="archive" size={14} />
             {creating ? t("applicationBackups.creating") : t("applicationBackups.createNow")}

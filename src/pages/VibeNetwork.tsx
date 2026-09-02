@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
+import { GuideLink } from "@/guide/GuideLink";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -137,6 +138,7 @@ export function VibeNetwork() {
           <p className="page-subtitle">{t("vibeNetwork.subtitle")}</p>
         </div>
         <div className="vibe-network-header-actions">
+          <GuideLink topic="vibe-network" />
           <Switch checked={advanced} onChange={setAdvanced} label={t("vibeNetwork.advancedToggle")} />
           <Button variant="secondary" onClick={handleSync} disabled={syncing || members.length === 0}>
             <Icon name="refresh-cw" size={16} />
