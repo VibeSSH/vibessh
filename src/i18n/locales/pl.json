@@ -420,7 +420,12 @@
       "kill": "Ubijam…",
       "recreate": "Odtwarzam…"
     },
-    "gracefulNote": "Czekam, aż proces sam się zamknie — do około 10 sekund. Skrócenie tego grozi utratą tego, co właśnie zapisywał."
+    "gracefulNote": "Czekam, aż proces sam się zamknie — do około 10 sekund. Skrócenie tego grozi utratą tego, co właśnie zapisywał.",
+    "whereTitle": "Gdzie działa",
+    "node": "Node",
+    "runtime": "Środowisko uruchomieniowe",
+    "workingDirectory": "Katalog roboczy",
+    "noPorts": "Nie skonfigurowano żadnych portów."
   },
   "portsTab": {
     "description": "Kontroluj, z których portów sieciowych korzysta ta aplikacja i kto może się do nich łączyć.",

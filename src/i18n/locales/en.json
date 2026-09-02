@@ -420,7 +420,12 @@
       "kill": "Killing…",
       "recreate": "Recreating…"
     },
-    "gracefulNote": "Waiting for the process to shut down on its own - up to about 10 seconds. Cutting that short risks losing whatever it was writing."
+    "gracefulNote": "Waiting for the process to shut down on its own - up to about 10 seconds. Cutting that short risks losing whatever it was writing.",
+    "whereTitle": "Where it runs",
+    "node": "Node",
+    "runtime": "Runtime",
+    "workingDirectory": "Working directory",
+    "noPorts": "No ports configured."
   },
   "portsTab": {
     "description": "Control which network ports this application uses and who can reach them.",

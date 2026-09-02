@@ -243,7 +243,7 @@ export function ApplicationDetail() {
       : servers.find((s) => s.id === migrateTargetServerId)?.nodeCapabilities?.docker === false);
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{application ? application.name : id}</h1>
@@ -356,31 +356,75 @@ export function ApplicationDetail() {
           </div>
 
           {tab === "overview" && (
-            <div className="application-detail-overview">
-              {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
+            <div className="application-detail-overview-grid">
+              <div className="application-detail-overview">
+                {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
+              </div>
 
-              <Card title={t("applicationDetail.resourceUsageTitle")}>
-                {application.status === "running" && resourceUsage ? (
-                  <div className="stat-grid">
-                    <div>
-                      <p className="form-label">{t("applicationDetail.cpu")}</p>
-                      <p className="application-detail-stat-value">{resourceUsage.cpuPercent?.toFixed(1) ?? "—"}%</p>
+              <aside className="application-detail-aside">
+                <Card title={t("applicationDetail.resourceUsageTitle")}>
+                  {application.status === "running" && resourceUsage ? (
+                    <div className="application-detail-facts">
+                      <div className="application-detail-fact">
+                        <span className="form-label">{t("applicationDetail.cpu")}</span>
+                        <p className="application-detail-stat-value">{resourceUsage.cpuPercent?.toFixed(1) ?? "\u2014"}%</p>
+                      </div>
+                      <div className="application-detail-fact">
+                        <span className="form-label">{t("applicationDetail.ram")}</span>
+                        <p className="application-detail-stat-value">
+                          {resourceUsage.ramBytes ? `${(resourceUsage.ramBytes / 1024 / 1024).toFixed(0)} MB` : "\u2014"}
+                        </p>
+                      </div>
+                      <div className="application-detail-fact">
+                        <span className="form-label">{t("applicationDetail.uptime")}</span>
+                        <p className="application-detail-stat-value">
+                          {resourceUsage.uptimeSeconds ? formatUptime(resourceUsage.uptimeSeconds) : "\u2014"}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="form-label">{t("applicationDetail.ram")}</p>
-                      <p className="application-detail-stat-value">
-                        {resourceUsage.ramBytes ? `${(resourceUsage.ramBytes / 1024 / 1024).toFixed(0)} MB` : "—"}
-                      </p>
+                  ) : (
+                    <p className="form-note">{t("applicationDetail.notRunning")}</p>
+                  )}
+                </Card>
+
+                <Card title={t("applicationDetail.whereTitle")}>
+                  <div className="application-detail-facts">
+                    <div className="application-detail-fact">
+                      <span className="form-label">{t("applicationDetail.node")}</span>
+                      <p className="application-detail-fact-value">{serverName ?? t("applicationCard.local")}</p>
                     </div>
-                    <div>
-                      <p className="form-label">{t("applicationDetail.uptime")}</p>
-                      <p className="application-detail-stat-value">{resourceUsage.uptimeSeconds ? formatUptime(resourceUsage.uptimeSeconds) : "—"}</p>
+                    <div className="application-detail-fact">
+                      <span className="form-label">{t("applicationDetail.runtime")}</span>
+                      <p className="application-detail-fact-value">{application.runtimeType}</p>
+                    </div>
+                    <div className="application-detail-fact">
+                      <span className="form-label">{t("applicationDetail.workingDirectory")}</span>
+                      <p className="application-detail-fact-value">{application.workingDirectory}</p>
                     </div>
                   </div>
-                ) : (
-                  <p className="form-note">{t("applicationDetail.notRunning")}</p>
+                </Card>
+
+                {features.includes("ports") && (
+                  <Card title={t("applicationDetail.tabPorts")}>
+                    {application.ports.length === 0 ? (
+                      <p className="form-note">{t("applicationDetail.noPorts")}</p>
+                    ) : (
+                      <div className="application-detail-facts">
+                        {application.ports.map((port) => (
+                          <div key={port.id} className="application-detail-port">
+                            <span className="application-detail-port-name">{port.name}</span>
+                            <span className="application-detail-port-map">
+                              {port.externalPort ? `${port.externalPort} \u2192 ${port.internalPort}` : `\u2014 \u2192 ${port.internalPort}`}
+                              {" "}
+                              {port.protocol}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
                 )}
-              </Card>
+              </aside>
             </div>
           )}
 

@@ -26,3 +26,74 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+
+/* The Overview tab: console beside the facts, not above them.
+ *
+ * The right column holds what somebody watching a console keeps switching
+ * tabs to check - where it runs, which ports are open, what it is using.
+ * That is the test the column has to pass: it earns the space because it
+ * saves a tab switch, rather than filling it because it was empty.
+ *
+ * `minmax(0, 1fr)` on the console, not `1fr`: a grid child defaults to
+ * `min-width: auto`, so a single long log line would push the column wider
+ * than the grid and spill the whole layout sideways. */
+.application-detail-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+/* One column below the width where two would squeeze the console into
+ * something narrower than the lines it has to show. */
+@media (max-width: 1180px) {
+  .application-detail-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.application-detail-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.application-detail-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.application-detail-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.application-detail-fact-value {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* Ports are the densest thing here, so they get the compact treatment:
+ * name on the left, mapping on the right, monospaced so the numbers line
+ * up down the column. */
+.application-detail-port {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.application-detail-port-name {
+  color: var(--text-secondary);
+}
+
+.application-detail-port-map {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}

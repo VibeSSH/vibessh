@@ -2,7 +2,22 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  /* Prose and forms read badly past this, which is what the cap is for. */
   max-width: 1100px;
+}
+
+/* Pages where width is a feature rather than a hazard.
+ *
+ * A console, a file listing, a metrics table and a log view are not prose:
+ * the cap above made a 1680px window show a console wrapping its lines with
+ * 580px of nothing beside it. Applied per page rather than raised globally,
+ * because the reason the cap exists has not gone away for the pages it was
+ * written for.
+ *
+ * Still bounded. An unbounded console on an ultrawide monitor turns every
+ * log line into a sentence the eye has to track across half a metre. */
+.page-wide {
+  max-width: 1600px;
 }
 
 .page-header-row {
