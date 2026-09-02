@@ -16,7 +16,7 @@ mod server;
 
 pub use ai::{
     AiConfig, AiConfigView, AiContextBundle, AiContextRef, AiMessage, AiMode, AiProviderKind, AiRole, AiTurnRequest,
-    AiTurnResponse, SetAiConfigInput,
+    AiTurnResponse, CloudAiAnswer, CloudAiQuota, SetAiConfigInput,
 };
 pub use app_info::AppInfo;
 pub use application::{

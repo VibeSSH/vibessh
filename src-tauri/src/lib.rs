@@ -190,6 +190,7 @@ pub fn run() {
             commands::ai_commands::get_ai_config,
             commands::ai_commands::set_ai_config,
             commands::ai_commands::test_ai_connection,
+            commands::ai_commands::get_ai_quota,
             commands::ai_commands::preview_ai_context,
             commands::ai_commands::send_ai_turn,
             commands::ai_commands::stop_ai_turn,

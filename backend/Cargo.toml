@@ -32,6 +32,11 @@ chrono = { workspace = true }
 # Worth revisiting once the query surface is large enough to want it.
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "migrate", "macros"] }
 # Password hashing (Argon2id - the OWASP-recommended default) for accounts.
+# Outbound HTTP for the hosted Vibe AI assistant, which proxies to an
+# OpenAI-compatible provider so the key never reaches a client. rustls
+# rather than native-tls: this crate already links rustls through sqlx,
+# and a second TLS stack in one binary is worth avoiding.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 argon2 = "0.5"
 # JWT access tokens. HS256 (symmetric) is enough here since this service is
 # both the sole issuer and sole verifier - no third party ever needs to

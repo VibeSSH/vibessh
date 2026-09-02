@@ -18,6 +18,12 @@ pub enum ApiError {
     /// refreshing tokens would just get the same 403 again).
     Forbidden(String),
     Conflict(String),
+    /// A per-account allowance is spent. Its own variant rather than
+    /// `Forbidden` because the two mean opposite things to a client: a 403
+    /// will never succeed however long you wait, and this one succeeds
+    /// tomorrow. Introduced for the hosted AI assistant's daily question
+    /// limit (`ai::chat`).
+    TooManyRequests(String),
     NotFound(String),
     /// The message here is for the server log only - `IntoResponse` never
     /// sends it to the client (see the security note on Error Handling in
@@ -32,6 +38,7 @@ impl std::fmt::Display for ApiError {
             ApiError::Unauthorized(msg) => write!(f, "unauthorized: {msg}"),
             ApiError::Forbidden(msg) => write!(f, "forbidden: {msg}"),
             ApiError::Conflict(msg) => write!(f, "conflict: {msg}"),
+            ApiError::TooManyRequests(msg) => write!(f, "too many requests: {msg}"),
             ApiError::NotFound(msg) => write!(f, "not found: {msg}"),
             ApiError::Internal(msg) => write!(f, "internal error: {msg}"),
         }
@@ -53,6 +60,9 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "unauthorized", msg),
             ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, "forbidden", msg),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg),
+            // The message is safe to show: it names the limit, which is the
+            // one thing the user needs in order to understand the refusal.
+            ApiError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests", msg),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, "not_found", msg),
             ApiError::Internal(msg) => {
                 log::error!("{msg}");

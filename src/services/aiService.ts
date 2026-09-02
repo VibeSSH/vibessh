@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./tauri";
-import type { AiConfigView, AiContextBundle, AiContextRef, AiMode, AiTurnRequest, SetAiConfigInput } from "@/types/ai";
+import type { AiConfigView, AiContextBundle, AiContextRef, AiMode, AiQuota, AiTurnRequest, SetAiConfigInput } from "@/types/ai";
 
 export function getAiConfig(): Promise<AiConfigView> {
   return callCommand<AiConfigView>("get_ai_config");
@@ -16,6 +16,14 @@ export function setAiConfig(input: SetAiConfigInput): Promise<AiConfigView> {
  * cheaper and would pass while the configured model does not exist, which is
  * the failure people actually hit.
  */
+/**
+ * The account's remaining allowance for the included model, or null when
+ * this install uses its own API key.
+ */
+export function getAiQuota(): Promise<AiQuota | null> {
+  return callCommand<AiQuota | null>("get_ai_quota");
+}
+
 export function testAiConnection(): Promise<void> {
   return callCommand<void>("test_ai_connection");
 }

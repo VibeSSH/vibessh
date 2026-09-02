@@ -21,6 +21,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::ai::context::AiContextBuilder;
+use crate::ai::hosted::HostedProvider;
 use crate::ai::knowledge::KnowledgeSource;
 use crate::ai::openai_compatible::OpenAiCompatibleProvider;
 use crate::ai::prompt;
@@ -28,8 +29,10 @@ use crate::ai::provider::{AiProvider, AiRequest};
 use crate::ai::skills;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    AiConfig, AiConfigView, AiContextBundle, AiContextRef, AiMode, AiProviderKind, AiRole, AiTurnRequest, SetAiConfigInput,
+    AiConfig, AiConfigView, AiContextBundle, AiContextRef, AiMode, AiProviderKind, AiRole, AiTurnRequest, CloudAiQuota,
+    SetAiConfigInput,
 };
+use crate::state::CloudState;
 use crate::runtime::local_process::LocalProcessManager;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
@@ -37,6 +40,7 @@ use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
+use crate::services::cloud_service::cloud_ai_endpoint;
 use crate::storage::{ai_config, credentials};
 
 /// A ceiling on the answer. The assistant is asked for three short points;
@@ -85,12 +89,16 @@ pub fn set_ai_config(config_dir: &Path, input: SetAiConfigInput) -> AppResult<Ai
         model: input.model.trim().to_string(),
     };
 
-    if input.enabled {
+    if input.enabled && input.provider == AiProviderKind::OpenAiCompatible {
         let key = input.api_key.trim();
         if !key.is_empty() {
             credentials::store_ai_api_key(key)?;
         }
     } else {
+        // Switching to the included model clears the personal key too.
+        // Keeping a live credential in the keyring for a provider the
+        // user has stopped using is the same leftover `forget_secret`
+        // exists to prevent elsewhere.
         // Not `forget_secret`'s log-and-continue treatment: this one is
         // triggered by an explicit user action, so a failure to carry it out
         // has to be visible rather than logged.
@@ -107,18 +115,45 @@ pub fn set_ai_config(config_dir: &Path, input: SetAiConfigInput) -> AppResult<Ai
 /// sentence pointing at Settings. Distinguishing "no model" from "no
 /// endpoint" in the error code would be precision the user cannot act on
 /// differently - both send them to the same form.
-pub fn resolve_provider(config_dir: &Path) -> AppResult<(AiConfig, Box<dyn AiProvider>)> {
+pub async fn resolve_provider(config_dir: &Path, cloud: &CloudState) -> AppResult<(AiConfig, Box<dyn AiProvider>)> {
     let config = ai_config::load_ai_config(config_dir)?;
-    if !config.enabled || config.base_url.is_empty() || config.model.is_empty() {
+    if !config.enabled {
         return Err(AppError::AiNotConfigured);
     }
-    // Absent is fine - a self-hosted endpoint needs no key. See
-    // `OpenAiCompatibleProvider::request_builder`.
-    let api_key = credentials::load_ai_api_key()?.unwrap_or_default();
-    let provider: Box<dyn AiProvider> = match config.provider {
-        AiProviderKind::OpenAiCompatible => Box::new(OpenAiCompatibleProvider::new(&config.base_url, &api_key)?),
-    };
-    Ok((config, provider))
+    match config.provider {
+        AiProviderKind::OpenAiCompatible => {
+            if config.base_url.is_empty() || config.model.is_empty() {
+                return Err(AppError::AiNotConfigured);
+            }
+            // Absent is fine - a self-hosted endpoint needs no key. See
+            // `OpenAiCompatibleProvider::request_builder`.
+            let api_key = credentials::load_ai_api_key()?.unwrap_or_default();
+            let provider: Box<dyn AiProvider> = Box::new(OpenAiCompatibleProvider::new(&config.base_url, &api_key)?);
+            Ok((config, provider))
+        }
+        AiProviderKind::VibeSshHosted => {
+            // Being signed out is `Unauthorized`, not `AiNotConfigured`:
+            // the assistant is configured correctly and the remedy is a
+            // login, which the frontend already routes that code to.
+            let (backend_url, token) = cloud_ai_endpoint(cloud).await?;
+            let provider: Box<dyn AiProvider> = Box::new(HostedProvider::new(&backend_url, &token));
+            Ok((config, provider))
+        }
+    }
+}
+
+/// The account's remaining allowance for the included model.
+///
+/// `None` when the user is not on the hosted provider - there is no
+/// allowance to report for a personal API key, and showing a quota that
+/// does not apply would be worse than showing none.
+pub async fn ai_quota(config_dir: &Path, cloud: &CloudState) -> AppResult<Option<CloudAiQuota>> {
+    let config = ai_config::load_ai_config(config_dir)?;
+    if config.provider != AiProviderKind::VibeSshHosted {
+        return Ok(None);
+    }
+    let (backend_url, token) = cloud_ai_endpoint(cloud).await?;
+    HostedProvider::new(&backend_url, &token).quota().await.map(Some)
 }
 
 /// One real round trip, so Test connection proves the endpoint, the key and
@@ -127,8 +162,8 @@ pub fn resolve_provider(config_dir: &Path) -> AppResult<(AiConfig, Box<dyn AiPro
 /// Deliberately not a `GET /models` probe, which several OpenAI-compatible
 /// endpoints do not implement and which would pass while the configured
 /// model does not exist - the failure users actually hit.
-pub async fn test_ai_connection(config_dir: &Path) -> AppResult<()> {
-    let (config, provider) = resolve_provider(config_dir)?;
+pub async fn test_ai_connection(config_dir: &Path, cloud: &CloudState) -> AppResult<()> {
+    let (config, provider) = resolve_provider(config_dir, cloud).await?;
     let request = AiRequest {
         model: config.model,
         messages: vec![crate::ai::provider::ChatMessage {

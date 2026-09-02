@@ -21,6 +21,7 @@ use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+pub mod ai;
 pub mod audit;
 pub mod auth;
 pub mod authorize;
@@ -71,6 +72,10 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        // The hosted Vibe AI assistant. Authenticated, because the
+        // allowance it spends is per account and VibeSSH pays for it.
+        .route("/ai/chat", post(ai::chat))
+        .route("/ai/quota", get(ai::quota))
         .route("/teams", post(teams::create_team).get(teams::list_teams))
         .route("/teams/:team_id", get(teams::get_team).delete(teams::delete_team))
         .route("/teams/:team_id/members", get(teams::list_members).post(teams::add_member))

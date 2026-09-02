@@ -7,7 +7,14 @@
  * "enter a key" and "a key is stored".
  */
 
-export type AiProviderKind = "openAiCompatible";
+/**
+ * `vibeSshHosted` is the model VibeSSH includes. It carries no base URL,
+ * model name or key on this side - all three live on the VibeSSH backend,
+ * which is what makes a shared key possible at all: a key shipped inside a
+ * desktop binary is a published key. The per-account daily allowance is
+ * enforced there too, for the same reason.
+ */
+export type AiProviderKind = "openAiCompatible" | "vibeSshHosted";
 
 export interface AiConfig {
   enabled: boolean;
@@ -52,6 +59,19 @@ export interface AiContextBundle {
   /** What could not be collected. Shown to the user and sent to the model,
    * so it can say what it does not know rather than guessing. */
   notes: string[];
+}
+
+/**
+ * The account's use of the included model today. `null` from
+ * `getAiQuota` when this install uses a personal API key, because there is
+ * then no allowance to report and showing an inapplicable one is worse
+ * than showing none.
+ */
+export interface AiQuota {
+  used: number;
+  limit: number;
+  /** Midnight UTC, when `used` returns to zero. */
+  resetsAt: string;
 }
 
 export interface AiTurnRequest {

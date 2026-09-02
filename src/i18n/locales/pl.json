@@ -1197,7 +1197,11 @@
     "aiPrivacyNote": "W trybie Diagnoza wysyłana jest migawka wybranego Node lub aplikacji — status, porty, limity i ostatnie logi. Hasła, tokeny, klucze i sekretne wartości środowiskowe są wcześniej usuwane, a dokładny tekst możesz zobaczyć przed wysłaniem.",
     "aiTest": "Testuj połączenie",
     "aiTestOk": "Dostawca odpowiedział.",
-    "aiSavedToast": "Zapisano ustawienia Vibe AI."
+    "aiSavedToast": "Zapisano ustawienia Vibe AI.",
+    "aiProviderHosted": "Wliczony w VibeSSH",
+    "aiProviderHostedNote": "Korzysta z modelu udostępnianego przez VibeSSH, na kluczu VibeSSH. Wymaga zalogowania na konto VibeSSH i ma dzienny limit pytań wspólny dla całego konta.",
+    "aiQuotaRemaining": "Zostało {{remaining}} z {{limit}} pytań na dziś. Limit odnawia się o północy UTC.",
+    "aiQuotaUnknown": "Zaloguj się na konto VibeSSH, aby korzystać z wliczonego modelu."
   },
   "vibeNetwork": {
     "title": "Vibe Network",
@@ -1298,7 +1302,8 @@
     "ai_auth_failed": "Dostawca AI odrzucił klucz API. Sprawdź go w Ustawieniach oraz to, czy nie wygasł i nie został unieważniony.",
     "ai_model_unavailable": "Dostawca AI nie udostępnia modelu „{{model}}”. Sprawdź nazwę modelu w Ustawieniach.",
     "ai_rate_limited": "Przekroczono limit dostawcy AI. Odczekaj chwilę i spróbuj ponownie.",
-    "ai_provider_unavailable": "Nie udało się połączyć z dostawcą AI. Sprawdź adres punktu końcowego i połączenie."
+    "ai_provider_unavailable": "Nie udało się połączyć z dostawcą AI. Sprawdź adres punktu końcowego i połączenie.",
+    "ai_quota_exhausted": "Dzienny limit dla modelu wliczonego w VibeSSH został wykorzystany. Odnawia się o północy UTC, albo dodaj własny klucz API w Ustawieniach."
   },
   "connections": {
     "title": "Połączenia",

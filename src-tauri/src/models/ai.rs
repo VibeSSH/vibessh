@@ -30,9 +30,19 @@ use uuid::Uuid;
 pub enum AiProviderKind {
     /// Anything speaking OpenAI's `/chat/completions` shape - the OpenAI
     /// API itself, OpenRouter, Groq, Together, LM Studio, llama.cpp's
-    /// server, vLLM.
+    /// server, vLLM. The user supplies the address, the model and the key.
     #[default]
     OpenAiCompatible,
+    /// The model VibeSSH includes, reached through the VibeSSH backend.
+    ///
+    /// No address, no model name and no key on this side: all three belong
+    /// to the backend, which is what makes a shared key possible at all - a
+    /// key shipped to a desktop binary is a published key. The account's
+    /// daily allowance is enforced there too, for the same reason.
+    ///
+    /// Requires being signed in to a VibeSSH account, because the allowance
+    /// is per account.
+    VibeSshHosted,
 }
 
 /// The non-secret half of the assistant's configuration, persisted as
@@ -176,6 +186,28 @@ pub struct AiContextBundle {
     /// preview, because a model told what is missing can say so instead of
     /// guessing, which is exactly what the system prompt asks of it.
     pub notes: Vec<String>,
+}
+
+/// The hosted assistant's answer, as the backend returns it.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAiAnswer {
+    pub content: String,
+    pub quota: CloudAiQuota,
+}
+
+/// How much of the included model's daily allowance this account has spent.
+///
+/// Counted and enforced on the backend, never here - a count the client
+/// could edit would protect nothing, which is the reason the hosted model
+/// proxies at all. This copy exists only so the UI can show it.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAiQuota {
+    pub used: i32,
+    pub limit: i32,
+    /// Midnight UTC, when `used` returns to zero.
+    pub resets_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// What a completed non-streaming turn returns.

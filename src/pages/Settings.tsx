@@ -9,13 +9,13 @@ import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { getAiConfig, setAiConfig, testAiConnection } from "@/services/aiService";
+import { getAiConfig, getAiQuota, setAiConfig, testAiConnection } from "@/services/aiService";
 import { getAppInfo } from "@/services/appService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
 import { getDnsSuffix, setDnsSuffix } from "@/services/networkService";
 import { toastSuccess } from "@/stores/toastStore";
-import type { AiConfigView, AiProviderKind } from "@/types/ai";
+import type { AiConfigView, AiProviderKind, AiQuota } from "@/types/ai";
 import type { BackupDestinationConfig, RegistryCredential } from "@/types/application";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/i18n";
 import "./pages.css";
@@ -114,6 +114,7 @@ function AiCard() {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [quota, setQuota] = useState<AiQuota | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -132,6 +133,12 @@ function AiCard() {
       })
       .catch((err) => setLoadError(errorMessage(err, t)))
       .finally(() => setLoading(false));
+    // Best-effort: not being signed in, or a backend that offers no
+    // included model, both resolve to "no allowance to show" rather than
+    // an error over a settings form the user may not even be here for.
+    getAiQuota()
+      .then(setQuota)
+      .catch(() => setQuota(null));
   }, [t]);
 
   async function handleSubmit(e: FormEvent) {
@@ -142,6 +149,9 @@ function AiCard() {
     setTestError(null);
     try {
       const saved = await setAiConfig({ enabled, provider, baseUrl, model, apiKey });
+      getAiQuota()
+        .then(setQuota)
+        .catch(() => setQuota(null));
       setConfig(saved);
       // Cleared as soon as it has been handed over, so the only copy is the
       // one in the OS keyring - not also sitting in React state for the rest
@@ -183,10 +193,22 @@ function AiCard() {
               <label className="form-field">
                 <span className="form-label">{t("settings.aiProvider")}</span>
                 <select className="form-input" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderKind)}>
+                  <option value="vibeSshHosted">{t("settings.aiProviderHosted")}</option>
                   <option value="openAiCompatible">{t("settings.aiProviderOpenAiCompatible")}</option>
                 </select>
-                <span className="form-note">{t("settings.aiProviderNote")}</span>
+                <span className="form-note">
+                  {provider === "vibeSshHosted" ? t("settings.aiProviderHostedNote") : t("settings.aiProviderNote")}
+                </span>
               </label>
+              {provider === "vibeSshHosted" && (
+                <div className="form-note form-note-spaced">
+                  {quota
+                    ? t("settings.aiQuotaRemaining", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })
+                    : t("settings.aiQuotaUnknown")}
+                </div>
+              )}
+              {provider === "openAiCompatible" && (
+                <>
               <label className="form-field">
                 <span className="form-label">{t("settings.aiBaseUrl")}</span>
                 <input
@@ -221,6 +243,8 @@ function AiCard() {
                 />
                 <span className="form-note">{t("settings.aiApiKeyNote")}</span>
               </label>
+                </>
+              )}
               <p className="form-note">{t("settings.aiPrivacyNote")}</p>
             </>
           )}

@@ -11,6 +11,7 @@
 //! mistakes cannot be taken back.
 
 pub mod context;
+pub mod hosted;
 pub mod knowledge;
 pub mod openai_compatible;
 pub mod prompt;

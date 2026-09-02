@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
+    CloudAiAnswer, CloudAiQuota,
     CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
@@ -86,6 +87,11 @@ impl CloudClient {
             StatusCode::FORBIDDEN => AppError::Unauthorized(message),
             StatusCode::NOT_FOUND => AppError::NotFound(message),
             StatusCode::BAD_REQUEST | StatusCode::CONFLICT => AppError::InvalidInput(message),
+            // The hosted AI assistant's daily allowance. Mapped to its own
+            // code rather than a generic failure because the UI says
+            // something specific about it - when it resets, and that a
+            // personal API key is the way around it.
+            StatusCode::TOO_MANY_REQUESTS => AppError::AiQuotaExhausted,
             _ => AppError::Internal(format!("cloud backend returned {status}: {message}")),
         }
     }
@@ -105,6 +111,21 @@ impl CloudClient {
 
     pub async fn logout(&self, refresh_token: &str) -> AppResult<()> {
         self.send_no_content(Method::POST, "/auth/logout", None, Some(&json!({ "refreshToken": refresh_token }))).await
+    }
+
+    /// One question against the model VibeSSH includes.
+    ///
+    /// No model, endpoint or key crosses this call in either direction -
+    /// all three belong to the backend, which is the whole point of the
+    /// hosted arrangement (see `backend/src/ai.rs`). What comes back is an
+    /// answer and the account's remaining allowance.
+    pub async fn ai_chat(&self, access_token: &str, messages: &serde_json::Value) -> AppResult<CloudAiAnswer> {
+        self.send(Method::POST, "/ai/chat", Some(access_token), Some(&json!({ "messages": messages }))).await
+    }
+
+    /// The account's usage today, without spending any of it.
+    pub async fn ai_quota(&self, access_token: &str) -> AppResult<CloudAiQuota> {
+        self.send::<(), _>(Method::GET, "/ai/quota", Some(access_token), None).await
     }
 
     pub async fn me(&self, access_token: &str) -> AppResult<CloudUserProfile> {

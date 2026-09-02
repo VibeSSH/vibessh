@@ -31,7 +31,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{AiConfigView, AiContextBundle, AiContextRef, AiMode, AiTurnRequest, SetAiConfigInput};
 use crate::runtime::local_process::LocalProcessManager;
 use crate::services;
-use crate::state::{AiTurnManager, SshSessionManager};
+use crate::state::{AiTurnManager, CloudState, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
@@ -67,9 +67,17 @@ pub fn set_ai_config(app: AppHandle, input: SetAiConfigInput) -> AppResult<AiCon
 }
 
 #[tauri::command]
-pub async fn test_ai_connection(app: AppHandle) -> AppResult<()> {
+pub async fn test_ai_connection(app: AppHandle, cloud: State<'_, CloudState>) -> AppResult<()> {
     let dir = config_dir(&app)?;
-    services::test_ai_connection(&dir).await
+    services::test_ai_connection(&dir, &cloud).await
+}
+
+/// How much of the included model's daily allowance is left, or `null`
+/// when this install uses a personal API key and has no allowance.
+#[tauri::command]
+pub async fn get_ai_quota(app: AppHandle, cloud: State<'_, CloudState>) -> AppResult<Option<crate::models::CloudAiQuota>> {
+    let dir = config_dir(&app)?;
+    services::ai_quota(&dir, &cloud).await
 }
 
 /// The exact text that a Diagnose turn would send.
@@ -112,12 +120,18 @@ pub async fn preview_ai_context(
 /// possible at all: the command's own future would otherwise hold the task,
 /// and there would be nothing for `AiTurnManager` to abort.
 #[tauri::command]
-pub async fn send_ai_turn(app: AppHandle, turns: State<'_, AiTurnManager>, turn_id: String, request: AiTurnRequest) -> AppResult<()> {
+pub async fn send_ai_turn(
+    app: AppHandle,
+    turns: State<'_, AiTurnManager>,
+    cloud: State<'_, CloudState>,
+    turn_id: String,
+    request: AiTurnRequest,
+) -> AppResult<()> {
     // Resolved before spawning, so a misconfigured assistant fails the
     // command itself - the UI gets a real error to render instead of an
     // empty answer that ends in an error event.
     let dir = config_dir(&app)?;
-    let (config, provider) = services::resolve_ai_provider(&dir)?;
+    let (config, provider) = services::resolve_ai_provider(&dir, &cloud).await?;
 
     let phase_event = format!("ai://{turn_id}/phase");
     let delta_event = format!("ai://{turn_id}/delta");

@@ -1197,7 +1197,11 @@
     "aiPrivacyNote": "In Diagnose mode a snapshot of the selected Node or Application is sent — its status, ports, limits and recent logs. Passwords, tokens, keys and secret environment values are removed first, and you can see the exact text before it is sent.",
     "aiTest": "Test connection",
     "aiTestOk": "The provider answered.",
-    "aiSavedToast": "Vibe AI settings saved."
+    "aiSavedToast": "Vibe AI settings saved.",
+    "aiProviderHosted": "Included with VibeSSH",
+    "aiProviderHostedNote": "Uses the model VibeSSH provides, on VibeSSH's key. Requires being signed in to a VibeSSH account, and has a daily question limit shared across your account.",
+    "aiQuotaRemaining": "{{remaining}} of {{limit}} questions left today. Resets at midnight UTC.",
+    "aiQuotaUnknown": "Sign in to a VibeSSH account to use the included model."
   },
   "vibeNetwork": {
     "title": "Vibe Network",
@@ -1298,7 +1302,8 @@
     "ai_auth_failed": "The AI provider rejected the API key. Check it in Settings, and that it hasn’t expired or been revoked.",
     "ai_model_unavailable": "The AI provider doesn’t offer the model “{{model}}”. Check the model name in Settings.",
     "ai_rate_limited": "The AI provider’s rate limit was reached. Wait a moment and try again.",
-    "ai_provider_unavailable": "Couldn’t reach the AI provider. Check the endpoint address and your connection."
+    "ai_provider_unavailable": "Couldn’t reach the AI provider. Check the endpoint address and your connection.",
+    "ai_quota_exhausted": "Today's allowance for the included model is used up. It resets at midnight UTC, or you can add your own API key in Settings."
   },
   "connections": {
     "title": "Connections",

@@ -92,6 +92,20 @@ pub async fn try_restore_session(state: &CloudState) {
     let _ = ensure_valid_access_token(state).await;
 }
 
+/// The backend address this device is configured to talk to, and a
+/// currently-valid access token for it - refreshed here if it was close
+/// to expiry.
+///
+/// Exists so `services::ai_service` can build the hosted AI provider
+/// without reaching into `CloudState` itself. It returns owned values
+/// rather than a borrow because the provider outlives this call: it is
+/// moved into the task that runs the turn.
+pub async fn cloud_ai_endpoint(state: &CloudState) -> AppResult<(String, String)> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    Ok((inner.client.base_url().to_string(), token))
+}
+
 pub async fn list_teams(state: &CloudState) -> AppResult<Vec<CloudTeam>> {
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;

@@ -81,6 +81,11 @@ pub enum ErrorCode {
     /// the three because the user's next step is the same for all of
     /// them, and none of them is their fault.
     AiProviderUnavailable,
+    /// The account's daily allowance for the *included* model is spent.
+    /// Distinct from `AiRateLimited`, which is the upstream provider
+    /// throttling and clears in minutes: this one clears at midnight and
+    /// the remedy is either waiting or configuring your own provider.
+    AiQuotaExhausted,
 }
 
 /// Single error type shared by every backend module. New modules should add a
@@ -159,6 +164,9 @@ pub enum AppError {
 
     #[error("couldn't reach the AI provider")]
     AiProviderUnavailable,
+
+    #[error("today's allowance for the included AI model is used up")]
+    AiQuotaExhausted,
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -183,6 +191,7 @@ impl AppError {
             AppError::AiModelUnavailable { .. } => ErrorCode::AiModelUnavailable,
             AppError::AiRateLimited => ErrorCode::AiRateLimited,
             AppError::AiProviderUnavailable => ErrorCode::AiProviderUnavailable,
+            AppError::AiQuotaExhausted => ErrorCode::AiQuotaExhausted,
         }
     }
 
@@ -244,6 +253,7 @@ impl Serialize for AppError {
             // problems the user can fix; the rest are the network.
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",
+            ErrorCode::AiQuotaExhausted => "invalid_input",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
@@ -281,6 +291,7 @@ mod tests {
             AppError::AiModelUnavailable { model: "gpt-4o-mini".into() },
             AppError::AiRateLimited,
             AppError::AiProviderUnavailable,
+            AppError::AiQuotaExhausted,
         ] {
             let value = json(&error);
             assert!(value["code"].is_string(), "{value}");

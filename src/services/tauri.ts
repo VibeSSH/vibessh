@@ -28,7 +28,8 @@ export type ErrorCode =
   | "ai_auth_failed"
   | "ai_model_unavailable"
   | "ai_rate_limited"
-  | "ai_provider_unavailable";
+  | "ai_provider_unavailable"
+  | "ai_quota_exhausted";
 
 /**
  * An error from a Tauri command, with the backend's classification intact.

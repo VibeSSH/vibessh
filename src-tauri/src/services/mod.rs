@@ -32,8 +32,8 @@ pub use application_files_service::{
     upload_file as upload_application_file, write_file as write_application_file, FileHistoryVersion,
 };
 pub use ai_service::{
-    ai_config_view, build_ai_context, resolve_provider as resolve_ai_provider, run_turn as run_ai_turn, set_ai_config,
-    test_ai_connection,
+    ai_config_view, ai_quota, build_ai_context, resolve_provider as resolve_ai_provider, run_turn as run_ai_turn,
+    set_ai_config, test_ai_connection,
 };
 pub use application_service::{
     add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,

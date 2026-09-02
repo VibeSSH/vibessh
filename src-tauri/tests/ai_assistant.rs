@@ -24,7 +24,7 @@ use vibessh_lib::models::{
 };
 use vibessh_lib::runtime::local_process::LocalProcessManager;
 use vibessh_lib::services;
-use vibessh_lib::state::SshSessionManager;
+use vibessh_lib::state::{CloudState, SshSessionManager};
 use vibessh_lib::storage::application_repository::ApplicationRepository;
 use vibessh_lib::storage::firewall_rule_repository::FirewallRuleRepository;
 use vibessh_lib::storage::log_capture::LogCaptureStore;
@@ -231,14 +231,45 @@ async fn a_reference_to_something_deleted_produces_a_note_rather_than_a_failure(
 
 /// With nothing configured, the assistant refuses before it can read a key,
 /// build a client or resolve a hostname.
-#[test]
-fn a_disabled_assistant_refuses_with_the_code_that_points_at_settings() {
+#[tokio::test]
+async fn a_disabled_assistant_refuses_before_it_touches_a_key_or_a_session() {
     let dir = std::env::temp_dir().join(format!("vibessh-ai-config-{}", Uuid::new_v4()));
-    // `Box<dyn AiProvider>` is not Debug, so the Ok side cannot be
-    // unwrapped by `expect_err`; matched by hand instead.
-    let error = match services::resolve_ai_provider(&dir) {
+    // A signed-out cloud state, which is what a fresh install has. The
+    // refusal must come from `enabled` being false, before anything reaches
+    // for a token - otherwise a disabled assistant would report "sign in"
+    // rather than "set me up".
+    let cloud = CloudState::new("http://localhost:8787".to_string());
+    // `Box<dyn AiProvider>` is not Debug, so the Ok side cannot be unwrapped
+    // by `expect_err`; matched by hand instead.
+    let error = match services::resolve_ai_provider(&dir, &cloud).await {
         Err(error) => error,
         Ok(_) => panic!("a fresh install must not resolve a provider"),
     };
     assert_eq!(error.code(), ErrorCode::AiNotConfigured);
+}
+
+/// The included model needs an account, because the daily allowance is per
+/// account. Signed out, that has to read as "sign in", not as a
+/// configuration problem - the two send the user to different places.
+#[tokio::test]
+async fn the_included_model_refuses_with_unauthorized_when_signed_out() {
+    let dir = std::env::temp_dir().join(format!("vibessh-ai-config-{}", Uuid::new_v4()));
+    vibessh_lib::storage::ai_config::save_ai_config(
+        &dir,
+        &vibessh_lib::models::AiConfig {
+            enabled: true,
+            provider: vibessh_lib::models::AiProviderKind::VibeSshHosted,
+            base_url: String::new(),
+            model: String::new(),
+        },
+    )
+    .unwrap();
+
+    let cloud = CloudState::new("http://localhost:8787".to_string());
+    let error = match services::resolve_ai_provider(&dir, &cloud).await {
+        Err(error) => error,
+        Ok(_) => panic!("the hosted provider must not resolve without a session"),
+    };
+    assert_eq!(error.code(), ErrorCode::Unauthorized);
+    std::fs::remove_dir_all(&dir).ok();
 }
