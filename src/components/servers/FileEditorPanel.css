@@ -54,6 +54,21 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
+  /* A ceiling of its own, not only a share of the parent.
+   *
+   * `height: 100%` up the chain works on the Files *page*, whose layout
+   * fills the window. Inside the Application's Files tab the same panel
+   * sits in `.page`, which grows with its content - so the editor grew with
+   * the file, a 2000-line config became a 2000-line page, and the only
+   * scrollbar was the window's.
+   *
+   * Viewport-relative, so it holds whether or not anything above it has a
+   * height: the editor keeps its own scrollbar either way. The subtracted
+   * space is the page header, tab bar and editor toolbar above it. */
+  max-height: calc(100vh - 260px);
+  /* Below this the editor is too short to work in, even on a laptop where
+   * the calculation above would allow less. */
+  min-height: 320px;
 }
 
 .file-editor-tab-body .form-note {
