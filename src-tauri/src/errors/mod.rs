@@ -81,6 +81,11 @@ pub enum ErrorCode {
     /// the three because the user's next step is the same for all of
     /// them, and none of them is their fault.
     AiProviderUnavailable,
+    /// This VibeSSH backend has no included model configured. Not the
+    /// user's problem to fix and not a connection failure: the backend
+    /// answered perfectly well and said it offers no model. Their only
+    /// move is a personal API key, which is what the message says.
+    AiHostedUnavailable,
     /// The account's daily allowance for the *included* model is spent.
     /// Distinct from `AiRateLimited`, which is the upstream provider
     /// throttling and clears in minutes: this one clears at midnight and
@@ -165,6 +170,9 @@ pub enum AppError {
     #[error("couldn't reach the AI provider")]
     AiProviderUnavailable,
 
+    #[error("this VibeSSH backend doesn't offer an included AI model")]
+    AiHostedUnavailable,
+
     #[error("today's allowance for the included AI model is used up")]
     AiQuotaExhausted,
 }
@@ -191,6 +199,7 @@ impl AppError {
             AppError::AiModelUnavailable { .. } => ErrorCode::AiModelUnavailable,
             AppError::AiRateLimited => ErrorCode::AiRateLimited,
             AppError::AiProviderUnavailable => ErrorCode::AiProviderUnavailable,
+            AppError::AiHostedUnavailable => ErrorCode::AiHostedUnavailable,
             AppError::AiQuotaExhausted => ErrorCode::AiQuotaExhausted,
         }
     }
@@ -253,7 +262,7 @@ impl Serialize for AppError {
             // problems the user can fix; the rest are the network.
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",
-            ErrorCode::AiQuotaExhausted => "invalid_input",
+            ErrorCode::AiHostedUnavailable | ErrorCode::AiQuotaExhausted => "invalid_input",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
@@ -291,6 +300,7 @@ mod tests {
             AppError::AiModelUnavailable { model: "gpt-4o-mini".into() },
             AppError::AiRateLimited,
             AppError::AiProviderUnavailable,
+            AppError::AiHostedUnavailable,
             AppError::AiQuotaExhausted,
         ] {
             let value = json(&error);

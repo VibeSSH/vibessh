@@ -1304,7 +1304,8 @@
     "ai_model_unavailable": "The AI provider doesn’t offer the model “{{model}}”. Check the model name in Settings.",
     "ai_rate_limited": "The AI provider’s rate limit was reached. Wait a moment and try again.",
     "ai_provider_unavailable": "Couldn’t reach the AI provider. Check the endpoint address and your connection.",
-    "ai_quota_exhausted": "Today's allowance for the included model is used up. It resets at midnight UTC, or you can add your own API key in Settings."
+    "ai_quota_exhausted": "Today's allowance for the included model is used up. It resets at midnight UTC, or you can add your own API key in Settings.",
+    "ai_hosted_unavailable": "This VibeSSH backend does not offer an included AI model. Switch to your own API key in Settings, or ask whoever runs the backend to configure one."
   },
   "connections": {
     "title": "Connections",

@@ -1304,7 +1304,8 @@
     "ai_model_unavailable": "Dostawca AI nie udostępnia modelu „{{model}}”. Sprawdź nazwę modelu w Ustawieniach.",
     "ai_rate_limited": "Przekroczono limit dostawcy AI. Odczekaj chwilę i spróbuj ponownie.",
     "ai_provider_unavailable": "Nie udało się połączyć z dostawcą AI. Sprawdź adres punktu końcowego i połączenie.",
-    "ai_quota_exhausted": "Dzienny limit dla modelu wliczonego w VibeSSH został wykorzystany. Odnawia się o północy UTC, albo dodaj własny klucz API w Ustawieniach."
+    "ai_quota_exhausted": "Dzienny limit dla modelu wliczonego w VibeSSH został wykorzystany. Odnawia się o północy UTC, albo dodaj własny klucz API w Ustawieniach.",
+    "ai_hosted_unavailable": "Ten backend VibeSSH nie udostępnia wliczonego modelu AI. Przełącz się w Ustawieniach na własny klucz API albo poproś osobę prowadzącą backend o skonfigurowanie modelu."
   },
   "connections": {
     "title": "Połączenia",

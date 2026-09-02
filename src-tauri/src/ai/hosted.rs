@@ -38,7 +38,21 @@ impl HostedProvider {
 
     /// The account's usage today, without spending any of it.
     pub async fn quota(&self) -> AppResult<CloudAiQuota> {
-        self.client.ai_quota(&self.access_token).await
+        self.client.ai_quota(&self.access_token).await.map_err(hosted_model_missing)
+    }
+}
+
+/// Turns the backend's 404 into something the interface can translate.
+///
+/// `/ai/chat` and `/ai/quota` answer 404 for exactly one reason - this
+/// deployment has no `AI_UPSTREAM_*` configured - so the mapping is
+/// unambiguous here. It is deliberately *not* done in `CloudClient`,
+/// where a 404 from `/teams/:id` means a missing team and remapping it
+/// would break every other cloud call.
+fn hosted_model_missing(err: AppError) -> AppError {
+    match err {
+        AppError::NotFound(_) => AppError::AiHostedUnavailable,
+        other => other,
     }
 }
 
@@ -65,7 +79,7 @@ impl AiProvider for HostedProvider {
                 .collect(),
         );
 
-        let answer = self.client.ai_chat(&self.access_token, &messages).await?;
+        let answer = self.client.ai_chat(&self.access_token, &messages).await.map_err(hosted_model_missing)?;
         if answer.content.trim().is_empty() {
             log::warn!("the hosted AI returned an empty answer");
             return Err(AppError::AiProviderUnavailable);
