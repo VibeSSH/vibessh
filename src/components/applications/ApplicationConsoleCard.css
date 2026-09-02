@@ -51,3 +51,33 @@
   flex: 1;
   font-family: var(--font-mono);
 }
+
+/* Severity colouring for console output.
+ *
+ * `info` is deliberately unstyled - it inherits whatever the console's own
+ * colour is. Giving every level a colour would leave nothing looking
+ * normal, and the whole point of red is that most lines are not red.
+ *
+ * Colour is the only signal here, which is a real accessibility limit worth
+ * naming: the level word itself is already in the text (`[12:00:00 WARN]`),
+ * so the information is not carried by colour alone - the colour makes it
+ * scannable rather than discoverable. */
+.application-console-line {
+  display: inline;
+}
+
+.application-console-line-error {
+  color: var(--danger, #f87171);
+}
+
+.application-console-line-warn {
+  /* Not `--warning`: that token is tuned for badges on a panel background,
+   * and reads muddy on the console's near-black. */
+  color: #f0a35e;
+}
+
+/* Quieter than the surrounding output rather than a different hue - debug
+ * lines are noise you are choosing to look past, not a category to spot. */
+.application-console-line-debug {
+  opacity: 0.55;
+}

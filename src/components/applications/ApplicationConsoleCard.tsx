@@ -16,6 +16,7 @@ import {
 import "@/components/servers/forms.css";
 import "./ApplicationConsoleCard.css";
 import { errorMessage } from "@/services/tauri";
+import { logLevelOf } from "./logLevel";
 
 interface ApplicationConsoleCardProps {
   applicationId: string;
@@ -234,7 +235,18 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
         </span>
       </div>
       <pre className="application-console-output" ref={outputRef} onScroll={handleOutputScroll}>
-        {lines.length === 0 ? t("applicationConsole.empty") : lines.join("\n")}
+        {lines.length === 0
+          ? t("applicationConsole.empty")
+          : // One element per line rather than one joined string, so each can
+            // carry its own severity. Keyed by index because these lines are
+            // an append-only window with no identity of their own - two
+            // identical lines are genuinely two events, not one repeated.
+            lines.map((line, index) => (
+              <span key={index} className={`application-console-line application-console-line-${logLevelOf(line)}`}>
+                {line}
+                {"\n"}
+              </span>
+            ))}
       </pre>
       {unsupported ? (
         <p className="form-note form-note-danger form-note-spaced">{unsupported}</p>
