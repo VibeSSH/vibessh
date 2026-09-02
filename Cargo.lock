@@ -7489,6 +7489,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "dotenvy",
  "env_logger",
  "http-body-util",
  "jsonwebtoken",

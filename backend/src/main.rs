@@ -25,9 +25,37 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Loads `.env`, if there is one.
+///
+/// `.env.example` has always said "copy to .env for local development", and
+/// until now nothing read it - so the variables lived only in whichever
+/// shell happened to export them, and restarting the backend meant finding
+/// that shell again or losing the configuration. That is not a small
+/// inconvenience: it is the difference between a restart anybody can do and
+/// a restart only one terminal window can.
+///
+/// Both locations are tried because the binary is run from either place:
+/// `cargo run` from `backend/`, and `./target/release/vibessh-backend.exe`
+/// from the repository root.
+///
+/// A real environment variable always wins over the file - that is
+/// `dotenvy`'s own rule, and the right one: a value exported deliberately
+/// for one run should not be overridden by a file somebody forgot about.
+/// A missing file is not an error; the variables may well be set already.
+fn load_dotenv() {
+    for candidate in [".env", "backend/.env"] {
+        if let Ok(path) = dotenvy::from_filename(candidate) {
+            log::info!("loaded environment from {}", path.display());
+            return;
+        }
+    }
+}
+
 async fn run() -> Result<(), String> {
+    load_dotenv();
+
     let database_url = std::env::var("DATABASE_URL").map_err(|_| {
-        "DATABASE_URL is not set - e.g. postgres://vibessh_app:PASSWORD@localhost:5432/vibessh".to_string()
+        "DATABASE_URL is not set - export it, or copy backend/.env.example to backend/.env and fill it in".to_string()
     })?;
     let jwt_secret = std::env::var("JWT_SECRET").map_err(|_| {
         "JWT_SECRET is not set - generate one with e.g. `openssl rand -base64 48`".to_string()

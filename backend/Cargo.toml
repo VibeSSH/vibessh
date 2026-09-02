@@ -56,6 +56,7 @@ base64 = "0.22"
 # #[async_trait] rather than native async-fn-in-trait - a custom extractor
 # implementing it needs the same macro on the impl to match.
 async-trait = "0.1"
+dotenvy = "0.15.7"
 
 [dev-dependencies]
 # Drives the real axum Router in-process for tests/health.rs, without
