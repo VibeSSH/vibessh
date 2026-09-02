@@ -1,0 +1,6 @@
+/* Brand marks come with their own padding and aspect; `contain` keeps them
+   whole rather than cropping into the logo. */
+.blueprint-icon-image {
+  object-fit: contain;
+  display: block;
+}

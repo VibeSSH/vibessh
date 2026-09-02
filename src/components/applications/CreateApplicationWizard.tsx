@@ -18,6 +18,7 @@ import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./CreateApplicationWizard.css";
 import { errorMessage } from "@/services/tauri";
+import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 interface CreateApplicationWizardProps {
   onClose: () => void;
@@ -330,19 +331,30 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                     {t("createApplicationWizard.blueprint")}
                     <HelpHint label={t("createApplicationWizard.eggHint")} />
                   </span>
-                  <div className="wizard-blueprint-options">
+                  {/* A grid of icon + name, not a column of paragraphs. Twelve
+                      full descriptions stacked vertically made this step taller
+                      than the screen and turned choosing between two known
+                      options into a scrolling exercise. The description is not
+                      lost - it moves below, for whichever one is selected, and
+                      onto the tile's tooltip for the rest. */}
+                  <div className="wizard-blueprint-grid">
                     {blueprints.map((blueprint) => (
                       <button
                         key={blueprint.id}
                         type="button"
-                        className={`wizard-blueprint-option ${blueprintId === blueprint.id ? "wizard-blueprint-option-active" : ""}`}
+                        title={blueprint.description}
+                        aria-pressed={blueprintId === blueprint.id}
+                        className={`wizard-blueprint-tile ${blueprintId === blueprint.id ? "wizard-blueprint-tile-active" : ""}`}
                         onClick={() => setBlueprintId(blueprint.id)}
                       >
-                        <span className="wizard-blueprint-option-name">{blueprint.name}</span>
-                        <span className="wizard-blueprint-option-description">{blueprint.description}</span>
+                        <span className="wizard-blueprint-tile-icon">
+                          <BlueprintIcon blueprintId={blueprint.id} size={20} />
+                        </span>
+                        <span className="wizard-blueprint-tile-name">{blueprint.name}</span>
                       </button>
                     ))}
                   </div>
+                  {selectedBlueprint && <p className="wizard-blueprint-description">{selectedBlueprint.description}</p>}
                 </label>
 
                 {selectedBlueprint && availableRuntimeTypes.length > 1 && (

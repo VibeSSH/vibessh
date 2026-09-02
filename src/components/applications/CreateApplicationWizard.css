@@ -100,17 +100,33 @@
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
 }
 
-.wizard-blueprint-options {
-  display: flex;
-  flex-direction: column;
+/* A grid, capped in height, rather than a column that grows with the number
+   of blueprints. Twelve of them as full-width paragraphs made this step
+   taller than the window; as tiles they fit in three rows and the choice is
+   made by looking rather than by reading. */
+.wizard-blueprint-grid {
+  display: grid;
+  /* 200px, not 148: four columns in a 720px modal left about 115px for the
+     name, which ellipsised "Kontener Docker (ogólny)" and "Aplikacja Java
+     (ogólna)" - and a truncated name is exactly what makes a picker hard to
+     use. Three wider columns fit the real names. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
+  /* Four rows at the current tile height. Past that it scrolls, so adding a
+     blueprint can never push the wizard's own buttons off the screen. */
+  max-height: 244px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
-.wizard-blueprint-option {
+.wizard-blueprint-tile {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 11px;
+  /* Fixed, so a one-line and a two-line name produce the same tile. */
+  min-height: 52px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -118,27 +134,57 @@
   text-align: left;
   transition: border-color 120ms ease, background-color 120ms ease;
 }
-.wizard-blueprint-option:hover {
+.wizard-blueprint-tile:hover {
   border-color: var(--border-hover);
   background: var(--surface-3);
 }
 
-.wizard-blueprint-option-active,
-.wizard-blueprint-option-active:hover {
+.wizard-blueprint-tile-active,
+.wizard-blueprint-tile-active:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
 }
 
-.wizard-blueprint-option-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.wizard-blueprint-option-description {
-  font-size: 13px;
+.wizard-blueprint-tile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
   color: var(--text-secondary);
 }
+.wizard-blueprint-tile-active .wizard-blueprint-tile-icon {
+  color: var(--accent);
+}
+
+.wizard-blueprint-tile-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+  /* Up to two lines, then ellipsised. One line truncated "Kontener Docker
+     (ogólny)", and a picker that hides part of what you are picking is the
+     problem being fixed here. The tile has a fixed height so two-line names
+     do not make the grid ragged. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The full description of whatever is selected. Shown here rather than on
+   every tile, so the information survives without twelve copies of it
+   competing for the same space. */
+.wizard-blueprint-description {
+  margin: 10px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 
 .wizard-docker-warning {
   display: flex;

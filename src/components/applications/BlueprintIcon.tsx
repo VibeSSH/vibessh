@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { blueprintIcon } from "./blueprintIcons";
+import "./BlueprintIcon.css";
 
 interface BlueprintIconProps {
   blueprintId: string | undefined;
@@ -21,6 +22,13 @@ export function BlueprintIcon({ blueprintId, size = 16 }: BlueprintIconProps) {
 
   if (!icon) {
     return <Icon name="box" size={size} />;
+  }
+
+  if (icon.kind === "image") {
+    // `<img>`, not inlined markup: a browser does not run script from an SVG
+    // loaded this way, and these files ship with the app rather than being
+    // fetched, so there is no request and nothing to intercept.
+    return <img src={icon.src} alt="" width={size} height={size} className="blueprint-icon-image" />;
   }
 
   if (icon.kind === "letters") {
