@@ -86,7 +86,20 @@ pub async fn application_logs(
     .await;
 
     if let Ok(live_lines) = live_fetch {
-        let previous_tail = log_capture.tail(id, LOG_OVERLAP_ANCHOR_LINES).await?;
+        // The anchor has to be at least as long as the window being merged.
+        //
+        // `docker logs --tail N` returns a *sliding* window: on a quiet
+        // container it is the same N lines as last time, overlapping what is
+        // already captured along its whole length rather than joining onto
+        // the end of it. `merge_new_log_lines` matches the capture's suffix
+        // against the live window's prefix, so with a 32-line anchor and a
+        // 200-line window there was nothing to match - and every poll
+        // appended all 200 lines again. A console polling every two seconds
+        // turned 388 real lines into 12,319 stored ones, individual lines
+        // repeated 59 times, and fed the duplicates to the Logs tab and to
+        // the AI context alike.
+        let anchor = max_lines.max(LOG_OVERLAP_ANCHOR_LINES);
+        let previous_tail = log_capture.tail(id, anchor).await?;
         let new_lines = merge_new_log_lines(&previous_tail, live_lines);
         log_capture.append(id, &new_lines).await?;
     }
@@ -104,6 +117,9 @@ pub async fn application_logs(
 /// occurrence. Matching a whole block of recent lines makes an accidental
 /// match effectively impossible: it would take the same 32 consecutive
 /// lines appearing twice.
+/// The floor for the overlap anchor, for callers asking for a very short
+/// window. The anchor actually used is the larger of this and the window
+/// itself - see the call site for why a fixed value cannot work.
 const LOG_OVERLAP_ANCHOR_LINES: u32 = 32;
 
 /// Finds where genuinely new output starts in a fresh live fetch.
@@ -165,4 +181,47 @@ pub async fn application_console_write(
         console.write(input).await
     })
     .await
+}
+#[cfg(test)]
+mod merge_tests {
+    use super::merge_new_log_lines;
+
+    fn lines(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    /// The case that produced 12,319 stored lines from 388 real ones.
+    ///
+    /// A quiet container returns the same window every poll. If the anchor
+    /// is shorter than the window, the capture's suffix never lines up with
+    /// the window's prefix and the whole window is appended again - forever,
+    /// every two seconds.
+    #[test]
+    fn an_unchanged_window_adds_nothing_when_the_anchor_covers_it() {
+        let captured = lines(&["a", "b", "c", "d", "e"]);
+        let live = lines(&["c", "d", "e"]);
+        // Anchor of 3 - the window's own length.
+        assert!(merge_new_log_lines(&captured[2..], live.clone()).is_empty());
+        // Anchor of 2 - too short, which is the bug: it cannot see the
+        // overlap and therefore duplicates everything.
+        assert_eq!(merge_new_log_lines(&captured[3..], live).len(), 3);
+    }
+
+    #[test]
+    fn only_genuinely_new_lines_are_added() {
+        let captured = lines(&["a", "b", "c", "d", "e"]);
+        let live = lines(&["d", "e", "f"]);
+        assert_eq!(merge_new_log_lines(&captured, live), lines(&["f"]));
+    }
+
+    /// More output than the window holds between two polls: nothing in the
+    /// window matches the capture, so it is all appended. Some duplication
+    /// is possible here and is the correct trade - losing lines would be
+    /// worse than repeating them, and `--tail` cannot express "since".
+    #[test]
+    fn a_window_that_skipped_ahead_is_taken_whole() {
+        let captured = lines(&["a", "b", "c"]);
+        let live = lines(&["x", "y", "z"]);
+        assert_eq!(merge_new_log_lines(&captured, live.clone()), live);
+    }
 }
