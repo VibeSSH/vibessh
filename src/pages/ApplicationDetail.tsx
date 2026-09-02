@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
-import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { POLL_INTERVALS } from "@/hooks/usePolling";
+import { queryKeys } from "@/services/queryKeys";
 import { AskVibeAiButton } from "@/components/ai/AskVibeAiButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -37,7 +39,7 @@ import {
 import { useServersStore } from "@/stores/serversStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
-import type { ApplicationDetail as ApplicationDetailData, ApplicationStatus, Blueprint, ResourceUsage } from "@/types/application";
+import type { ApplicationStatus, Blueprint } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "@/components/applications/CreateApplicationWizard.css";
@@ -73,9 +75,8 @@ export function ApplicationDetail() {
   const { id } = useParams<{ id: string }>();
   const servers = useServersStore((s) => s.servers);
 
-  const [application, setApplication] = useState<ApplicationDetailData | null>(null);
+  const queryClient = useQueryClient();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
-  const [resourceUsage, setResourceUsage] = useState<ResourceUsage | null>(null);
   /**
    * Recent samples, for the charts under the console.
    *
@@ -86,7 +87,6 @@ export function ApplicationDetail() {
    * does not have.
    */
   const [history, setHistory] = useState<{ cpu: number; ram: number }[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
 
   const [confirming, setConfirming] = useState<Verb | null>(null);
@@ -104,12 +104,77 @@ export function ApplicationDetail() {
   const [migrateError, setMigrateError] = useState<string | null>(null);
   const migrateBackdrop = useModalDialog(() => !migrateBusy && setMigrateOpen(false), { labelledBy: "applicationdetail-dialog-title-2" });
 
+  /**
+   * The application itself, from the cache.
+   *
+   * This page used to hold it in `useState` and fetch it on every mount, so
+   * opening an Application you were just looking at showed a skeleton while
+   * the same question went out again. Now it paints from the cache and
+   * refreshes behind that.
+   *
+   * `refetchInterval` replaces the manual poll. It also makes the two reads
+   * genuinely independent - separate queries, each on its own clock, neither
+   * waiting for the other or able to fail the other.
+   */
+  const applicationQuery = useQuery({
+    queryKey: queryKeys.application(id ?? ""),
+    queryFn: () => getApplication(id as string),
+    enabled: Boolean(id),
+    refetchInterval: POLL_INTERVALS.applicationDetail,
+  });
+  const application = applicationQuery.data ?? null;
+
+  /**
+   * Resource usage, on its own query.
+   *
+   * Its command is `docker stats --no-stream`, which waits for Docker's own
+   * sampling and is the slowest single thing this app asks a Node for. On
+   * its own key it can be slow, or fail on a temporarily unreachable Node,
+   * without holding up or blanking the page around it - which is what
+   * happened when both reads shared one sequential poll.
+   *
+   * Only while the Application is running: `docker stats` on a stopped
+   * container is a round trip whose answer is always nothing.
+   */
+  const usageQuery = useQuery({
+    queryKey: [...queryKeys.application(id ?? ""), "usage"],
+    queryFn: () => getApplicationResourceUsage(id as string),
+    enabled: Boolean(id) && application?.status === "running",
+    refetchInterval: POLL_INTERVALS.applicationDetail,
+  });
+  // Gated on the status, not on the query. A disabled query keeps its last
+  // answer, so without this a container you just stopped would keep showing
+  // the CPU and memory it was using while it ran.
+  const resourceUsage = application?.status === "running" ? (usageQuery.data ?? null) : null;
+
+  const loadError = applicationQuery.error ? errorMessage(applicationQuery.error, t) : null;
+
+  /** After an action the Node has already carried out - the next read is
+   * the authoritative one. */
   const reload = useCallback(() => {
     if (!id) return;
-    getApplication(id)
-      .then(setApplication)
-      .catch((err) => setLoadError(errorMessage(err, t)));
-  }, [id, t]);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.application(id) });
+  }, [id, queryClient]);
+
+  /**
+   * One chart sample per reading that arrives, not per render.
+   *
+   * Keyed on `dataUpdatedAt` rather than on the data: two identical
+   * readings in a row are two samples, and a re-render that fetched nothing
+   * is none.
+   */
+  useEffect(() => {
+    const usage = usageQuery.data;
+    if (!usage) return;
+    setHistory((previous) => {
+      const next = [...previous, { cpu: usage.cpuPercent ?? 0, ram: usage.ramBytes ?? 0 }];
+      // Five minutes at the page's own refresh interval. Long enough to show
+      // a spike settling, short enough that the window is about now rather
+      // than about the whole session.
+      return next.length > HISTORY_SAMPLES ? next.slice(next.length - HISTORY_SAMPLES) : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usageQuery.dataUpdatedAt]);
 
   useEffect(() => {
     listBlueprints()
@@ -120,51 +185,6 @@ export function ApplicationDetail() {
       .catch(() => {});
   }, [application?.blueprintId, i18n.language]);
 
-  const poll = useCallback(async () => {
-    if (!id) return;
-
-    // Both at once, not one after the other.
-    //
-    // These were sequential, so every tick cost the status probe *plus* the
-    // usage probe - and the usage probe runs `docker stats --no-stream`,
-    // which waits for Docker's own sampling and is the slowest single
-    // command in the app. Five seconds of interval spent holding the SSH
-    // session is also five seconds during which anything the user clicks
-    // queues behind it, which is why the whole page felt sluggish rather
-    // than just this reading.
-    //
-    // `allSettled`, not `all`: they still fail independently. Resource usage
-    // can fail on a temporarily unreachable Node without that meaning the
-    // Application failed to load - bundling both into one `Promise.all` used
-    // to throw away an already-successful `getApplication` result and leave
-    // the page stuck on a bare id with nothing usable on it.
-    const [applicationResult, usageResult] = await Promise.allSettled([getApplication(id), getApplicationResourceUsage(id)]);
-
-    if (applicationResult.status === "fulfilled") {
-      setApplication(applicationResult.value);
-      setLoadError(null);
-    } else {
-      setLoadError(errorMessage(applicationResult.reason, t));
-      return;
-    }
-
-    if (usageResult.status === "fulfilled") {
-      const usage = usageResult.value;
-      setResourceUsage(usage);
-      setHistory((previous) => {
-        const next = [...previous, { cpu: usage.cpuPercent ?? 0, ram: usage.ramBytes ?? 0 }];
-        // Five minutes at the detail page's own poll interval. Long enough
-        // to show a spike settling, short enough that the window is about
-        // now rather than about the whole session.
-        return next.length > HISTORY_SAMPLES ? next.slice(next.length - HISTORY_SAMPLES) : next;
-      });
-    }
-    // A failed usage probe leaves the last-known reading in place rather
-    // than clearing it - this page already shows its own errors where they
-    // matter (Console, Logs, ...), no need for a second banner here.
-  }, [id, t]);
-
-  usePolling(poll, POLL_INTERVALS.applicationDetail, { enabled: Boolean(id) });
 
   const loadLogs = useCallback(() => {
     if (!id) return;
