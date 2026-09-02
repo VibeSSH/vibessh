@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
@@ -21,6 +22,7 @@ import {
 import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
+import "./PortsTab.css";
 import { errorMessage } from "@/services/tauri";
 
 interface PortsTabProps {
@@ -48,6 +50,21 @@ async function recreateIfRunningDocker(application: ApplicationDetail) {
   if (status === "running") {
     await recreateApplication(application.id);
   }
+}
+
+/**
+ * How exposed a port is, in the badge's own colour.
+ *
+ * The list showed every visibility as the same neutral chip, so "reachable
+ * from the whole internet" and "reachable from this host only" looked
+ * identical in the one place somebody scans to check exactly that. Public is
+ * a warning rather than a danger: publishing a port is a normal thing to
+ * want, it is just the choice that deserves a second look.
+ */
+function visibilityTone(visibility: PortVisibility): "neutral" | "success" | "warning" {
+  if (visibility === "public") return "warning";
+  if (visibility === "vibeNetwork") return "success";
+  return "neutral";
 }
 
 /** Declared ports are documentation of intent, not a live guarantee - see applicationService.listApplicationPorts's own doc comment. A "required" port (blueprint-declared, none of the built-in blueprints set one up yet) can be edited but not removed here, same rule the backend itself enforces. */
@@ -113,93 +130,101 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     <div className="application-detail-overview">
       {error && <p className="page-error-note">{error}</p>}
 
-      <div className="application-detail-header-row">
-        <p className="form-note">{t("portsTab.description")}</p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditingPort(null);
-            setFormOpen(true);
-          }}
-        >
-          <Icon name="plus" size={14} />
-          {t("portsTab.addPort")}
-        </Button>
-      </div>
+      <Card>
+        <div className="card-header application-detail-header-row ports-card-header">
+          <div className="ports-card-heading">
+            <h3 className="card-title">{t("portsTab.title")}</h3>
+            <p className="card-subtitle">{t("portsTab.description")}</p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingPort(null);
+              setFormOpen(true);
+            }}
+          >
+            <Icon name="plus" size={14} />
+            {t("portsTab.addPort")}
+          </Button>
+        </div>
 
-      <div className="application-detail-header-row">
-        <p className="form-note">
-          {firewallResult === undefined && t("portsTab.firewallSyncNote")}
-          {firewallResult === null && t("portsTab.firewallSyncLocal")}
-          {firewallResult && firewallResult.backend === null && (
-            <span className="form-note-danger">{t("portsTab.firewallSyncNoBackend")}</span>
-          )}
-          {firewallResult &&
-            firewallResult.backend !== null &&
-            t(firewallResult.rulesRemoved > 0 ? "portsTab.firewallSyncSummaryWithRemoved" : "portsTab.firewallSyncSummary", {
-              backend: firewallResult.backend,
-              status: firewallResult.active ? t("portsTab.firewallActive") : t("portsTab.firewallInactive"),
-              count: firewallResult.rulesApplied,
-              removed: firewallResult.rulesRemoved,
-            })}
-          {/* A sync that "succeeded" while nothing enforces the rules is the
-              case that made "Vibe Network only" ports publicly reachable -
-              it has to read as a warning, not as part of the summary. */}
-          {firewallResult && firewallResult.backend !== null && firewallResult.unenforced && (
-            <span className="form-note-danger"> {t("portsTab.firewallUnenforced")}</span>
-          )}
-          {firewallError && <span className="form-note-danger"> {firewallError}</span>}
-        </p>
-        <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
-          <Icon name="lock" size={14} />
-          {firewallSyncing ? t("common.saving") : t("portsTab.syncFirewall")}
-        </Button>
-      </div>
-
-      {loading ? (
-        <SkeletonRows />
-      ) : ports.length === 0 ? (
-        <EmptyState icon="wifi" title={t("portsTab.emptyTitle")} description={t("portsTab.emptyDescription")} />
-      ) : (
-        <ul className="server-list">
-          {ports.map((port) => (
-            <li key={port.id} className="server-list-item">
-              <div className="server-list-main">
-                <span className="server-list-name" title={port.name}>
-                  {port.name}
-                </span>
-                <span className="server-list-host">
-                  {port.protocol.toUpperCase()} · {port.bindAddress}:{port.internalPort}
-                  {port.externalPort ? ` → ${port.externalPort}` : ""}
-                </span>
-              </div>
-              <Badge tone="neutral">{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
-              {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
-              <IconButton
-                icon="edit"
-                size="sm"
-                title={t("portsTab.editAria", { name: port.name })}
-                onClick={() => {
-                  setEditingPort(port);
-                  setFormOpen(true);
-                }}
-              />
-              {!port.required && (
+        {loading ? (
+          <SkeletonRows />
+        ) : ports.length === 0 ? (
+          <EmptyState icon="wifi" title={t("portsTab.emptyTitle")} description={t("portsTab.emptyDescription")} />
+        ) : (
+          <ul className="server-list">
+            {ports.map((port) => (
+              <li key={port.id} className="server-list-item">
+                <div className="server-list-main">
+                  <span className="server-list-name" title={port.name}>
+                    {port.name}
+                  </span>
+                  <span className="server-list-host">
+                    {port.protocol.toUpperCase()} · {port.bindAddress}:{port.internalPort}
+                    {port.externalPort ? ` → ${port.externalPort}` : ""}
+                  </span>
+                </div>
+                <Badge tone={visibilityTone(port.visibility)}>{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
+                {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
                 <IconButton
-                  icon="trash"
+                  icon="edit"
                   size="sm"
-                  danger
-                  title={t("portsTab.deleteAria", { name: port.name })}
+                  title={t("portsTab.editAria", { name: port.name })}
                   onClick={() => {
-                    setDeleteError(null);
-                    setDeletingPort(port);
+                    setEditingPort(port);
+                    setFormOpen(true);
                   }}
                 />
+                {!port.required && (
+                  <IconButton
+                    icon="trash"
+                    size="sm"
+                    danger
+                    title={t("portsTab.deleteAria", { name: port.name })}
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeletingPort(port);
+                    }}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="ports-firewall">
+          <div className="ports-firewall-text">
+            <span className="ports-firewall-title">{t("portsTab.firewallTitle")}</span>
+            <p className="form-note ports-firewall-status">
+              {firewallResult === undefined && t("portsTab.firewallSyncNote")}
+              {firewallResult === null && t("portsTab.firewallSyncLocal")}
+              {firewallResult && firewallResult.backend === null && (
+                <span className="form-note-danger">{t("portsTab.firewallSyncNoBackend")}</span>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+              {firewallResult &&
+                firewallResult.backend !== null &&
+                t(firewallResult.rulesRemoved > 0 ? "portsTab.firewallSyncSummaryWithRemoved" : "portsTab.firewallSyncSummary", {
+                  backend: firewallResult.backend,
+                  status: firewallResult.active ? t("portsTab.firewallActive") : t("portsTab.firewallInactive"),
+                  count: firewallResult.rulesApplied,
+                  removed: firewallResult.rulesRemoved,
+                })}
+              {/* A sync that "succeeded" while nothing enforces the rules is the
+                  case that made "Vibe Network only" ports publicly reachable -
+                  it has to read as a warning, not as part of the summary. */}
+              {firewallResult && firewallResult.backend !== null && firewallResult.unenforced && (
+                <span className="form-note-danger"> {t("portsTab.firewallUnenforced")}</span>
+              )}
+              {firewallError && <span className="form-note-danger"> {firewallError}</span>}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
+            <Icon name="lock" size={14} />
+            {firewallSyncing ? t("common.saving") : t("portsTab.syncFirewall")}
+          </Button>
+        </div>
+      </Card>
 
       {/* Ports are who can reach this application from outside the node;
           connections are who can reach it from inside it. They belong on the

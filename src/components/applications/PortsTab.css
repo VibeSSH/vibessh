@@ -1,0 +1,60 @@
+/*
+ * The Ports tab used to be two loose paragraphs, each with a button pinned
+ * to the far right of the window, above an unboxed list - and then a real
+ * card for connections underneath. Two halves of the same subject, drawn as
+ * if only one of them counted. Both are cards now, and these rules are what
+ * the ports card needs beyond the shared ones.
+ */
+
+.ports-card-header {
+  align-items: flex-start;
+}
+
+/* The title and its explanation are one block: without this the flex
+   header spaces them apart and the sentence stops looking like it belongs
+   to the heading above it. */
+.ports-card-heading {
+  display: flex;
+  flex-direction: column;
+  /* Long copy should wrap rather than push the button off the row. */
+  min-width: 0;
+}
+
+/*
+ * The firewall control, at the foot of the card rather than above the list.
+ *
+ * Synchronising the firewall is something you do about the ports, so it
+ * reads after them. It keeps its own rule above it because it is a
+ * different kind of action from adding a port: it changes the Node, not
+ * this application's declaration.
+ */
+.ports-firewall {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.ports-firewall-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ports-firewall-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* The status line under it carries the last sync's result, which can be a
+   sentence rather than a phrase - it wraps instead of stretching the row. */
+.ports-firewall-status {
+  margin: 0;
+  max-width: 68ch;
+}
