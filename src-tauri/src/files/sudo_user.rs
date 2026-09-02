@@ -372,12 +372,7 @@ impl SudoUserApplicationFileProvider {
     /// provisioning time, so a Node upgraded from a build that staged
     /// through `/tmp` heals itself with no manual step.
     async fn ensure_staging_dir(&self) -> AppResult<()> {
-        let command = format!(
-            "sudo install -d -o root -g root -m 755 {root} && sudo install -d -o {user} -g {user} -m 701 {dir}",
-            root = shell_quote(STAGING_ROOT),
-            user = shell_quote(&self.username),
-            dir = shell_quote(&staging_dir(self.application_id)),
-        );
+        let command = staging_dir_command(&self.username, self.application_id);
         let output = self.connection.execute_command(&command).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
@@ -408,11 +403,7 @@ impl SudoUserApplicationFileProvider {
     /// SFTP becomes owned by the dedicated account, so the helper (which
     /// runs as that account) can read it back out.
     async fn release_staging(&self, staging: &str) -> AppResult<()> {
-        let command = format!(
-            "sudo chown {user}:{user} {path} && sudo chmod 600 {path}",
-            user = shell_quote(&self.username),
-            path = shell_quote(staging),
-        );
+        let command = release_staging_command(&self.username, staging);
         let output = self.connection.execute_command(&command).await?;
         if output.exit_code != 0 {
             return Err(AppError::Connection("couldn't stage the file for transfer".into()));
@@ -603,6 +594,40 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
     }
 }
 
+
+/// The command that creates an Application's staging directory.
+///
+/// A free function so the string a Node actually receives can be asserted
+/// on. The bug this shape exists to prevent shipped as `-g {user}`: there is
+/// no group named after the account, because `dedicated_user::
+/// ensure_provisioned` creates it with `useradd --gid vibessh-apps`. Every
+/// staged file operation failed with "invalid group", which is the whole
+/// Files tab for any Application running under a dedicated account.
+fn staging_dir_command(username: &str, application_id: Uuid) -> String {
+    format!(
+        "sudo install -d -o root -g root -m 755 {root} && sudo install -d -o {user} -g {group} -m 701 {dir}",
+        root = shell_quote(STAGING_ROOT),
+        user = shell_quote(username),
+        // Mode 701 is what keeps the shared group harmless: the group bit is
+        // zero, so the other accounts in `vibessh-apps` gain nothing from
+        // being in it.
+        group = crate::dedicated_user::GROUP,
+        dir = shell_quote(&staging_dir(application_id)),
+    )
+}
+
+/// The command that hands a staged file over to the dedicated account.
+fn release_staging_command(username: &str, staging: &str) -> String {
+    format!(
+        "sudo chown {user}:{group} {path} && sudo chmod 600 {path}",
+        user = shell_quote(username),
+        // Same correction, same reason it is safe: mode 600 leaves the group
+        // with nothing.
+        group = crate::dedicated_user::GROUP,
+        path = shell_quote(staging),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,6 +694,37 @@ mod tests {
         assert!(!helper_script().contains("/tmp"), "{}", helper_script());
         let staging = staging_path(Uuid::new_v4());
         assert!(staging.starts_with(&format!("{STAGING_ROOT}/")), "{staging}");
+    }
+
+    /// The failure this file shipped with: `install -g <username>` against a
+    /// group that does not exist, because accounts are created with
+    /// `useradd --gid vibessh-apps` and no per-user group is ever made. The
+    /// Node answered "install: invalid group" and every staged file
+    /// operation died, which is the entire Files tab for a dedicated-user
+    /// Application.
+    #[test]
+    fn staging_is_grouped_by_the_shared_group_not_the_account_name() {
+        let id = Uuid::new_v4();
+        let username = crate::dedicated_user::username(id);
+        let command = staging_dir_command(&username, id);
+
+        assert!(command.contains(&format!("-g {}", crate::dedicated_user::GROUP)), "{command}");
+        assert!(!command.contains(&format!("-g '{username}'")), "the account name is not a group: {command}");
+
+        let release = release_staging_command(&username, "/run/vibessh/staging/x");
+        assert!(release.contains(&format!("{}:{}", format_args!("'{username}'"), crate::dedicated_user::GROUP)), "{release}");
+    }
+
+    /// The shared group is only safe because nothing is readable through
+    /// it - every other Application's account is a member.
+    #[test]
+    fn nothing_is_reachable_through_the_shared_group() {
+        let id = Uuid::new_v4();
+        let username = crate::dedicated_user::username(id);
+        // Directory: owner-only traversal, group and other get no read.
+        assert!(staging_dir_command(&username, id).contains("-m 701"));
+        // File: owner-only, full stop.
+        assert!(release_staging_command(&username, "/run/vibessh/staging/x").contains("chmod 600"));
     }
 
     /// Staging is per-Application, so one Application's staged bytes never
