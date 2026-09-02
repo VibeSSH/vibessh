@@ -52,7 +52,7 @@ const HISTORY_SAMPLES = 60;
 
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "files" | "logs" | "environment" | "ports" | "databases" | "backups" | "settings";
+type Tab = "overview" | "files" | "logs" | "ports" | "databases" | "backups" | "settings";
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -361,11 +361,6 @@ export function ApplicationDetail() {
                 {t("applicationDetail.tabLogs")}
               </button>
             )}
-            {features.includes("environment") && (
-              <button className={`modal-tab ${tab === "environment" ? "modal-tab-active" : ""}`} onClick={() => setTab("environment")}>
-                {t("applicationDetail.tabEnvironment")}
-              </button>
-            )}
             {features.includes("ports") && (
               <button className={`modal-tab ${tab === "ports" ? "modal-tab-active" : ""}`} onClick={() => setTab("ports")}>
                 {t("applicationDetail.tabPorts")}
@@ -457,6 +452,13 @@ export function ApplicationDetail() {
                       <span className="form-label">{t("applicationDetail.workingDirectory")}</span>
                       <p className="application-detail-fact-value">{application.workingDirectory}</p>
                     </div>
+                    {/* The last fact the removed Details card carried that
+                        this column did not. Moved rather than kept as a
+                        reason for a whole duplicate card to survive. */}
+                    <div className="application-detail-fact">
+                      <span className="form-label">{t("applicationDetail.createdAt")}</span>
+                      <p className="application-detail-fact-value">{new Date(application.createdAt).toLocaleString()}</p>
+                    </div>
                   </div>
                 </Card>
 
@@ -486,20 +488,17 @@ export function ApplicationDetail() {
 
           {tab === "settings" && (
             <div className="application-detail-overview">
-              <Card title={t("applicationDetail.detailsTitle")}>
-                <div className="wizard-review-grid">
-                  <span className="wizard-review-label">{t("createApplicationWizard.location")}</span>
-                  <span className="wizard-review-value">{serverName ?? t("applicationCard.local")}</span>
-                  <span className="wizard-review-label">{t("createApplicationWizard.runtimeType")}</span>
-                  <span className="wizard-review-value">{t(`createApplicationWizard.runtimeTypeOption.${application.runtimeType}`)}</span>
-                  <span className="wizard-review-label">{t("createApplicationWizard.workingDirectory")}</span>
-                  <span className="wizard-review-value">{application.workingDirectory}</span>
-                  <span className="wizard-review-label">{t("applicationDetail.createdAt")}</span>
-                  <span className="wizard-review-value">{new Date(application.createdAt).toLocaleString()}</span>
-                </div>
-              </Card>
 
               <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onSaved={reload} />
+
+              {/* Folded in from its own tab. Environment variables and the
+                  blueprint's own fields answer one question between them -
+                  how this process comes up - and splitting that across two
+                  tabs meant opening both to know the answer. Placed
+                  directly after the blueprint fields and before the health
+                  check and limits, which watch the result rather than
+                  decide it. */}
+              {features.includes("environment") && <EnvironmentTab application={application} onSaved={reload} />}
 
               {application.runtimeType === "docker" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
 
@@ -528,7 +527,6 @@ export function ApplicationDetail() {
             </Card>
           )}
 
-          {tab === "environment" && <EnvironmentTab application={application} onSaved={reload} />}
 
           {tab === "ports" && <PortsTab applicationId={id} application={application} />}
 
