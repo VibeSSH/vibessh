@@ -488,7 +488,9 @@
     "placeholder": "Wpisz komendę i wciśnij Enter…",
     "notRunning": "Uruchom aplikację, aby wysyłać komendy",
     "send": "Wyślij",
-    "writeError": "Ta aplikacja nie ma interaktywnej konsoli."
+    "writeError": "Ta aplikacja nie ma interaktywnej konsoli.",
+    "live": "na żywo",
+    "polled": "odświeżane co 2 s"
   },
   "applicationBackups": {
     "title": "Backupy",

@@ -1,3 +1,4 @@
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./tauri";
 import type {
   Application,
@@ -258,4 +259,34 @@ export interface MigrationResult {
 /** "Migrate to another Node" - provisions an identical Docker application on `targetServerId`, copies its working directory over, cuts its DNS alias (if it has one) to the new instance, then retires the old one. A single blocking call - see the Rust `services::migration_service`'s own doc comment for the full step order. Docker-only; rejected server-side for any other runtime type. */
 export function migrateApplication(id: string, targetServerId: string): Promise<MigrationResult> {
   return callCommand<MigrationResult>("migrate_application", { id, targetServerId });
+}
+
+/**
+ * Opens a live output stream for an Application.
+ *
+ * Docker over SSH only - `docker logs -f` is a real follow the Node runs
+ * for us, and nothing equivalent exists for a local process after the fact.
+ * Anything else rejects, and the caller keeps polling, which is exactly
+ * what the console did before this existed.
+ *
+ * `followId` is chosen by the caller so it can subscribe to the events
+ * before the stream starts and cannot miss the first lines.
+ */
+export function followApplicationLogs(applicationId: string, followId: string, tail: number): Promise<void> {
+  return callCommand<void>("follow_application_logs", { id: applicationId, followId, tail });
+}
+
+/** Stops a live stream. Not optional: this is what closes the channel and
+ * ends `docker logs -f` on the Node. */
+export function stopFollowingApplicationLogs(followId: string): Promise<boolean> {
+  return callCommand<boolean>("stop_following_application_logs", { followId });
+}
+
+/** Same not-in-a-Tauri-webview guard as the terminal helpers. */
+export function onApplicationLogLine(followId: string, handler: (line: string) => void): Promise<UnlistenFn> {
+  return listen<string>(`applog://${followId}/line`, (event) => handler(event.payload)).catch(() => () => {});
+}
+
+export function onApplicationLogClosed(followId: string, handler: (reason: string | null) => void): Promise<UnlistenFn> {
+  return listen<string | null>(`applog://${followId}/closed`, (event) => handler(event.payload)).catch(() => () => {});
 }

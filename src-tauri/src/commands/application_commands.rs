@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::blueprints::BlueprintRegistry;
@@ -12,7 +12,7 @@ use crate::models::{
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
-use crate::state::{DnsSuffixState, SshSessionManager};
+use crate::state::{DnsSuffixState, LogFollowManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
@@ -249,6 +249,62 @@ async fn mark_new_log_session(log_capture: &LogCaptureStore, id: Uuid) {
     if let Err(err) = log_capture.append(id, &[line]).await {
         log::warn!("couldn't mark a new log session for {id}: {err}");
     }
+}
+
+/// Opens a live console stream. Returns as soon as the follow is running;
+/// output arrives on `applog://{follow_id}/line` and the stream's end on
+/// `applog://{follow_id}/closed`.
+///
+/// One event pair per follow rather than per Application, so two consoles
+/// open on the same Application - a second window, a stale tab - do not
+/// interleave into one name. Same shape `terminal_commands` uses.
+#[tauri::command]
+pub async fn follow_application_logs(
+    app: AppHandle,
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    follows: State<'_, LogFollowManager>,
+    id: Uuid,
+    tail: u32,
+    follow_id: String,
+) -> AppResult<()> {
+    let line_event = format!("applog://{follow_id}/line");
+    let closed_event = format!("applog://{follow_id}/closed");
+
+    let app_for_lines = app.clone();
+    let handle = services::follow_application_logs(
+        &repo,
+        &server_repo,
+        &sessions,
+        &local_process_manager,
+        id,
+        tail,
+        move |line| {
+            if let Err(err) = app_for_lines.emit(&line_event, line) {
+                log::warn!("couldn't deliver a console line to the UI: {err}");
+            }
+        },
+        move |reason| {
+            if let Err(err) = app.emit(&closed_event, reason) {
+                log::warn!("couldn't tell the UI the console stream ended: {err}");
+            }
+        },
+    )
+    .await?;
+
+    follows.insert(follow_id, handle).await;
+    Ok(())
+}
+
+/// Stops a live console stream. `false` means it had already ended.
+///
+/// Not optional bookkeeping: dropping the handle is what closes the remote
+/// channel, and skipping it leaves `docker logs -f` running on the Node.
+#[tauri::command]
+pub async fn stop_following_application_logs(follows: State<'_, LogFollowManager>, follow_id: String) -> AppResult<bool> {
+    Ok(follows.stop(&follow_id).await)
 }
 
 #[tauri::command]

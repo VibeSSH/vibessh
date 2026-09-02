@@ -12,6 +12,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
+use crate::models::RuntimeType;
 use crate::runtime::local_process::LocalProcessManager;
 use crate::runtime::RuntimeContext;
 use crate::services::ssh_service::retry_on_connection_failure;
@@ -23,6 +24,37 @@ use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::server_repository::ServerRepository;
 
 use super::*;
+
+/// Starts a live follow of an Application's output.
+///
+/// Docker over SSH only, and that is deliberate rather than unfinished.
+/// `docker logs -f` is a real follow the Node performs for us; a local
+/// process has no equivalent to attach to after the fact, and systemd's
+/// `journalctl -f` needs its own unit resolution. Anything else returns
+/// `InvalidInput` and the console keeps polling, which is what it did
+/// before this existed - the fallback is the old behaviour, not a failure.
+///
+/// The seeded tail comes from the same `--tail` the follow itself asks
+/// for, so opening a console does not stare at nothing until the container
+/// next says something.
+pub async fn follow_application_logs(
+    repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+    tail: u32,
+    on_line: impl FnMut(String) + Send + 'static,
+    on_closed: impl FnOnce(Option<String>) + Send + 'static,
+) -> AppResult<crate::ssh::client::FollowHandle> {
+    let (detail, connection, _runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("live output is only available for Docker applications".to_string()));
+    }
+    let connection = connection.ok_or_else(|| AppError::InvalidInput("live output needs a connection to the Node".to_string()))?;
+    let container = format!("vibessh-app-{id}");
+    connection.follow_container_logs(&container, tail, on_line, on_closed).await
+}
 
 /// The last `max_lines` lines available right now - a snapshot the Logs tab
 /// fetches on open and on manual refresh, same "pull, not push" shape

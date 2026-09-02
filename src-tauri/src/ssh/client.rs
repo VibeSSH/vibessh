@@ -351,6 +351,84 @@ impl SshSession {
         Ok(TerminalHandle { input_tx })
     }
 
+
+    /// Runs a command and streams its output line by line until the caller
+    /// drops the returned handle.
+    ///
+    /// Its own method rather than a flag on `execute_command`, because the
+    /// two have opposite shapes: `execute_command` collects everything,
+    /// caps it and returns once, under a timeout. A follow never returns on
+    /// its own and must not be capped or timed out - `docker logs -f` on a
+    /// quiet container is *supposed* to sit there producing nothing.
+    ///
+    /// Lines are assembled here rather than in the caller. A channel
+    /// boundary lands wherever TCP put it, frequently mid-line, and every
+    /// consumer would otherwise have to reimplement the same buffering -
+    /// the mistake `ai::openai_compatible` had to get right for SSE.
+    ///
+    /// stderr is folded into the same stream: `docker logs` writes a
+    /// container's stderr there, and separating them would drop half of
+    /// what a crashing process said.
+    pub async fn follow_command(
+        &self,
+        command: &str,
+        mut on_line: impl FnMut(String) + Send + 'static,
+        on_closed: impl FnOnce(Option<String>) + Send + 'static,
+    ) -> AppResult<FollowHandle> {
+        let mut channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open a log channel: {err}")))?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't start following the log: {err}")))?;
+
+        let (stop_tx, mut stop_rx) = mpsc::unbounded_channel::<()>();
+
+        tokio::spawn(async move {
+            let mut buffer = String::new();
+            let close_reason = loop {
+                tokio::select! {
+                    // The handle was dropped - the UI closed the console, or
+                    // the whole page went away. Closing the channel stops
+                    // `docker logs -f` on the Node rather than leaving it
+                    // running and writing into a socket nobody reads.
+                    stop = stop_rx.recv() => {
+                        if stop.is_none() {
+                            let _ = channel.close().await;
+                            break None;
+                        }
+                    }
+                    msg = channel.wait() => {
+                        match msg {
+                            Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                                buffer.push_str(&String::from_utf8_lossy(&data));
+                                while let Some(newline) = buffer.find('\n') {
+                                    let line = buffer[..newline].trim_end_matches('\r').to_string();
+                                    buffer.drain(..=newline);
+                                    on_line(line);
+                                }
+                            }
+                            Some(ChannelMsg::Close) | None => break None,
+                            _ => {}
+                        }
+                    }
+                }
+            };
+            // Whatever was left without a trailing newline is still output -
+            // a process killed mid-line said it, and dropping it would hide
+            // the last thing it managed to write.
+            if !buffer.is_empty() {
+                on_line(buffer);
+            }
+            on_closed(close_reason);
+        });
+
+        Ok(FollowHandle { _stop_tx: stop_tx })
+    }
+
     /// Opens a `direct-tcpip` channel to `host_to_connect:port_to_connect` -
     /// the primitive `ssh::port_forward`'s Local/Dynamic forward accept
     /// loops call once per accepted local connection. `originator_*`
@@ -407,6 +485,13 @@ impl SshSession {
 /// A handle to a running interactive shell, opened by `SshSession::open_terminal`.
 /// Dropping it ends the underlying background task and closes the remote
 /// channel - there's no separate `close()` to remember to call.
+/// Keeps a `follow_command` stream alive. Dropping it closes the remote
+/// channel, which is the only way the follow ever ends - there is no
+/// "finished" for `docker logs -f`.
+pub struct FollowHandle {
+    _stop_tx: mpsc::UnboundedSender<()>,
+}
+
 pub struct TerminalHandle {
     input_tx: mpsc::UnboundedSender<TerminalInput>,
 }

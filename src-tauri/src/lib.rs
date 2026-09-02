@@ -110,6 +110,7 @@ pub fn run() {
         .manage(state::AgentSessionManager::new())
         .manage(state::FileTransferManager::new())
         .manage(state::AiTurnManager::new())
+        .manage(state::LogFollowManager::new())
         .manage(state::MigrationLockManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
@@ -215,6 +216,8 @@ pub fn run() {
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,
             commands::application_commands::update_application_config,
+            commands::application_commands::follow_application_logs,
+            commands::application_commands::stop_following_application_logs,
             commands::application_backup_commands::list_application_backups,
             commands::application_backup_commands::create_application_backup,
             commands::application_backup_commands::delete_application_backup,

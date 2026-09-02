@@ -76,6 +76,26 @@ impl SshSession {
         Ok(output.stdout)
     }
 
+    /// Streams a container's output as it is produced.
+    ///
+    /// `--tail` seeds the view with recent history so an operator opening
+    /// the console does not stare at nothing until the next line arrives,
+    /// and `-f` then keeps the channel open. No `--timestamps` here, unlike
+    /// `container_logs`: that method has to reconstruct interleaving after
+    /// the fact from a single collected blob, while a live stream arrives in
+    /// order by construction and the prefix would only cost width.
+    pub async fn follow_container_logs(
+        &self,
+        container: &str,
+        tail: u32,
+        on_line: impl FnMut(String) + Send + 'static,
+        on_closed: impl FnOnce(Option<String>) + Send + 'static,
+    ) -> AppResult<crate::ssh::client::FollowHandle> {
+        validate_container_ref(container)?;
+        let tail = tail.clamp(1, 5000);
+        self.follow_command(&format!("sudo docker logs --tail {tail} -f {container} 2>&1"), on_line, on_closed).await
+    }
+
     /// `docker kill` sends SIGKILL immediately, bypassing the container's
     /// own stop timeout - the Docker equivalent of `kill -9`, for when
     /// `stop_container`'s normal graceful stop isn't what's wanted
