@@ -66,36 +66,90 @@ export function vibesshEditorTheme(): Extension[] {
       ".cm-selectionMatch": { backgroundColor: "var(--surface-2)" },
       ".cm-panels": { backgroundColor: "var(--surface-0)", color: "var(--text-primary)" },
       // The search panel is the one part of the editor made of form
-      // controls, and unstyled they are the browser's own: white boxes and
-      // grey buttons on a dark editor. These give them the same surfaces the
-      // rest of the app uses.
+      // controls, and CodeMirror ships its own look for them: a light
+      // linear-gradient on every button and a plain bordered box for every
+      // field. On this theme that reads as somebody else's widget dropped
+      // into the app, so the whole panel is restyled from VibeSSH's tokens.
+      //
+      // `background` rather than `backgroundColor` throughout, because the
+      // default is a gradient - setting only the colour leaves the gradient
+      // painted over it, which is what made the buttons white.
       ".cm-panel.cm-search": {
+        background: "var(--surface-0)",
         borderBottom: "1px solid var(--border)",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "6px",
         padding: "8px 10px",
+        fontFamily: "inherit",
+        fontSize: "12.5px",
       },
-      ".cm-panel.cm-search input, .cm-panel.cm-search button": {
-        backgroundColor: "var(--surface-1)",
+      // The panel's own layout is a run of inline elements separated by
+      // literal spaces and `<br>`; the flex gap above replaces those, so the
+      // margins CodeMirror sets on each control have to go or they compound.
+      ".cm-panel.cm-search > *": { margin: "0" },
+      // The panel puts the replace row on its own line with a literal
+      // `<br>`, which a flex container would otherwise swallow. Zero-height
+      // and full-width is the standard way to keep it breaking the line.
+      ".cm-panel.cm-search br": { flexBasis: "100%", height: "0" },
+      ".cm-panel.cm-search .cm-textfield": {
+        background: "var(--surface-bg)",
         border: "1px solid var(--border)",
-        borderRadius: "6px",
+        borderRadius: "var(--radius-sm)",
         color: "var(--text-primary)",
         font: "inherit",
-        padding: "3px 8px",
+        padding: "5px 10px",
+        minWidth: "180px",
       },
-      ".cm-panel.cm-search input:focus-visible, .cm-panel.cm-search button:focus-visible": {
-        outline: "2px solid var(--accent)",
-        outlineOffset: "1px",
+      ".cm-panel.cm-search .cm-textfield::placeholder": { color: "var(--text-tertiary)" },
+      ".cm-panel.cm-search .cm-textfield:focus": {
+        borderColor: "var(--accent)",
+        outline: "none",
       },
-      ".cm-panel.cm-search button:hover": { backgroundColor: "var(--surface-2)" },
-      ".cm-panel.cm-search button": { cursor: "pointer" },
-      // The modifier toggles are checkboxes with their label as loose text;
-      // without this the label sits away from its own box.
-      ".cm-panel.cm-search label": { color: "var(--text-secondary)", marginLeft: "8px" },
-      ".cm-panel.cm-search label input": { marginRight: "4px", padding: "0" },
+      // Matched to `.btn-sm`: same 28px floor, radius, weight and ring, so a
+      // button in here and a button in the header above it are the same
+      // control seen twice.
+      ".cm-panel.cm-search .cm-button": {
+        background: "var(--surface-1)",
+        backgroundImage: "none",
+        border: "1px solid transparent",
+        borderRadius: "var(--radius-sm)",
+        boxShadow: "var(--t-ring)",
+        color: "var(--text-primary)",
+        cursor: "pointer",
+        font: "inherit",
+        fontWeight: "600",
+        minHeight: "28px",
+        padding: "5px 12px",
+      },
+      ".cm-panel.cm-search .cm-button:hover": { background: "var(--surface-2)" },
+      ".cm-panel.cm-search .cm-button:active": { filter: "brightness(0.95)" },
+      ".cm-panel.cm-search label": {
+        alignItems: "center",
+        color: "var(--text-secondary)",
+        display: "inline-flex",
+        gap: "5px",
+        whiteSpace: "nowrap",
+      },
+      ".cm-panel.cm-search label input": { accentColor: "var(--accent)", margin: "0" },
+      // Pushed to the far end and drawn as a ghost control: it closes the
+      // panel, which is the one thing in here nobody is aiming for.
       ".cm-panel.cm-search [name=close]": {
         background: "none",
         border: "none",
-        color: "var(--text-secondary)",
-        fontSize: "16px",
+        borderRadius: "var(--radius-sm)",
+        color: "var(--text-tertiary)",
+        cursor: "pointer",
+        fontSize: "18px",
+        lineHeight: "1",
+        marginLeft: "auto",
+        padding: "2px 8px",
+        position: "static",
+      },
+      ".cm-panel.cm-search [name=close]:hover": {
+        background: "color-mix(in srgb, #ffffff 6%, transparent)",
+        color: "var(--text-primary)",
       },
       ".cm-searchMatch": {
         backgroundColor: `${TERMINAL_COLORS.yellow}33`,
