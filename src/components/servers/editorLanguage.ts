@@ -2,6 +2,8 @@ import type { Extension } from "@codemirror/state";
 import { StreamLanguage } from "@codemirror/language";
 import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
+import { linter } from "@codemirror/lint";
+import { yamlProblems } from "./yamlLint";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
@@ -14,6 +16,33 @@ import { properties } from "@codemirror/legacy-modes/mode/properties";
 import { nginx } from "@codemirror/legacy-modes/mode/nginx";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
+
+/**
+ * Marks YAML syntax problems as you type.
+ *
+ * Only YAML gets a linter, and that is a judgement about consequence rather
+ * than about effort. A broken `server.properties` line is ignored by the
+ * server; a broken `spigot.yml` stops it booting, and the failure surfaces
+ * minutes later as "the Application will not start" with the cause nowhere
+ * in sight. Catching it in the editor is the difference between a red
+ * squiggle and a diagnosis.
+ *
+ * `parseDocument` is not cheap on a large file, but CodeMirror already runs
+ * a linter on a delay after typing stops rather than on every keystroke, so
+ * this costs one parse per pause.
+ */
+const yamlLinter = linter((view) =>
+  yamlProblems(view.state.doc.toString()).map((problem) => ({
+    from: Math.min(problem.from, view.state.doc.length),
+    // Clamped: a parser position past the end of the document - which a
+    // truncated file can produce - makes CodeMirror throw, and a linter
+    // that can take the editor down is worse than no linter.
+    to: Math.min(problem.to, view.state.doc.length),
+    severity: problem.severity,
+    message: problem.message,
+    source: "YAML",
+  })),
+);
 
 /**
  * Picks a CodeMirror language extension from a remote file's name - by
@@ -32,7 +61,7 @@ export function languageExtensionFor(fileName: string): Extension[] {
       return [json()];
     case "yml":
     case "yaml":
-      return [yaml()];
+      return [yaml(), yamlLinter];
     case "js":
     case "mjs":
     case "cjs":
