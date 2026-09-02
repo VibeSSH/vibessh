@@ -297,6 +297,12 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
    * minute of coming up whether or not anybody sends traffic. A tunnel that
    * is up and has still never handshaked is therefore a real finding, and it
    * says so rather than being flattened into "inactive".
+   *
+   * Each value is written to finish the row's own label - "Connection: not
+   * established" - and stays short, because the row ellipsises and the
+   * detail belongs in the rows under it. "Last handshake" already says
+   * "never"; this row saying it again, at length, was both redundant and
+   * bad Polish.
    */
   const tunnel = status?.tunnel ?? "unknown";
   const connectionLabel = (() => {
