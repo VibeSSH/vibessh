@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { recordCommandTiming } from "./commandTiming";
 
 /**
  * The machine-readable classification the Rust side attaches to every
@@ -65,9 +66,16 @@ export class CommandError extends Error {
  * variant as a rejected promise, so callers only need to catch it once here.
  */
 export async function callCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  // Measured here because this is the one place every command passes
+  // through - see `commandTiming` for why "the UI feels slow" needs numbers
+  // before it needs a fix.
+  const started = performance.now();
   try {
-    return await invoke<T>(command, args);
+    const result = await invoke<T>(command, args);
+    recordCommandTiming(command, performance.now() - started, false);
+    return result;
   } catch (error) {
+    recordCommandTiming(command, performance.now() - started, true);
     throw normalizeError(error);
   }
 }
