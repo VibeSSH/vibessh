@@ -14,6 +14,8 @@ Applications are managed in the Applications module. This screen is for the rest
 
 The sidebar -> **Actions**, once a server is chosen.
 
+![systemd services and Docker containers on a Node](images/actions.png)
+
 ## systemd services
 
 A list of units with two independent states that are easy to confuse:

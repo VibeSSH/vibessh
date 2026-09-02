@@ -8,6 +8,8 @@ order: 45
 
 VibeSSH tworzy bazy MySQL/MariaDB dla aplikacji i pilnuje ich danych dostępowych. Nie jest to menedżer baz — nie ma tu przeglądania tabel ani zapytań; do tego jest phpMyAdmin, do którego można stąd przejść.
 
+![Baza danych utworzona dla aplikacji, z wygenerowaną nazwą i użytkownikiem](images/databases-tab.png)
+
 ## Dwa poziomy
 
 **Host bazy danych** to silnik: serwer MySQL albo MariaDB, na którym powstają bazy. Rejestruje się go raz, w menu bocznym pod **Bazy danych**.

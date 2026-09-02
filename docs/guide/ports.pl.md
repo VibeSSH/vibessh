@@ -12,6 +12,8 @@ Port to deklaracja, z których gniazd sieciowych korzysta aplikacja i kto może 
 
 Aplikacja → zakładka **Porty**. Karta na górze wymienia zadeklarowane porty, a pod nią, za kreską, siedzi synchronizacja firewalla węzła.
 
+![Zakładka Porty: trzy porty z plakietkami poziomu dostępu i synchronizacja firewalla na dole karty](images/ports-tab.png)
+
 ## Pola formularza
 
 | Pole | Co robi | Przykład |

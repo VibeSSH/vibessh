@@ -18,6 +18,8 @@ If an application has a dedicated account, VibeSSH creates a separate system acc
 
 The account and its helper script are set up on the first file operation, so the first visit to the tab can be slightly slower than the ones after it.
 
+![The application file browser, with directories and configuration files](images/application-files.png)
+
 ## Getting around
 
 Clicking a directory enters it; the breadcrumbs above the list lead back. A directory you have already visited is remembered, so walking back up the tree is instant - VibeSSH asks the Node whether anything changed a moment later.

@@ -12,6 +12,8 @@ A backup is a packed copy of an application's working directory - the Minecraft 
 
 Application -> the **Backups** tab. The list of backups, a **Back up now** button, and the **Automatic backups** card below it.
 
+![The backup list: scheduled and manual, with sizes and the S3 upload marker](images/backups-tab.png)
+
 ## A manual backup
 
 One click, one archive. In the list a backup is marked **Manual** or **Scheduled**, with its date and size.

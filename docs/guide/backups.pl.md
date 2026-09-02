@@ -12,6 +12,8 @@ Backup to spakowana kopia katalogu roboczego aplikacji — świata Minecrafta, k
 
 Aplikacja → zakładka **Backupy**. Lista backupów, przycisk **Utwórz backup teraz** i karta **Automatyczne backupy** pod nią.
 
+![Lista backupów: automatyczne i ręczny, z rozmiarem i oznaczeniem wysłania do S3](images/backups-tab.png)
+
 ## Backup ręczny
 
 Jedno kliknięcie, jeden archiwum. Na liście backup ma znacznik **Ręczny** albo **Automatyczny**, datę i rozmiar.

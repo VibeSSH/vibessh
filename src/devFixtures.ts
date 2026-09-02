@@ -186,6 +186,23 @@ const fixtures: Record<string, unknown> = {
   },
   list_port_forwards: [],
 
+  list_server_processes: [
+    { pid: 1421, user: "vibessh-app", cpuPercent: 41.2, ramBytes: 3_355_443_200, command: "java -Xms4G -Xmx4G -jar paper.jar nogui" },
+    { pid: 918, user: "mysql", cpuPercent: 1.4, ramBytes: 486_539_264, command: "/usr/sbin/mariadbd" },
+    { pid: 640, user: "root", cpuPercent: 0.6, ramBytes: 121_634_816, command: "/usr/bin/dockerd -H fd://" },
+    { pid: 1, user: "root", cpuPercent: 0.0, ramBytes: 12_582_912, command: "/sbin/init" },
+  ],
+  list_server_services: [
+    { name: "docker.service", description: "Docker Application Container Engine", active: true, enabled: true },
+    { name: "ssh.service", description: "OpenBSD Secure Shell server", active: true, enabled: true },
+    { name: "mariadb.service", description: "MariaDB database server", active: true, enabled: true },
+    { name: "unattended-upgrades.service", description: "Unattended Upgrades Shutdown", active: false, enabled: true },
+  ],
+  list_server_containers: [
+    { id: "c1f0", name: "vibessh-paper", image: "itzg/minecraft-server:latest", state: "running", status: "Up 2 hours" },
+    { id: "a93b", name: "vibessh-velocity", image: "itzg/bungeecord:latest", state: "exited", status: "Exited (0) 3 days ago" },
+  ],
+
   get_server_metrics: { cpuPercent: 22.8, ramUsedBytes: 5_100_273_664, ramTotalBytes: 16_642_998_272, uptimeSeconds: 1_209_600, rxBytesPerSecond: 184_320, txBytesPerSecond: 96_256 },
   get_node_sync_status: { inSync: true },
   ping_server: 6,

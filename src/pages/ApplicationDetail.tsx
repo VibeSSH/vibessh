@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { POLL_INTERVALS } from "@/hooks/usePolling";
@@ -54,7 +54,10 @@ const HISTORY_SAMPLES = 60;
 
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "files" | "logs" | "ports" | "databases" | "backups" | "settings";
+/** Every tab, and the values the `?tab=` parameter accepts. One list, so a
+ * tab cannot exist without being linkable to. */
+const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "settings"] as const;
+type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -87,7 +90,24 @@ export function ApplicationDetail() {
    * does not have.
    */
   const [history, setHistory] = useState<{ cpu: number; ram: number }[]>([]);
-  const [tab, setTab] = useState<Tab>("overview");
+  /**
+   * Which tab is open, held in the URL rather than in component state.
+   *
+   * It was `useState`, which meant a tab could not be linked to: the guide
+   * could send somebody to this page but not to the Ports on it, the back
+   * button did not undo a tab change, and a reload always landed on
+   * Overview. It is also what makes a tab screenshottable at all, since a
+   * capture can only be pointed at a URL.
+   *
+   * An unknown or missing value reads as Overview rather than as an error -
+   * a mistyped link should land somewhere sensible.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tab: Tab = TABS.includes(requestedTab as Tab) ? (requestedTab as Tab) : "overview";
+  // `replace`, so reading through an application's tabs does not fill the
+  // history with every tab glanced at on the way.
+  const setTab = (next: Tab) => setSearchParams({ tab: next }, { replace: true });
 
   const [confirming, setConfirming] = useState<Verb | null>(null);
   const [actionBusy, setActionBusy] = useState(false);

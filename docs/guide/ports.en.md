@@ -12,6 +12,8 @@ A port is a declaration of which network sockets an application uses and who may
 
 Application -> the **Ports** tab. The card at the top lists the declared ports; below it, behind a rule, sits the Node firewall sync.
 
+![The Ports tab: three ports with their access badges, and the firewall sync at the foot of the card](images/ports-tab.png)
+
 ## The form's fields
 
 | Field | What it does | Example |

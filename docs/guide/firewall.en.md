@@ -12,6 +12,8 @@ The firewall is where the access levels declared on application ports become rea
 
 The sidebar -> **Firewall**, once a server is chosen.
 
+![A Node's firewall: the ufw backend, enforcement active, and four rules](images/firewall.png)
+
 ## Status
 
 Two fields that have to be read together:

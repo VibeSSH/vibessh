@@ -14,6 +14,8 @@ Aplikacjami zarządza się w module Aplikacje. Ten ekran jest do reszty maszyny 
 
 Menu boczne → **Akcje**, po wybraniu serwera.
 
+![Usługi systemd i kontenery Dockera na węźle](images/actions.png)
+
 ## Usługi systemd
 
 Lista jednostek z dwoma niezależnymi stanami, których nie należy mylić:

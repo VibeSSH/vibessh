@@ -12,6 +12,8 @@ Firewall to miejsce, w którym poziomy dostępu zadeklarowane przy portach aplik
 
 Menu boczne → **Firewall**, po wybraniu serwera.
 
+![Firewall węzła: backend ufw, egzekwowanie aktywne i cztery reguły](images/firewall.png)
+
 ## Stan
 
 Dwa pola, które trzeba czytać razem:

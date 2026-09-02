@@ -18,6 +18,8 @@ Jeśli aplikacja ma włączone dedykowane konto, VibeSSH zakłada na węźle oso
 
 Konto i skrypt pomocniczy są zakładane przy pierwszej operacji na plikach, więc pierwsze wejście w zakładkę może być odrobinę wolniejsze niż kolejne.
 
+![Przeglądarka plików aplikacji z katalogami i plikami konfiguracyjnymi](images/application-files.png)
+
 ## Nawigacja
 
 Klik w katalog wchodzi do środka, okruszki nad listą prowadzą z powrotem. Katalog raz odwiedzony jest zapamiętany, więc cofanie się po drzewie jest natychmiastowe — dopiero po chwili VibeSSH pyta węzeł, czy coś się zmieniło.

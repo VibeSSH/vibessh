@@ -8,6 +8,8 @@ order: 45
 
 VibeSSH creates MySQL/MariaDB databases for applications and looks after their credentials. It is not a database manager - there is no table browsing and no query editor; phpMyAdmin is for that, and you can reach it from here.
 
+![A database created for an application, with its generated name and user](images/databases-tab.png)
+
 ## Two levels
 
 A **database host** is the engine: a MySQL or MariaDB server on which databases are created. You register one once, from the sidebar under **Databases**.
