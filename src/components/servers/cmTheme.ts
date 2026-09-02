@@ -188,16 +188,26 @@ export function vibesshEditorTheme(): Extension[] {
         outline: `1px solid ${TERMINAL_COLORS.yellow}`,
       },
       ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: `${TERMINAL_COLORS.yellow}55` },
-      // Lint marks, loud enough to find.
+      // Lint marks: the line, not the two characters the parser stopped on.
       //
-      // CodeMirror's default is a thin wavy underline in `#d11` - a dark red
-      // that on this background reads as a faint smudge under one word, and
-      // was reported as "barely visible". The range is tinted as well as
-      // underlined, the underline is drawn in the app's own `--danger`, and
-      // the gutter carries a marker so a problem scrolled off screen is
-      // still findable.
+      // The first attempt tinted the diagnostic's own range. For an
+      // indentation error that range is whitespace, so it drew a small red
+      // rectangle in the middle of empty space - reported, fairly, as
+      // looking broken. The row is marked instead (see `problemLines`), with
+      // a bar down its left edge the same way an error banner is marked
+      // elsewhere in the app, and the range keeps only its underline.
+      // No `currentColor` for the bar: `color` on the line element is
+      // inherited by every unhighlighted run of text in it, which would
+      // repaint the file's own words red.
+      ".cm-problemLine-error": {
+        backgroundColor: "color-mix(in srgb, #ef4444 9%, transparent)",
+        boxShadow: "inset 2px 0 0 0 #ef4444",
+      },
+      ".cm-problemLine-warning": {
+        backgroundColor: "color-mix(in srgb, #f59e0b 8%, transparent)",
+        boxShadow: "inset 2px 0 0 0 #f59e0b",
+      },
       ".cm-lintRange-error": {
-        backgroundColor: "color-mix(in srgb, #ef4444 18%, transparent)",
         backgroundImage:
           "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath fill='none' stroke='%23ef4444' stroke-width='1.2' d='m0 3 1.5-2 1.5 2 1.5-2 1.5 2'/%3E%3C/svg%3E\")",
         backgroundRepeat: "repeat-x",
@@ -205,14 +215,25 @@ export function vibesshEditorTheme(): Extension[] {
         paddingBottom: "1px",
       },
       ".cm-lintRange-warning": {
-        backgroundColor: "color-mix(in srgb, #f59e0b 15%, transparent)",
         backgroundImage:
           "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath fill='none' stroke='%23f59e0b' stroke-width='1.2' d='m0 3 1.5-2 1.5 2 1.5-2 1.5 2'/%3E%3C/svg%3E\")",
         backgroundRepeat: "repeat-x",
         backgroundPosition: "left bottom",
       },
-      ".cm-lint-marker-error": { color: "#ef4444" },
-      ".cm-lint-marker-warning": { color: "#f59e0b" },
+      // The gutter's own marker is a filled disc as wide as the column, which
+      // next to a fold arrow and a line number is one round shape too many.
+      // A small dot, vertically centred, aligned with the bar on the line.
+      ".cm-gutter-lint": { width: "12px" },
+      ".cm-gutter-lint .cm-gutterElement": { padding: "0", display: "flex", alignItems: "center", justifyContent: "center" },
+      ".cm-lint-marker": {
+        backgroundImage: "none",
+        borderRadius: "50%",
+        content: "''",
+        height: "6px",
+        width: "6px",
+      },
+      ".cm-lint-marker-error": { backgroundColor: "#ef4444", content: "''" },
+      ".cm-lint-marker-warning": { backgroundColor: "#f59e0b", content: "''" },
       ".cm-tooltip-lint": {
         background: "var(--surface-1)",
         border: "1px solid var(--border)",

@@ -4,6 +4,7 @@ import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import { linter, lintGutter } from "@codemirror/lint";
 import { yamlProblems, yamlProblemMessage } from "./yamlLint";
+import { problemLineHighlight } from "./problemLines";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
@@ -68,7 +69,7 @@ export function languageExtensionFor(fileName: string, t: (key: string) => strin
       // `lintGutter` puts a marker beside the line number: the
       // underline only exists where the text is, and a config file is
       // usually longer than the window.
-      return [yaml(), yamlLinter(t), lintGutter()];
+      return [yaml(), yamlLinter(t), lintGutter(), problemLineHighlight];
     case "js":
     case "mjs":
     case "cjs":
