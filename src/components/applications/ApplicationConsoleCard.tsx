@@ -82,10 +82,28 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
 
   useEffect(() => {
     let cancelled = false;
-    const followId = crypto.randomUUID();
-    const unlisteners: UnlistenFn[] = [];
+    let live: string | null = null;
+    let unlisteners: UnlistenFn[] = [];
+    let attempt = 0;
+    let retryTimer: number | undefined;
 
-    async function start() {
+    const dropListeners = () => {
+      unlisteners.forEach((off) => off());
+      unlisteners = [];
+    };
+
+    /**
+     * Opens one stream.
+     *
+     * `seedTail` is 200 the first time and 0 on every reconnect. A follow
+     * asks the Node for `--tail N` so a console does not open empty, but a
+     * reconnect already has those lines on screen - replaying them would
+     * repeat the whole window each time the transport blinked.
+     */
+    async function open(seedTail: number) {
+      const followId = crypto.randomUUID();
+      live = followId;
+
       const offLine = await onApplicationLogLine(followId, (line) => {
         // Capped the same way the polled view is: a container in a crash
         // loop can produce output faster than anyone reads it, and an
@@ -95,45 +113,78 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           return next.length > TAIL_LINES ? next.slice(next.length - TAIL_LINES) : next;
         });
       });
-      // A stream that ends - the container stopped, the connection dropped -
-      // hands the console back to polling rather than leaving it frozen on
-      // the last line it happened to receive.
-      const offClosed = await onApplicationLogClosed(followId, () => setSource("poll"));
+
+      const offClosed = await onApplicationLogClosed(followId, () => {
+        // A stream ending is not the end of the console.
+        //
+        // Measured on a running container: the follow delivered 232 lines
+        // and then stopped six seconds later, because anything that hits a
+        // connection error drops the cached SSH session and reconnects -
+        // and every channel on it, this one included, dies with it. Falling
+        // back to polling permanently turned a blink into a downgrade that
+        // lasted until the tab was reopened.
+        if (cancelled || live !== followId) return;
+        reconnect();
+      });
+
       unlisteners.push(offLine, offClosed);
 
       try {
-        await followApplicationLogs(applicationId, followId, TAIL_LINES);
+        await followApplicationLogs(applicationId, followId, seedTail);
         if (cancelled) {
           // The effect was torn down while this was in flight - React's
           // StrictMode does exactly that on every mount in development, and
-          // a real unmount does it whenever the tab changes. The cleanup
-          // already ran and stopped an id that was not registered yet, so
-          // without this the follow registers a moment later with nobody
-          // left to stop it: `docker logs -f` running on the Node for the
-          // life of the process.
+          // a real unmount does it whenever the tab changes. Without this
+          // the follow registers a moment later with nobody left to stop
+          // it: `docker logs -f` running on the Node for the life of the
+          // process.
           void stopFollowingApplicationLogs(followId).catch(() => {});
           return;
         }
+        attempt = 0;
         setSource("stream");
       } catch (err) {
-        // Polling stays on, which is what this card always did - but the
-        // reason goes to the console. A runtime with no follow is normal
-        // and silent; a Docker Application that should have streamed and
-        // did not is a fault, and swallowing both identically made "why is
-        // this still polling?" unanswerable.
+        // A runtime with no follow is normal and permanent - a local
+        // process, a systemd unit - so this does not retry. Polling is what
+        // this card always did, and the reason goes to the browser console
+        // so "why is this still polling?" is answerable.
         console.warn("Vibe console: live output unavailable, falling back to polling", err);
         if (!cancelled) setSource("poll");
       }
     }
 
-    void start();
+    /**
+     * Reopens after a stream ended by itself, backing off.
+     *
+     * Bounded because not every ending is transient: a container that has
+     * stopped will end every follow immediately, and retrying forever would
+     * be a request per second against a Node for output that is not coming.
+     * After the last attempt the console keeps working, on the two-second
+     * poll it used before any of this existed.
+     */
+    function reconnect() {
+      dropListeners();
+      if (attempt >= 4) {
+        setSource("poll");
+        return;
+      }
+      const delay = 500 * 2 ** attempt;
+      attempt += 1;
+      setSource("deciding");
+      retryTimer = window.setTimeout(() => {
+        if (!cancelled) void open(0);
+      }, delay);
+    }
+
+    void open(TAIL_LINES);
 
     return () => {
       cancelled = true;
-      unlisteners.forEach((off) => off());
+      window.clearTimeout(retryTimer);
+      dropListeners();
       // Fire and forget: the component is going away either way, and the
       // backend treats an unknown id as a no-op.
-      void stopFollowingApplicationLogs(followId).catch(() => {});
+      if (live) void stopFollowingApplicationLogs(live).catch(() => {});
       setSource("deciding");
     };
   }, [applicationId]);

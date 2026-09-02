@@ -92,7 +92,10 @@ impl SshSession {
         on_closed: impl FnOnce(Option<String>) + Send + 'static,
     ) -> AppResult<crate::ssh::client::FollowHandle> {
         validate_container_ref(container)?;
-        let tail = tail.clamp(1, 5000);
+        // Zero is meaningful here, unlike in `container_logs`: a reconnect
+        // already has the history on screen and wants only what comes next.
+        // Replaying the window on every blink would repeat it each time.
+        let tail = tail.min(5000);
         self.follow_command(&format!("sudo docker logs --tail {tail} -f {container} 2>&1"), on_line, on_closed).await
     }
 
