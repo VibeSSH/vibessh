@@ -6,6 +6,7 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { TerminalView } from "@/components/servers/TerminalView";
 import { useServersStore } from "@/stores/serversStore";
+import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import "./pages.css";
 import "./Terminal.css";
 
@@ -31,6 +32,7 @@ export function TerminalPage() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
+  const canOpenTerminal = useCanOnServer(serverId, "node.terminal");
 
   const [tabs, setTabs] = useState<TerminalTab[]>(() => [makeTab(1)]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
@@ -38,6 +40,14 @@ export function TerminalPage() {
   const [closedReasons, setClosedReasons] = useState<Record<string, string | null>>({});
 
   if (!serverId) {
+    return <Navigate to="/servers" replace />;
+  }
+
+  // A shell is every other permission at once - somebody with one does not
+  // need "create application" to create an application - so it is gated on
+  // its own, and gated by sending them away rather than by leaving an inert
+  // page behind.
+  if (!canOpenTerminal) {
     return <Navigate to="/servers" replace />;
   }
 

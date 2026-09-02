@@ -214,6 +214,19 @@ export function RolesSection({ teamId, canManage }: { teamId: string; canManage:
             {/* Grouped by what each permission acts on. A single undivided
                 grid of them is a list to read; four short groups is a set of
                 decisions to make. */}
+            {/* Said where the granting happens, not only in the guide. A
+                permission list implies enforcement, and for the Applications
+                and Node groups that implication would be wrong - those
+                operations run over each member's own SSH connection and
+                never reach the backend. Somebody handing out roles has to
+                read this before they believe a checkbox protects a Node. */}
+            <div className="roles-guard-rail-note">
+              <Icon name="alert-triangle" size={14} />
+              <div>
+                <p className="roles-guard-rail-title">{t("roles.guardRailTitle")}</p>
+                <p className="roles-guard-rail-body">{t("roles.guardRailBody")}</p>
+              </div>
+            </div>
             {groupPermissions(allPermissions).map(({ group, permissions }) => (
               <div key={group} className="roles-permission-group">
                 <p className="roles-permission-group-title">{t(`roles.groups.${group}`, { defaultValue: group })}</p>

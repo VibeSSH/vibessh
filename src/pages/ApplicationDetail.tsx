@@ -37,6 +37,7 @@ import {
   stopApplication,
 } from "@/services/applicationService";
 import { useServersStore } from "@/stores/serversStore";
+import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { ApplicationStatus, Blueprint } from "@/types/application";
@@ -168,6 +169,19 @@ export function ApplicationDetail() {
   const resourceUsage = application?.status === "running" ? (usageQuery.data ?? null) : null;
 
   const loadError = applicationQuery.error ? errorMessage(applicationQuery.error, t) : null;
+
+  /**
+   * Team guard rails for this application's Node.
+   *
+   * Hides the actions a member has not been given, so nobody presses one by
+   * accident. Not a security boundary - the operations run over the
+   * operator's own SSH connection from their own machine, so anybody who
+   * can reach the Node can do the same thing outside VibeSSH. See
+   * `nodePermissionsStore`; the roles screen and the guide say the same
+   * thing where somebody grants these.
+   */
+  const canLifecycle = useCanOnServer(application?.serverId, "applications.lifecycle");
+  const canConfigure = useCanOnServer(application?.serverId, "applications.config");
 
   /** After an action the Node has already carried out - the next read is
    * the authoritative one. */
@@ -305,8 +319,11 @@ export function ApplicationDetail() {
   }
 
   const aiReady = useAiReady();
-  const canStart = application ? ["stopped", "failed", "unknown"].includes(application.status) : false;
-  const canStopOrRestart = application ? ["running", "starting"].includes(application.status) : false;
+  // Two different questions, deliberately combined here rather than
+  // conflated: whether the application's current state allows the verb, and
+  // whether this member has been given the verb at all.
+  const canStart = canLifecycle && (application ? ["stopped", "failed", "unknown"].includes(application.status) : false);
+  const canStopOrRestart = canLifecycle && (application ? ["running", "starting"].includes(application.status) : false);
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
   const features = blueprint?.features ?? [];
   const migrationTargets = servers.filter((s) => s.id !== application?.serverId);
@@ -369,13 +386,13 @@ export function ApplicationDetail() {
                   </Button>
                 </>
               )}
-              {application.runtimeType === "docker" && (
+              {application.runtimeType === "docker" && canConfigure && (
                 <Button variant="secondary" size="sm" onClick={() => setConfirming("recreate")}>
                   <BlueprintIcon blueprintId={application?.blueprintId} size={14} />
                   {t("applicationDetail.verb.recreate")}
                 </Button>
               )}
-              {application.runtimeType === "docker" && migrationTargets.length > 0 && (
+              {application.runtimeType === "docker" && migrationTargets.length > 0 && canConfigure && (
                 <Button
                   variant="secondary"
                   size="sm"

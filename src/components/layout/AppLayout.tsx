@@ -4,6 +4,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { cloudSessionInfo } from "@/services/cloudService";
+import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
 import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
 import { Sidebar } from "./Sidebar";
@@ -20,7 +21,17 @@ export function AppLayout() {
     // side by the time this resolves (see lib.rs's setup() spawning
     // cloud_try_restore_session) - this just asks what the current state
     // is, it doesn't do the restoring itself.
-    cloudSessionInfo().then((info) => setUser(info?.user ?? null));
+    cloudSessionInfo().then((info) => {
+      setUser(info?.user ?? null);
+      // Team guard rails, loaded once a session is known to exist. Signed
+      // out there is nothing to load and nothing is restricted - see
+      // `nodePermissionsStore` for why "not loaded" means "permitted".
+      if (info?.user) {
+        void useNodePermissionsStore.getState().load();
+      } else {
+        useNodePermissionsStore.getState().clear();
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { queryKeys } from "@/services/queryKeys";
 import { GuideLink } from "@/guide/GuideLink";
+import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -74,6 +75,9 @@ function visibilityTone(visibility: PortVisibility): "neutral" | "success" | "wa
 export function PortsTab({ applicationId, application }: PortsTabProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  // A member without this sees the ports and cannot change them - the
+  // list is the useful half and reading it harms nothing.
+  const canEditPorts = useCanOnServer(application.serverId, "applications.ports");
   // Cached, so coming back to this tab paints the list it had rather than a
   // skeleton over a fresh round trip. `isPending` is only the first load:
   // a background refresh leaves the rows on screen.
@@ -150,16 +154,18 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                 not know what "Vibe Network only" means is looking at the
                 thing, not searching for its name. */}
             <GuideLink topic="ports" />
-            <Button
-              size="sm"
-              onClick={() => {
-                setEditingPort(null);
-                setFormOpen(true);
-              }}
-            >
-              <Icon name="plus" size={14} />
-              {t("portsTab.addPort")}
-            </Button>
+            {canEditPorts && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingPort(null);
+                  setFormOpen(true);
+                }}
+              >
+                <Icon name="plus" size={14} />
+                {t("portsTab.addPort")}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -182,6 +188,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                 </div>
                 <Badge tone={visibilityTone(port.visibility)}>{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
                 {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
+                {canEditPorts && (
                 <IconButton
                   icon="edit"
                   size="sm"
@@ -191,7 +198,8 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                     setFormOpen(true);
                   }}
                 />
-                {!port.required && (
+                )}
+                {!port.required && canEditPorts && (
                   <IconButton
                     icon="trash"
                     size="sm"
@@ -234,7 +242,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
               {firewallError && <span className="form-note-danger"> {firewallError}</span>}
             </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing}>
+          <Button variant="secondary" size="sm" onClick={handleSyncFirewall} disabled={firewallSyncing || !canEditPorts}>
             <Icon name="lock" size={14} />
             {firewallSyncing ? t("common.saving") : t("portsTab.syncFirewall")}
           </Button>

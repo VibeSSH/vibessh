@@ -8,6 +8,9 @@ describe("permissionGroup", () => {
     expect(permissionGroup("team.roles.assign")).toBe("roles");
     expect(permissionGroup("audit.view")).toBe("audit");
     expect(permissionGroup("servers.manage")).toBe("servers");
+    expect(permissionGroup("applications.ports")).toBe("applications");
+    expect(permissionGroup("applications.files.write")).toBe("applications");
+    expect(permissionGroup("node.terminal")).toBe("node");
   });
 
   // Invitations are about who gets into the team, so they belong with
@@ -17,7 +20,7 @@ describe("permissionGroup", () => {
   });
 
   it("has somewhere to put a key it does not recognise", () => {
-    expect(permissionGroup("applications.restart")).toBe("other");
+    expect(permissionGroup("billing.invoices.view")).toBe("other");
   });
 });
 
@@ -47,8 +50,8 @@ describe("groupPermissions", () => {
   // A permission the form cannot display is a permission nobody can grant,
   // so an unknown key has to survive rather than be filtered out.
   it("shows a permission it has no rule for, in a group at the end", () => {
-    const grouped = groupPermissions([...catalog, "applications.restart"]);
-    expect(grouped[grouped.length - 1]).toEqual({ group: "other", permissions: ["applications.restart"] });
+    const grouped = groupPermissions([...catalog, "billing.invoices.view"]);
+    expect(grouped[grouped.length - 1]).toEqual({ group: "other", permissions: ["billing.invoices.view"] });
   });
 
   it("leaves out a group with nothing in it", () => {

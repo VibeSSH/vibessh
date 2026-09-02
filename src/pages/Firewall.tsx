@@ -22,6 +22,7 @@ import {
   type NodeFirewallOverview,
 } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
+import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { toastSuccess } from "@/stores/toastStore";
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
@@ -46,6 +47,10 @@ export function FirewallPage() {
   const { serverId } = useParams<{ serverId: string }>();
   const navigate = useNavigate();
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
+  // Reading the rules is left alone: knowing what is open harms
+  // nothing, and is exactly what somebody without the permission needs
+  // in order to ask for a change.
+  const canChangeFirewall = useCanOnServer(serverId, "node.firewall");
 
   const [overview, setOverview] = useState<NodeFirewallOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -149,11 +154,13 @@ export function FirewallPage() {
                 </span>
               </div>
               <div className="form-actions">
+                {canChangeFirewall && (
                 <Button variant="secondary" size="sm" onClick={handleSync} disabled={syncing}>
                   <Icon name="refresh-cw" size={14} />
                   {syncing ? t("common.loading") : t("firewallPage.syncNow")}
                 </Button>
-                {!overview.active && (
+                )}
+                {!overview.active && canChangeFirewall && (
                   <Button size="sm" onClick={handleEnable} disabled={enabling}>
                     <Icon name="lock" size={14} />
                     {enabling ? t("common.loading") : t("firewallPage.secure")}
@@ -168,10 +175,12 @@ export function FirewallPage() {
       <Card title={t("firewallPage.rulesTitle")} subtitle={overview ? t("firewallPage.rulesCount", { count: overview.rules.length }) : undefined}>
         <div className="application-detail-header-row">
           <p className="form-note">{t("firewallPage.rulesNote")}</p>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Icon name="plus" size={14} />
-            {t("firewallPage.addCustomRule")}
-          </Button>
+          {canChangeFirewall && (
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={14} />
+              {t("firewallPage.addCustomRule")}
+            </Button>
+          )}
         </div>
 
         {loading ? (
@@ -189,7 +198,7 @@ export function FirewallPage() {
                   </span>
                   <span className="server-list-host">{originLabel(t, view.origin)}</span>
                 </div>
-                {view.origin.kind === "custom" && (
+                {view.origin.kind === "custom" && canChangeFirewall && (
                   <IconButton
                     icon="trash"
                     size="sm"

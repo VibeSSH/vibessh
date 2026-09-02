@@ -142,3 +142,42 @@
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/*
+ * The note that says what the permissions below are and are not.
+ *
+ * Placed inside the form rather than in the guide alone, because the
+ * mistake it prevents is made here: somebody grants a role, reads
+ * "Manage ports", and concludes a Node is protected. Amber rather than
+ * red - this is a correction of an assumption, not a failure.
+ */
+.roles-guard-rail-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.roles-guard-rail-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.roles-guard-rail-title {
+  margin: 0 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.roles-guard-rail-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}

@@ -14,7 +14,7 @@
  */
 
 /** The groups, in the order they are shown. */
-export const PERMISSION_GROUPS = ["team", "members", "roles", "audit", "servers"] as const;
+export const PERMISSION_GROUPS = ["team", "members", "roles", "audit", "servers", "applications", "node"] as const;
 
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number] | "other";
 
@@ -32,6 +32,8 @@ export function permissionGroup(permission: string): PermissionGroup {
   if (permission.startsWith("team.")) return "team";
   if (permission.startsWith("audit.")) return "audit";
   if (permission.startsWith("servers.")) return "servers";
+  if (permission.startsWith("applications.")) return "applications";
+  if (permission.startsWith("node.")) return "node";
   return "other";
 }
 
