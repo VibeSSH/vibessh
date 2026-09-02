@@ -67,18 +67,57 @@ The server refuses to start because the world it is told to load will not \
 read. This is the most common cause of a Paper/Purpur server that fails \
 immediately after startup begins, and the log says so directly.
 
-How to tell which of the two it is:
-- `level.dat` unreadable: the server keeps a previous copy at \
-  `world/level.dat_old`. Stop the Application, replace `level.dat` with \
-  `level.dat_old` in the Files tab, start it again.
-- One damaged region: the log names a chunk or a `world/region/r.X.Z.mca` \
-  file. Deleting that one `.mca` file loses those chunks and nothing else - \
-  they regenerate on next visit.
-- `Failed to check session lock`: the world is not damaged. A second process \
-  still holds it, usually a container that was not stopped. Check for a \
-  duplicate Application on the same working directory.
+Take a backup first, from the Backups tab, so anything below is reversible.
 
-Take a backup before editing a world - the Backups tab does this.",
+Which of the three it is:
+- **`level.dat` unreadable.** In the Files tab, open `world/`, delete \
+  `level.dat` and rename `level.dat_old` to `level.dat`. If the log also \
+  says `No key dimensions in MapLike`, use that playbook instead - it is the \
+  same fix with more certainty about the cause.
+- **One damaged region.** The log names a chunk or a \
+  `world/region/r.X.Z.mca` file. Delete that one file in the Files tab; it \
+  loses those chunks and nothing else, and they regenerate when someone \
+  walks there.
+- **`Failed to check session lock`.** The world is not damaged at all. A \
+  second process still holds it, usually a container that was never \
+  stopped. Look for a duplicate Application pointed at the same working \
+  directory rather than touching the world.",
+    },
+    Skill {
+        id: "mc-leveldat-empty",
+        blueprints: MINECRAFT_SERVERS,
+        triggers: &[
+            "failed to load datapacks",
+            "can't proceed with server load",
+            "no key dimensions in maplike",
+            "no key seed in maplike",
+            "no key generator in maplike",
+        ],
+        title: "level.dat reads as empty, so the server gives up before loading the world",
+        guidance: "\
+This pair of lines is more specific than it looks, and it is worth not \
+mistaking it for a datapack problem. `No key dimensions in MapLike[{}]` \
+means the world settings parsed to an *empty* compound: the server read \
+`world/level.dat` and got nothing out of it. `Failed to load datapacks` is \
+the consequence, not the cause - the datapack list lives inside level.dat, \
+so an unreadable level.dat fails there first. A genuinely broken datapack \
+names itself in the log.
+
+The file is truncated or zero length, usually from a crash or a full disk \
+while it was being written.
+
+In VibeSSH:
+1. Backups tab - take a backup first, so this is reversible.
+2. Files tab - open `world/`. The server keeps the previous copy as \
+   `level.dat_old`. Delete `level.dat`, then rename `level.dat_old` to \
+   `level.dat`.
+3. Start the Application again.
+
+If `level.dat_old` is missing or fails the same way, the world settings are \
+gone. Restoring from Backups is the only way to keep the world; otherwise \
+delete the `world` directory in the Files tab and the server generates a new \
+one on next start - which loses everything built in it, so confirm the user \
+wants that before suggesting it.",
     },
     Skill {
         id: "mc-eula",
@@ -335,6 +374,31 @@ mod tests {
         let context = "Recent log lines\n[12:00:01] [Server thread/ERROR]: Failed to load level.dat\njava.io.IOException: Exception reading world/level.dat";
         let matched = match_skills(Some(context), "why is it down?", Some("paper"), 3);
         assert_eq!(matched.first().map(|s| s.id), Some("mc-world-corrupt"));
+    }
+
+    /// The exact pair of lines off a real failed server. The model read them
+    /// as "a damaged datapack or maybe the world data" and offered both. They
+    /// are more specific than that: the datapack list lives inside level.dat,
+    /// so an unreadable level.dat fails there first, and `No key dimensions
+    /// in MapLike[{}]` says the file parsed to nothing.
+    #[test]
+    fn the_datapack_message_resolves_to_the_level_dat_playbook() {
+        let context = "[12:00:01] [Server thread/ERROR]: Failed to load datapacks, can't proceed with server load
+                       No key dimensions in MapLike[{}]; No key seed in MapLike[{}]";
+        let matched = match_skills(Some(context), "nie startuje", Some("paper"), 2);
+        assert_eq!(matched.first().map(|s| s.id), Some("mc-leveldat-empty"));
+    }
+
+    /// Every fix in a playbook has to be something the interface can
+    /// actually do, because the assistant is told to give steps rather than
+    /// commands. A playbook full of shell would quietly undo that.
+    #[test]
+    fn playbooks_do_not_hand_out_shell_commands() {
+        for skill in SKILLS {
+            for forbidden in ["$ ", "sudo ", "rm -rf", "cp -a", "mv /", "docker run"] {
+                assert!(!skill.guidance.contains(forbidden), "{} contains a shell command: {forbidden:?}", skill.id);
+            }
+        }
     }
 
     /// Evidence beats topic. The question mentions memory, the log names the

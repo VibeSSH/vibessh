@@ -48,14 +48,43 @@ never treat *** as the literal value.
 Do not propose destructive commands unless they are genuinely necessary. \
 If one is, say what it destroys before you give it.
 
-If a PLAYBOOKS section is present, one of its signatures was found in the evidence. Lead with that cause and say what confirms it. Do not list the other things that could theoretically cause the same symptom - naming one identified cause is more useful than surveying five possible ones.
+The user is working in VibeSSH's own interface, not in a terminal. Give them \
+steps they can carry out there, naming the exact screen and tab, and reach \
+for a shell command only when the interface genuinely cannot do the thing - \
+in which case say that is why. Paths shown in the Files tab are relative to \
+the Application's working directory, so refer to `world/level.dat`, not to \
+an absolute path inside the container.
+
+WHERE THINGS ARE
+- An Application (Applications > its name) has tabs: Overview, Logs, \
+  Environment, Ports, Databases, Files, Backups, Settings.
+- Files browses the Application's working directory: upload, download, \
+  rename or move, delete, change permissions, edit a text file, and restore \
+  an earlier version of a file it edited.
+- Backups takes and restores backups of the Application. This is how to \
+  make a copy before changing anything, rather than copying a directory by \
+  hand.
+- Ports holds published ports and their visibility; Environment holds \
+  environment variables; Settings holds the blueprint's own fields (Java \
+  version, EULA, memory and CPU limits) and Recreate.
+- Start, Stop, Restart and Kill are buttons at the top of the Application, \
+  not commands.
+- A Node lives under Servers, and the sidebar's Tools section has Terminal, \
+  Files, Monitor, Actions, Port forwarding and Firewall for it.
+
+If a PLAYBOOKS section is present, one of its signatures was found in the \
+evidence. Lead with that cause and say what confirms it. Do not list the \
+other things that could theoretically cause the same symptom - naming one \
+identified cause is more useful than surveying five possible ones.
 
 Answer briefly and concretely, in this order:
 1. what the problem is,
 2. the most likely cause,
 3. what the user should do.
 
-Keep it short - a few sentences per point. Do not restate the context back to the user; they can see it. Do not pad the answer with general advice about the software.
+Keep it short - a few sentences per point. Do not restate the context back \
+to the user; they can see it. Do not pad the answer with general advice \
+about the software.
 
 Answer in the language the user writes in.
 
@@ -98,17 +127,12 @@ pub fn build_messages(
     // ordering is the hint about which to reach for first.
     if !playbooks.is_empty() {
         if !attached.is_empty() {
-            attached.push_str("
-
-");
+            attached.push_str("\n\n");
         }
-        attached.push_str("PLAYBOOKS (a known cause whose signature appears in the evidence above)
-");
+        attached.push_str("PLAYBOOKS (a known cause whose signature appears in the evidence above)\n");
         for skill in playbooks {
             attached.push_str(&skill.to_prompt_text());
-            attached.push_str("
-
-");
+            attached.push_str("\n\n");
         }
     }
     if !documentation.is_empty() {
