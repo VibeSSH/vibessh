@@ -200,7 +200,15 @@ pub async fn build_ai_context(
     }
     let reference = reference?;
     let builder = AiContextBuilder { applications, servers, networks, firewall_rules, ssh_sessions, local_processes, log_capture };
-    Some(builder.build(reference).await)
+
+    // Timed because "the assistant feels slow" is otherwise unanswerable:
+    // a turn waits on this and then on a model, and the two are
+    // indistinguishable from outside. The panel already names which phase
+    // it is in; this puts a number on the first one.
+    let started = std::time::Instant::now();
+    let bundle = builder.build(reference).await;
+    log::info!("collected the AI context in {} ms", started.elapsed().as_millis());
+    Some(bundle)
 }
 
 /// Pulls the blueprint id back out of the collected summary.

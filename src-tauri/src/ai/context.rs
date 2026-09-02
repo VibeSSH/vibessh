@@ -201,6 +201,30 @@ impl AiContextBuilder<'_> {
         out.sources.push("Application".to_string());
         let app = &detail.application;
 
+        // Both of these are SSH round trips to the same Node, and neither
+        // depends on the other, so they wait together rather than in turn.
+        // The live status is the single most valuable field in the whole
+        // snapshot and the log tail is the largest; making the user wait for
+        // the sum of the two was pure serialisation.
+        let (live_status, log_tail) = tokio::join!(
+            probe(
+                "the live status could not be checked",
+                services::refresh_application_status(self.applications, self.servers, self.ssh_sessions, self.local_processes, id),
+            ),
+            probe(
+                "the logs could not be read",
+                services::application_logs(
+                    self.applications,
+                    self.servers,
+                    self.ssh_sessions,
+                    self.local_processes,
+                    self.log_capture,
+                    id,
+                    LOG_TAIL_LINES,
+                ),
+            ),
+        );
+
         out.heading("Application");
         out.line(format!("Name: {}", app.name));
         if let Some(description) = &app.description {
@@ -230,12 +254,7 @@ impl AiContextBuilder<'_> {
         // diagnosis and the most likely to fail, which is exactly why its
         // failure is reported rather than swallowed - a refusal from the
         // Docker daemon *is* the answer surprisingly often.
-        match probe(
-            "the live status could not be checked",
-            services::refresh_application_status(self.applications, self.servers, self.ssh_sessions, self.local_processes, id),
-        )
-        .await
-        {
+        match live_status {
             Ok(status) => out.line(format!("Live status right now: {}", status_word(status))),
             Err(note) => out.note(note),
         }
@@ -303,20 +322,7 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading(&format!("Recent log lines (up to {LOG_TAIL_LINES}, oldest first)"));
-        match probe(
-            "the logs could not be read",
-            services::application_logs(
-                self.applications,
-                self.servers,
-                self.ssh_sessions,
-                self.local_processes,
-                self.log_capture,
-                id,
-                LOG_TAIL_LINES,
-            ),
-        )
-        .await
-        {
+        match log_tail {
             Ok(lines) if lines.is_empty() => out.line("- no log output has been captured"),
             Ok(lines) => {
                 out.sources.push("Logs".to_string());
@@ -346,6 +352,16 @@ impl AiContextBuilder<'_> {
         };
         out.sources.push("Node".to_string());
 
+        // Same reasoning as the Application probes above: two independent
+        // SSH round trips to one Node.
+        let (metrics, firewall) = tokio::join!(
+            probe("live CPU/memory/disk could not be read from this Node", services::get_server_metrics(self.servers, self.ssh_sessions, id)),
+            probe(
+                "the firewall status could not be read from this Node",
+                services::node_firewall_overview(self.applications, self.servers, self.networks, self.firewall_rules, self.ssh_sessions, id),
+            ),
+        );
+
         out.heading("Node");
         out.line(format!("Name: {}", server.name));
         out.line(format!("Address: {}:{}", server.host, server.ssh_port));
@@ -371,9 +387,7 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading("Live resource usage");
-        match probe("live CPU/memory/disk could not be read from this Node", services::get_server_metrics(self.servers, self.ssh_sessions, id))
-            .await
-        {
+        match metrics {
             Ok(metrics) => {
                 out.sources.push("Metrics".to_string());
                 out.line(format!("CPU: {:.1}%", metrics.cpu_usage_percent));
@@ -405,12 +419,7 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading("Firewall");
-        match probe(
-            "the firewall status could not be read from this Node",
-            services::node_firewall_overview(self.applications, self.servers, self.networks, self.firewall_rules, self.ssh_sessions, id),
-        )
-        .await
-        {
+        match firewall {
             Ok(overview) => {
                 out.sources.push("Firewall".to_string());
                 match &overview.backend {

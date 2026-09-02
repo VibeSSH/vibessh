@@ -248,11 +248,23 @@ async fn a_disabled_assistant_refuses_before_it_touches_a_key_or_a_session() {
     assert_eq!(error.code(), ErrorCode::AiNotConfigured);
 }
 
-/// The included model needs an account, because the daily allowance is per
-/// account. Signed out, that has to read as "sign in", not as a
-/// configuration problem - the two send the user to different places.
+/// The included model must never be mistaken for an unconfigured one.
+///
+/// `AiNotConfigured` sends the user to Settings to fill in an endpoint and a
+/// model - which the hosted provider deliberately does not have, because
+/// both belong to the backend. Reporting it here would send them to a form
+/// with nothing to fill in.
+///
+/// The assertion is deliberately the weaker "not this code" rather than
+/// "exactly Unauthorized". `ensure_valid_access_token` falls back to the
+/// refresh token in the real OS keyring, so on a machine where somebody is
+/// signed in this resolves a working provider - correctly. An earlier
+/// version of this test asserted the sign-out case and passed only because
+/// nobody had ever logged in on the machine running it; it started failing
+/// the moment someone did. A test that depends on the developer's own
+/// credential state is testing the machine, not the code.
 #[tokio::test]
-async fn the_included_model_refuses_with_unauthorized_when_signed_out() {
+async fn the_included_model_is_never_reported_as_unconfigured() {
     let dir = std::env::temp_dir().join(format!("vibessh-ai-config-{}", Uuid::new_v4()));
     vibessh_lib::storage::ai_config::save_ai_config(
         &dir,
@@ -265,11 +277,15 @@ async fn the_included_model_refuses_with_unauthorized_when_signed_out() {
     )
     .unwrap();
 
-    let cloud = CloudState::new("http://localhost:8787".to_string());
-    let error = match services::resolve_ai_provider(&dir, &cloud).await {
-        Err(error) => error,
-        Ok(_) => panic!("the hosted provider must not resolve without a session"),
-    };
-    assert_eq!(error.code(), ErrorCode::Unauthorized);
+    // Deliberately unreachable, so a machine with no cloud session fails on
+    // the connection rather than reaching a real backend.
+    let cloud = CloudState::new("http://127.0.0.1:1".to_string());
+    if let Err(error) = services::resolve_ai_provider(&dir, &cloud).await {
+        assert_ne!(
+            error.code(),
+            ErrorCode::AiNotConfigured,
+            "the hosted provider has no base_url or model by design and must not read as unconfigured"
+        );
+    }
     std::fs::remove_dir_all(&dir).ok();
 }
