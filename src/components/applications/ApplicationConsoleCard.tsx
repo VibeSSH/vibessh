@@ -52,7 +52,19 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
   const outputRef = useRef<HTMLPreElement>(null);
   const stickToBottom = useRef(true);
 
-  const [streaming, setStreaming] = useState(false);
+  /**
+   * Which source is filling the output, and the reason this is three states
+   * rather than a boolean.
+   *
+   * With a boolean starting at `false`, polling was enabled from the first
+   * render: it fetched the 200-line tail, and then the stream - which asks
+   * for `--tail 200` so a console does not open empty - replayed the same
+   * 200 lines and appended them. Every line appeared twice. `deciding`
+   * holds polling back until the follow has either started or failed, so
+   * exactly one source ever fills the buffer.
+   */
+  const [source, setSource] = useState<"deciding" | "stream" | "poll">("deciding");
+  const streaming = source === "stream";
 
   const poll = useCallback(async () => {
     try {
@@ -66,7 +78,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
 
   // Only while there is no stream. Running both would deliver every line
   // twice: the follow pushes it, and the next poll re-reads the same tail.
-  usePolling(poll, POLL_INTERVALS.console, { enabled: !streaming });
+  usePolling(poll, POLL_INTERVALS.console, { enabled: source === "poll" });
 
   useEffect(() => {
     let cancelled = false;
@@ -83,16 +95,23 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           return next.length > TAIL_LINES ? next.slice(next.length - TAIL_LINES) : next;
         });
       });
-      const offClosed = await onApplicationLogClosed(followId, () => setStreaming(false));
+      // A stream that ends - the container stopped, the connection dropped -
+      // hands the console back to polling rather than leaving it frozen on
+      // the last line it happened to receive.
+      const offClosed = await onApplicationLogClosed(followId, () => setSource("poll"));
       unlisteners.push(offLine, offClosed);
 
       try {
         await followApplicationLogs(applicationId, followId, TAIL_LINES);
-        if (!cancelled) setStreaming(true);
-      } catch {
-        // This runtime has no follow - a local process, a systemd unit, or
-        // a Node that could not be reached. Polling stays on, which is what
-        // this card always did.
+        if (!cancelled) setSource("stream");
+      } catch (err) {
+        // Polling stays on, which is what this card always did - but the
+        // reason goes to the console. A runtime with no follow is normal
+        // and silent; a Docker Application that should have streamed and
+        // did not is a fault, and swallowing both identically made "why is
+        // this still polling?" unanswerable.
+        console.warn("Vibe console: live output unavailable, falling back to polling", err);
+        if (!cancelled) setSource("poll");
       }
     }
 
@@ -104,7 +123,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       // Fire and forget: the component is going away either way, and the
       // backend treats an unknown id as a no-op.
       void stopFollowingApplicationLogs(followId).catch(() => {});
-      setStreaming(false);
+      setSource("deciding");
     };
   }, [applicationId]);
 
@@ -148,7 +167,9 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           <span className="application-console-dot application-console-dot-green" />
         </span>
         <h3 className="card-title">{t("applicationConsole.title")}</h3>
-        <span className="application-console-mode">{streaming ? t("applicationConsole.live") : t("applicationConsole.polled")}</span>
+        <span className="application-console-mode">
+          {source === "stream" ? t("applicationConsole.live") : source === "poll" ? t("applicationConsole.polled") : t("applicationConsole.connecting")}
+        </span>
       </div>
       <pre className="application-console-output" ref={outputRef} onScroll={handleOutputScroll}>
         {lines.length === 0 ? t("applicationConsole.empty") : lines.join("\n")}

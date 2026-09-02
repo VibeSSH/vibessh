@@ -490,7 +490,8 @@
     "send": "Wyślij",
     "writeError": "Ta aplikacja nie ma interaktywnej konsoli.",
     "live": "na żywo",
-    "polled": "odświeżane co 2 s"
+    "polled": "odświeżane co 2 s",
+    "connecting": "łączę…"
   },
   "applicationBackups": {
     "title": "Backupy",

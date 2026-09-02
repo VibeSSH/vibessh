@@ -490,7 +490,8 @@
     "send": "Send",
     "writeError": "This application has no interactive console.",
     "live": "live",
-    "polled": "refreshed every 2 s"
+    "polled": "refreshed every 2 s",
+    "connecting": "connecting…"
   },
   "applicationBackups": {
     "title": "Backups",

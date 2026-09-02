@@ -289,6 +289,7 @@ pub async fn follow_application_logs(
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("live output is only available for Docker applications".to_string()));
     }
+    log::info!("opening a live console for {} ({:?})", detail.application.name, detail.application.runtime_type);
 
     // Agent-mode: ask the Node's own daemon to do the following.
     if let Some(server_id) = detail.application.server_id {
@@ -348,6 +349,7 @@ pub async fn follow_application_logs(
     .await?;
 
     follows.insert(follow_id, LogFollow::Ssh(handle)).await;
+    log::info!("live console streaming over SSH for application {id}");
     Ok(())
 }
 
