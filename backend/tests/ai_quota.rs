@@ -37,7 +37,9 @@ use axum::routing::post;
 use axum::Router;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use std::sync::Arc;
+
+use tokio::sync::{Barrier, Mutex};
 
 /// Serialises the tests in this binary - see the module comment.
 ///
@@ -115,12 +117,12 @@ async fn stored_count(email: &str) -> i32 {
 /// implementation passes a sequential version of this test and fails this
 /// one, which is the entire reason it is written with `tokio::spawn` rather
 /// than a loop.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 #[ignore]
 async fn concurrent_questions_never_exceed_the_daily_limit() {
     let _guard = ENV_LOCK.lock().await;
     const LIMIT: i32 = 4;
-    const ATTEMPTS: usize = 12;
+    const ATTEMPTS: usize = 16;
 
     let upstream = spawn_upstream(StatusCode::OK, canned_answer()).await;
     configure(&upstream, LIMIT);
@@ -128,11 +130,23 @@ async fn concurrent_questions_never_exceed_the_daily_limit() {
     let (email, token) = common::register_user().await;
     let router = common::test_router().await;
 
+    // The barrier is what makes this a race rather than a fast loop.
+    //
+    // Spawning in a loop and letting each task start when it is scheduled
+    // was measured against a deliberately broken (read-then-write)
+    // implementation and caught it only one run in three: the early tasks
+    // finished before the later ones were spawned, so most requests never
+    // overlapped at all. Holding every task at the barrier and releasing
+    // them together took that to every run.
+    let barrier = Arc::new(Barrier::new(ATTEMPTS));
+
     let mut tasks = Vec::with_capacity(ATTEMPTS);
     for _ in 0..ATTEMPTS {
         let router = router.clone();
         let token = token.clone();
+        let barrier = Arc::clone(&barrier);
         tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
             let (status, _body) = common::post_with_bearer(router, "/ai/chat", &token, a_question()).await;
             status
         }));
