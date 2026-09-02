@@ -12,7 +12,7 @@ import { html } from "@codemirror/lang-html";
 import { xml } from "@codemirror/lang-xml";
 import { sql } from "@codemirror/lang-sql";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
-import { properties } from "@codemirror/legacy-modes/mode/properties";
+import { propertiesLanguage } from "./propertiesLanguage";
 import { nginx } from "@codemirror/legacy-modes/mode/nginx";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
@@ -101,7 +101,7 @@ export function languageExtensionFor(fileName: string): Extension[] {
     case "conf":
     case "env":
     case "properties":
-      return [StreamLanguage.define(properties)];
+      return [propertiesLanguage];
   }
 
   if (base === "dockerfile" || base.startsWith("dockerfile.")) {
@@ -111,10 +111,10 @@ export function languageExtensionFor(fileName: string): Extension[] {
     return [StreamLanguage.define(nginx)];
   }
   if (base.endsWith(".service") || base.endsWith(".socket") || base.endsWith(".timer") || base.endsWith(".unit")) {
-    return [StreamLanguage.define(properties)];
+    return [propertiesLanguage];
   }
   if (base === ".env" || base.startsWith(".env.")) {
-    return [StreamLanguage.define(properties)];
+    return [propertiesLanguage];
   }
 
   return [];
