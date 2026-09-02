@@ -12,6 +12,8 @@ Monitor shows what a Node is doing right now: resource usage, network throughput
 
 The sidebar -> **Monitor**, once a server is chosen.
 
+![Monitor: resources, the history charts, and the process list sorted by memory](images/monitor.png)
+
 ## Resources
 
 Four readings, refreshed every few seconds: **CPU**, **RAM**, **Network in** and **Network out**.

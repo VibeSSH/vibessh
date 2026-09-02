@@ -199,12 +199,24 @@ const fixtures: Record<string, unknown> = {
     { name: "unattended-upgrades.service", description: "Unattended Upgrades Shutdown", active: false, enabled: true },
   ],
   list_server_containers: [
-    { id: "c1f0", name: "vibessh-paper", image: "itzg/minecraft-server:latest", state: "running", status: "Up 2 hours" },
-    { id: "a93b", name: "vibessh-velocity", image: "itzg/bungeecord:latest", state: "exited", status: "Exited (0) 3 days ago" },
+    { id: "c1f0", name: "vibessh-paper", image: "itzg/minecraft-server:latest", running: true, status: "Up 2 hours" },
+    { id: "a93b", name: "vibessh-velocity", image: "itzg/bungeecord:latest", running: false, status: "Exited (0) 3 days ago" },
   ],
 
-  get_server_metrics: { cpuPercent: 22.8, ramUsedBytes: 5_100_273_664, ramTotalBytes: 16_642_998_272, uptimeSeconds: 1_209_600, rxBytesPerSecond: 184_320, txBytesPerSecond: 96_256 },
-  get_node_sync_status: { inSync: true },
+  // Field for field with `ServerMetrics` - a near miss here is not a
+  // compile error, it is a page that says "collecting..." forever.
+  get_server_metrics: {
+    cpuUsagePercent: 22.8,
+    ramUsedBytes: 5_100_273_664,
+    ramTotalBytes: 16_642_998_272,
+    diskUsedBytes: 41_875_931_136,
+    diskTotalBytes: 107_374_182_400,
+    loadAverage1m: 0.82,
+    uptimeSeconds: 1_209_600,
+    networkRxBytesPerSec: 184_320,
+    networkTxBytesPerSec: 96_256,
+  },
+  get_node_sync_status: { serverId: SERVER_ID, desiredRevision: 12, appliedRevision: 12, inSync: true },
   ping_server: 6,
 
   // The assistant and the cloud are deliberately inert here: a screenshot

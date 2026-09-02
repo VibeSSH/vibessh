@@ -12,6 +12,8 @@ Monitor pokazuje, co węzeł robi w tej chwili: zużycie zasobów, ruch sieciowy
 
 Menu boczne → **Monitor**, po wybraniu serwera.
 
+![Monitor: zasoby, wykresy historii i lista procesów posortowana po pamięci](images/monitor.png)
+
 ## Zasoby
 
 Cztery odczyty, odświeżane co kilka sekund: **CPU**, **RAM**, **Sieć — odbiór** i **Sieć — wysyłka**.
