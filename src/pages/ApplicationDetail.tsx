@@ -52,7 +52,7 @@ const HISTORY_SAMPLES = 60;
 
 const LOG_TAIL_LINES = 500;
 
-type Tab = "overview" | "logs" | "environment" | "ports" | "databases" | "files" | "backups" | "settings";
+type Tab = "overview" | "files" | "logs" | "environment" | "ports" | "databases" | "backups" | "settings";
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
 const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
@@ -345,6 +345,17 @@ export function ApplicationDetail() {
             <button className={`modal-tab ${tab === "overview" ? "modal-tab-active" : ""}`} onClick={() => setTab("overview")}>
               {t("applicationDetail.tabOverview")}
             </button>
+            {/* Files sits second, right after the console.
+                It is the tab an operator reaches for most once something is
+                running - a config to edit, a plugin to drop in, a world to
+                replace - and it was buried behind four tabs that are read
+                far less often. The rest keep their existing relative order:
+                only the one that was in the wrong place moved. */}
+            {features.includes("files") && (
+              <button className={`modal-tab ${tab === "files" ? "modal-tab-active" : ""}`} onClick={() => setTab("files")}>
+                {t("applicationDetail.tabFiles")}
+              </button>
+            )}
             {features.includes("logs") && (
               <button className={`modal-tab ${tab === "logs" ? "modal-tab-active" : ""}`} onClick={() => setTab("logs")}>
                 {t("applicationDetail.tabLogs")}
@@ -363,11 +374,6 @@ export function ApplicationDetail() {
             {features.includes("databases") && (
               <button className={`modal-tab ${tab === "databases" ? "modal-tab-active" : ""}`} onClick={() => setTab("databases")}>
                 {t("applicationDetail.tabDatabases")}
-              </button>
-            )}
-            {features.includes("files") && (
-              <button className={`modal-tab ${tab === "files" ? "modal-tab-active" : ""}`} onClick={() => setTab("files")}>
-                {t("applicationDetail.tabFiles")}
               </button>
             )}
             <button className={`modal-tab ${tab === "backups" ? "modal-tab-active" : ""}`} onClick={() => setTab("backups")}>
