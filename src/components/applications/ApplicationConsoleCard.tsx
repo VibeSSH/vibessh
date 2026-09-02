@@ -103,7 +103,18 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
 
       try {
         await followApplicationLogs(applicationId, followId, TAIL_LINES);
-        if (!cancelled) setSource("stream");
+        if (cancelled) {
+          // The effect was torn down while this was in flight - React's
+          // StrictMode does exactly that on every mount in development, and
+          // a real unmount does it whenever the tab changes. The cleanup
+          // already ran and stopped an id that was not registered yet, so
+          // without this the follow registers a moment later with nobody
+          // left to stop it: `docker logs -f` running on the Node for the
+          // life of the process.
+          void stopFollowingApplicationLogs(followId).catch(() => {});
+          return;
+        }
+        setSource("stream");
       } catch (err) {
         // Polling stays on, which is what this card always did - but the
         // reason goes to the console. A runtime with no follow is normal

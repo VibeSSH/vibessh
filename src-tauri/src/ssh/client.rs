@@ -389,6 +389,7 @@ impl SshSession {
 
         tokio::spawn(async move {
             let mut buffer = String::new();
+            let mut exit_failure: Option<u32> = None;
             let close_reason = loop {
                 tokio::select! {
                     // The handle was dropped - the UI closed the console, or
@@ -411,6 +412,17 @@ impl SshSession {
                                     on_line(line);
                                 }
                             }
+                            // A follow that ends because its command failed
+                            // has to say so. Without this the caller sees an
+                            // ordinary close and silently falls back, which
+                            // is indistinguishable from "this runtime has no
+                            // follow" - and that ambiguity cost real time to
+                            // diagnose once already.
+                            Some(ChannelMsg::ExitStatus { exit_status }) => {
+                                if exit_status != 0 {
+                                    exit_failure = Some(exit_status);
+                                }
+                            }
                             Some(ChannelMsg::Close) | None => break None,
                             _ => {}
                         }
@@ -422,6 +434,10 @@ impl SshSession {
             // the last thing it managed to write.
             if !buffer.is_empty() {
                 on_line(buffer);
+            }
+            let close_reason = close_reason.or_else(|| exit_failure.map(|code| format!("the command exited with status {code}")));
+            if let Some(reason) = &close_reason {
+                log::warn!("a log follow ended: {reason}");
             }
             on_closed(close_reason);
         });
