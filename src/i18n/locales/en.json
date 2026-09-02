@@ -1304,9 +1304,12 @@
   },
   "serverIcon": {
     "title": "Node icon",
-    "hint": "Pick an image to tell this node apart in the sidebar. Cropped to a square and resized to 64x64.",
+    "hint": "Pick an image to tell this node apart in the sidebar. Cropped to a square and resized to 64×64. PNG, JPEG or WebP, up to 8 MB.",
     "choose": "Choose image",
     "clear": "Remove",
-    "noSvg": "SVG isn't accepted - an SVG can carry script into the page that renders it. Use a PNG, JPEG or WebP."
+    "noSvg": "SVG isn't accepted - an SVG can carry script into the page that renders it. Use a PNG, JPEG or WebP.",
+    "tooLarge": "That image is {{size}}, over the {{limit}} limit. Icons are shown at 64×64 - pick something smaller, or export it at a lower resolution first.",
+    "tooManyPixels": "That image is {{width}}×{{height}}, which is more than {{limit}} megapixels. Decoding it would cost far more memory than a 64×64 icon is worth.",
+    "notAnImage": "That file couldn't be read as an image. Use a PNG, JPEG or WebP."
   }
 }

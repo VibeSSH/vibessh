@@ -16,6 +16,41 @@ const ICON_SIZE = 64;
  * `rasterize`. */
 const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif,image/bmp";
 
+/** The largest file worth decoding for a 64px icon.
+ *
+ * Checked before anything touches the bytes. Nothing here needs an 8 MB
+ * source, and decoding one costs real memory in the webview for a result
+ * that is thrown away at 64x64. */
+const MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+
+/** The largest decoded image accepted, in megapixels.
+ *
+ * A separate limit from the file size, and the more important of the two: a
+ * compressed image is not a bounded thing. A few hundred kilobytes of PNG can
+ * decode to hundreds of megapixels - a decompression bomb - and `file.size`
+ * says nothing about that. This is the same shape of guard `files::archive`
+ * already applies to declared entry sizes in a zip, for the same reason.
+ *
+ * 40 MP is comfortably above any photograph a person would pick and far below
+ * what would hurt. */
+const MAX_SOURCE_MEGAPIXELS = 40;
+
+/** A file size a human can read back, for the refusal message. */
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** Thrown with a translation key and its interpolation values, so the message
+ * the user reads is built by i18next rather than assembled in code. */
+class IconRejected extends Error {
+  constructor(
+    readonly key: string,
+    readonly params: Record<string, string | number> = {},
+  ) {
+    super(key);
+  }
+}
+
 /**
  * Turns whatever the user picked into a small, safe PNG data URL.
  *
@@ -31,9 +66,29 @@ const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif,image/bmp";
  */
 async function rasterize(file: File): Promise<string> {
   if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
-    throw new Error("svg");
+    throw new IconRejected("serverIcon.noSvg");
   }
-  const bitmap = await createImageBitmap(file);
+  if (file.size > MAX_SOURCE_BYTES) {
+    throw new IconRejected("serverIcon.tooLarge", { size: formatBytes(file.size), limit: formatBytes(MAX_SOURCE_BYTES) });
+  }
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    // A file the browser cannot decode at all - a renamed text file, a
+    // truncated download, a format this build has no decoder for.
+    throw new IconRejected("serverIcon.notAnImage");
+  }
+  const megapixels = (bitmap.width * bitmap.height) / 1_000_000;
+  if (megapixels > MAX_SOURCE_MEGAPIXELS) {
+    bitmap.close();
+    throw new IconRejected("serverIcon.tooManyPixels", {
+      width: bitmap.width,
+      height: bitmap.height,
+      limit: MAX_SOURCE_MEGAPIXELS,
+    });
+  }
   try {
     const canvas = document.createElement("canvas");
     canvas.width = ICON_SIZE;
@@ -79,7 +134,10 @@ export function ServerIconPicker({ server, onChanged }: ServerIconPickerProps) {
       await setServerIcon(server.id, icon);
       onChanged(icon);
     } catch (err) {
-      setError(err instanceof Error && err.message === "svg" ? t("serverIcon.noSvg") : errorMessage(err, t));
+      // A refusal from `rasterize` carries its own key and values; anything
+      // else is a real failure from the command and goes through the shared
+      // error renderer.
+      setError(err instanceof IconRejected ? t(err.key, err.params) : errorMessage(err, t));
     } finally {
       setBusy(false);
       // Cleared so picking the *same* file again still fires a change event.

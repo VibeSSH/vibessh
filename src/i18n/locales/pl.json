@@ -1304,9 +1304,12 @@
   },
   "serverIcon": {
     "title": "Ikona węzła",
-    "hint": "Wybierz obrazek, żeby odróżnić ten węzeł na pasku bocznym. Przycięty do kwadratu i przeskalowany do 64x64.",
+    "hint": "Wybierz obrazek, żeby odróżnić ten węzeł na pasku bocznym. Przycięty do kwadratu i przeskalowany do 64×64. PNG, JPEG albo WebP, do 8 MB.",
     "choose": "Wybierz obrazek",
     "clear": "Usuń",
-    "noSvg": "SVG nie jest przyjmowany - może wnieść skrypt na stronę, która go wyświetla. Użyj PNG, JPEG albo WebP."
+    "noSvg": "SVG nie jest przyjmowany - może wnieść skrypt na stronę, która go wyświetla. Użyj PNG, JPEG albo WebP.",
+    "tooLarge": "Ten obrazek ma {{size}}, ponad limit {{limit}}. Ikony wyświetlane są w 64×64 - wybierz mniejszy albo wyeksportuj go w niższej rozdzielczości.",
+    "tooManyPixels": "Ten obrazek ma {{width}}×{{height}}, czyli ponad {{limit}} megapikseli. Jego zdekodowanie kosztowałoby znacznie więcej pamięci, niż warta jest ikona 64×64.",
+    "notAnImage": "Nie udało się odczytać tego pliku jako obrazu. Użyj PNG, JPEG albo WebP."
   }
 }
