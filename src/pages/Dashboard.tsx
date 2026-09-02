@@ -27,6 +27,7 @@ import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
 import { errorMessage } from "@/services/tauri";
+import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 
 type WorkspaceTab = "applications" | "terminal" | "activity";
@@ -297,7 +298,7 @@ export function Dashboard() {
                     {filteredApplications.map((app) => (
                       <li key={app.id} className="server-list-item">
                         <div className="server-list-icon">
-                          <Icon name="box" size={16} />
+                          <BlueprintIcon blueprintId={app.blueprintId} size={16} />
                         </div>
                         <button type="button" className="server-list-main dashboard-row-btn" onClick={() => navigate(`/applications/${app.id}`)}>
                           <span className="server-list-name">{app.name}</span>

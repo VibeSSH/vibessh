@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import type { Application, ApplicationStatus } from "@/types/application";
 import "./ApplicationCard.css";
+import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 export const STATUS_TONE: Record<ApplicationStatus, "neutral" | "success" | "danger" | "warning"> = {
   unknown: "neutral",
@@ -37,7 +37,7 @@ export function ApplicationCard({ application, serverName, busy, onOpen, onStart
     <Card className="application-card">
       <div className="application-card-header">
         <div className="application-card-icon">
-          <Icon name="box" size={16} />
+          <BlueprintIcon blueprintId={application.blueprintId} size={16} />
         </div>
         <div className="application-card-title-col">
           <p className="application-card-name" title={application.name}>

@@ -41,6 +41,7 @@ import "@/components/applications/CreateApplicationWizard.css";
 import "./pages.css";
 import "./ApplicationDetail.css";
 import { errorMessage } from "@/services/tauri";
+import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 const LOG_TAIL_LINES = 500;
 
@@ -250,7 +251,7 @@ export function ApplicationDetail() {
               )}
               {application.runtimeType === "docker" && (
                 <Button variant="secondary" size="sm" onClick={() => setConfirming("recreate")}>
-                  <Icon name="box" size={14} />
+                  <BlueprintIcon blueprintId={application?.blueprintId} size={14} />
                   {t("applicationDetail.verb.recreate")}
                 </Button>
               )}
