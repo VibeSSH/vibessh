@@ -146,6 +146,38 @@ export function ApplicationDetail() {
     if (tab === "logs") loadLogs();
   }, [tab, loadLogs]);
 
+  /**
+   * Runs a lifecycle verb.
+   *
+   * Split out of the confirmation handler so Start can call it directly.
+   * Starting an Application risks nothing and undoes itself with one click,
+   * so a modal in front of it was a second click for no decision - unlike
+   * Stop and Restart, which drop whoever is connected, or Kill and
+   * Recreate, which lose work.
+   */
+  async function runAction(verb: Verb) {
+    if (!id) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const call: Record<Verb, () => Promise<ApplicationStatus>> = {
+        start: () => startApplication(id),
+        stop: () => stopApplication(id, true),
+        restart: () => restartApplication(id),
+        kill: () => killApplication(id),
+        recreate: () => recreateApplication(id),
+      };
+      await call[verb]();
+      toastSuccess(t(`applicationDetail.verbPast.${verb}`, { name: application?.name ?? "" }));
+      setConfirming(null);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t("applicationDetail.couldntDo", { verb: t(`applicationDetail.verb.${verb}`) }));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleConfirmAction() {
     if (!confirming || !id) return;
     setActionBusy(true);
@@ -242,9 +274,9 @@ export function ApplicationDetail() {
                 />
               )}
               {canStart && (
-                <Button size="sm" onClick={() => setConfirming("start")}>
+                <Button size="sm" onClick={() => void runAction("start")} disabled={actionBusy}>
                   <Icon name="play" size={14} />
-                  {t("applicationDetail.verb.start")}
+                  {actionBusy ? t("applicationDetail.working.start") : t("applicationDetail.verb.start")}
                 </Button>
               )}
               {canStopOrRestart && (
@@ -418,13 +450,16 @@ export function ApplicationDetail() {
               <p className="dialog-body-text">
                 <Trans i18nKey={`applicationDetail.confirmBody.${confirming}`} values={{ name: application?.name ?? "" }} components={{ 1: <strong /> }} />
               </p>
+              {actionBusy && (confirming === "stop" || confirming === "restart") && (
+                <p className="form-note">{t("applicationDetail.gracefulNote")}</p>
+              )}
               {actionError && <p className="form-note form-note-danger form-note-spaced">{actionError}</p>}
               <div className="form-actions">
                 <Button variant="secondary" onClick={() => setConfirming(null)} disabled={actionBusy}>
                   {t("common.cancel")}
                 </Button>
                 <Button variant={VERB_IS_DESTRUCTIVE[confirming] ? "danger" : "primary"} onClick={handleConfirmAction} disabled={actionBusy}>
-                  {t(`applicationDetail.verb.${confirming}`)}
+                  {actionBusy ? t(`applicationDetail.working.${confirming}`) : t(`applicationDetail.verb.${confirming}`)}
                 </Button>
               </div>
             </div>

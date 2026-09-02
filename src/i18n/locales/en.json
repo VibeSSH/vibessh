@@ -412,7 +412,15 @@
     "migrateSuccessToast": "Migrated to the new Node as {{name}}.",
     "migrateError": "Couldn't migrate the application.",
     "migrateWarningsToast": "\"{{name}}\" was migrated, but not everything finished: {{warning}}",
-    "migrateNotStartedToast": "\"{{name}}\" was migrated but didn't start on the new node."
+    "migrateNotStartedToast": "\"{{name}}\" was migrated but didn't start on the new node.",
+    "working": {
+      "start": "Starting…",
+      "stop": "Stopping…",
+      "restart": "Restarting…",
+      "kill": "Killing…",
+      "recreate": "Recreating…"
+    },
+    "gracefulNote": "Waiting for the process to shut down on its own - up to about 10 seconds. Cutting that short risks losing whatever it was writing."
   },
   "portsTab": {
     "description": "Control which network ports this application uses and who can reach them.",

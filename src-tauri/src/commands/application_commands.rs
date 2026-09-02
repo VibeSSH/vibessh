@@ -225,6 +225,32 @@ pub async fn delete_application(
     .await
 }
 
+/// Writes a visible break into the captured log when a new run begins.
+///
+/// `log_capture` deliberately keeps output across a restart or a recreate,
+/// so a brand new container's empty buffer never looks like "no logs" and
+/// the lines explaining *why* something died survive the thing dying. The
+/// cost of that is what a user reported: after a restart the previous
+/// session simply continued, with nothing marking where the old run ended
+/// and the new one began.
+///
+/// A separator keeps both properties. Clearing instead would answer the
+/// same complaint by destroying the crash evidence the capture exists for.
+///
+/// Deliberately not translated: this is written into the stored log, which
+/// outlives the session and may be read by somebody else, so it must not
+/// change language with the interface. Never fatal - a missing separator is
+/// cosmetic and must not fail an action that already succeeded.
+async fn mark_new_log_session(log_capture: &LogCaptureStore, id: Uuid) {
+    let line = format!(
+        "===== VibeSSH: new session started at {} =====",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    if let Err(err) = log_capture.append(id, &[line]).await {
+        log::warn!("couldn't mark a new log session for {id}: {err}");
+    }
+}
+
 #[tauri::command]
 pub async fn start_application(
     repo: State<'_, ApplicationRepository>,
@@ -232,9 +258,12 @@ pub async fn start_application(
     sessions: State<'_, SshSessionManager>,
     registry_repo: State<'_, RegistryCredentialRepository>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    log_capture: State<'_, LogCaptureStore>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    services::start_application(&repo, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
+    let status = services::start_application(&repo, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await?;
+    mark_new_log_session(&log_capture, id).await;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -255,9 +284,12 @@ pub async fn restart_application(
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    log_capture: State<'_, LogCaptureStore>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    services::restart_application(&repo, &server_repo, &sessions, &local_process_manager, id).await
+    let status = services::restart_application(&repo, &server_repo, &sessions, &local_process_manager, id).await?;
+    mark_new_log_session(&log_capture, id).await;
+    Ok(status)
 }
 
 /// "Recreate Container" (Etap M1, Docker only) - tears the container down

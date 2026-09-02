@@ -412,7 +412,15 @@
     "migrateSuccessToast": "Zmigrowano na nowy Node jako {{name}}.",
     "migrateError": "Nie udało się zmigrować aplikacji.",
     "migrateWarningsToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wszystko się dokończyło: {{warning}}",
-    "migrateNotStartedToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wystartowała na nowym węźle."
+    "migrateNotStartedToast": "Aplikacja \"{{name}}\" została przeniesiona, ale nie wystartowała na nowym węźle.",
+    "working": {
+      "start": "Uruchamiam…",
+      "stop": "Zatrzymuję…",
+      "restart": "Restartuję…",
+      "kill": "Ubijam…",
+      "recreate": "Odtwarzam…"
+    },
+    "gracefulNote": "Czekam, aż proces sam się zamknie — do około 10 sekund. Skrócenie tego grozi utratą tego, co właśnie zapisywał."
   },
   "portsTab": {
     "description": "Kontroluj, z których portów sieciowych korzysta ta aplikacja i kto może się do nich łączyć.",
