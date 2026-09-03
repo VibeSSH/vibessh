@@ -88,6 +88,41 @@ async fn replace_role_permissions(tx: &mut Transaction<'_, Postgres>, role_id: U
     Ok(())
 }
 
+/// Gives every built-in role every permission in the catalog.
+///
+/// The Owner role is seeded when a team is created, with the catalog as it
+/// stood **at that moment**. Add a permission afterwards and every existing
+/// team's Owner silently lacks it - which does not merely look untidy: the
+/// "can't grant what you don't have" rule then refuses to let the owner of
+/// a team hand out the new permission at all, with an error naming a
+/// permission they would reasonably believe they hold. That is exactly what
+/// happened when the operations permissions were added.
+///
+/// Run at startup rather than written as a migration, because a migration
+/// would fix it once and the next addition to the catalog would reintroduce
+/// it. The role's definition is "every permission", so the code that owns
+/// that definition keeps it true, on every boot, for every team - including
+/// teams created by an older build.
+///
+/// Idempotent: `ON CONFLICT DO NOTHING` against the table's own composite
+/// primary key, so a boot with nothing to do costs one statement and
+/// changes nothing.
+pub async fn backfill_system_role_permissions(db: &sqlx::PgPool) -> Result<u64, sqlx::Error> {
+    let catalog: Vec<String> = permissions::ALL_PERMISSIONS.iter().map(|key| (*key).to_string()).collect();
+    let result = sqlx::query(
+        "INSERT INTO role_permissions (role_id, permission_key)
+         SELECT r.id, catalog.key
+         FROM roles r
+         CROSS JOIN UNNEST($1::text[]) AS catalog(key)
+         WHERE r.is_system = TRUE
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(&catalog)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn list_permissions() -> Json<&'static [&'static str]> {
     Json(permissions::ALL_PERMISSIONS)
 }

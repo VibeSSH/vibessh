@@ -70,6 +70,16 @@ async fn run() -> Result<(), String> {
 
     log::info!("connecting to the database...");
     let db = connect_and_migrate(&database_url).await?;
+
+    // Built-in roles mean "every permission", so they are brought up to the
+    // current catalog before anything serves a request - see
+    // `roles::backfill_system_role_permissions` for why this is a boot step
+    // rather than a migration.
+    match vibessh_backend::roles::backfill_system_role_permissions(&db).await {
+        Ok(0) => {}
+        Ok(added) => log::info!("granted {added} newly-catalogued permission(s) to built-in roles"),
+        Err(err) => return Err(format!("couldn't bring built-in roles up to the permission catalog: {err}")),
+    }
     let app = build_router(db, Arc::from(jwt_secret.into_bytes()));
 
     log::info!("listening on http://{bind_addr}");
