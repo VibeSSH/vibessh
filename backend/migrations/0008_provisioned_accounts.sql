@@ -1,0 +1,21 @@
+-- Accounts created *for* somebody by a team owner, rather than by the
+-- person themselves.
+--
+-- The owner provides an email, the server generates a password and shows it
+-- to the owner exactly once, and the account is created already in the
+-- team. That removes the step that made inviting somebody awkward: until
+-- now an invitation could only be accepted by a person who had already
+-- registered on their own.
+--
+-- The password the owner is shown is a password the owner knows, so the
+-- account is not really the member's until they have replaced it. That is
+-- what this column is for: while it is TRUE the backend refuses every
+-- request from that account except reading its own profile and setting a
+-- new password. Not a client-side prompt - a client-side prompt is a
+-- suggestion, and this has to be a rule, because the whole point is that
+-- somebody else knows the current password.
+--
+-- Self-registered accounts are unaffected: the default is FALSE, and
+-- `auth::register` never sets it.
+ALTER TABLE users
+    ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE;

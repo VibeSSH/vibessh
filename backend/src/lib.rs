@@ -69,6 +69,9 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        // Takes `AnyAuthUser`, so it keeps working for the one account
+        // state that cannot use anything else - see `auth::AuthUser`.
+        .route("/auth/password", post(auth::change_password))
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
@@ -79,6 +82,7 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/teams", post(teams::create_team).get(teams::list_teams))
         .route("/teams/:team_id", get(teams::get_team).delete(teams::delete_team))
         .route("/teams/:team_id/members", get(teams::list_members).post(teams::add_member))
+        .route("/teams/:team_id/members/provision", post(teams::provision_member))
         .route("/teams/:team_id/members/:user_id", delete(teams::remove_member))
         .route("/permissions", get(roles::list_permissions))
         .route("/teams/:team_id/roles", get(roles::list_roles).post(roles::create_role))

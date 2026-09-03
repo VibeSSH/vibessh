@@ -31,6 +31,15 @@ pub enum ApiError {
     /// tomorrow. Introduced for the hosted AI assistant's daily question
     /// limit (`ai::chat`).
     TooManyRequests(String),
+    /// Authenticated, but the account still holds the password somebody
+    /// else set for it and must replace it before doing anything.
+    ///
+    /// Its own variant rather than `Forbidden`, for the same reason
+    /// `TooManyRequests` is: a client seeing a 403 should stop, and a client
+    /// seeing this should send the user to one specific screen and then
+    /// carry on. Collapsing them would leave the desktop app guessing from
+    /// the message text.
+    PasswordChangeRequired(String),
     NotFound(String),
     /// The message here is for the server log only - `IntoResponse` never
     /// sends it to the client (see the security note on Error Handling in
@@ -44,6 +53,7 @@ impl std::fmt::Display for ApiError {
             ApiError::InvalidInput(msg) => write!(f, "invalid input: {msg}"),
             ApiError::Unauthorized(msg) => write!(f, "unauthorized: {msg}"),
             ApiError::Forbidden(msg) => write!(f, "forbidden: {msg}"),
+            ApiError::PasswordChangeRequired(msg) => write!(f, "password change required: {msg}"),
             ApiError::Conflict(msg) => write!(f, "conflict: {msg}"),
             ApiError::TooManyRequests(msg) => write!(f, "too many requests: {msg}"),
             ApiError::UpstreamFailure(msg) => write!(f, "upstream failure: {msg}"),
@@ -67,6 +77,10 @@ impl IntoResponse for ApiError {
             ApiError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, "invalid_input", msg),
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "unauthorized", msg),
             ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, "forbidden", msg),
+            // 403 as well, because it is a refusal that re-authenticating
+            // will not lift - only changing the password will. The `kind`
+            // is what tells the two apart.
+            ApiError::PasswordChangeRequired(msg) => (StatusCode::FORBIDDEN, "password_change_required", msg),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg),
             // The message is safe to show: it names the limit, which is the
             // one thing the user needs in order to understand the refusal.

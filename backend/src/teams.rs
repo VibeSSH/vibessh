@@ -19,9 +19,9 @@ use serde_json::json;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::authorize;
+use crate::authorize::{authorize, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult};
-use crate::models::{AddMemberRequest, CreateTeamRequest, Team, TeamMember};
+use crate::models::{AddMemberRequest, CreateTeamRequest, ProvisionMemberRequest, ProvisionedMember, Team, TeamMember};
 use crate::{permissions, AppState};
 
 pub const OWNER_ROLE_NAME: &str = "Owner";
@@ -195,6 +195,137 @@ pub async fn add_member(
     tx.commit().await?;
 
     Ok(StatusCode::CREATED)
+}
+
+/// Creates an account for somebody and puts them in the team, in one step.
+///
+/// The flow this replaces asked the person to register on their own first,
+/// which meant an invitation could not reach anybody who had not already
+/// found the app - the common case when a team lead wants to bring somebody
+/// in. Here the lead supplies an email, the server makes the account, and
+/// the lead passes on a password that the account is then forced to
+/// replace.
+///
+/// The password is generated here rather than chosen by the caller: a
+/// password one person picks for another is reliably the weakest either of
+/// them uses, and this one exists only to survive being passed along. It is
+/// returned exactly once. Nothing stores it in the clear and no endpoint
+/// can produce it again - if it is lost, provision the account again or use
+/// a reset.
+///
+/// Everything happens in one transaction. A half-provisioned account - a
+/// user with no team, or a member with no role - would be worse than a
+/// clean failure, because nobody would know which half had happened.
+pub async fn provision_member(
+    State(state): State<AppState>,
+    AuthUser(actor_id): AuthUser,
+    Path(team_id): Path<Uuid>,
+    Json(body): Json<ProvisionMemberRequest>,
+) -> ApiResult<impl IntoResponse> {
+    team_for_member(&state.db, team_id, actor_id).await?;
+    authorize(&state.db, team_id, actor_id, permissions::TEAM_MEMBERS_ADD).await?;
+
+    let email = crate::auth::normalize_email(&body.email);
+    crate::auth::validate_email(&email)?;
+
+    // The local part of the address, until they set their own. Better than
+    // an empty name in a member list, and it is theirs to change.
+    let display_name = match body.display_name.as_deref().map(str::trim).filter(|name| !name.is_empty()) {
+        Some(name) => crate::auth::validate_display_name(name)?,
+        None => crate::auth::validate_display_name(email.split('@').next().unwrap_or("member"))?,
+    };
+
+    // Checked before the role is validated so the common mistake - the
+    // person already has an account - is reported as itself.
+    let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1").bind(&email).fetch_optional(&state.db).await?;
+    if existing.is_some() {
+        return Err(ApiError::Conflict("an account with this email already exists - add them as a member instead".to_string()));
+    }
+
+    // A role is granted here, so the same rule applies as anywhere else:
+    // nobody hands out more than they hold.
+    if let Some(role_id) = body.role_id {
+        let role_permissions: Vec<String> =
+            sqlx::query_scalar("SELECT rp.permission_key FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.id = $1 AND r.team_id = $2")
+                .bind(role_id)
+                .bind(team_id)
+                .fetch_all(&state.db)
+                .await?;
+        ensure_can_grant(&state.db, team_id, actor_id, &role_permissions).await?;
+    }
+
+    let temporary_password = crate::password::generate_password();
+    let password_hash = crate::password::hash_password(&temporary_password).map_err(ApiError::Internal)?;
+    let new_user_id = Uuid::new_v4();
+    let now = Utc::now();
+
+    let mut tx = state.db.begin().await?;
+
+    let insert = sqlx::query(
+        "INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $5, TRUE)",
+    )
+    .bind(new_user_id)
+    .bind(&email)
+    .bind(&password_hash)
+    .bind(&display_name)
+    .bind(now)
+    .execute(&mut *tx)
+    .await;
+    if let Err(sqlx::Error::Database(db_err)) = &insert {
+        if db_err.is_unique_violation() {
+            // Somebody registered between the check above and this insert.
+            return Err(ApiError::Conflict("an account with this email already exists - add them as a member instead".to_string()));
+        }
+    }
+    insert?;
+
+    sqlx::query("INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, $3)")
+        .bind(team_id)
+        .bind(new_user_id)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+    let mut role_assigned = false;
+    if let Some(role_id) = body.role_id {
+        let belongs: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM roles WHERE id = $1 AND team_id = $2").bind(role_id).bind(team_id).fetch_optional(&mut *tx).await?;
+        if belongs.is_none() {
+            return Err(ApiError::NotFound("role not found".to_string()));
+        }
+        sqlx::query("INSERT INTO member_roles (team_id, user_id, role_id) VALUES ($1, $2, $3)")
+            .bind(team_id)
+            .bind(new_user_id)
+            .bind(role_id)
+            .execute(&mut *tx)
+            .await?;
+        role_assigned = true;
+    }
+
+    // The password is never in the audit record - the point of writing one
+    // is that somebody can see an account was created for this address, not
+    // to leave the credential in a log that outlives it.
+    audit::record(
+        &mut tx,
+        team_id,
+        actor_id,
+        audit::MEMBER_ADDED,
+        "user",
+        Some(new_user_id),
+        json!({ "email": email, "provisioned": true, "role_assigned": role_assigned }),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let user = crate::models::UserProfile {
+        id: new_user_id,
+        email,
+        display_name,
+        created_at: now,
+        must_change_password: true,
+    };
+    Ok((StatusCode::CREATED, Json(ProvisionedMember { user, temporary_password, role_assigned })))
 }
 
 pub async fn remove_member(

@@ -109,3 +109,19 @@ pub async fn revoke(db: &PgPool, raw_token: &str) -> ApiResult<()> {
         .await?;
     Ok(())
 }
+
+/// Ends every session for one account.
+///
+/// Used when a password changes: a provisioned password was known to
+/// whoever created the account, so any session opened with it belongs to
+/// them as much as to the owner, and leaving those alive would make the
+/// change cosmetic. Already-revoked rows are left alone rather than
+/// re-stamped, so the timestamp keeps saying when a session actually ended.
+pub async fn revoke_all_for_user(db: &PgPool, user_id: Uuid) -> ApiResult<()> {
+    sqlx::query("UPDATE refresh_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL")
+        .bind(Utc::now())
+        .bind(user_id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
