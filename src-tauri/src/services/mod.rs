@@ -12,6 +12,8 @@ mod migration_service;
 mod network_service;
 mod node_state_service;
 mod papermc_service;
+mod pterodactyl_import_service;
+mod pterodactyl_run_service;
 mod ping_service;
 mod purpur_service;
 mod server_service;
@@ -54,17 +56,23 @@ pub use dns_service::{
 };
 pub use firewall_service::{
     add_custom_firewall_rule, desired_rules as preview_node_firewall_rules, enable_node_firewall, node_firewall_overview,
-    reconcile_node as sync_node_firewall, remove_custom_firewall_rule, sync_application_node_firewall, FirewallSyncResult, NodeFirewallOverview,
+    node_listening_sockets, reconcile_node as sync_node_firewall, remove_custom_firewall_rule, sync_application_node_firewall, FirewallSyncResult,
+    ListeningSocket, NodeFirewallOverview,
 };
 pub use network_service::{
     join_node, leave_node, list_members as list_network_members, list_node_endpoints, mesh_status, reconcile_mesh, sync_vibe_network,
     MeshReconcileResult, NodeEndpoint, NodeMeshStatus, PeerHandshake, VibeNetworkSyncResult,
 };
 pub use node_state_service::{reconcile_node, sync_status as node_sync_status};
+pub use pterodactyl_import_service::{
+    build_plan as build_pterodactyl_plan, MigrationPlan as PterodactylMigrationPlan, NodeOverride as PterodactylNodeOverride,
+    PlannedServer as PterodactylPlannedServer,
+};
+pub use pterodactyl_run_service::{import_server as import_pterodactyl_server, ImportOutcome as PterodactylImportOutcome, ImportStep as PterodactylImportStep};
 pub use database_service::{
     create_application_database, create_database_host, delete_application_database, delete_database_host, install_database_server,
     list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
-    reveal_application_database_password, set_database_host_phpmyadmin,
+    reveal_application_database_password, set_database_host_phpmyadmin, update_database_host,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
 pub use migration_service::{migrate_application, MigrationResult};

@@ -31,6 +31,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::errors::AppResult;
+use super::skills;
 use crate::models::{AiContextBundle, AiContextRef, ApplicationStatus};
 use crate::runtime::local_process::LocalProcessManager;
 use crate::services;
@@ -206,7 +207,24 @@ impl AiContextBuilder<'_> {
         // The live status is the single most valuable field in the whole
         // snapshot and the log tail is the largest; making the user wait for
         // the sum of the two was pure serialisation.
-        let (live_status, log_tail) = tokio::join!(
+        // The third probe answers a question none of the stored configuration
+        // can: what is *actually* listening. A published port with nothing
+        // behind it looks exactly like a working one everywhere in VibeSSH's
+        // own records, so without this the model could only ever repeat the
+        // configuration back.
+        let listening = async {
+            match app.server_id {
+                Some(server_id) => Some(
+                    probe(
+                        "the ports actually listening could not be read from this Node",
+                        services::node_listening_sockets(self.servers, self.ssh_sessions, server_id),
+                    )
+                    .await,
+                ),
+                None => None,
+            }
+        };
+        let (live_status, log_tail, listening) = tokio::join!(
             probe(
                 "the live status could not be checked",
                 services::refresh_application_status(self.applications, self.servers, self.ssh_sessions, self.local_processes, id),
@@ -223,6 +241,7 @@ impl AiContextBuilder<'_> {
                     LOG_TAIL_LINES,
                 ),
             ),
+            listening,
         );
 
         out.heading("Application");
@@ -283,6 +302,37 @@ impl AiContextBuilder<'_> {
                     if port.required { ", required by the blueprint" } else { "" }
                 ));
             }
+        }
+
+        // Reported against the published ports rather than as a raw socket
+        // list: "3306 is published and nothing is listening on it" is a
+        // finding, and a dump of every socket on the Node is homework.
+        match listening {
+            Some(Ok(sockets)) => {
+                out.sources.push("Listening ports".to_string());
+                out.heading("What is actually listening on the Node");
+                let published: Vec<_> = detail.ports.iter().filter(|port| port.external_port.is_some()).collect();
+                if published.is_empty() {
+                    out.line("No port of this Application is published, so nothing is expected to listen for it");
+                } else {
+                    for port in published {
+                        let external = port.external_port.unwrap_or_default();
+                        match sockets.iter().find(|socket| socket.port == external && socket.protocol == port.protocol) {
+                            Some(socket) => out.line(format!(
+                                "- {} {:?} {external}: listening, owned by {}",
+                                port.name,
+                                port.protocol,
+                                socket.process.as_deref().unwrap_or("a process this SSH user may not see")
+                            )),
+                            // The whole reason for the probe. Said plainly,
+                            // because it is the finding.
+                            None => out.line(format!("- {} {:?} {external}: {}", port.name, port.protocol, skills::NOTHING_LISTENING)),
+                        }
+                    }
+                }
+            }
+            Some(Err(note)) => out.note(note),
+            None => {}
         }
 
         // Resource limits live inside `runtime_config` rather than in their
@@ -410,12 +460,78 @@ impl AiContextBuilder<'_> {
         }
 
         out.heading("Vibe Network");
-        match self.networks.list() {
+        let is_member = match self.networks.list() {
             Ok(members) => match members.iter().find(|member| member.server_id == id) {
-                Some(member) => out.line(format!("This Node is a member, with mesh address {}", member.wireguard_ip)),
-                None => out.line("This Node is not a member of the Vibe Network"),
+                Some(member) => {
+                    out.line(format!("This Node is a member, with mesh address {}", member.wireguard_ip));
+                    true
+                }
+                None => {
+                    out.line("This Node is not a member of the Vibe Network");
+                    false
+                }
             },
-            Err(err) => out.note(format!("Vibe Network membership could not be read: {err}")),
+            Err(err) => {
+                out.note(format!("Vibe Network membership could not be read: {err}"));
+                false
+            }
+        };
+
+        // Membership is a row in this app's database. Whether the Nodes can
+        // actually reach each other is a fact only WireGuard on the Nodes
+        // themselves knows, and the two disagree often enough that the
+        // difference is the answer: a mesh every Node has joined and none
+        // has ever handshaked over is a firewall or an endpoint problem, and
+        // it looks perfectly healthy from the database alone.
+        if is_member {
+            match probe("the mesh peers could not be read", services::mesh_status(self.networks, self.servers, self.ssh_sessions)).await {
+                Ok(statuses) => {
+                    out.sources.push("Mesh peers".to_string());
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|since| since.as_secs())
+                        .unwrap_or_default();
+                    let name_of = |server_id: Uuid| match self.servers.get(server_id) {
+                        Ok(Some(server)) => server.name,
+                        _ => "an unknown Node".to_string(),
+                    };
+                    match statuses.iter().find(|status| status.server_id == id) {
+                        Some(status) => {
+                            out.line(format!("Tunnel on this Node: {:?}", status.tunnel));
+                            if let Some(error) = &status.tunnel_error {
+                                out.line(format!("The tunnel could not be read: {error}"));
+                            }
+                            if status.peers.is_empty() {
+                                out.line("This Node reports no peers at all");
+                            }
+                            for peer in &status.peers {
+                                let seen = if peer.latest_handshake_unix == 0 {
+                                    skills::NEVER_HANDSHAKED.to_string()
+                                } else {
+                                    format!("last handshake {} seconds ago", now.saturating_sub(peer.latest_handshake_unix))
+                                };
+                                out.line(format!("- sees {}: {seen}", name_of(peer.server_id)));
+                            }
+                            if status.unknown_peers > 0 {
+                                // A Node re-keyed outside the app looks
+                                // exactly like one that never handshaked
+                                // unless this is said out loud.
+                                out.line(format!(
+                                    "- {} peer(s) whose key belongs to no known member, which is what a Node re-keyed outside VibeSSH looks like",
+                                    status.unknown_peers
+                                ));
+                            }
+                        }
+                        None => out.line("This Node was not in the mesh status report"),
+                    }
+                    // The other side of "do the Nodes see each other": a
+                    // peer that cannot be asked at all.
+                    for status in statuses.iter().filter(|status| status.server_id != id && !status.reachable) {
+                        out.line(format!("- {} did not answer, so its side of the tunnel is unknown", name_of(status.server_id)));
+                    }
+                }
+                Err(note) => out.note(note),
+            }
         }
 
         out.heading("Firewall");

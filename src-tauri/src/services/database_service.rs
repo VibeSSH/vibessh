@@ -21,7 +21,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost};
+use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseHost, UpdateDatabaseHostInput};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::ssh::{write_private_file, SshSession};
 // The one shared implementation - every module that builds a remote
@@ -108,6 +108,43 @@ pub fn create_database_host(repo: &DatabaseRepository, input: CreateDatabaseHost
         return Err(err);
     }
     Ok(created)
+}
+
+/// Corrects a database host's connection details.
+///
+/// The password is only rewritten when one was actually typed. An empty
+/// field keeps the stored secret, which is what makes it possible to fix a
+/// port or a username without knowing the password - the frontend has never
+/// held it and cannot send it back.
+pub fn update_database_host(repo: &DatabaseRepository, id: Uuid, input: UpdateDatabaseHostInput) -> AppResult<DatabaseHost> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err(AppError::InvalidInput("a name is required".into()));
+    }
+    let host = input.host.trim();
+    if host.is_empty() {
+        return Err(AppError::InvalidInput("a host is required".into()));
+    }
+    let admin_username = input.admin_username.trim();
+    if admin_username.is_empty() {
+        return Err(AppError::InvalidInput("an admin username is required".into()));
+    }
+
+    let updated = repo.update_host(
+        id,
+        &UpdateDatabaseHostInput {
+            name: name.to_string(),
+            host: host.to_string(),
+            port: input.port,
+            admin_username: admin_username.to_string(),
+            admin_password: String::new(),
+        },
+    )?;
+
+    if !input.admin_password.is_empty() {
+        credentials::store_secret(id, SecretKind::DatabaseHostAdmin, &input.admin_password)?;
+    }
+    Ok(updated)
 }
 
 /// `ON DELETE RESTRICT` (see `storage::migrations`) rejects this while any
@@ -686,9 +723,34 @@ async fn run_mysql(connection: &SshSession, host: &DatabaseHost, admin_password:
         for secret in redact.iter().copied().chain(std::iter::once(admin_password)) {
             detail = detail.replace(secret, "[redacted]");
         }
+        if let Some(user) = socket_auth_refusal(&detail) {
+            return Err(AppError::DatabaseSocketAuthOnly { user });
+        }
         return Err(AppError::Connection(format!("database provisioning failed: {detail}")));
     }
     Ok(())
+}
+
+/// Recognises MySQL's "this account does not do passwords" refusal.
+///
+/// `ERROR 1698 (28000)` is what an account using the `unix_socket` /
+/// `auth_socket` plugin answers to any password at all - the default for
+/// `root` on Debian and Ubuntu. Reported as its own error because the fix is
+/// a different account, not a different password, and the raw code sends
+/// people hunting for a typo in something MySQL never read.
+fn socket_auth_refusal(detail: &str) -> Option<String> {
+    if !detail.contains("1698") {
+        return None;
+    }
+    // "Access denied for user 'root'@'localhost'" - the account is the one
+    // useful specific, so it is carried through.
+    let user = detail
+        .split("for user ")
+        .nth(1)
+        .map(|rest| rest.trim().trim_matches(|c| c == '\'' || c == '"' || c == '.').to_string())
+        .filter(|user| !user.is_empty())
+        .unwrap_or_else(|| "that account".to_string());
+    Some(user)
 }
 
 /// Pure command-string construction, separated from `run_mysql`'s actual
@@ -745,6 +807,140 @@ fn build_mysql_command(defaults_file: &str, host: &DatabaseHost, sql: &str) -> S
 }
 
 
+
+/// `mysql <db> < dump.sql`, built the same way and for the same reasons as
+/// `build_mysql_command` above: the admin password only ever reaches the
+/// client through the defaults file, and `--defaults-extra-file` has to come
+/// first.
+fn build_mysql_restore_command(defaults_file: &str, host: &DatabaseHost, database_name: &str, dump_path: &str) -> String {
+    format!(
+        "mysql --defaults-extra-file={} --protocol=TCP -h {} -P {} -u {} {} < {}",
+        shell_quote(defaults_file),
+        shell_quote(&host.host),
+        host.port,
+        shell_quote(&host.admin_username),
+        shell_quote(database_name),
+        shell_quote(dump_path),
+    )
+}
+
+/// Whether a name is safe to put where an identifier goes.
+///
+/// Every database name this module *generates* already is, but a restore
+/// takes one back out of a repository row, and "it came from our own
+/// database" is not the same as "it is safe in a command". Cheap to check,
+/// and the alternative is trusting a value all the way into a shell.
+fn is_safe_identifier(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 64 && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `mysqldump <db> > file`, built the same way as the two commands above and
+/// for the same reason: the admin password only ever reaches the client
+/// through the defaults file.
+///
+/// `--single-transaction` so a running InnoDB database is read consistently
+/// without being locked, and `--no-create-db` because the destination schema
+/// will have a different, VibeSSH-generated name.
+fn build_mysqldump_command(defaults_file: &str, host: &DatabaseHost, database_name: &str, dump_path: &str) -> String {
+    format!(
+        "install -m 600 /dev/null {dump} && mysqldump --defaults-extra-file={defaults} --protocol=TCP -h {host} -P {port} -u {user} \
+--single-transaction --routines --triggers --no-tablespaces --no-create-db {db} > {dump}",
+        dump = shell_quote(dump_path),
+        defaults = shell_quote(defaults_file),
+        host = shell_quote(&host.host),
+        port = host.port,
+        user = shell_quote(&host.admin_username),
+        db = shell_quote(database_name),
+    )
+}
+
+/// Writes a dump of `database_name` to `dump_path` on the database host's own
+/// machine, using that host's stored admin credentials.
+///
+/// Public for the Pterodactyl importer, and living here for the same reason
+/// the restore does: this module is the only one that knows how an admin
+/// password reaches a client without passing through a command string.
+///
+/// The dump never travels through this process - it is written to a file on
+/// the host, and the caller says where.
+pub async fn dump_database_to_file(
+    db_repo: &DatabaseRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    database_host_id: Uuid,
+    database_name: &str,
+    dump_path: &str,
+) -> AppResult<()> {
+    if !is_safe_identifier(database_name) {
+        return Err(AppError::InvalidInput(format!("{database_name} is not a database name this can dump")));
+    }
+    let host = load_host(db_repo, database_host_id)?;
+    let admin_password = load_host_admin_password(&host)?;
+    let connection = connect_to_host(server_repo, sessions, &host).await?;
+
+    let defaults_file = format!(".vibessh-my-{}.cnf", Uuid::new_v4());
+    write_private_file(&connection, &defaults_file, defaults_file_contents(&admin_password).as_bytes()).await?;
+
+    let command = build_mysqldump_command(&defaults_file, &host, database_name, dump_path);
+    let attempt = connection.execute_command(&command).await;
+    let _ = connection.execute_command(&format!("rm -f {}", shell_quote(&defaults_file))).await;
+    let output = attempt?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let mut detail = if detail.is_empty() { "the dump failed".to_string() } else { detail.to_string() };
+        detail = detail.replace(&admin_password, "[redacted]");
+        if let Some(user) = socket_auth_refusal(&detail) {
+            return Err(AppError::DatabaseSocketAuthOnly { user });
+        }
+        return Err(AppError::Connection(format!("dumping {database_name} failed: {detail}")));
+    }
+    Ok(())
+}
+
+/// Loads a SQL dump that is already sitting on the database host into one of
+/// its databases.
+///
+/// Public because the Pterodactyl importer needs it, and deliberately living
+/// here rather than there: this is the only module that knows how an admin
+/// password reaches a `mysql` client on a Node without passing through a
+/// command string, and a second copy of that knowledge is how one of them
+/// ends up doing it the insecure way.
+///
+/// The dump is *not* streamed from the desktop. It is named by a path on the
+/// host, so a multi-gigabyte dump never travels through this process.
+pub async fn restore_dump_into_database(
+    db_repo: &DatabaseRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    database_host_id: Uuid,
+    database_name: &str,
+    dump_path: &str,
+) -> AppResult<()> {
+    if !is_safe_identifier(database_name) {
+        return Err(AppError::InvalidInput(format!("{database_name} is not a database name this can restore into")));
+    }
+    let host = load_host(db_repo, database_host_id)?;
+    let admin_password = load_host_admin_password(&host)?;
+    let connection = connect_to_host(server_repo, sessions, &host).await?;
+
+    let defaults_file = format!(".vibessh-my-{}.cnf", Uuid::new_v4());
+    write_private_file(&connection, &defaults_file, defaults_file_contents(&admin_password).as_bytes()).await?;
+
+    let command = build_mysql_restore_command(&defaults_file, &host, database_name, dump_path);
+    let attempt = connection.execute_command(&command).await;
+    let _ = connection.execute_command(&format!("rm -f {}", shell_quote(&defaults_file))).await;
+    let output = attempt?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        let mut detail = if detail.is_empty() { "the restore failed".to_string() } else { detail.to_string() };
+        detail = detail.replace(&admin_password, "[redacted]");
+        if let Some(user) = socket_auth_refusal(&detail) {
+            return Err(AppError::DatabaseSocketAuthOnly { user });
+        }
+        return Err(AppError::Connection(format!("restoring {database_name} failed: {detail}")));
+    }
+    Ok(())
+}
 
 /// Deliberately **not** `naming::dns_label`, despite the similar name.
 ///
@@ -819,6 +1015,59 @@ mod tests {
     /// The regression test for the password-in-argv finding: a command
     /// string is visible in `ps` to every local account on the Node for as
     /// long as the client runs, so the password must not appear in one -
+    /// The refusal that reads as a wrong password and is not one.
+    #[test]
+    fn mysql_error_1698_is_recognised_as_socket_authentication() {
+        assert_eq!(
+            socket_auth_refusal("ERROR 1698 (28000): Access denied for user 'root'@'localhost'"),
+            Some("root'@'localhost".to_string())
+        );
+        // A genuinely wrong password is 1045, and must not be reported as
+        // something a new password cannot fix.
+        assert_eq!(socket_auth_refusal("ERROR 1045 (28000): Access denied for user 'vibessh'@'localhost'"), None);
+        assert_eq!(socket_auth_refusal("ERROR 1049 (42000): Unknown database 's1_rank'"), None);
+    }
+
+    /// A third command builder, a third chance to leak the same secret.
+    #[test]
+    fn build_mysqldump_command_never_carries_the_password_either() {
+        let host = stub_host();
+        let command = build_mysqldump_command(".vibessh-my-test.cnf", &host, "s1_survival", ".vibessh-dump.sql");
+        assert!(!command.contains("adminpass"), "{command}");
+        assert!(!command.contains("MYSQL_PWD"), "{command}");
+        // The dump file is created 0600 before anything is written into it:
+        // a redirect alone would use the login shell's umask, and a dump is
+        // a full copy of somebody's data.
+        assert!(command.starts_with("install -m 600 /dev/null '.vibessh-dump.sql'"), "{command}");
+        assert!(command.contains("mysqldump --defaults-extra-file='.vibessh-my-test.cnf'"), "{command}");
+    }
+
+    /// The restore path carries the same secret and must handle it the same
+    /// way. A second command builder is a second chance to get this wrong,
+    /// so it gets its own test rather than relying on the one above.
+    #[test]
+    fn build_mysql_restore_command_never_carries_the_password_either() {
+        let host = stub_host();
+        let command = build_mysql_restore_command(".vibessh-my-test.cnf", &host, "u1_survival", ".vibessh-dump.sql");
+        assert!(!command.contains("adminpass"), "{command}");
+        assert!(!command.contains("MYSQL_PWD"), "{command}");
+        assert!(command.starts_with("mysql --defaults-extra-file='.vibessh-my-test.cnf'"), "{command}");
+        assert!(command.ends_with("< '.vibessh-dump.sql'"), "{command}");
+    }
+
+    /// A name is not safe because of where it came from. This is the guard
+    /// between a repository row and a shell.
+    #[test]
+    fn only_a_plain_identifier_can_be_restored_into() {
+        assert!(is_safe_identifier("u1_survival"));
+        assert!(is_safe_identifier("s3db"));
+        assert!(!is_safe_identifier(""));
+        assert!(!is_safe_identifier("a; DROP DATABASE x"));
+        assert!(!is_safe_identifier("back`tick"));
+        assert!(!is_safe_identifier("with space"));
+        assert!(!is_safe_identifier(&"x".repeat(65)), "MySQL identifiers stop at 64");
+    }
+
     /// not as `-p`, and not as `MYSQL_PWD` either.
     #[test]
     fn build_mysql_command_never_carries_the_password() {

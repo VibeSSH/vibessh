@@ -15,10 +15,32 @@ describe("DeleteApplicationDialog", () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     render(
-      <DeleteApplicationDialog applicationName="Survival" busy={false} error={null} onConfirm={onConfirm} onCancel={onCancel} {...overrides} />,
+      <DeleteApplicationDialog
+        applicationName="Survival"
+        busy={false}
+        error={null}
+        removeFiles={false}
+        onRemoveFilesChange={() => {}}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+        {...overrides}
+      />,
     );
     return { onConfirm, onCancel };
   }
+
+  /// The one step here that cannot be undone. It has to be a deliberate
+  /// tick, never a default, and it has to reach the caller as typed.
+  it("offers removing the files, unticked, and reports the choice", async () => {
+    const onRemoveFilesChange = vi.fn();
+    renderDialog({ onRemoveFilesChange });
+
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).not.toBeChecked();
+
+    await userEvent.click(checkbox);
+    expect(onRemoveFilesChange).toHaveBeenCalledWith(true);
+  });
 
   it("names the application being deleted", () => {
     renderDialog();

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type MouseEvent, type ReactNode } from "react";
 import "./Markdown.css";
 
 /**
@@ -9,6 +9,10 @@ import "./Markdown.css";
  * renderer that handles exactly that subset is smaller than the dependency
  * it replaces and cannot inject markup - every node below is a real element
  * with escaped text inside it.
+ *
+ * Vibe AI's answers render through here too, and that second caller is why
+ * links and images are guarded: the guide's markdown is written in this
+ * repository, a model's is not. Nothing here trusts the source it is given.
  *
  * What it renders: headings, paragraphs, bullet and numbered lists, fenced
  * code, tables, block quotes as call-outs, images, links, and inline
@@ -55,6 +59,83 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+const BULLET = /^([-*])\s+/;
+const NUMBERED = /^\d+[.)]\s+/;
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+function listMarker(line: string): "ul" | "ol" | null {
+  const trimmed = line.trim();
+  if (BULLET.test(trimmed)) return "ul";
+  if (NUMBERED.test(trimmed)) return "ol";
+  return null;
+}
+
+/**
+ * One list and everything indented under it, returned with the line to carry
+ * on from.
+ *
+ * Indentation is the whole point of doing this recursively. A flat reader
+ * ends the list at the first indented bullet, so a numbered list with
+ * sub-points renders as three lists and the numbering restarts at 1 after
+ * every one of them - which is exactly the shape the assistant answers in.
+ */
+function parseList(lines: string[], start: number, keyPrefix: string): [ReactNode, number] {
+  const baseIndent = indentOf(lines[start]);
+  const type = listMarker(lines[start]) ?? "ul";
+  const items: { text: string; child: ReactNode | null }[] = [];
+  let index = start;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (line.trim() === "") {
+      // A blank line between items does not end the list. Markdown calls
+      // this a loose list and it is how a model writes one, so stopping
+      // here restarted the numbering at 1 on every single step - three
+      // items rendering as "1. 1. 1.".
+      let ahead = index + 1;
+      while (ahead < lines.length && lines[ahead].trim() === "") ahead += 1;
+      const continues = ahead < lines.length && indentOf(lines[ahead]) >= baseIndent && listMarker(lines[ahead]) !== null;
+      if (!continues) break;
+      index = ahead;
+      continue;
+    }
+
+    const indent = indentOf(line);
+    if (indent < baseIndent) break;
+
+    if (indent > baseIndent) {
+      // Deeper than this list, so it belongs to the item just read.
+      if (listMarker(line) === null || items.length === 0) break;
+      const [child, next] = parseList(lines, index, `${keyPrefix}-${items.length - 1}n`);
+      items[items.length - 1].child = child;
+      index = next;
+      continue;
+    }
+
+    // A marker change at this level starts a different list, not this one.
+    if (listMarker(line) !== type) break;
+    items.push({ text: line.trim().replace(type === "ul" ? BULLET : NUMBERED, ""), child: null });
+    index += 1;
+  }
+
+  const List = type;
+  return [
+    <List key={keyPrefix} className="guide-md-list">
+      {items.map((item, i) => (
+        <li key={i}>
+          {renderInline(item.text, `${keyPrefix}-${i}`)}
+          {item.child}
+        </li>
+      ))}
+    </List>,
+    index,
+  ];
+}
+
 /** One `| a | b |` row, split on unescaped pipes. */
 function tableCells(line: string): string[] {
   return line
@@ -73,11 +154,17 @@ interface MarkdownProps {
   source: string;
   /** Resolves an image path in the markdown to something the app can load.
    * Screenshots live beside the documents, and how they are served is the
-   * caller's problem, not the renderer's. */
+   * caller's problem, not the renderer's. Without one, no image is loaded:
+   * the only source of URLs left would be whoever wrote the markdown, and
+   * a model's answer is not a source this app fetches from. */
   resolveImage?: (src: string) => string | undefined;
+  /** Called instead of following a link. A webview that follows an outside
+   * URL has left the app, with no back button to return with, so any caller
+   * whose markdown can carry arbitrary links must handle them itself. */
+  onLinkClick?: (href: string) => void;
 }
 
-export function Markdown({ source, resolveImage }: MarkdownProps) {
+function MarkdownView({ source, resolveImage, onLinkClick }: MarkdownProps) {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -128,9 +215,20 @@ export function Markdown({ source, resolveImage }: MarkdownProps) {
     // - a screenshot in a manual is worth naming.
     const image = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(trimmed);
     if (image) {
-      const resolved = resolveImage ? resolveImage(image[2]) : image[2];
+      const resolved = resolveImage ? resolveImage(image[2]) : undefined;
       index += 1;
-      if (resolved) {
+      if (!resolved) {
+        // Say what was there rather than dropping it silently - the same
+        // choice the rest of this renderer makes for constructs it cannot
+        // draw.
+        if (image[1]) {
+          blocks.push(
+            <p key={key++} className="guide-md-p">
+              {image[1]}
+            </p>,
+          );
+        }
+      } else {
         blocks.push(
           <figure key={key++} className="guide-md-figure">
             <img src={resolved} alt={image[1]} loading="lazy" />
@@ -188,25 +286,10 @@ export function Markdown({ source, resolveImage }: MarkdownProps) {
       continue;
     }
 
-    const bullet = /^([-*])\s+/.test(trimmed);
-    const numbered = /^\d+[.)]\s+/.test(trimmed);
-    if (bullet || numbered) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const candidate = lines[index].trim();
-        const isItem = bullet ? /^([-*])\s+/.test(candidate) : /^\d+[.)]\s+/.test(candidate);
-        if (!isItem) break;
-        items.push(candidate.replace(bullet ? /^([-*])\s+/ : /^\d+[.)]\s+/, ""));
-        index += 1;
-      }
-      const List = bullet ? "ul" : "ol";
-      blocks.push(
-        <List key={key++} className="guide-md-list">
-          {items.map((item, i) => (
-            <li key={i}>{renderInline(item, `li${key}-${i}`)}</li>
-          ))}
-        </List>,
-      );
+    if (listMarker(line) !== null) {
+      const [list, next] = parseList(lines, index, `li${key++}`);
+      blocks.push(list);
+      index = next;
       continue;
     }
 
@@ -224,5 +307,25 @@ export function Markdown({ source, resolveImage }: MarkdownProps) {
     );
   }
 
-  return <div className="guide-md">{blocks}</div>;
+  // Delegated rather than threaded through every inline call: one handler on
+  // the container catches links wherever they turn up - prose, list items,
+  // table cells.
+  function handleClick(event: MouseEvent<HTMLDivElement>) {
+    if (!onLinkClick) return;
+    const anchor = (event.target as HTMLElement).closest("a");
+    const href = anchor?.getAttribute("href");
+    if (!href) return;
+    event.preventDefault();
+    onLinkClick(href);
+  }
+
+  return (
+    <div className="guide-md" onClick={onLinkClick ? handleClick : undefined}>
+      {blocks}
+    </div>
+  );
 }
+
+/** Memoised because Vibe AI re-renders the whole transcript on every
+ * streamed token, and only the last message's text has changed. */
+export const Markdown = memo(MarkdownView);

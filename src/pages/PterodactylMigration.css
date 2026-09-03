@@ -1,0 +1,310 @@
+/*
+ * The migration plan's reading surface.
+ *
+ * One card per server, collapsed to the four things somebody scans for - the
+ * name, the image it becomes, its port, and whether it has anything to look
+ * at - and opening to the full decision underneath. A flat table of every
+ * field would be unreadable at thirty servers, which is the size this screen
+ * is for.
+ */
+
+.ptero-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.ptero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ptero-summary {
+  margin-bottom: 14px;
+}
+
+.ptero-summary-count {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ptero-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--warning);
+}
+.ptero-note-neutral {
+  color: var(--text-secondary);
+}
+.ptero-note:last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * The run bar sits between the summary and the list, which is where somebody
+ * ends up after reading the plan and before touching anything.
+ */
+.ptero-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ptero-run-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Said next to the button rather than in a dialog afterwards: "created but
+   stopped" is the single thing somebody will otherwise be surprised by. */
+.ptero-run-note {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.ptero-run-progress {
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+/* Its own class rather than borrowing the assistant subject picker: that
+   one lives in a stylesheet this page does not import, so reusing it would
+   have looked right only while both pages happened to be open. */
+.ptero-run-hosts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ptero-host-select {
+  width: auto;
+  max-width: 220px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+/*
+ * The machine map. One row per Pterodactyl node, because that is the unit
+ * the question applies to - five servers on one node is one answer.
+ */
+.ptero-machines {
+  margin-bottom: 14px;
+}
+
+.ptero-machine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ptero-machine-name {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.ptero-machines .ptero-run-note {
+  margin: 10px 0;
+}
+
+.ptero-outcomes {
+  margin-bottom: 14px;
+}
+
+.ptero-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The checkbox is a sibling of the head button, never inside it - a checkbox
+   nested in a <button> is invalid markup, and clicking it would toggle the
+   card open at the same time. */
+.ptero-server-row {
+  display: flex;
+  align-items: center;
+}
+
+.ptero-server-check {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0 0 0 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ptero-server-check:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.ptero-server-row .ptero-server-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.ptero-server {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ptero-server-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.ptero-server-head:hover {
+  background: var(--surface-2);
+}
+
+.ptero-server-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ptero-server-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ptero-server-egg {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.ptero-server-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ptero-server-port {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.ptero-server-chip {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ptero-server-body {
+  padding: 0 16px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.ptero-reason {
+  margin: 12px 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.ptero-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.ptero-facts dt {
+  margin-bottom: 3px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.ptero-facts dd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.ptero-facts code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  word-break: break-all;
+  color: var(--text-secondary);
+}
+
+.ptero-block {
+  margin-bottom: 14px;
+}
+.ptero-block:last-child {
+  margin-bottom: 0;
+}
+
+.ptero-block-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.ptero-plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.ptero-plain-list code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* Warnings inside a result line indent under it rather than running on
+   as prose - the line above is a verdict, these are the caveats to it. */
+.ptero-outcome-warnings {
+  margin: 4px 0 6px;
+}
+
+.ptero-muted {
+  color: var(--text-tertiary);
+}
+
+/* Warnings keep the marker: they are a list somebody counts through before
+   agreeing, and an unmarked list reads as prose. */
+.ptero-warnings {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.ptero-warnings li::marker {
+  color: var(--warning);
+}

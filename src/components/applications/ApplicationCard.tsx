@@ -19,6 +19,9 @@ interface ApplicationCardProps {
   application: Application;
   serverName?: string;
   busy: boolean;
+  /** Absent means this list has no selection - no checkbox is drawn at all. */
+  selected?: boolean;
+  onSelectedChange?: (selected: boolean) => void;
   onOpen: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -27,7 +30,19 @@ interface ApplicationCardProps {
   onDelete: () => void;
 }
 
-export function ApplicationCard({ application, serverName, busy, onOpen, onStart, onStop, onRestart, onKill, onDelete }: ApplicationCardProps) {
+export function ApplicationCard({
+  application,
+  serverName,
+  busy,
+  selected,
+  onSelectedChange,
+  onOpen,
+  onStart,
+  onStop,
+  onRestart,
+  onKill,
+  onDelete,
+}: ApplicationCardProps) {
   const { t } = useTranslation();
   const isLocal = !application.serverId;
   const canStart = application.status === "stopped" || application.status === "failed" || application.status === "unknown";
@@ -36,6 +51,17 @@ export function ApplicationCard({ application, serverName, busy, onOpen, onStart
   return (
     <Card className="application-card">
       <div className="application-card-header">
+        {/* Only drawn when the list actually offers a selection, so a card
+            outside that context is exactly what it was. */}
+        {onSelectedChange && (
+          <input
+            type="checkbox"
+            className="application-card-check"
+            checked={selected ?? false}
+            onChange={(event) => onSelectedChange(event.target.checked)}
+            aria-label={t("applicationCard.selectAria", { name: application.name })}
+          />
+        )}
         <div className="application-card-icon">
           <BlueprintIcon blueprintId={application.blueprintId} size={16} />
         </div>

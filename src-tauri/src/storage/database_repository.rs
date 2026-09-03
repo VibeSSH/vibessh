@@ -14,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
+use crate::models::{UpdateDatabaseHostInput, ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
 
 pub struct DatabaseRepository {
     conn: Mutex<Connection>,
@@ -61,6 +61,24 @@ impl DatabaseRepository {
         .map_err(|err| AppError::Storage(format!("failed to create the database host: {err}")))?;
         drop(conn);
         self.get_host(id)?.ok_or_else(|| AppError::Internal(format!("database host {id} vanished immediately after being created")))
+    }
+
+    /// Updates the connection details. The engine and the linked phpMyAdmin
+    /// instance are left alone - neither is part of "where and as whom do we
+    /// connect".
+    pub fn update_host(&self, id: Uuid, input: &UpdateDatabaseHostInput) -> AppResult<DatabaseHost> {
+        let conn = self.lock();
+        let changed = conn
+            .execute(
+                "UPDATE database_hosts SET name = ?2, host = ?3, port = ?4, admin_username = ?5, updated_at = ?6 WHERE id = ?1",
+                params![id.to_string(), input.name, input.host, input.port, input.admin_username, Utc::now().to_rfc3339()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to update the database host: {err}")))?;
+        drop(conn);
+        if changed == 0 {
+            return Err(AppError::NotFound(format!("database host {id}")));
+        }
+        self.get_host(id)?.ok_or_else(|| AppError::Internal(format!("database host {id} vanished immediately after being updated")))
     }
 
     pub fn get_host(&self, id: Uuid) -> AppResult<Option<DatabaseHost>> {

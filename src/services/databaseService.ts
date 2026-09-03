@@ -1,8 +1,13 @@
 import { callCommand } from "./tauri";
-import type { ApplicationDatabase, CreateDatabaseHostInput, DatabaseHost } from "@/types/database";
+import type { ApplicationDatabase, CreateDatabaseHostInput, DatabaseHost, UpdateDatabaseHostInput } from "@/types/database";
 
 export function listDatabaseHosts(): Promise<DatabaseHost[]> {
   return callCommand<DatabaseHost[]>("list_database_hosts");
+}
+
+/** A blank `adminPassword` keeps the stored one. */
+export function updateDatabaseHost(id: string, input: UpdateDatabaseHostInput): Promise<DatabaseHost> {
+  return callCommand<DatabaseHost>("update_database_host", { id, input });
 }
 
 export function createDatabaseHost(input: CreateDatabaseHostInput): Promise<DatabaseHost> {

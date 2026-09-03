@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { open } from "@tauri-apps/plugin-shell";
+import { Markdown } from "@/guide/Markdown";
 import { AiUsageModal } from "@/components/ai/AiUsageModal";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { getAiConfig, getAiQuota, previewAiContext } from "@/services/aiService";
+import { listApplications } from "@/services/applicationService";
+import { queryKeys } from "@/services/queryKeys";
+import { listServers } from "@/services/serverService";
 import { errorMessage } from "@/services/tauri";
 import { useAiStore } from "@/stores/aiStore";
 import type { AiConfigView, AiContextBundle, AiMode, AiQuota } from "@/types/ai";
@@ -14,6 +19,19 @@ import "./pages.css";
 import "./VibeAi.css";
 
 const MODES: AiMode[] = ["ask", "diagnose"];
+
+/**
+ * A link in an answer goes to the system browser, never to this webview.
+ * The app has no address bar and no back button, so following one in place
+ * would strand somebody on a page written by the model.
+ */
+function openExternally(href: string) {
+  if (!/^https?:\/\//i.test(href)) return;
+  open(href).catch(() => {
+    // Nothing useful to say if the desktop refuses to open a browser, and
+    // the answer itself is still on screen with the address in it.
+  });
+}
 
 /**
  * The assistant panel.
@@ -32,7 +50,7 @@ const MODES: AiMode[] = ["ask", "diagnose"];
  */
 export function VibeAi() {
   const { t } = useTranslation();
-  const { messages, mode, context, contextLabel, turnId, error, phase, setMode, clearConversation, send, stop, consumePendingQuestion } =
+  const { messages, mode, context, contextLabel, turnId, error, phase, setMode, setContext, clearConversation, send, stop, consumePendingQuestion } =
     useAiStore();
 
   const [config, setConfig] = useState<AiConfigView | null>(null);
@@ -43,6 +61,17 @@ export function VibeAi() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [quota, setQuota] = useState<AiQuota | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
+
+  // What a Diagnose turn can be about. Fetched here rather than read from the
+  // servers store, which is filled by the pages that list servers - opening
+  // this panel straight from the sidebar would otherwise offer an empty list.
+  const { data: servers = [] } = useQuery({ queryKey: queryKeys.servers(), queryFn: listServers, staleTime: 30_000, retry: false });
+  const { data: applications = [] } = useQuery({
+    queryKey: queryKeys.applications(),
+    queryFn: listApplications,
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const busy = turnId !== null;
@@ -106,6 +135,23 @@ export function VibeAi() {
     void send(question);
   }
 
+  /// The subject is encoded as "kind:id" because a <select> carries one
+  /// string, and both halves are needed to build the reference.
+  function handleSubjectChange(value: string) {
+    if (value === "") {
+      setContext(null, null);
+      return;
+    }
+    const separator = value.indexOf(":");
+    const kind = value.slice(0, separator);
+    const id = value.slice(separator + 1);
+    if (kind === "node") {
+      setContext({ kind: "node", id }, servers.find((server) => server.id === id)?.name ?? id);
+    } else {
+      setContext({ kind: "application", id }, applications.find((application) => application.id === id)?.name ?? id);
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     // Enter sends, Shift+Enter breaks the line - what every chat box does,
     // and worth matching because the alternative surprises people into
@@ -118,7 +164,11 @@ export function VibeAi() {
 
   if (loading) return null;
 
-  const ready = config?.enabled && config.baseUrl && config.model;
+  // The included model carries no base URL and no model name - both belong to
+  // the bring-your-own-endpoint path and live on the backend for the hosted
+  // one. Requiring them of every provider made the one provider that needs no
+  // configuring the only one that could never look configured.
+  const ready = config?.enabled && (config.provider === "vibeSshHosted" || (config.baseUrl !== "" && config.model !== ""));
 
   return (
     <div className="page vibe-ai-page">
@@ -169,12 +219,47 @@ export function VibeAi() {
                   {t("aiUsage.chip", { remaining: Math.max(quota.limit - quota.used, 0), limit: quota.limit })}
                 </Button>
               )}
-              {mode === "diagnose" &&
-                (context ? (
-                  <Badge tone="neutral">{contextLabel ?? t("vibeAi.contextUnnamed")}</Badge>
-                ) : (
-                  <Badge tone="warning">{t("vibeAi.noContext")}</Badge>
-                ))}
+              {/* A warning badge saying "nothing selected" was a dead end:
+                * it named the problem and offered no way out, and the only
+                * cure was to leave, find the Node and come back through a
+                * quick action. The same spot now picks the subject. */}
+              {mode === "diagnose" && (
+                <select
+                  className="form-input vibe-ai-subject"
+                  value={context ? `${context.kind}:${context.id}` : ""}
+                  onChange={(event) => handleSubjectChange(event.target.value)}
+                  aria-label={t("vibeAi.subjectLabel")}
+                  data-empty={context ? undefined : "true"}
+                >
+                  <option value="">{t("vibeAi.subjectNone")}</option>
+                  {/* A context seeded by a quick action, when the lists did
+                    * not load. Without it the picker would read as empty
+                    * while a subject was in fact attached to the turn. */}
+                  {context &&
+                    !servers.some((server) => `node:${server.id}` === `${context.kind}:${context.id}`) &&
+                    !applications.some((application) => `application:${application.id}` === `${context.kind}:${context.id}`) && (
+                      <option value={`${context.kind}:${context.id}`}>{contextLabel ?? t("vibeAi.contextUnnamed")}</option>
+                    )}
+                  {servers.length > 0 && (
+                    <optgroup label={t("vibeAi.subjectNodes")}>
+                      {servers.map((server) => (
+                        <option key={server.id} value={`node:${server.id}`}>
+                          {server.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {applications.length > 0 && (
+                    <optgroup label={t("vibeAi.subjectApplications")}>
+                      {applications.map((application) => (
+                        <option key={application.id} value={`application:${application.id}`}>
+                          {application.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              )}
               {mode === "diagnose" && context && (
                 <Button variant="secondary" size="sm" onClick={() => void togglePreview()} aria-expanded={previewOpen}>
                   <Icon name="eye" size={14} />
@@ -221,10 +306,34 @@ export function VibeAi() {
               messages.map((message) => (
                 <div key={message.id} className={`vibe-ai-message vibe-ai-message-${message.role}`}>
                   <div className="vibe-ai-bubble">
-                    {message.content}
-                    {message.pending && <span className="vibe-ai-caret" aria-hidden="true" />}
+                    {/* Only the assistant's half is markdown. What somebody
+                      * typed is shown as they typed it - reading their own
+                      * asterisks back as bold would be the panel editing the
+                      * question. */}
+                    {message.role === "assistant" && message.content !== "" ? (
+                      <Markdown source={message.content} onLinkClick={openExternally} />
+                    ) : (
+                      message.content
+                    )}
+                    {message.pending && message.content !== "" && <span className="vibe-ai-caret" aria-hidden="true" />}
                     {message.pending && message.content === "" && (
-                      <span className="vibe-ai-thinking">{phase === "collecting" ? t("vibeAi.collecting") : t("vibeAi.thinking")}</span>
+                      <span
+                        className="vibe-ai-pending"
+                        role="status"
+                        aria-label={phase === "collecting" ? t("vibeAi.collecting") : t("vibeAi.thinking")}
+                      >
+                        {/* The collecting phase keeps its words: a Node that never answers
+                          * is worth naming, and dots alone would hide it behind what looks
+                          * like a slow model. Waiting on the model is just the dots. */}
+                        {phase === "collecting" && (
+                          <span className="vibe-ai-thinking" aria-hidden="true">{t("vibeAi.collecting")}</span>
+                        )}
+                        <span className="vibe-ai-dots" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </span>
+                      </span>
                     )}
                   </div>
                   {message.stopped && <p className="vibe-ai-stopped">{t("vibeAi.stoppedNote")}</p>}

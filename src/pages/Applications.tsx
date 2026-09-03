@@ -118,6 +118,9 @@ export function Applications() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletingApplication, setDeletingApplication] = useState<Application | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [removeFiles, setRemoveFiles] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
@@ -173,7 +176,7 @@ export function Applications() {
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      const report = await deleteApplication(deletingApplication.id);
+      const report = await deleteApplication(deletingApplication.id, removeFiles);
       removeApplication(deletingApplication.id);
       // The row is gone either way, but a partial teardown leaves the
       // container running and still holding its published port - reporting
@@ -191,6 +194,56 @@ export function Applications() {
       setDeleteBusy(false);
     }
   }
+
+  function toggleSelected(id: string, isSelected: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (isSelected) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  /**
+   * Removes every selected Application, one after another.
+   *
+   * Sequential rather than parallel: each teardown talks to the same Node
+   * over the same SSH session, destroys a container and revokes firewall
+   * rules, and ten of those at once is a good way to get a half-applied
+   * firewall. Slower and legible beats fast and interleaved.
+   *
+   * One failure does not stop the rest - the others are still removable, and
+   * stopping halfway would leave a selection nobody can reason about.
+   */
+  async function handleConfirmBulkDelete() {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    const failures: string[] = [];
+    for (const id of selected) {
+      const application = applications.find((candidate) => candidate.id === id);
+      try {
+        await deleteApplication(id, removeFiles);
+        removeApplication(id);
+      } catch (err) {
+        failures.push(`${application?.name ?? id}: ${errorMessage(err, t)}`);
+      }
+    }
+    setDeleteBusy(false);
+    if (failures.length > 0) {
+      setDeleteError(failures.join("; "));
+      toastError(t("applications.bulkRemovedWithFailuresToast", { count: failures.length }));
+      return;
+    }
+    toastSuccess(t("applications.bulkRemovedToast", { count: selected.size }));
+    setSelected(new Set());
+    setBulkOpen(false);
+    reload();
+  }
+
+  const selectedNames = applications
+    .filter((application) => selected.has(application.id))
+    .map((application) => application.name)
+    .join(", ");
 
   return (
     <div className="page">
@@ -235,6 +288,8 @@ export function Applications() {
                   application={application}
                   serverName={servers.find((s) => s.id === application.serverId)?.name}
                   busy={busyId === application.id}
+                  selected={selected.has(application.id)}
+                  onSelectedChange={(isSelected) => toggleSelected(application.id, isSelected)}
                   onOpen={() => navigate(`/applications/${application.id}`)}
                   onStart={() => runAction(application.id, () => startApplication(application.id))}
                   onStop={() => runAction(application.id, () => stopApplication(application.id, true))}
@@ -261,13 +316,50 @@ export function Applications() {
         />
       )}
 
+      {/* Only present once something is selected: a bar offering to delete
+          nothing is a bar in the way. */}
+      {selected.size > 0 && (
+        <div className="applications-bulk-bar">
+          <span className="applications-bulk-count">{t("applications.selectedCount", { count: selected.size })}</span>
+          <Button variant="secondary" size="sm" onClick={() => setSelected(new Set())}>
+            {t("applications.clearSelection")}
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setDeleteError(null);
+              setBulkOpen(true);
+            }}
+          >
+            <Icon name="trash" size={14} />
+            {t("applications.removeSelected", { count: selected.size })}
+          </Button>
+        </div>
+      )}
+
       {deletingApplication && (
         <DeleteApplicationDialog
           applicationName={deletingApplication.name}
           busy={deleteBusy}
           error={deleteError}
+          removeFiles={removeFiles}
+          onRemoveFilesChange={setRemoveFiles}
           onConfirm={handleConfirmDelete}
           onCancel={() => setDeletingApplication(null)}
+        />
+      )}
+
+      {bulkOpen && (
+        <DeleteApplicationDialog
+          applicationName={selectedNames}
+          count={selected.size}
+          busy={deleteBusy}
+          error={deleteError}
+          removeFiles={removeFiles}
+          onRemoveFilesChange={setRemoveFiles}
+          onConfirm={handleConfirmBulkDelete}
+          onCancel={() => setBulkOpen(false)}
         />
       )}
     </div>

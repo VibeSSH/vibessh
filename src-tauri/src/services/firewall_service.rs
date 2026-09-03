@@ -280,20 +280,88 @@ async fn revoke_obsolete_rules(provider: &dyn firewall::FirewallProvider, connec
 /// which process owns a socket - only whether one is bound at all, which
 /// isn't enough to build a useful error message from.
 pub async fn listening_process(connection: &crate::ssh::SshSession, protocol: PortProtocol, port: u16) -> AppResult<Option<String>> {
+    let Some(socket) = listening_sockets(connection, protocol).await?.into_iter().find(|socket| socket.port == port) else {
+        return Ok(None);
+    };
+    Ok(Some(describe_owner(connection, &socket).await))
+}
+
+/// Turns a socket's owner into something an operator can act on.
+///
+/// The name from `ss` alone is not that: it is the kernel's comm, cut at 15
+/// characters, so a genuine answer reads as a typo - "systemd-socket-" for
+/// `systemd-socket-proxyd`. The pid is already known, so the real command
+/// line is one question away, and it is asked only here, on the path where a
+/// collision has already been found. Nothing routine pays for it.
+async fn describe_owner(connection: &crate::ssh::SshSession, socket: &ListeningSocket) -> String {
+    let name = socket.process.clone().unwrap_or_else(|| "unknown process".to_string());
+    let Some(pid) = socket.pid else {
+        return name;
+    };
+
+    // A `u32`, so nothing here can carry anything but digits into the
+    // command - see `ssh::command`'s own doc comment for why that is checked
+    // rather than assumed.
+    let full = connection.execute_command(&format!("ps -p {pid} -o args=")).await;
+    let described = match full {
+        Ok(output) if output.exit_code == 0 => {
+            let args = output.stdout.trim();
+            // Long enough to identify a service, short enough not to fill a
+            // dialog with a Java command line.
+            match args.chars().count() {
+                0 => name,
+                count if count > 120 => format!("{}…", args.chars().take(120).collect::<String>()),
+                _ => args.to_string(),
+            }
+        }
+        // The process ended between the two commands, or `ps` is not there.
+        // The name and the pid are still better than nothing.
+        _ => name,
+    };
+    format!("{described} (pid {pid})")
+}
+
+/// Every socket listening on one Node for one protocol.
+///
+/// `listening_process` answers "is this one port taken". This answers "what
+/// is actually up", which is a different question and the one a diagnosis
+/// starts from: a published port with nothing behind it looks identical to
+/// a working one everywhere in VibeSSH's own configuration, and only the
+/// Node can tell the two apart.
+pub async fn listening_sockets(connection: &crate::ssh::SshSession, protocol: PortProtocol) -> AppResult<Vec<ListeningSocket>> {
     let flag = match protocol {
         PortProtocol::Tcp => "-tlnp",
         PortProtocol::Udp => "-ulnp",
     };
     let output = connection.execute_command(&format!("sudo ss {flag}")).await?;
-    Ok(parse_ss_output(&output.stdout)
-        .into_iter()
-        .find(|socket| socket.port == port)
-        .map(|socket| socket.process.unwrap_or_else(|| "unknown process".to_string())))
+    Ok(parse_ss_output(&output.stdout, protocol))
 }
 
-struct ListeningSocket {
-    port: u16,
-    process: Option<String>,
+/// Both protocols at once, for a Node named by id rather than by an open
+/// connection - what a caller that only has repositories can reach for.
+pub async fn node_listening_sockets(
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+) -> AppResult<Vec<ListeningSocket>> {
+    let connection = get_or_connect(server_repo, sessions, server_id).await?;
+    let mut sockets = listening_sockets(&connection, PortProtocol::Tcp).await?;
+    sockets.extend(listening_sockets(&connection, PortProtocol::Udp).await?);
+    Ok(sockets)
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningSocket {
+    pub protocol: PortProtocol,
+    pub port: u16,
+    /// `None` when this SSH user is not allowed to see who owns the socket.
+    /// A socket is still a socket, so the caller learns something either way.
+    ///
+    /// This is the kernel's comm name, which is cut at 15 characters -
+    /// "systemd-socket-proxyd" arrives as "systemd-socket-". Use `pid` to
+    /// resolve it into something a person can act on.
+    pub process: Option<String>,
+    pub pid: Option<u32>,
 }
 
 /// Parses `ss -tlnp`/`ss -ulnp` output, e.g.:
@@ -312,7 +380,7 @@ struct ListeningSocket {
 /// this SSH user isn't allowed to see the owner of, e.g. one already
 /// wrapped in `sudo` that still can't cross a container/namespace boundary)
 /// - the caller still knows *a* socket is there either way.
-fn parse_ss_output(output: &str) -> Vec<ListeningSocket> {
+fn parse_ss_output(output: &str, protocol: PortProtocol) -> Vec<ListeningSocket> {
     output
         .lines()
         .filter_map(|line| {
@@ -328,11 +396,26 @@ fn parse_ss_output(output: &str) -> Vec<ListeningSocket> {
             if port == 0 {
                 return None;
             }
-            let process = line.find("users:((").and_then(|start| {
-                let rest = &line[start + "users:((".len()..];
-                rest.split('"').nth(1).map(str::to_string)
+            // `ss` prints `users:(("systemd-socket-",pid=1234,fd=3))`. The
+            // name is the kernel's comm, cut at 15 characters, so a long one
+            // arrives truncated into something that looks like a typo -
+            // "systemd-socket-" is a real example. The pid sits in the same
+            // field and identifies the process exactly, so it is kept and
+            // shown: `ps -p 1234 -o comm=` ends the question, and a name
+            // alone does not.
+            // `ss` prints `users:(("systemd-socket-",pid=1234,fd=3))`.
+            let owner = line.find("users:((").map(|start| &line[start + "users:((".len()..]);
+            let process = owner.and_then(|rest| rest.split('"').nth(1)).map(str::to_string);
+            let pid = owner.and_then(|rest| {
+                rest.split("pid=")
+                    .nth(1)?
+                    .split(|c: char| !c.is_ascii_digit())
+                    .next()
+                    .filter(|pid| !pid.is_empty())?
+                    .parse::<u32>()
+                    .ok()
             });
-            Some(ListeningSocket { port, process })
+            Some(ListeningSocket { protocol, port, process, pid })
         })
         .collect()
 }
@@ -423,6 +506,13 @@ pub async fn node_firewall_overview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tests all parse TCP listings; the protocol is only carried
+    /// through to the caller, never used while parsing.
+    fn parse_ss_output_tcp(output: &str) -> Vec<ListeningSocket> {
+        parse_ss_output(output, PortProtocol::Tcp)
+    }
+
     use crate::models::{CreateApplicationInput, PortInput, RuntimeType};
 
     fn temp_setup() -> (ApplicationRepository, ServerRepository, NodeNetworkRepository, FirewallRuleRepository) {
@@ -637,12 +727,14 @@ mod tests {
 LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*    users:((\"sshd\",pid=1123,fd=3),(\"systemd\",pid=1,fd=192))\n\
 LISTEN 0      4096      127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=533,fd=15))\n\
 LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=1123,fd=4))\n";
-        let sockets = parse_ss_output(output);
+        let sockets = parse_ss_output_tcp(output);
         assert_eq!(sockets.len(), 3);
         assert_eq!(sockets[0].port, 22);
         assert_eq!(sockets[0].process.as_deref(), Some("sshd"));
+        assert_eq!(sockets[0].pid, Some(1123));
         assert_eq!(sockets[1].port, 53);
         assert_eq!(sockets[1].process.as_deref(), Some("systemd-resolve"));
+        assert_eq!(sockets[1].pid, Some(533));
         assert_eq!(sockets[2].port, 22);
     }
 
@@ -650,18 +742,43 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
     /// `"¡\u{a0}0 a\u{2000}0"`. `split_whitespace` splits on every Unicode
     /// space, so a line of unexpected text can leave a bare "0" in the
     /// column the local address should be in.
+    /// The line behind a message nobody could act on. `ss` reports a
+    /// process by the kernel's comm name, cut at 15 characters, so
+    /// "systemd-socket-proxyd" arrives as "systemd-socket-" - a name that
+    /// does not exist and cannot be looked up. The pid is in the same field
+    /// and settles it.
+    #[test]
+    fn a_truncated_process_name_is_still_identifiable_by_its_pid() {
+        let output = "LISTEN 0 4096 0.0.0.0:3002 0.0.0.0:* users:((\"systemd-socket-\",pid=8471,fd=3))";
+        let sockets = parse_ss_output_tcp(output);
+        assert_eq!(sockets.len(), 1);
+        assert_eq!(sockets[0].port, 3002);
+        assert_eq!(sockets[0].process.as_deref(), Some("systemd-socket-"));
+        assert_eq!(sockets[0].pid, Some(8471), "the pid is what makes a truncated name identifiable");
+    }
+
+    /// A socket whose owner this SSH user may not see has no name and no
+    /// pid, and must still be reported - "something is bound here" is the
+    /// part that matters.
+    #[test]
+    fn a_socket_with_no_visible_owner_is_still_a_socket() {
+        let sockets = parse_ss_output_tcp("LISTEN 0 4096 0.0.0.0:3002 0.0.0.0:*");
+        assert_eq!(sockets.len(), 1);
+        assert_eq!(sockets[0].process, None);
+    }
+
     #[test]
     fn parse_ss_output_does_not_invent_a_socket_on_port_zero() {
-        assert!(parse_ss_output("¡\u{a0}0 a\u{2000}0").is_empty());
-        assert!(parse_ss_output("a b c 0").is_empty());
+        assert!(parse_ss_output_tcp("¡\u{a0}0 a\u{2000}0").is_empty());
+        assert!(parse_ss_output_tcp("a b c 0").is_empty());
         // The same shape with a real port is still read.
-        assert_eq!(parse_ss_output("LISTEN 0 4096 0.0.0.0:22").len(), 1);
+        assert_eq!(parse_ss_output_tcp("LISTEN 0 4096 0.0.0.0:22").len(), 1);
     }
 
     #[test]
     fn parse_ss_output_skips_the_header_row_and_handles_a_socket_with_no_process_column() {
         let output = "State  Recv-Q Send-Q       Local Address:Port  Peer Address:PortProcess\nUNCONN 0      0                  0.0.0.0:54221      0.0.0.0:*                                             \n";
-        let sockets = parse_ss_output(output);
+        let sockets = parse_ss_output_tcp(output);
         assert_eq!(sockets.len(), 1);
         assert_eq!(sockets[0].port, 54221);
         assert_eq!(sockets[0].process, None);
@@ -669,7 +786,7 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
 
     #[test]
     fn parse_ss_output_on_empty_input_is_empty() {
-        assert!(parse_ss_output("").is_empty());
+        assert!(parse_ss_output_tcp("").is_empty());
     }
 
     /// `parse_ss_output` turns remote `ss` output into the list of ports
@@ -683,7 +800,7 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
         proptest! {
             #[test]
             fn never_panics_on_arbitrary_output(output in "\\PC{0,400}") {
-                let _ = parse_ss_output(&output);
+                let _ = parse_ss_output_tcp(&output);
             }
 
             /// Deliberately close to the real thing - the shapes that break
@@ -704,7 +821,7 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
                     0..12,
                 ),
             ) {
-                let _ = parse_ss_output(&lines.join("\n"));
+                let _ = parse_ss_output_tcp(&lines.join("\n"));
             }
 
             /// Every socket it does return has to carry a usable port -
@@ -712,7 +829,7 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
             /// collide.
             #[test]
             fn every_returned_socket_has_a_real_port(output in "\\PC{0,400}") {
-                for socket in parse_ss_output(&output) {
+                for socket in parse_ss_output_tcp(&output) {
                     prop_assert!(socket.port > 0, "returned port 0 from {output:?}");
                 }
             }

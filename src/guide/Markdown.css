@@ -77,12 +77,38 @@
   margin: 0 0 12px;
 }
 
+/*
+ * The markers are set back explicitly because Tailwind's Preflight strips
+ * them from every `ul` and `ol` in the app - reasonable for the navigation
+ * lists it was written for, wrong for a manual whose whole body is numbered
+ * steps. Without this the guide renders "1. Open Teams." as an unnumbered
+ * indented line, and a step somebody is meant to follow in order loses the
+ * order.
+ */
 .guide-md-list {
   margin: 0 0 12px;
   padding-left: 22px;
 }
+ol.guide-md-list {
+  list-style: decimal;
+}
+ul.guide-md-list {
+  list-style: disc;
+}
+/* A second level of bullets is told apart by its marker, not by indent
+   alone. */
+ul.guide-md-list ul.guide-md-list {
+  list-style: circle;
+}
+
 .guide-md-list li {
   margin-bottom: 4px;
+}
+
+/* The marker takes the prose colour, so a numbered step reads as one thing
+   rather than as a bright number in front of calmer text. */
+.guide-md-list li::marker {
+  color: var(--text-tertiary);
 }
 
 .guide-md code {

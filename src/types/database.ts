@@ -38,3 +38,20 @@ export interface ApplicationDatabase {
   connectionsFrom: string;
   createdAt: string;
 }
+
+/**
+ * The editable half of a database host.
+ *
+ * `adminPassword` empty means "keep the stored one": the frontend never
+ * receives the password, so it cannot resend it, and requiring one to change
+ * a port would mean retyping a secret nobody has to hand. The engine is not
+ * here - changing it would reinterpret every database already provisioned
+ * through this host.
+ */
+export interface UpdateDatabaseHostInput {
+  name: string;
+  host: string;
+  port: number;
+  adminUsername: string;
+  adminPassword: string;
+}

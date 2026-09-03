@@ -181,6 +181,45 @@ pub fn delete_ai_api_key() -> AppResult<()> {
     }
 }
 
+/// The Pterodactyl Application API key used by the migration importer.
+///
+/// Install-wide for the same reason as the AI key above: there is one panel
+/// being migrated from. It is kept at all because a migration is not one
+/// request - the wizard reads the panel to build a plan, the person thinks
+/// about it, and the import runs afterwards; asking them to paste an admin
+/// key again at each step would push them towards keeping it in a text file,
+/// which is worse than the keyring by every measure.
+const PTERODACTYL_API_KEY_ENTRY: &str = "pterodactyl-application-api-key";
+
+fn pterodactyl_api_key_entry() -> AppResult<Entry> {
+    Entry::new(SERVICE_NAME, PTERODACTYL_API_KEY_ENTRY)
+        .map_err(|err| AppError::Storage(format!("failed to access the OS credential store: {err}")))
+}
+
+pub fn store_pterodactyl_api_key(value: &str) -> AppResult<()> {
+    pterodactyl_api_key_entry()?
+        .set_password(value)
+        .map_err(|err| AppError::Storage(format!("failed to store the Pterodactyl API key: {err}")))
+}
+
+pub fn load_pterodactyl_api_key() -> AppResult<Option<String>> {
+    match pterodactyl_api_key_entry()?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(AppError::Storage(format!("failed to read the Pterodactyl API key: {err}"))),
+    }
+}
+
+/// Called when the migration is finished or abandoned. An admin key for a
+/// panel the user is decommissioning has no reason to outlive the migration
+/// that needed it.
+pub fn delete_pterodactyl_api_key() -> AppResult<()> {
+    match pterodactyl_api_key_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(AppError::Storage(format!("failed to clear the Pterodactyl API key: {err}"))),
+    }
+}
+
 // Named wrappers for the one call site (pairing_commands.rs) that predates
 // SecretKind - self-documenting at the call site, same implementation.
 pub fn store_agent_credential(server_id: Uuid, credential: &str) -> AppResult<()> {

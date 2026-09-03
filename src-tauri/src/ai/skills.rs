@@ -47,6 +47,17 @@ const MINECRAFT_SERVERS: &[&str] = &["paper", "purpur"];
 /// handshake with a backend rather than anything local.
 const MINECRAFT_PROXIES: &[&str] = &["velocity", "waterfall"];
 
+/// The finding `ai::context` writes when a published port has nothing
+/// behind it, and the trigger the matching playbook fires on.
+///
+/// Shared rather than written out twice, because the two are one fact in
+/// two modules: reword the sentence in the context builder and the playbook
+/// stops firing, with nothing failing to say so.
+pub const NOTHING_LISTENING: &str = "published, but nothing is listening on it";
+
+/// The same arrangement for a mesh peer that has never been reached.
+pub const NEVER_HANDSHAKED: &str = "never handshaked";
+
 pub const SKILLS: &[Skill] = &[
     Skill {
         id: "mc-world-corrupt",
@@ -152,6 +163,34 @@ Another process has the port. Two cases, and they are fixed differently:
 Change the external port in the Ports tab, or remove whatever holds it. Do \
 not change the internal port - that is the port inside the container and \
 almost never the problem.",
+    },
+    // The counterpart to `port-bind`, and the more confusing of the two:
+    // there, something holds the port and says so loudly. Here the
+    // configuration is perfect, no error is logged anywhere, and the port
+    // simply does not answer. It fires on the line the context builder
+    // writes after asking the Node itself what is listening.
+    Skill {
+        id: "port-not-listening",
+        blueprints: &[],
+        triggers: &[
+            NOTHING_LISTENING,
+            "connection refused",
+        ],
+        title: "The port is published but nothing is behind it",
+        guidance: "\
+Nothing is bound to that port on the Node, so the port itself is not what \
+needs fixing - whatever should be answering on it is not running. In order:
+- Is the Application actually up? A stopped or restarting container \
+  publishes nothing. Overview shows the live status.
+- Did it start and then exit? The last lines in Logs say why, and the port \
+  disappears the moment the process does.
+- Is the service inside listening on the internal port the Ports tab \
+  declares? A service configured to a different port inside the container \
+  publishes a port with nothing behind it, and nothing anywhere reports an \
+  error.
+
+Do not open the port in Firewall to fix this. A firewall rule cannot make a \
+port answer when no process is listening on it.",
     },
     Skill {
         id: "java-version",
@@ -281,6 +320,33 @@ it. The Node's disk usage is in this snapshot if it could be read. Common \
 consumers on a Node running VibeSSH: old container images (`docker image \
 prune`), an Application's own logs, and accumulated backups in \
 `.vibessh-backups/`.",
+    },
+    // Membership and reachability are different facts, and the database
+    // only knows the first. This fires on what the Nodes themselves report
+    // about their tunnels.
+    Skill {
+        id: "mesh-no-handshake",
+        blueprints: &[],
+        triggers: &[
+            NEVER_HANDSHAKED,
+            "tunnel on this node: down",
+            "its side of the tunnel is unknown",
+        ],
+        title: "The Nodes have joined the mesh but are not reaching each other",
+        guidance: "\
+Joining is a row in VibeSSH; a handshake is the Nodes actually finding each \
+other. When peers show no handshake, it is almost never the mesh \
+configuration:
+- UDP 54221 has to be reachable on each Node from the outside, not only \
+  from inside the mesh. Firewall, for that Node.
+- A Node behind NAT with no public address can only be the side that opens \
+  the connection. If both sides are behind NAT, nothing will ever \
+  handshake.
+- After any membership change, click Sync Vibe Network. Until a Node is \
+  reconciled it keeps its old configuration.
+
+A tunnel reported as Down is a different state: the interface is not on \
+that Node at all, so it has not been reconciled since joining.",
     },
     Skill {
         id: "docker-unavailable",
@@ -449,6 +515,21 @@ mod tests {
 
     /// The trigger lists are what makes this work at all, so a typo that
     /// makes one unreachable should fail here rather than in production.
+    /// The two findings the context builder writes after asking a Node
+    /// about its own live state. The wording cannot drift - both sides
+    /// share the constant - but the matching still has to work, and these
+    /// are the sentences it has to work on.
+    #[test]
+    fn the_live_state_findings_reach_their_playbooks() {
+        let ports = format!("- web Tcp 25565: {NOTHING_LISTENING}");
+        let matched = match_skills(Some(&ports), "nobody can connect", None, 3);
+        assert!(ids(&matched).contains(&"port-not-listening"));
+
+        let mesh = format!("- sees db01: {NEVER_HANDSHAKED}");
+        let matched = match_skills(Some(&mesh), "do the nodes see each other?", None, 3);
+        assert!(ids(&matched).contains(&"mesh-no-handshake"));
+    }
+
     #[test]
     fn every_skill_is_reachable_by_at_least_one_of_its_own_triggers() {
         for skill in SKILLS {

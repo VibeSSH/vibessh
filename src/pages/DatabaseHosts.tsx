@@ -10,7 +10,7 @@ import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { listApplications } from "@/services/applicationService";
-import { createDatabaseHost, deleteDatabaseHost, listDatabaseHosts, setDatabaseHostPhpmyadmin } from "@/services/databaseService";
+import { createDatabaseHost, deleteDatabaseHost, listDatabaseHosts, setDatabaseHostPhpmyadmin, updateDatabaseHost } from "@/services/databaseService";
 import { useServersStore } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
 import type { Application } from "@/types/application";
@@ -37,6 +37,7 @@ export function DatabaseHosts() {
   const [error, setError] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
+  const [editingHost, setEditingHost] = useState<DatabaseHost | null>(null);
 
   const [deletingHost, setDeletingHost] = useState<DatabaseHost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -115,8 +116,13 @@ export function DatabaseHosts() {
                   </div>
                   <Badge tone="neutral">{host.engine === "mariadb" ? "MariaDB" : "MySQL"}</Badge>
                   {host.phpmyadminApplicationId && <Badge tone="success">{t("databaseHosts.phpmyadminLinked")}</Badge>}
+                  <IconButton icon="edit" size="sm" title={t("databaseHosts.editAria", { name: host.name })} onClick={() => setEditingHost(host)} />
+                  {/* Its own icon now. Linking a web interface and fixing a
+                      username are different jobs, and one pencil for both
+                      meant the connection details could not be corrected at
+                      all. */}
                   <IconButton
-                    icon="edit"
+                    icon="external-link"
                     size="sm"
                     title={t("databaseHosts.configurePhpmyadminAria", { name: host.name })}
                     onClick={() => setLinkingHost(host)}
@@ -143,6 +149,17 @@ export function DatabaseHosts() {
           onClose={() => setFormOpen(false)}
           onSaved={() => {
             setFormOpen(false);
+            reload();
+          }}
+        />
+      )}
+
+      {editingHost && (
+        <DatabaseHostFormModal
+          existing={editingHost}
+          onClose={() => setEditingHost(null)}
+          onSaved={() => {
+            setEditingHost(null);
             reload();
           }}
         />
@@ -186,29 +203,55 @@ export function DatabaseHosts() {
 }
 
 interface DatabaseHostFormModalProps {
+  /** The host being corrected. Absent means this is a new one. */
+  existing?: DatabaseHost;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps) {
+function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormModalProps) {
   const { t } = useTranslation();
   const backdrop = useModalDialog(onClose, { labelledBy: "databasehosts-dialog-title-2" });
   const servers = useServersStore((s) => s.servers);
 
-  const [name, setName] = useState("");
-  const [serverId, setServerId] = useState("");
-  const [engine, setEngine] = useState<DatabaseEngine>("mysql");
-  const [host, setHost] = useState("127.0.0.1");
-  const [port, setPort] = useState("3306");
-  const [adminUsername, setAdminUsername] = useState("root");
+  const [name, setName] = useState(existing?.name ?? "");
+  const [serverId, setServerId] = useState(existing?.serverId ?? "");
+  const [engine, setEngine] = useState<DatabaseEngine>(existing?.engine ?? "mysql");
+  const [host, setHost] = useState(existing?.host ?? "127.0.0.1");
+  const [port, setPort] = useState(String(existing?.port ?? 3306));
+  const [adminUsername, setAdminUsername] = useState(existing?.adminUsername ?? "root");
   const [adminPassword, setAdminPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !host.trim() || !adminUsername.trim() || !adminPassword) {
+    // A password is required to create a host and optional to edit one: the
+    // stored secret is kept when the field is left blank, so a port can be
+    // fixed without retyping something the frontend has never held.
+    if (!name.trim() || !host.trim() || !adminUsername.trim() || (!existing && !adminPassword)) {
       setError(t("databaseHosts.invalidForm"));
+      return;
+    }
+
+    if (existing) {
+      setBusy(true);
+      setError(null);
+      try {
+        await updateDatabaseHost(existing.id, {
+          name: name.trim(),
+          host: host.trim(),
+          port: Number(port) || 3306,
+          adminUsername: adminUsername.trim(),
+          adminPassword,
+        });
+        toastSuccess(t("databaseHosts.savedToast", { name: name.trim() }));
+        onSaved();
+      } catch (err) {
+        setError(errorMessage(err, t));
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     const input: CreateDatabaseHostInput = {
@@ -238,7 +281,7 @@ function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps)
     <div className="modal-backdrop" {...backdrop.backdropProps}>
       <div className="modal-panel" {...backdrop.panelProps}>
         <div className="modal-header">
-          <h2 className="modal-title" id="databasehosts-dialog-title-2">{t("databaseHosts.addTitle")}</h2>
+          <h2 className="modal-title" id="databasehosts-dialog-title-2">{existing ? t("databaseHosts.editTitle") : t("databaseHosts.addTitle")}</h2>
           <IconButton icon="x" size="sm" onClick={onClose} title={t("common.close")} />
         </div>
         <form className="server-form" onSubmit={handleSubmit}>
@@ -280,7 +323,13 @@ function DatabaseHostFormModal({ onClose, onSaved }: DatabaseHostFormModalProps)
               </label>
               <label className="form-field">
                 <span className="form-label">{t("databaseHosts.adminPassword")}</span>
-                <input className="form-input" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+                <input
+                  className="form-input"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder={existing ? t("databaseHosts.adminPasswordKeep") : undefined}
+                />
               </label>
             </div>
             <p className="form-note">{t("databaseHosts.adminPasswordNote")}</p>

@@ -42,6 +42,10 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  // Held in a ref so the right-click handler below reaches the paste that
+  // belongs to the terminal instance currently mounted, rather than closing
+  // over a stale one.
+  const pasteRef = useRef<(() => void) | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -120,10 +124,43 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
       if (terminalId) writeToTerminal(terminalId, data).catch(() => {});
     });
 
+    /**
+     * Puts the local clipboard into the terminal.
+     *
+     * `term.paste` rather than writing the text as input: it applies
+     * bracketed-paste mode when the remote program asked for it, which is
+     * what stops an editor from auto-indenting every line of a pasted block
+     * into a staircase.
+     */
+    const pasteFromClipboard = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) term.paste(text);
+      } catch {
+        // Reading the clipboard can be refused, and a terminal that silently
+        // ignores a paste is indistinguishable from a broken one - so it
+        // says so in the terminal itself, where the person is looking.
+        term.write("\r\n\x1b[33m" + t("terminalPage.pasteBlocked") + "\x1b[0m\r\n");
+      }
+    };
+    pasteRef.current = pasteFromClipboard;
+
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === "keydown" && event.ctrlKey && event.key.toLowerCase() === "f") {
         setSearchOpen(true);
         queueMicrotask(() => searchInputRef.current?.focus());
+        return false;
+      }
+      // The terminal conventions. Deliberately the shifted pair: plain
+      // Ctrl+C has to keep reaching the shell as "interrupt", which is the
+      // whole reason terminals moved copy and paste onto Ctrl+Shift.
+      if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "v") {
+        void pasteFromClipboard();
+        return false;
+      }
+      if (event.type === "keydown" && event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "c") {
+        const selection = term.getSelection();
+        if (selection) void navigator.clipboard.writeText(selection).catch(() => {});
         return false;
       }
       if (event.type === "keydown" && event.key === "Escape") {
@@ -190,7 +227,17 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
           </button>
         </div>
       )}
-      <div ref={containerRef} className="terminal-view" />
+      {/* Right-click pastes, the way PuTTY and WinSCP do. It is the
+        * binding people reach for first, and the one whose absence sends
+        * them back to retyping a command by hand. */}
+      <div
+        ref={containerRef}
+        className="terminal-view"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          pasteRef.current?.();
+        }}
+      />
     </div>
   );
 }

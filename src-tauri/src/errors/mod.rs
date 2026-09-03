@@ -70,6 +70,21 @@ pub enum ErrorCode {
     /// The provider rejected the key. Not a connection problem and not a
     /// retry: the stored key is wrong, expired or revoked.
     AiAuthFailed,
+
+    // ---- Pterodactyl migration ----
+    //
+    // Two codes rather than one, because 401 and 403 from a panel have
+    // completely different fixes and reading them as the same thing sends
+    // somebody looking for a new key when the one they have is correct.
+    /// A database account that cannot be used over the network at all,
+    /// because it authenticates through the local socket. Its own code
+    /// because the fix is a different account, not a different password.
+    DatabaseSocketAuthOnly,
+    /// The panel refused the Application API key outright.
+    PterodactylKeyRejected,
+    /// The key was accepted, but has none of the resource permissions the
+    /// import needs. The key is right; its checkboxes are not.
+    PterodactylKeyForbidden,
     /// The endpoint answered, but does not serve the configured model.
     /// Carries the model name so the message can say which one.
     AiModelUnavailable,
@@ -187,6 +202,20 @@ pub enum AppError {
 
     #[error("today's allowance for the included AI model is used up")]
     AiQuotaExhausted,
+
+    /// `user` is the account as MySQL named it, e.g. `root@localhost`.
+    #[error("{user} authenticates through the local socket and cannot be used with a password")]
+    DatabaseSocketAuthOnly { user: String },
+
+    // ---- Pterodactyl migration ----
+    #[error("the Pterodactyl panel rejected the Application API key")]
+    PterodactylKeyRejected,
+
+    /// `resource` is the panel path that was refused, which is what says
+    /// *which* permission is missing - "servers" and "nodes" are separate
+    /// checkboxes on a Pterodactyl key.
+    #[error("the Pterodactyl API key has no permission for {resource}")]
+    PterodactylKeyForbidden { resource: String },
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -207,6 +236,9 @@ impl AppError {
             AppError::Timeout { .. } => ErrorCode::Timeout,
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
+            AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
+            AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
+            AppError::PterodactylKeyForbidden { .. } => ErrorCode::PterodactylKeyForbidden,
             AppError::AiAuthFailed => ErrorCode::AiAuthFailed,
             AppError::AiModelUnavailable { .. } => ErrorCode::AiModelUnavailable,
             AppError::AiRateLimited => ErrorCode::AiRateLimited,
@@ -231,6 +263,8 @@ impl AppError {
             AppError::Timeout { operation, seconds } => serde_json::json!({ "operation": operation, "seconds": seconds }),
             AppError::HostKeyMismatch { host } => serde_json::json!({ "host": host }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
+            AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
+            AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
             _ => serde_json::Value::Null,
         }
     }
@@ -273,6 +307,8 @@ impl Serialize for AppError {
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input
             // problems the user can fix; the rest are the network.
+            ErrorCode::DatabaseSocketAuthOnly => "invalid_input",
+            ErrorCode::PterodactylKeyRejected | ErrorCode::PterodactylKeyForbidden => "unauthorized",
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",
             ErrorCode::AiHostedUnavailable | ErrorCode::AiQuotaExhausted => "invalid_input",

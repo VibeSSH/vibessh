@@ -88,7 +88,7 @@ impl SshSession {
         &self,
         container: &str,
         tail: u32,
-        on_line: impl FnMut(String) + Send + 'static,
+        mut on_line: impl FnMut(String) + Send + 'static,
         on_closed: impl FnOnce(Option<String>) + Send + 'static,
     ) -> AppResult<crate::ssh::client::FollowHandle> {
         validate_container_ref(container)?;
@@ -96,7 +96,20 @@ impl SshSession {
         // already has the history on screen and wants only what comes next.
         // Replaying the window on every blink would repeat it each time.
         let tail = tail.min(5000);
-        self.follow_command(&format!("sudo docker logs --tail {tail} -f {container} 2>&1"), on_line, on_closed).await
+        // `2>&1` is what lets a container's own stderr reach the console,
+        // which is most of what a server writes - but it also delivers the
+        // daemon's own complaints as though the container had said them. The
+        // one that matters is "no such container": an Application that has
+        // never been started has none, the console reconnects on a timer, and
+        // each attempt appended the same error until the buffer was nothing
+        // else. Dropped rather than rewritten, because the console already
+        // has an honest empty state for "not running".
+        let filtered = move |line: String| {
+            if !is_daemon_missing_container_notice(&line) {
+                on_line(line);
+            }
+        };
+        self.follow_command(&format!("sudo docker logs --tail {tail} -f {container} 2>&1"), filtered, on_closed).await
     }
 
     /// `docker kill` sends SIGKILL immediately, bypassing the container's
@@ -117,6 +130,20 @@ impl SshSession {
         }
         Ok(())
     }
+}
+
+/// Whether a line is the Docker daemon saying there is no container, rather
+/// than anything the container itself wrote.
+///
+/// Deliberately narrow. A broad "looks like an error" filter would swallow
+/// real output - a Minecraft server printing a stack trace is exactly what
+/// the console is for - so this matches only the daemon's own two ways of
+/// saying "there is nothing here to read".
+fn is_daemon_missing_container_notice(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("Error response from daemon: No such container")
+        || line.starts_with("Error: No such container")
+        || line.starts_with("Error response from daemon: can not get logs from container which is dead or marked for removal")
 }
 
 /// Parses `LIST_COMMAND`'s `|`-delimited output into `ContainerSummary`s.
@@ -169,6 +196,35 @@ mod tests {
     fn accepts_realistic_container_refs() {
         for good in ["nginx", "web_app-1", "a1b2c3d4e5f6", "minecraft-server.1"] {
             assert!(validate_container_ref(good).is_ok(), "should have accepted {good:?}");
+        }
+    }
+
+    /// The line that filled an unstarted Application's console with an
+    /// error about nothing the operator did.
+    #[test]
+    fn the_daemons_missing_container_notice_is_not_console_output() {
+        assert!(is_daemon_missing_container_notice(
+            "Error response from daemon: No such container: vibessh-app-93150782-6d10-4210-acc1-22a9c77cbad2"
+        ));
+        assert!(is_daemon_missing_container_notice(
+            "Error response from daemon: can not get logs from container which is dead or marked for removal"
+        ));
+        assert!(is_daemon_missing_container_notice("  Error: No such container: x  "), "leading whitespace must not defeat it");
+    }
+
+    /// The filter has to stay narrow. A server printing a stack trace is
+    /// exactly what the console exists to show, and a broad "looks like an
+    /// error" rule would eat it.
+    #[test]
+    fn a_containers_own_errors_still_reach_the_console() {
+        for line in [
+            "[Server thread/ERROR]: Error response from daemon: No such container",
+            "java.lang.RuntimeException: No such container",
+            "Error response from daemon: conflict: unable to remove repository reference",
+            "[16:20:03 WARN]: Can't keep up! Is the server overloaded?",
+            "",
+        ] {
+            assert!(!is_daemon_missing_container_notice(line), "{line:?} is not the daemon saying there is nothing to read");
         }
     }
 

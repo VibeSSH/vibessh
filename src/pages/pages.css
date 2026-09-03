@@ -113,3 +113,44 @@
   font-size: 13px;
   animation: fadeIn 200ms ease-out both;
 }
+
+/* The address a container sees is not the address the Node sees, and the
+   difference is the whole reason a copied plugin config times out. Said
+   next to the address rather than in a tooltip nobody opens. */
+.databases-address-note {
+  color: var(--text-tertiary);
+}
+
+/*
+ * The bulk bar. Fixed to the bottom rather than pinned above the grid: the
+ * selection is made by scrolling through cards, and an action that scrolls
+ * away from the thing it acts on is an action people lose.
+ */
+.applications-bulk-bar {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.applications-bulk-count {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.application-card-check {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-right: 2px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

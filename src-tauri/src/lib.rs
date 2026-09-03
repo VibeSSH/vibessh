@@ -59,6 +59,10 @@ pub mod network;
 // real-server integration test (`tests/docker_runtime.rs`) drives
 // `runtime::docker::DockerRuntime` directly against a live Docker daemon.
 pub mod runtime;
+// Reads a Pterodactyl panel and decides what each of its servers would
+// become here - see `pterodactyl::mod`'s own doc comment for why the two
+// models line up as closely as they do.
+pub mod pterodactyl;
 // SigV4 client for the S3-compatible backup destination
 // (`services::application_backup_service`) - see `s3::mod`'s own doc
 // comment for why this is hand-rolled rather than `aws-sdk-s3`.
@@ -188,6 +192,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_info,
+            commands::pterodactyl_commands::pterodactyl_connection,
+            commands::pterodactyl_commands::pterodactyl_connect,
+            commands::pterodactyl_commands::pterodactyl_plan,
+            commands::pterodactyl_commands::pterodactyl_forget,
+            commands::pterodactyl_import_command::pterodactyl_import,
             commands::ai_commands::get_ai_config,
             commands::ai_commands::set_ai_config,
             commands::ai_commands::test_ai_connection,
@@ -251,6 +260,7 @@ pub fn run() {
             commands::migration_commands::migrate_application,
             commands::database_commands::list_database_hosts,
             commands::database_commands::create_database_host,
+            commands::database_commands::update_database_host,
             commands::database_commands::delete_database_host,
             commands::database_commands::set_database_host_phpmyadmin,
             commands::database_commands::install_database_server,

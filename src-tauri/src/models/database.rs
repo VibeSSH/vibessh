@@ -70,6 +70,24 @@ pub struct CreateDatabaseHostInput {
     pub admin_password: String,
 }
 
+/// The editable half of a database host.
+///
+/// `admin_password` is optional and empty means "keep the stored one" - the
+/// frontend never receives the password, so it cannot resend it, and
+/// demanding one to change a port would mean retyping a secret nobody has
+/// on hand. The engine is not editable: changing it would reinterpret every
+/// database already provisioned through this host.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDatabaseHostInput {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub admin_username: String,
+    #[serde(default)]
+    pub admin_password: String,
+}
+
 /// One provisioned database + scoped user for a single Application.
 /// `database_name`/`username` are always machine-generated, never
 /// user-typed (Section 12.1) - there's no free-text identifier here to

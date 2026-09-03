@@ -262,7 +262,7 @@ pub async fn run_turn(
     let blueprint = summary.and_then(blueprint_from_summary);
     let playbooks = skills::match_skills(summary, last_user_message, blueprint.as_deref(), PLAYBOOKS);
 
-    let messages = prompt::build_messages(context, &playbooks, &snippets, &request.messages);
+    let messages = prompt::build_messages(request.mode, context, &playbooks, &snippets, &request.messages);
     let ai_request =
         AiRequest { model: model.to_string(), messages, max_tokens: Some(MAX_ANSWER_TOKENS), temperature: Some(TEMPERATURE) };
 
@@ -361,7 +361,7 @@ mod tests {
         let sent = provider.last_request();
         assert_eq!(sent.model, "gpt-4o-mini");
         assert_eq!(sent.messages[0].role, ChatRole::System);
-        assert_eq!(sent.messages[0].content, prompt::SYSTEM_PROMPT);
+        assert_eq!(sent.messages[0].content, prompt::system_prompt(AiMode::Ask));
         assert_eq!(sent.messages.last().unwrap().content, "why is it down?");
     }
 

@@ -2,7 +2,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::errors::AppResult;
-use crate::models::{ApplicationDatabase, CreateDatabaseHostInput, DatabaseHost};
+use crate::models::{ApplicationDatabase, CreateDatabaseHostInput, UpdateDatabaseHostInput, DatabaseHost};
 use crate::services;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
@@ -17,6 +17,13 @@ pub fn list_database_hosts(repo: State<DatabaseRepository>) -> AppResult<Vec<Dat
 #[tauri::command]
 pub fn create_database_host(repo: State<DatabaseRepository>, input: CreateDatabaseHostInput) -> AppResult<DatabaseHost> {
     services::create_database_host(&repo, input)
+}
+
+/// Corrects a host's connection details. A blank password keeps the stored
+/// one - see the service for why that is the rule rather than a shortcut.
+#[tauri::command]
+pub fn update_database_host(repo: State<DatabaseRepository>, id: Uuid, input: UpdateDatabaseHostInput) -> AppResult<DatabaseHost> {
+    services::update_database_host(&repo, id, input)
 }
 
 #[tauri::command]
