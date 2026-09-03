@@ -165,6 +165,8 @@ impl KeywordKnowledgeService {
             // A new topic is two files and two lines here.
             // `every_guide_document_is_in_the_corpus` fails if the second
             // pair is forgotten.
+            ("Guide - Nodes and applications", include_str!("../../../docs/guide/concepts.en.md")),
+            ("Poradnik - Node i aplikacja", include_str!("../../../docs/guide/concepts.pl.md")),
             ("Guide - Getting started", include_str!("../../../docs/guide/getting-started.en.md")),
             ("Poradnik - Pierwsze kroki", include_str!("../../../docs/guide/getting-started.pl.md")),
             ("Guide - Dashboard", include_str!("../../../docs/guide/dashboard.en.md")),
