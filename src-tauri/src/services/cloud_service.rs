@@ -70,11 +70,18 @@ async fn ensure_valid_access_token(state: &CloudState) -> AppResult<String> {
 
     let refresh_token = credentials::load_cloud_refresh_token()?
         .ok_or_else(|| AppError::Unauthorized("not signed in to the VibeSSH cloud backend".to_string()))?;
-    let auth = inner.client.refresh(&refresh_token).await.inspect_err(|_err| {
-        // A rejected refresh token means the session is really over (it was
-        // revoked, or expired) - clear the now-useless stored token instead
-        // of leaving it around to fail the same way on every future call.
-        let _ = credentials::delete_cloud_refresh_token();
+    let auth = inner.client.refresh(&refresh_token).await.inspect_err(|err| {
+        // Cleared only when the backend actually rejected it - revoked, or
+        // expired. A refresh that failed because the backend could not be
+        // reached says nothing about whether the token is still good, and
+        // deleting it there turns a moment of downtime into a permanent
+        // sign-out: the app starts, cannot reach the backend, throws away a
+        // perfectly valid credential, and the user has to log in again with
+        // no idea why. That is exactly what happened every time the backend
+        // was restarted while the app was starting.
+        if matches!(err, AppError::Unauthorized(_)) {
+            let _ = credentials::delete_cloud_refresh_token();
+        }
     })?;
     credentials::store_cloud_refresh_token(&auth.refresh_token)?;
     let access_token = auth.access_token.clone();
@@ -285,4 +292,32 @@ pub async fn list_audit_events(state: &CloudState, team_id: Uuid, limit: i64, of
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;
     inner.client.list_audit_events(&token, team_id, limit, offset).await
+}
+
+#[cfg(test)]
+mod session_persistence_tests {
+    use crate::errors::AppError;
+
+    /// Which refresh failures are allowed to destroy the stored credential.
+    ///
+    /// Mirrors the condition in `ensure_valid_access_token`. It is a test
+    /// about a policy rather than about code shape: the failure it guards
+    /// against - a backend being briefly unreachable silently logging
+    /// somebody out for good - is invisible until it happens to a user, and
+    /// it happened repeatedly while the backend was being restarted.
+    fn should_forget_token(err: &AppError) -> bool {
+        matches!(err, AppError::Unauthorized(_))
+    }
+
+    #[test]
+    fn a_rejected_token_is_forgotten() {
+        assert!(should_forget_token(&AppError::Unauthorized("refresh token revoked".into())));
+    }
+
+    #[test]
+    fn a_token_survives_a_backend_that_cannot_be_reached() {
+        assert!(!should_forget_token(&AppError::Connection("couldn't reach the VibeSSH cloud backend".into())));
+        assert!(!should_forget_token(&AppError::Timeout { operation: "the request", seconds: 30 }));
+        assert!(!should_forget_token(&AppError::Internal("backend returned 500".into())));
+    }
 }

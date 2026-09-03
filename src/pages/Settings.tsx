@@ -111,7 +111,10 @@ function AiCard() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState<AiProviderKind>("openAiCompatible");
+  // Matches the backend's own default, so a fresh install opens on the
+  // included model rather than on the form that asks for somebody
+  // else's endpoint and key.
+  const [provider, setProvider] = useState<AiProviderKind>("vibeSshHosted");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");

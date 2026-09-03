@@ -70,12 +70,19 @@ pub struct AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
+            // Still off. This is the one feature that sends anything about
+            // the user's infrastructure to a third party, so it does not
+            // start doing that because the app was installed or updated.
             enabled: false,
-            provider: AiProviderKind::OpenAiCompatible,
-            // No default endpoint or model on purpose. Picking one would
-            // be picking a vendor on the user's behalf, and an empty field
-            // with a placeholder is honest about the fact that this needs
-            // an account somewhere before it can work.
+            // But when somebody does turn it on, the included model is what
+            // they land on: nothing to paste, nothing to sign up for, and
+            // it works as soon as they are signed in. Defaulting to
+            // "bring your own endpoint" instead made a working feature look
+            // like one that needed configuring before it could be tried.
+            provider: AiProviderKind::VibeSshHosted,
+            // Left empty on purpose even so. These belong to the
+            // OpenAI-compatible path, and pre-filling them would be picking
+            // a vendor on the user's behalf.
             base_url: String::new(),
             model: String::new(),
         }
