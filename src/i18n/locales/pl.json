@@ -1035,7 +1035,8 @@
     "ram": "Pamięć",
     "revealHostAria": "Pokaż adres hosta",
     "signIn": "Zaloguj się",
-    "signOut": "Wyloguj się"
+    "signOut": "Wyloguj się",
+    "system": "System"
   },
   "resourceLimits": {
     "title": "Limity zasobów",

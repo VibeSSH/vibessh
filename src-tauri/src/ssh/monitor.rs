@@ -28,7 +28,9 @@ cat /proc/loadavg
 echo ===UPTIME===
 cat /proc/uptime
 echo ===NET===
-cat /proc/net/dev"#;
+cat /proc/net/dev
+echo ===OS===
+cat /etc/os-release 2>/dev/null"#;
 
 impl SshSession {
     pub async fn get_metrics(&self) -> AppResult<ServerMetrics> {
@@ -42,6 +44,7 @@ impl SshSession {
         let load_average_1m = parse_loadavg(section("LOAD")).unwrap_or(0.0);
         let uptime_seconds = parse_uptime(section("UPTIME")).unwrap_or(0);
         let (rx_bytes, tx_bytes) = parse_net_dev(section("NET"));
+        let os_name = parse_os_release(section("OS"));
 
         let now = Instant::now();
         let previous = self.swap_metrics_sample(MetricsSample {
@@ -79,6 +82,7 @@ impl SshSession {
             uptime_seconds,
             network_rx_bytes_per_sec,
             network_tx_bytes_per_sec,
+            os_name,
         })
     }
 
@@ -204,6 +208,25 @@ fn parse_disk(section: &str) -> Option<(u64, u64)> {
     Some((size, used))
 }
 
+/// `PRETTY_NAME` out of `/etc/os-release`.
+///
+/// The value is shell-quoted in that file more often than not
+/// (`PRETTY_NAME="Ubuntu 24.04.1 LTS"`), so the quotes come off; a
+/// distribution that omits them is handled by the same code path rather
+/// than by a second branch.
+///
+/// `None` rather than a guess when the file is absent or has no such line -
+/// a container image without it is a real case, and "unknown" written out
+/// as if it were a distribution name would be worse than a blank row.
+fn parse_os_release(section: &str) -> Option<String> {
+    let value = section.lines().find_map(|line| line.trim().strip_prefix("PRETTY_NAME="))?;
+    let value = value.trim().trim_matches('"').trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(value.to_string())
+}
+
 fn parse_loadavg(section: &str) -> Option<f32> {
     section.lines().next()?.split_whitespace().next()?.parse().ok()
 }
@@ -287,5 +310,40 @@ mod tests {
         assert_eq!(processes[0].user, "root");
         assert_eq!(processes[0].ram_bytes, 10240 * 1024);
         assert_eq!(processes[1].command, "nginx");
+    }
+}
+
+#[cfg(test)]
+mod os_release_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_pretty_name_out_of_a_real_os_release() {
+        let section = "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n";
+        assert_eq!(parse_os_release(section).as_deref(), Some("Ubuntu 24.04.1 LTS"));
+    }
+
+    /// Some distributions leave the value unquoted. Same code path, not a
+    /// second branch.
+    #[test]
+    fn reads_an_unquoted_value() {
+        assert_eq!(parse_os_release("PRETTY_NAME=Alpine Linux v3.20\n").as_deref(), Some("Alpine Linux v3.20"));
+    }
+
+    /// `NAME=` also ends in the same three letters, so a naive `contains`
+    /// would match it and report the wrong string.
+    #[test]
+    fn is_not_fooled_by_a_line_that_merely_ends_in_the_same_letters() {
+        let section = "NAME=\"Debian GNU/Linux\"\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n";
+        assert_eq!(parse_os_release(section).as_deref(), Some("Debian GNU/Linux 12 (bookworm)"));
+    }
+
+    /// A container image without the file, or a distribution that does not
+    /// ship the field. Nothing is better than a guess.
+    #[test]
+    fn says_nothing_when_there_is_nothing_to_say() {
+        assert_eq!(parse_os_release(""), None);
+        assert_eq!(parse_os_release("NAME=\"Something\"\n"), None);
+        assert_eq!(parse_os_release("PRETTY_NAME=\"\"\n"), None);
     }
 }

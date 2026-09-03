@@ -202,6 +202,7 @@ mod tests {
                     uptime_seconds: 100,
                     network_rx_bytes_per_sec: 0,
                     network_tx_bytes_per_sec: 0,
+                    os_name: Some("Ubuntu 24.04.1 LTS".to_string()),
                 },
             };
             let _ = ws.send(Message::Text(serde_json::to_string(&event).unwrap())).await;

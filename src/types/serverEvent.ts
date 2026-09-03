@@ -9,6 +9,10 @@ export interface ServerMetrics {
   uptimeSeconds: number;
   networkRxBytesPerSec: number;
   networkTxBytesPerSec: number;
+  /** What the Node calls itself - `PRETTY_NAME` from `/etc/os-release`.
+   * Null when the file is absent (some container images), when the
+   * distribution omits the field, or when an older Agent is reporting. */
+  osName: string | null;
 }
 
 /** Mirrors the Rust `ProcessSummary` struct. */

@@ -30,6 +30,15 @@ pub struct ServerMetrics {
     /// sample after a connection opens, since there's no prior point yet.
     pub network_rx_bytes_per_sec: u64,
     pub network_tx_bytes_per_sec: u64,
+    /// What the Node calls itself - `PRETTY_NAME` from `/etc/os-release`,
+    /// e.g. "Ubuntu 24.04.1 LTS".
+    ///
+    /// Optional because it genuinely can be absent: a container image
+    /// without the file, a distribution that does not ship it, or an older
+    /// Agent that predates this field. A missing name is shown as nothing
+    /// rather than as a guess.
+    #[serde(default)]
+    pub os_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

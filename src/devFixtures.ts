@@ -215,6 +215,7 @@ const fixtures: Record<string, unknown> = {
     uptimeSeconds: 1_209_600,
     networkRxBytesPerSec: 184_320,
     networkTxBytesPerSec: 96_256,
+    osName: "Ubuntu 24.04.1 LTS",
   },
   get_node_sync_status: { serverId: SERVER_ID, desiredRevision: 12, appliedRevision: 12, inSync: true },
   ping_server: 6,

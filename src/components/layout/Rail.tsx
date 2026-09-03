@@ -204,10 +204,12 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
     window.clearTimeout(closeTimer.current);
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) setTooltipPos({ top: rect.top + rect.height / 2, left: rect.right + 10 });
-    // Only for a Node that can answer: an offline or agent-mode server has
-    // no metrics to fetch, and asking anyway would be a doomed SSH attempt
-    // on every pointer crossing.
-    if (!isAgent && server.status === "online") ensureMetrics(server.id);
+    // Skipped only where the attempt is known to be pointless: agent mode
+    // has no metrics command, and a Node already known to be offline will
+    // not answer. "Unknown" is not "offline" - it means nothing has checked
+    // yet, which on a freshly opened app is exactly when somebody hovers,
+    // and refusing to try there left the card permanently blank.
+    if (!isAgent && server.status !== "offline") ensureMetrics(server.id);
   }
   function handleLeave() {
     closeTimer.current = window.setTimeout(() => {
@@ -261,6 +263,16 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
                 is the honest state for the first second of a hover. */}
             {metrics && (
               <dl className="rail-instance-tooltip-facts">
+                {/* First, because it is the fact that frames the other two:
+                    how much memory is a lot depends on what is running. */}
+                {metrics.osName && (
+                  <>
+                    <dt>{t("rail.system")}</dt>
+                    <dd className="rail-instance-tooltip-os" title={metrics.osName}>
+                      {metrics.osName}
+                    </dd>
+                  </>
+                )}
                 <dt>{t("rail.ram")}</dt>
                 <dd>{formatBytesOf(metrics.ramUsedBytes, metrics.ramTotalBytes)}</dd>
                 <dt>{t("rail.disk")}</dt>

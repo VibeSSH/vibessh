@@ -309,3 +309,12 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* A distribution name can be long ("Debian GNU/Linux 12 (bookworm)"), and
+   the card is narrow. Truncated rather than allowed to widen the card or
+   wrap under its own label; the full string is in the tooltip. */
+.rail-instance-tooltip-os {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

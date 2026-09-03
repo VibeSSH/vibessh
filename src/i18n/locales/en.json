@@ -1034,7 +1034,8 @@
     "ram": "Memory",
     "revealHostAria": "Show host address",
     "signIn": "Sign in",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "system": "System"
   },
   "resourceLimits": {
     "title": "Resource limits",

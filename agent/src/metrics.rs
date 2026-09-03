@@ -67,6 +67,9 @@ impl MetricsCollector {
             uptime_seconds: System::uptime(),
             network_rx_bytes_per_sec: (rx_delta as f64 / elapsed_secs) as u64,
             network_tx_bytes_per_sec: (tx_delta as f64 / elapsed_secs) as u64,
+            // `sysinfo` reads the same `/etc/os-release` the SSH path parses
+            // by hand, so both modes report the Node the same way.
+            os_name: System::long_os_version(),
         }
     }
 }
