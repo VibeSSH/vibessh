@@ -167,14 +167,20 @@ pub(crate) fn bool_input(inputs: &HashMap<String, serde_json::Value>, blueprint:
 
 /// The Docker image a Java-based Egg's rendered `DockerConfig` runs -
 /// Eclipse Temurin's own official, widely-used JRE builds (Adoptium), tagged
-/// `<major>-jre-alpine` (e.g. `21-jre-alpine`). Used by
+/// `<major>-jre` (e.g. `21-jre`). Used by
 /// `PaperBlueprint`/`VelocityBlueprint`/`GenericJavaBlueprint`'s own
 /// `render_runtime_config`, all three of which went Docker-only in Etap M1
 /// (see each one's own doc comment) - a small, shared source of truth for
 /// "which image a Java version maps to" rather than three copies of the
 /// same string formatting.
 pub(crate) fn temurin_image(java_version: &str) -> String {
-    format!("eclipse-temurin:{}-jre-alpine", java_version.trim())
+    // Deliberately *not* the `-alpine` variant. Alpine is musl, and a Java
+    // plugin that ships a compiled native library ships a glibc build of it:
+    // `sqlite-jdbc` (LuckPerms and most permission and antibot plugins) and
+    // netty's native transports both fail to load, with a stack trace whose
+    // only clue is `os.name=Linux-Musl`. The saving is about fifty megabytes
+    // an image, against plugins that do not load.
+    format!("eclipse-temurin:{}-jre", java_version.trim())
 }
 
 /// Builds the Docker-shape `runtime_config` (`{"image": ..., "command":
@@ -272,6 +278,26 @@ mod tests {
 
     fn field(key: &str, required: bool, field_type: BlueprintFieldType, default_value: Option<serde_json::Value>) -> BlueprintField {
         BlueprintField { key: key.to_string(), label: key.to_string(), field_type, required, default_value, help_text: None }
+    }
+
+    /// The image must not be a musl one, and this is the reason rather than
+    /// a preference.
+    ///
+    /// A Java plugin that ships a compiled native library ships a glibc
+    /// build of it. On Alpine that library simply is not found, and the only
+    /// hint in the resulting stack trace is `os.name=Linux-Musl` - reported
+    /// from a real server whose antibot plugin could not load `sqlite-jdbc`.
+    /// The failure is at plugin load, far from anything that names an image.
+    #[test]
+    fn java_runs_on_glibc_so_plugins_with_native_libraries_load() {
+        for version in ["8", "17", "21", "25"] {
+            let image = temurin_image(version);
+            assert!(!image.contains("alpine"), "{image} is musl; plugins shipping native libraries cannot load there");
+            assert_eq!(image, format!("eclipse-temurin:{version}-jre"));
+        }
+        // Whitespace around a version typed into the Settings tab must not
+        // reach the image reference.
+        assert_eq!(temurin_image("  21  "), "eclipse-temurin:21-jre");
     }
 
     fn stub_blueprint(fields: Vec<BlueprintField>) -> Blueprint {

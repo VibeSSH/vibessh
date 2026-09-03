@@ -254,7 +254,7 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "purpur-1.21.4-2416.jar", "nogui"], "runAsDedicatedUser": true })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-jar", "purpur-1.21.4-2416.jar", "nogui"], "runAsDedicatedUser": true })
         );
     }
 

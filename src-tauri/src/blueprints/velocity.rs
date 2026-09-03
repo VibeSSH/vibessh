@@ -200,7 +200,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "velocity-3.4.0-566.jar"], "runAsDedicatedUser": true }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-jar", "velocity-3.4.0-566.jar"], "runAsDedicatedUser": true }));
     }
 
     #[test]

@@ -107,7 +107,7 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"], "runAsDedicatedUser": true })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "--nogui"], "runAsDedicatedUser": true })
         );
     }
 
@@ -119,7 +119,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "server.jar"], "runAsDedicatedUser": true }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-jar", "server.jar"], "runAsDedicatedUser": true }));
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config["image"], serde_json::json!("eclipse-temurin:17-jre-alpine"));
+        assert_eq!(config["image"], serde_json::json!("eclipse-temurin:17-jre"));
     }
 
     #[test]

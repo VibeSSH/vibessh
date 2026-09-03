@@ -194,7 +194,7 @@ mod tests {
 
         let config = blueprint.render_runtime_config(&inputs).unwrap();
 
-        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre-alpine", "command": ["java", "-jar", "waterfall-1.20-497.jar"], "runAsDedicatedUser": true }));
+        assert_eq!(config, serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-jar", "waterfall-1.20-497.jar"], "runAsDedicatedUser": true }));
     }
 
     #[tokio::test]
