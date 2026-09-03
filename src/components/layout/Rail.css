@@ -278,3 +278,34 @@
   color: var(--text-tertiary);
   white-space: nowrap;
 }
+
+/*
+ * The facts under the latency: what the machine has, not only whether it
+ * answers.
+ *
+ * A two-column definition list rather than lines of "Label: value" - the
+ * values line up, so two servers hovered one after another can be compared
+ * without reading the labels twice.
+ */
+.rail-instance-tooltip-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.rail-instance-tooltip-facts dt {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.rail-instance-tooltip-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

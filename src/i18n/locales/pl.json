@@ -1024,16 +1024,18 @@
     "title": "Utwórz konto"
   },
   "rail": {
-    "addServer": "Dodaj serwer",
     "account": "Konto",
-    "notifications": "Powiadomienia",
-    "notificationsEmpty": "Jeszcze nic tu nie ma - akcje, które wykonasz, pojawią się w tym miejscu.",
-    "notificationsClear": "Wyczyść",
-    "signIn": "Zaloguj się",
-    "signOut": "Wyloguj się",
+    "addServer": "Dodaj serwer",
+    "disk": "Dysk",
+    "hideHostAria": "Ukryj adres hosta",
     "hostHidden": "Host ukryty",
+    "notifications": "Powiadomienia",
+    "notificationsClear": "Wyczyść",
+    "notificationsEmpty": "Jeszcze nic tu nie ma - akcje, które wykonasz, pojawią się w tym miejscu.",
+    "ram": "Pamięć",
     "revealHostAria": "Pokaż adres hosta",
-    "hideHostAria": "Ukryj adres hosta"
+    "signIn": "Zaloguj się",
+    "signOut": "Wyloguj się"
   },
   "resourceLimits": {
     "title": "Limity zasobów",

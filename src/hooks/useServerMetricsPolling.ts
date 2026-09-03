@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { getServerMetrics } from "@/services/monitorService";
+import { useServerMetricsStore } from "@/stores/serverMetricsStore";
 import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import type { ServerMetrics } from "@/types/serverEvent";
 
@@ -33,6 +34,10 @@ export function useServerMetricsPolling(sshServerIds: string[]): Record<string, 
       ids.map(async (id) => {
         try {
           const metrics = await getServerMetrics(id);
+          // Shared with anything else that wants a recent reading without
+          // opening its own connection - the rail's hover card, mainly. A
+          // dashboard left open means hovering a Node costs nothing at all.
+          useServerMetricsStore.getState().put(id, metrics);
           setState((prev) => ({
             ...prev,
             [id]: { latest: metrics, history: [...(prev[id]?.history ?? []), metrics].slice(-HISTORY_LENGTH) },

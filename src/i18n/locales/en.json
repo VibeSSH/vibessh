@@ -1023,16 +1023,18 @@
     "title": "Create an account"
   },
   "rail": {
-    "addServer": "Add server",
     "account": "Account",
-    "notifications": "Notifications",
-    "notificationsEmpty": "Nothing yet - actions you take show up here.",
-    "notificationsClear": "Clear",
-    "signIn": "Sign in",
-    "signOut": "Sign out",
+    "addServer": "Add server",
+    "disk": "Disk",
+    "hideHostAria": "Hide host address",
     "hostHidden": "Host hidden",
+    "notifications": "Notifications",
+    "notificationsClear": "Clear",
+    "notificationsEmpty": "Nothing yet - actions you take show up here.",
+    "ram": "Memory",
     "revealHostAria": "Show host address",
-    "hideHostAria": "Hide host address"
+    "signIn": "Sign in",
+    "signOut": "Sign out"
   },
   "resourceLimits": {
     "title": "Resource limits",

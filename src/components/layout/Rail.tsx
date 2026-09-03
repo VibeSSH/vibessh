@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { HostAddress } from "@/components/ui/HostAddress";
+import { useCachedServerMetrics, useServerMetricsStore } from "@/stores/serverMetricsStore";
+import { formatBytesOf } from "@/utils/formatBytes";
 import { Icon } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
@@ -175,10 +177,16 @@ function sortableTimestamp(server: ManagedServer): number {
  * next hover.
  */
 function RailInstanceButton({ server }: { server: ManagedServer }) {
+  const { t } = useTranslation();
   const { createRipple, rippleEls } = useRipple();
   const navigate = useNavigate();
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
   const isAgent = server.connectionMode === "agent";
+  // What the machine has, not only whether it answers. Read from the
+  // shared cache, so a hover usually costs nothing at all - see
+  // `serverMetricsStore` for why this is not a fetch per hover.
+  const metrics = useCachedServerMetrics(server.id);
+  const ensureMetrics = useServerMetricsStore((s) => s.ensure);
   const btnRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | undefined>(undefined);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
@@ -196,6 +204,10 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
     window.clearTimeout(closeTimer.current);
     const rect = btnRef.current?.getBoundingClientRect();
     if (rect) setTooltipPos({ top: rect.top + rect.height / 2, left: rect.right + 10 });
+    // Only for a Node that can answer: an offline or agent-mode server has
+    // no metrics to fetch, and asking anyway would be a doomed SSH attempt
+    // on every pointer crossing.
+    if (!isAgent && server.status === "online") ensureMetrics(server.id);
   }
   function handleLeave() {
     closeTimer.current = window.setTimeout(() => {
@@ -243,6 +255,17 @@ function RailInstanceButton({ server }: { server: ManagedServer }) {
             <HostAddress value={server.host} className="rail-instance-tooltip-host" />
             {!isAgent && server.status === "online" && typeof latencyMs === "number" && (
               <div className="rail-instance-tooltip-latency">{latencyMs} ms</div>
+            )}
+            {/* Absent until a reading exists, rather than shown as zeros: a
+                machine reporting "0 / 0 GB" looks broken, and "nothing yet"
+                is the honest state for the first second of a hover. */}
+            {metrics && (
+              <dl className="rail-instance-tooltip-facts">
+                <dt>{t("rail.ram")}</dt>
+                <dd>{formatBytesOf(metrics.ramUsedBytes, metrics.ramTotalBytes)}</dd>
+                <dt>{t("rail.disk")}</dt>
+                <dd>{formatBytesOf(metrics.diskUsedBytes, metrics.diskTotalBytes)}</dd>
+              </dl>
             )}
           </div>,
           document.body,
