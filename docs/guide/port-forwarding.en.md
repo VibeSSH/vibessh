@@ -3,41 +3,50 @@ id: port-forwarding
 title: SSH tunnels
 section: nodes
 route: /port-forwarding
-order: 75
+order: 90
 ---
 
-An SSH tunnel carries traffic over your connection to a Node. It is for reaching something that is not - and should not be - exposed to the world: a database console, an admin port, a service listening only on the Node's localhost.
+A tunnel lets you reach a service on a server that is not exposed to the internet - a database console, for instance.
 
-This is a different thing from application ports and the firewall. There you declare what should be reachable permanently; here you open yourself a way through for a while.
+## How to create a tunnel
 
-## Where it is
+1. Open **Port forwarding** and choose a server.
+2. Click **New tunnel**.
+3. **Tunnel type** - choose **Local**.
+4. **Bind address** - enter `127.0.0.1`.
+5. **Bind port** - a number on your computer, e.g. `3306`. Enter `0` to let the system pick a free one.
+6. **Target host** - the address as seen from the server, usually `127.0.0.1`.
+7. **Target port** - the service's port on the server, e.g. `3306`.
+8. Click **Start**.
 
-The sidebar -> **Port forwarding**, once a server is chosen.
+## Example
 
-> Tunnels are **not saved**. They live only while VibeSSH is open, and must be opened again after a restart. That is deliberate - a permanent tunnel is in practice an open port somebody forgot about.
+Reaching MariaDB on a server:
 
-## Three kinds
+- Tunnel type: **Local**
+- Bind address: `127.0.0.1`
+- Bind port: `3306`
+- Target host: `127.0.0.1`
+- Target port: `3306`
 
-**Local** - a port on your computer leads to an address as seen from the Node. The common case: `localhost:3306` on your machine reaches `127.0.0.1:3306` on the server, and a database client connects as though the database were local.
+Once it is running, your database client connects to `127.0.0.1:3306`.
 
-**Remote** - the reverse: a port on the server leads to an address as seen from your computer. Used when the server is the one that has to reach something of yours.
+## How to stop a tunnel
 
-**Dynamic (SOCKS5)** - a proxy on your computer whose traffic leaves from the Node. You do not name one destination; the application using the proxy does.
+1. Find the tunnel in the list.
+2. Click the stop icon.
 
-## The fields
+## How to check it works
 
-| Field | Meaning | Example |
-| --- | --- | --- |
-| Bind address | Where the tunnel accepts connections. `127.0.0.1` keeps it to you. | `127.0.0.1` |
-| Bind port | The port it listens on. `0` means any free port. | `3306` |
-| Target host | Where it leads, as seen from the other side. | `127.0.0.1` |
-| Target port | The port on the other side. | `3306` |
+- The tunnel appears in the list of active ones.
+- A program on your computer connects to the local port you gave.
 
-For a local tunnel the target is resolved **on the Node**, not on your machine. That is why `127.0.0.1` means "that server" there rather than your computer - and why this works for services bound to the Node's localhost.
+## Common problems
 
-## Common mistakes
+- **The bind port is taken** - something on your computer already uses it. Enter `0`.
+- **The tunnel disappeared after restarting the app** - tunnels are not saved. Create it again.
+- **It will not reach the target** - **Target host** is resolved on the server's side. Enter the address the server sees, usually `127.0.0.1`.
 
-- **I entered a target as seen from my computer** - the target is resolved on the Node's side. Enter what the server sees.
-- **The tunnel disappeared** - closing VibeSSH closes all of them. Nothing recreates them.
-- **The bind port is taken** - something on your computer already holds it. Enter `0` and the system picks a free one.
-- **I want permanent access** - this is not the tool for that. Permanent access is an application port with the right access level, ideally "Vibe Network".
+## More detail
+
+Tunnels only run while VibeSSH is open. For permanent access, use an application port with the right **Network access**. The **Remote** type works the other way: a port on the server leads to your computer. **Dynamic (SOCKS5)** creates a proxy whose traffic leaves from the server.

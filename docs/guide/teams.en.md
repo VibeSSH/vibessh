@@ -3,59 +3,58 @@ id: teams
 title: Teams
 section: getting-started
 route: /teams
-order: 85
+order: 150
 ---
 
-Teams let you share access to servers with other people. It is the only part of VibeSSH that needs a cloud account - the rest of the app works locally and requires no sign-in at all.
+Teams let you give other people access to VibeSSH. They need a cloud account; the rest of the app works locally.
 
-## Where it is
+## How to create a team
 
-The sidebar -> **Teams**. The entry appears once you are signed in.
+1. Open **Teams**.
+2. Enter a team name.
+3. Click **Create**.
 
-## A team
+## How to add somebody
 
-You create a team by giving it a name. Whoever created it is the **owner**.
+1. Open the team -> the **Members** tab.
+2. Scroll to the **Create an account** card.
+3. **E-mail** - that person's address.
+4. **Name** - optional.
+5. **Role** - choose a role from the list.
+6. Click **Create account**.
+7. Copy the password shown and pass it to them.
 
-## Adding someone
+The password is shown once. If you lose it, create the account again.
 
-Team -> **Members** -> **Create an account**. Give an email, optionally a name, and pick a role. The account is created already in the team with that role, and you get a generated password to pass on.
+They sign in with it and must change it immediately. Until they do, their account can do nothing else.
 
-**The password is shown once.** Nothing stores it in readable form and no screen can produce it again - pass it on before closing the panel. If it is lost, provision the account again.
+## How to create a role
 
-That person signs in with it and **must replace it immediately**. Until they do, the backend refuses every other request from the account, so it is a rule rather than a prompt - a password you know is not yet their password. Changing it also ends every other session for that account.
+1. Open the team -> the **Roles** tab.
+2. Click **Create role**.
+3. Enter a **Name** and an optional **Description**.
+4. Tick permissions in the groups.
+5. Save.
 
-This used to work through invitation codes. That was removed: an invitation could only reach somebody who had already registered on their own, which is backwards for the case it existed for.
+## How to share a server with the team
 
-## Roles
+1. Open the team -> the **Servers** tab.
+2. Add the server by entering its details.
 
-Members have roles that decide what they can do with the servers shared in the team. Roles are set on the member, on the team's page.
+Operation permissions only apply to servers shared with the team.
 
-## Operation permissions - and what they are not
+## How to check it works
 
-Beyond permissions over the team itself (members, roles, the audit log), roles also carry permissions over operations: creating applications, ports, files, backups, the firewall, the terminal, installing software, Vibe Network.
+- The person appears in the **Members** list.
+- Their role is shown next to them.
+- Once signed in, they see only the buttons their role allows.
 
-> **These are guard rails, not a security boundary.** They hide and disable actions inside VibeSSH, so a new member does not click something by accident. They cannot stop somebody who does not want to be stopped.
+## Common problems
 
-The reason is architectural and worth knowing: these operations **do not pass through the backend**. The desktop app performs them over its own SSH connection, with that person's credentials, from their machine. The backend holds team server metadata only and never holds credentials. Anybody with SSH access to a Node can do the same thing with plain `ssh`, without VibeSSH.
+- **I do not see Teams in the menu** - you have to be signed in.
+- **An account with this email already exists** - that person already has an account. Add them as a member instead.
+- **A new member can still do everything** - the server is not shared with the team, or they are using the same computer as you and can see your local servers.
 
-The permissions apply only to servers **shared with a team**, matched by address and port. Your own servers, in no team, are subject to nothing.
+## More detail
 
-If the app is signed out or cannot reach the backend, nothing is restricted. That is deliberate: a network failure must not lock you out of your own machines.
-
-### When you need a boundary that holds
-
-Give that person a **Node account** with limited `sudo` and their own SSH key. Linux enforces it rather than the interface, so it applies outside VibeSSH too. The two complement each other well: permissions organise everyday work, the account draws the line.
-
-## Team servers
-
-A server shared with a team is visible to its members according to their roles. SSH credentials stay where they were - sharing a server does not distribute your private key or password to anybody.
-
-## Removing
-
-Removing a member takes away their access to the team's resources. Deleting a team cannot be undone and affects every member of it.
-
-## Common mistakes
-
-- **I don't see Teams in the menu** - you have to be signed in. Everything else in VibeSSH works without an account.
-- **I invited someone and nothing happened** - an invitation is a code the other person has to paste on their side.
-- **A member cannot see a server** - check the server is shared with the team and that their role allows it.
+Operation permissions (applications, ports, files, firewall, terminal) hide and disable actions inside VibeSSH. They will not stop somebody who has SSH access to the server outside the app. A real boundary is a separate account on the server with limited `sudo`.

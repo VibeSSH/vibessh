@@ -3,67 +3,60 @@ id: vibe-network
 title: Vibe Network
 section: network
 route: /vibe-network
-order: 40
+order: 70
 ---
 
-Vibe Network to prywatna sieć łącząca Twoje węzły tunelem WireGuard. Dzięki niej aplikacja na jednym serwerze może rozmawiać z bazą na drugim, nie wystawiając jej portu do internetu.
-
-## Gdzie to jest
-
-Menu boczne → **Vibe Network**. Trzy zakładki: **Node'y**, **Endpointy**, **Prywatny DNS**.
+Vibe Network pozwala aplikacjom na różnych serwerach komunikować się prywatnie, bez wystawiania portów do internetu.
 
 ![Dwa węzły w sieci, oba z aktywnym tunelem i świeżym handshake'iem](images/vibe-network-nodes.png)
 
-## Dołączanie węzła
+## Jak dodać Node do sieci
 
-**Dodaj node** wybiera serwer z listy i robi na nim całą robotę: instaluje `wireguard-tools`, jeśli ich nie ma, generuje parę kluczy, przydziela adres w sieci prywatnej i uzgadnia konfigurację ze wszystkimi pozostałymi węzłami.
+1. Otwórz **Vibe Network**.
+2. Kliknij **Dodaj node**.
+3. Wybierz serwer z listy.
+4. Poczekaj, aż w wierszu **Połączenie** pojawi się **Aktywne**.
+5. Powtórz dla pozostałych serwerów.
 
-**Klucz prywatny nigdy nie opuszcza węzła.** Jest tworzony na jego dysku i tylko klucz publiczny wraca do aplikacji.
+Node musi mieć zainstalowany WireGuard. Jeśli go brakuje, zainstaluj go w konfiguracji Node'a przyciskiem **Zainstaluj automatycznie**.
 
-Używany jest osobny interfejs (`wg-vibessh0`) i nietypowy port UDP, żeby nie wejść w drogę WireGuardowi, który mógł już być na tym serwerze.
+## Jak połączyć dwie aplikacje
 
-## Co mówi karta węzła
+1. Otwórz aplikację → zakładka **Porty**.
+2. Zjedź do karty **Połączenia**.
+3. W polu **Połącz z** wybierz drugą aplikację.
+4. Kliknij **Połącz**.
 
-| Wiersz | Znaczenie |
+Połączenie działa w obie strony i obowiązuje od razu.
+
+## Jak sprawdzić, czy działa
+
+- Obie karty Node mają **Połączenie: Aktywne**.
+- Wiersz **Ostatni handshake** pokazuje czas liczony w sekundach lub minutach.
+- Na karcie **Połączenia** druga aplikacja jest wypisana z adnotacją, pod jaką nazwą jest dostępna.
+
+## Jak sprawdzić stan całej sieci
+
+1. Kliknij **Synchronizuj Vibe Network**.
+2. Pod przyciskiem pojawi się lista Node'ów z wynikiem.
+
+## Znaczenie wiersza „Połączenie"
+
+| Wartość | Co znaczy |
 | --- | --- |
-| Nazwa DNS | Nazwa, pod którą węzeł jest widoczny w sieci prywatnej. |
-| Połączenie | Stan **tunelu**, nie SSH. Wartości niżej. |
-| Opóźnienie | Czas odpowiedzi węzła. |
-| Aplikacje | Ile aplikacji na nim stoi. |
-| Endpointy | Ile portów wystawia. |
-| Ostatni handshake | Kiedy WireGuard ostatnio uzgodnił klucze z peerem. |
+| **Aktywne** | Tunel działa. |
+| **Nie zestawione** | Tunel jest podniesiony, ale nigdy nie było połączenia. |
+| **Bez ruchu** | Połączenie było, ale dawno. |
+| **Brak tunelu** | Na Node nie ma interfejsu sieci. |
+| **Nieznane** | Nie udało się odczytać stanu. Powód jest w wierszu poniżej. |
+| **Node nie odpowiada** | Serwer nie odpowiedział. |
 
-Plakietka **Online / Offline** u góry mówi, czy węzeł odpowiedział na SSH. To osobne pytanie od stanu tunelu i dlatego jest osobnym wskaźnikiem.
+## Najczęstsze problemy
 
-### Stany połączenia
+- **Synchronizacja mówi „udane", a połączenie jest „Nie zestawione"** — sprawdź, czy dostawca VPS nie blokuje ruchu UDP. Vibe Network używa portu UDP `54221`.
+- **Aplikacje nadal się nie widzą** — sam tunel łączy serwery, nie aplikacje. Dodaj połączenie na karcie **Połączenia**.
+- **Brak tunelu** — na Node nie ma WireGuarda albo Node nie został jeszcze zsynchronizowany.
 
-- **Aktywne** — tunel działa i handshake jest świeży.
-- **Nie zestawione** — tunel jest podniesiony, ale handshake nie nastąpił ani razu.
-- **Bez ruchu** — handshake był, ale dawno.
-- **Brak tunelu** — interfejsu nie ma na węźle. Nie dołączył albo nie został uzgodniony po dołączeniu.
-- **Nieznane** — nie udało się odczytać stanu. Powód pojawia się w wierszu **Stan tunelu** poniżej.
-- **Node nie odpowiada** — nie dało się do niego połączyć, więc nic nie zostało sprawdzone.
+## Więcej informacji
 
-> Konfiguracja ustawia `PersistentKeepalive = 25`, więc **działający tunel robi handshake w pół minuty od podniesienia, nawet jeśli nikt nic nie przesyła**. „Nie zestawione" utrzymujące się dłużej to realny problem, a nie brak ruchu.
-
-Wiersz **Nieznane peery** pojawia się, gdy węzeł raportuje peera, którego klucza nie zna żaden node w tej sieci. Tak wygląda węzeł przekluczowany poza aplikacją.
-
-## Synchronizacja
-
-**Synchronizuj Vibe Network** doprowadza wszystko do zadeklarowanego stanu: uzgadnia peery WireGuarda na każdym węźle, nakłada reguły firewalla i rozsyła wpisy prywatnego DNS. Każdy węzeł i każdy z tych trzech kroków jest wykonywany niezależnie — jeden nieosiągalny węzeł nie blokuje pozostałych.
-
-Wynik pokazuje się listą pod przyciskiem, z powodem przy każdym niepowodzeniu.
-
-## Prywatny DNS
-
-Nadaje węzłom i aplikacjom nazwy w rodzaju `vps.vibe`, żeby konfiguracja mogła wskazywać na nazwę, a nie na adres, który zmieni się przy przenosinach.
-
-## Endpointy
-
-Widok wszystkich portów aplikacji zebranych per węzeł. To ten sam model danych co zakładka Porty w aplikacji, tylko oglądany z drugiej strony — nie ma tu osobnych bytów do konfigurowania.
-
-## Częste pomyłki
-
-- **Sync mówi „udane", a połączenie „Nie zestawione"** — synchronizacja rozsyła konfigurację, ale to nie ona robi handshake. Sprawdź, czy port UDP WireGuarda jest przepuszczony w firewallu dostawcy VPS-a.
-- **Aplikacje nadal się nie widzą** — sam tunel nie daje im dostępu do siebie. Połączenia między aplikacjami nadaje się osobno, na zakładce Porty aplikacji.
-- **Usunąłem węzeł z sieci i klucz zniknął** — nie zniknął. Opuszczenie sieci zdejmuje interfejs i konfigurację, ale para kluczy zostaje, więc ponowne dołączenie nie zmienia tożsamości węzła.
+Vibe Network używa WireGuarda. Klucz prywatny jest generowany na serwerze i nigdy go nie opuszcza. Zakładka **Prywatny DNS** nadaje serwerom nazwy w rodzaju `vps.vibe`, żeby konfiguracja mogła wskazywać nazwę zamiast adresu IP.

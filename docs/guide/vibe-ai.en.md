@@ -3,51 +3,56 @@ id: vibe-ai
 title: Vibe AI
 section: ai
 route: /vibe-ai
-order: 80
+order: 130
 ---
 
-Vibe AI answers questions about VibeSSH and helps diagnose a Node or an application that is misbehaving. It reads the same guide you are reading now, so its answers describe this version of the app rather than general Docker knowledge from the internet.
+Vibe AI helps analyse errors and configuration.
 
-## What the assistant does not do
+## How to set it up
 
-This matters as much as what it does:
+1. Open **Settings**.
+2. Find the **Vibe AI** card.
+3. Tick **Enable the Vibe AI assistant**.
+4. **Provider** - choose from the list.
+5. **Base URL** - the provider's API address.
+6. **Model** - the model name.
+7. **API key** - paste your key.
+8. Run the connection test.
+9. Save.
 
-- **It has no terminal access** and runs no commands. It can tell you what to type; you type it.
-- **It changes nothing** - not configuration, not files, not the state of an application.
-- **It does not run in the background.** There is no autonomous agent watching your Nodes.
+The shared model works without a key of your own and has a daily question limit.
 
-## Two modes
+## How to ask a question
 
-**Ask** - answers questions about VibeSSH. **Nothing is read from your Nodes.** This is the mode for "what does recreating a container do" or "how does Vibe Network access differ from public".
+1. Open **Vibe AI** in the sidebar.
+2. Choose a mode:
+   - **Ask** - answers about VibeSSH. Nothing is read from your servers.
+   - **Diagnose** - additionally sends data about a chosen server or application.
+3. In **Diagnose**, choose the server or application.
+4. Type your question and press Enter.
 
-**Diagnose** - additionally sends a snapshot of a chosen Node or application: status, recent logs, configuration. This is the mode for when something is broken and it is not obvious why.
+## How to ask about an application's error
 
-## Exactly what gets sent
+1. Open the application reporting the error.
+2. Click **Ask Vibe AI**.
+3. The assistant opens with the question written and the context selected.
 
-The **What will be sent** panel shows the precise content that goes with your message. Not a summary and not a description - the same text the model sees.
+## What will be sent
 
-Before it is sent the snapshot is sanitised: **passwords, tokens, private keys, secret environment values and passwords inside connection strings are removed.** That includes values passed on a container's command line and authorization headers in logs.
+The **What will be sent** panel shows the exact content that goes with your message. Passwords, tokens, private keys and secret environment values are removed first.
 
-Look at the panel when in doubt. It exists so that you do not have to take a description on trust.
+## How to check it works
 
-## Configuration
+- The connection test succeeds.
+- Sending a question produces an answer.
+- In **Diagnose**, the **What will be sent** panel shows the chosen application's data.
 
-**Settings -> AI**. The shared model (Qwen) works without a key of your own and has a daily per-user question limit - the usage counter is in the same place.
+## Common problems
 
-To use a different model you supply your own details: base URL, model name and API key. **The key goes into the operating system's credential store**, never into a configuration file, and it is not returned to the interface after saving. **Test connection** checks the settings work before you ask your first question.
+- **The assistant is not configured** - nothing is set in **Settings**, or the shared model's daily limit is used up.
+- **The answer does not know my application** - **Ask** mode reads nothing from your servers. Switch to **Diagnose**.
+- **I asked it to fix something and nothing happened** - the assistant performs no operations. It describes what to do.
 
-## Ask Vibe AI from an error
+## More detail
 
-Where an application reports a failure, an **Ask Vibe AI** button appears. It opens the assistant with the context already selected and the question already written, so you do not retype the message.
-
-## How to read the answers
-
-The assistant is meant to name **one likely cause** and a concrete next step, not to enumerate everything that could theoretically have gone wrong. If an answer spreads into a list of possibilities, there was usually too little context - try Diagnose with the right application selected.
-
-An answer can be incomplete if you end it with **Stop**; it is clearly marked when that happens.
-
-## Common mistakes
-
-- **"The assistant is not configured yet"** - either nothing is set in Settings, or the shared model's daily limit is used up.
-- **The answer does not know my application** - Ask mode reads nothing from your Nodes. Switch to Diagnose and choose the application.
-- **I asked it to fix something** - the assistant performs no operations. It will describe what to do.
+The API key goes into the operating system's credential store and is not returned to the interface after saving. The assistant has no terminal access and does not run in the background.

@@ -3,51 +3,57 @@ id: databases
 title: Bazy danych
 section: applications
 route: /database-hosts
-order: 45
+order: 60
 ---
 
-VibeSSH tworzy bazy MySQL/MariaDB dla aplikacji i pilnuje ich danych dostępowych. Nie jest to menedżer baz — nie ma tu przeglądania tabel ani zapytań; do tego jest phpMyAdmin, do którego można stąd przejść.
+VibeSSH tworzy bazy MySQL/MariaDB dla aplikacji i pilnuje ich danych dostępowych.
 
 ![Baza danych utworzona dla aplikacji, z wygenerowaną nazwą i użytkownikiem](images/databases-tab.png)
 
-## Dwa poziomy
+## Jak dodać host bazy danych
 
-**Host bazy danych** to silnik: serwer MySQL albo MariaDB, na którym powstają bazy. Rejestruje się go raz, w menu bocznym pod **Bazy danych**.
+Host to serwer bazy, na którym powstaną bazy. Trzeba go dodać raz.
 
-**Baza aplikacji** to konkretna baza założona dla jednej aplikacji na wybranym hoście. Tworzy się ją w aplikacji, na zakładce Bazy danych.
+1. Otwórz **Bazy danych** w menu bocznym.
+2. Kliknij **Dodaj host**.
+3. Wpisz adres, port i konto administracyjne serwera bazy.
+4. Zapisz.
 
-Bez zarejestrowanego hosta zakładka w aplikacji nie ma czego zaoferować i powie o tym wprost.
+Jeśli na Node nie ma jeszcze żadnego silnika bazy, kliknij **Zainstaluj MariaDB** i poczekaj na zakończenie.
 
-## Rejestrowanie hosta
+## Jak utworzyć bazę dla aplikacji
 
-Podajesz adres, port i konto administracyjne silnika. Konto musi mieć prawo zakładania baz i użytkowników — VibeSSH używa go wyłącznie do tego.
+1. Otwórz aplikację → zakładka **Bazy danych**.
+2. W polu wyboru wskaż host bazy.
+3. **Przeznaczenie** — opcjonalnie, np. `luckperms`.
+4. Kliknij **Nowa baza danych**.
 
-Jeśli na węźle nie ma jeszcze żadnego silnika, dostępny jest przycisk **Zainstaluj MariaDB**. To świadoma decyzja operatora, a nie coś, co dzieje się samo przy tworzeniu aplikacji: instalacja serwera bazy zmienia węzeł trwale.
+Nazwa bazy, login i hasło są generowane automatycznie.
 
-## Tworzenie bazy dla aplikacji
+## Jak skopiować dane połączenia
 
-Wybierasz host, opcjonalnie wpisujesz przeznaczenie (np. `luckperms`) i to wszystko. **Nazwa bazy, login i hasło są generowane automatycznie** — nie wymyślasz ich i nie musisz nigdzie zapisywać.
+1. Przy bazie kliknij ikonę oka.
+2. Zobaczysz **Host**, **Baza danych**, **Użytkownik** i **Hasło**.
+3. Skopiuj wartości do konfiguracji wtyczki lub aplikacji.
 
-Osobne konto na bazę jest tu celem, nie ozdobą: aplikacja dostaje dostęp do swojej bazy i tylko do niej.
+## Jak usunąć bazę
 
-## Dane dostępowe
+1. Przy bazie kliknij ikonę kosza.
+2. Potwierdź.
 
-Przycisk oka pokazuje host, nazwę bazy, użytkownika i hasło — do wklejenia w konfigurację wtyczki czy aplikacji.
+Usunięcie kasuje bazę razem z danymi. Nie da się tego cofnąć.
 
-**Hasło nie jest trzymane w konfiguracji aplikacji.** Pokazywane jest na żądanie. Jeśli je zgubisz, nie odzyskujesz go — generujesz nowe przyciskiem resetu, co od razu zmienia hasło w silniku.
+## Jak sprawdzić, czy działa
 
-> Po zresetowaniu hasła trzeba zaktualizować konfigurację aplikacji i ją zrestartować. Nic nie zrobi tego za Ciebie — stare hasło przestaje działać w tej samej chwili.
+- Baza jest na liście z nazwą i użytkownikiem.
+- Wtyczka lub aplikacja łączy się bez błędu.
 
-## phpMyAdmin
+## Najczęstsze problemy
 
-Jeśli host ma skonfigurowany phpMyAdmin, przycisk otwiera go dla tej bazy. To tylko przejście do zewnętrznego narzędzia; VibeSSH nie pośredniczy w zapytaniach.
+- **Nie zarejestrowano żadnego hosta** — najpierw dodaj host w menu bocznym **Bazy danych**.
+- **Aplikacja nie łączy się z bazą** — sprawdź, czy port bazy ma dostęp **Tylko Vibe Network**, a oba Node'y są w Vibe Network.
+- **Zresetowałem hasło i przestało działać** — zaktualizuj hasło w konfiguracji aplikacji i zrestartuj ją.
 
-## Usuwanie
+## Więcej informacji
 
-Usunięcie bazy kasuje ją w silniku razem z danymi. Nie da się tego cofnąć i nie ma tu backupu — backupy aplikacji obejmują katalog roboczy, nie zawartość bazy.
-
-## Częste pomyłki
-
-- **„Nie zarejestrowano żadnego hosta"** — najpierw dodaj host w menu bocznym, dopiero potem twórz bazę w aplikacji.
-- **Aplikacja nie łączy się z bazą** — sprawdź, czy widzi host. Baza na innym węźle wymaga połączenia przez Vibe Network albo wystawionego portu; sam fakt, że oba węzły są Twoje, nie daje im łączności.
-- **Zresetowałem hasło i serwer padł** — konfiguracja aplikacji nadal ma stare. Zaktualizuj i zrestartuj.
+Każda baza dostaje własnego użytkownika, więc aplikacja ma dostęp tylko do swojej. Hasło nie jest przechowywane w konfiguracji aplikacji — pokazujesz je na żądanie. Backupy aplikacji nie obejmują zawartości baz danych.

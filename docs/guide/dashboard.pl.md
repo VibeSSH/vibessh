@@ -3,49 +3,34 @@ id: dashboard
 title: Panel
 section: getting-started
 route: /
-order: 2
+order: 5
 ---
 
-Panel to jedno pytanie: czy coś wymaga mojej uwagi. Jeśli nie, wchodzisz tu na sekundę i wychodzisz.
+Panel pokazuje stan wszystkich serwerów i aplikacji w jednym miejscu.
 
 ![Panel: stan zbiorczy, kafelki węzłów i alerty](images/dashboard.png)
 
-## Nagłówek
+## Co jest na Panelu
 
-Zbiorczy stan całości: **Wszystko w porządku** albo **Wymaga uwagi**, i ile węzłów jest online. To wypadkowa alertów niżej, więc jeśli świeci ostrzegawczo, powód jest na tej samej stronie.
+1. **Nagłówek** — zbiorczy stan: **Wszystko w porządku** albo **Wymaga uwagi**.
+2. **Node'y** — kafelek na serwer z CPU, RAM-em i czasem pracy.
+3. **Alerty** — lista problemów: serwer offline, aplikacja z błędem.
+4. **Zadania** — rzeczy do wykonania jednym kliknięciem, np. synchronizacja Node'a.
 
-## Node'y
+## Jak sprawdzić jeden serwer
 
-Kafelek na węzeł, a na nim CPU, RAM, czas pracy i stan synchronizacji z Vibe Network.
+1. Kliknij kafelek serwera.
+2. Pod spodem pojawią się zakładki **Aplikacje**, **Terminal** i **Aktywność**.
+3. Kliknij **Wszystkie Node'y**, żeby wrócić do widoku zbiorczego.
 
-- **Zsynchronizowany** — konfiguracja na węźle odpowiada tej zadeklarowanej w aplikacji.
-- **Niezsynchronizowany** — coś się rozjechało. Kliknięcie **Synchronizuj** doprowadza ten jeden węzeł do stanu docelowego.
-- **Zbieranie danych…** — węzeł odpowiada, ale nie ma jeszcze pierwszej próbki metryk. Procent CPU to różnica między dwoma odczytami, więc pierwszy z nich nie ma z czym się porównać.
-- **Offline** — węzeł nie odpowiedział.
+## Jak sprawdzić, czy działa
 
-## Alerty
+- Kafelki pokazują procenty CPU i RAM.
+- Serwery mają status **Online**.
+- Sekcja **Alerty** jest pusta.
 
-Rzeczy, o których warto wiedzieć bez szukania: serwer offline, węzeł nieosiągalny w Vibe Network, aplikacja w stanie błędu. Pusta lista to prawdziwa informacja, nie brak danych.
+## Najczęstsze problemy
 
-## Zadania
-
-Zaległości, które da się wykonać jednym kliknięciem — najczęściej węzeł czekający na synchronizację. Sekcja pokazuje się tylko wtedy, gdy jest w niej cokolwiek.
-
-## Zakładki pod spodem
-
-Po wybraniu węzła kafelkiem:
-
-- **Aplikacje** — co na nim stoi.
-- **Terminal** — powłoka do tego węzła bez przechodzenia do modułu Terminal. Dostępne tylko dla węzłów SSH.
-- **Aktywność** — ostatnie zdarzenia. Węzły w trybie Agent nie mają metryk CPU i RAM, tylko stan synchronizacji.
-
-**Wszystkie Node'y** czyści wybór i wraca do widoku zbiorczego.
-
-## Jak często to się odświeża
-
-Metryki węzłów co kilka sekund, całość panelu rzadziej. Odświeżanie zatrzymuje się, gdy okno jest schowane, i rusza od razu po powrocie — każdy odczyt to połączenie SSH do węzła, a nie darmowe zapytanie.
-
-## Częste pomyłki
-
-- **Panel pokazuje offline, a serwer działa** — sprawdź, czy VibeSSH ma do niego dostęp po SSH. Panel mówi o tym, co udało mu się osiągnąć, a nie o tym, czy maszyna żyje.
-- **Metryki stoją w miejscu** — jeśli okno było schowane, ostatni odczyt jest sprzed jego ukrycia.
+- **Serwer pokazuje offline, choć działa** — VibeSSH nie mógł się połączyć. Sprawdź serwer w module **Serwery**.
+- **Kafelek pokazuje „Zbieranie danych…"** — brak jeszcze drugiego odczytu. Poczekaj chwilę.
+- **Metryki stoją w miejscu** — okno było schowane. Odświeżanie rusza po powrocie.

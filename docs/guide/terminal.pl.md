@@ -3,39 +3,48 @@ id: terminal
 title: Terminal
 section: nodes
 route: /terminal
-order: 60
+order: 100
 ---
 
-Terminal to zwykła powłoka na węźle — to samo, co dostałbyś, łącząc się przez `ssh`, tylko w oknie aplikacji i z zakładkami.
+Terminal daje dostęp do wiersza poleceń na serwerze.
 
-## Gdzie to jest
+## Jak otworzyć terminal
 
-Menu boczne → **Terminal**, po wybraniu serwera. Skrót do tego samego jest na Panelu, na zakładce Terminal wybranego węzła.
+1. Otwórz **Terminal** w menu bocznym.
+2. Wybierz serwer.
+3. Poczekaj, aż pojawi się znak zachęty.
 
-## Karty
+Terminal do wybranego serwera otworzysz też z **Panelu**, zakładka **Terminal**.
 
-**Nowy terminal** otwiera kolejną kartę. Każda karta to osobna sesja SSH z własną historią i własnym katalogiem roboczym — zamknięcie jednej nie rusza pozostałych.
+## Jak wysłać komendę
 
-Karty nie przeżywają zamknięcia aplikacji. To sesje interaktywne, nie `screen` ani `tmux`; jeśli potrzebujesz procesu przeżywającego rozłączenie, uruchom go w `tmux` na węźle albo zrób z niego aplikację.
+1. Wpisz komendę.
+2. Wciśnij Enter.
 
-## Wyszukiwanie
+## Jak otworzyć kilka kart
 
-Pole **Szukaj w terminalu** przeszukuje bufor przewijania bieżącej karty, z przejściem do poprzedniego i następnego trafienia.
+1. Kliknij **Nowy terminal**.
+2. Przełączaj się między kartami, klikając ich nazwy.
+3. Kartę zamykasz krzyżykiem na jej nazwie.
 
-## Zakończenie sesji
+Każda karta to osobne połączenie z własną historią.
 
-Gdy sesja się skończy — bo wpisałeś `exit`, bo serwer ją zamknął, bo padło połączenie — karta zostaje z komunikatem i podanym powodem, jeśli jest znany. **Karta nie łączy się ponownie sama.** Zamknij ją i otwórz nową; automatyczne wznawianie po cichu wróciłoby do innego stanu, niż zostawiłeś.
+## Jak wyszukać tekst
 
-## Tylko SSH
+1. Wpisz tekst w polu **Szukaj w terminalu**.
+2. Przechodź między trafieniami strzałkami obok pola.
 
-Terminal działa dla węzłów w trybie SSH. Węzeł w trybie Agent nie udostępnia z tej aplikacji powłoki.
+## Jak sprawdzić, czy działa
 
-## Uwaga o Vibe AI
+- Pojawia się znak zachęty z nazwą serwera.
+- Komendy zwracają wynik.
 
-Asystent **nie ma dostępu do terminala** i nie wykonuje poleceń. Może opisać, co zrobić, ale wpisujesz to sam. To jest granica projektowa, nie brak funkcji.
+## Najczęstsze problemy
 
-## Częste pomyłki
+- **Sesja zakończona** — połączenie zostało zamknięte. Zamknij kartę i otwórz nową.
+- **Terminala nie ma w menu** — nie wybrano serwera albo Node działa w trybie Vibe Agent, który nie udostępnia terminala.
+- **Uruchomiłem program i zniknął po zamknięciu karty** — program uruchomiony w terminalu kończy się razem z sesją. Do stałego działania utwórz aplikację.
 
-- **Uruchomiłem serwer w terminalu i zniknął po zamknięciu karty** — proces wystartowany w sesji interaktywnej ginie razem z nią. Do tego są aplikacje.
-- **Terminala nie ma w menu** — nie wybrano serwera, albo węzeł jest w trybie Agent.
-- **Kopiowanie i wklejanie** — działa jak w terminalu, nie jak w edytorze tekstu; zaznaczenie kopiuje, prawy przycisk wkleja.
+## Więcej informacji
+
+Karty nie przeżywają zamknięcia VibeSSH. Vibe AI nie ma dostępu do terminala i nie wykonuje komend.

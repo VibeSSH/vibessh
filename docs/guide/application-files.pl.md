@@ -3,58 +3,67 @@ id: application-files
 title: Pliki aplikacji
 section: files
 route: /applications
-order: 20
+order: 40
 ---
 
-Przeglądarka plików pokazuje katalog roboczy aplikacji — i tylko jego. Nie jest to menedżer plików całego serwera; z tej zakładki nie da się wyjść poza katalog aplikacji, nawet wpisując ścieżkę ręcznie.
-
-## Gdzie to jest
-
-Aplikacja → zakładka **Pliki**.
-
-## Konto, na którym to działa
-
-Jeśli aplikacja ma włączone dedykowane konto, VibeSSH zakłada na węźle osobne konto systemowe (`vibessh-app-…`) i wszystkie operacje na plikach wykonuje jako ono. To nie jest kosmetyka: bez tego każda aplikacja na węźle mogłaby czytać pliki każdej innej.
-
-Konto i skrypt pomocniczy są zakładane przy pierwszej operacji na plikach, więc pierwsze wejście w zakładkę może być odrobinę wolniejsze niż kolejne.
+Zakładka **Pliki** pokazuje pliki aplikacji: konfigurację, wtyczki, świat.
 
 ![Przeglądarka plików aplikacji z katalogami i plikami konfiguracyjnymi](images/application-files.png)
 
-## Nawigacja
+## Jak przeglądać
 
-Klik w katalog wchodzi do środka, okruszki nad listą prowadzą z powrotem. Katalog raz odwiedzony jest zapamiętany, więc cofanie się po drzewie jest natychmiastowe — dopiero po chwili VibeSSH pyta węzeł, czy coś się zmieniło.
+1. Otwórz aplikację → zakładka **Pliki**.
+2. Kliknij folder, żeby wejść do środka.
+3. Kliknij nazwę nad listą, żeby wrócić wyżej.
+4. Użyj pola **Filtruj**, żeby znaleźć plik po nazwie.
 
-Lista pokazuje najwyżej 200 pozycji. Pole **Filtruj** zawęża do tego, czego szukasz — katalog z tysiącami plików jest po to, żeby go filtrować, a nie przewijać.
+## Jak edytować plik
 
-## Edytor
+1. Kliknij nazwę pliku.
+2. Wprowadź zmiany.
+3. Kliknij **Zapisz** albo wciśnij `Ctrl+S`.
+4. Zrestartuj aplikację przyciskiem **Uruchom ponownie**.
 
-Klik w plik otwiera go w edytorze z kolorowaniem składni. Rozpoznawane są między innymi `.yml`, `.json`, `.properties`, `.toml`, `.sh`, `Dockerfile` i pliki jednostek systemd.
+Zaznaczona opcja **Kopia zapasowa przed zapisem** zapisuje poprzednią wersję. Znajdziesz ją pod ikoną historii.
 
-- **Szukaj** (ikona lupy albo `Ctrl+F`) — wyszukiwarka w pliku, z podświetlaniem trafień.
-- **Ctrl+S** — zapis, tak samo jak przycisk.
-- **Historia** — poprzednie wersje pliku zapisane przez ten edytor.
-- **Kopia zapasowa przed zapisem** — zaznaczone domyślnie. Przed nadpisaniem pliku jego obecna treść trafia do historii. Wyłączaj świadomie.
+Aby znaleźć tekst w pliku, kliknij ikonę lupy albo wciśnij `Ctrl+F`.
 
-Pliki powyżej 1 MB nie otwierają się w edytorze. Limit egzekwuje backend, nie tylko interfejs.
+## Jak przesłać plik
 
-### Walidacja YAML
+1. Kliknij **Prześlij**.
+2. Wybierz plik z komputera.
+3. Poczekaj na koniec transferu.
 
-Pliki `.yml` i `.yaml` są sprawdzane składniowo w trakcie pisania. Linia z błędem dostaje tło, belkę przy lewej krawędzi i kropkę w rynience.
+## Jak pobrać plik
 
-**Przy błędzie składni zapis jest zablokowany.** To celowe: plik konfiguracyjny, który się nie parsuje, powoduje, że serwer nie wstaje, a awaria pojawia się minutę później, w zupełnie innym miejscu, bez śladu przyczyny.
+1. Kliknij ikonę pobierania przy pliku.
+2. Wskaż miejsce zapisu.
 
-Blokują wyłącznie **błędy**. Ostrzeżenia nie — ostrzeżenie to parser mówiący „nietypowe", a odmowa zapisu byłaby edytorem przegłosowującym Ciebie.
+## Pozostałe operacje
 
-Duplikat klucza też blokuje. To ten przypadek, w którym drugi po cichu wygrywa, więc ustawienie ma inną wartość, niż widać w pliku.
+Kliknij plik prawym przyciskiem myszy:
 
-## Operacje na plikach
+- **Zmień nazwę**
+- **Przenieś**
+- **Kopiuj**
+- **Uprawnienia**
+- **Usuń**
+- **Rozpakuj** — dla plików `.zip`
 
-Prawy przycisk myszy na pozycji: zmiana nazwy, przeniesienie, kopiowanie, uprawnienia, usunięcie, a dla archiwów `.zip` — rozpakowanie.
+Nowe pliki i foldery tworzysz przyciskami **Nowy plik** i **Nowy folder**.
 
-Wysyłanie i pobieranie idzie przez kolejkę transferów widoczną na dole. Transfer, który padnie, można ponowić bez wybierania pliku od nowa.
+## Jak sprawdzić, czy działa
 
-## Częste pomyłki
+- Po zapisie pojawia się komunikat o zapisaniu pliku.
+- Po restarcie aplikacja używa nowej konfiguracji.
+- Przesłany plik jest widoczny na liście.
 
-- **Nie widzę pliku, który wgrałem przez FTP** — odśwież listę. Zapamiętany katalog pokazuje ostatni odczyt, dopóki VibeSSH nie zapyta ponownie.
-- **Zapis nie działa i nie wiem czemu** — jeśli to YAML, spójrz na czerwony pasek nad edytorem. Podaje numer linii i powód.
-- **Zmieniłem plik, a serwer działa po staremu** — większość serwerów czyta konfigurację przy starcie. Po zapisie trzeba zrestartować aplikację.
+## Najczęstsze problemy
+
+- **Nie mogę zapisać pliku YAML** — nad edytorem jest czerwony pasek z numerem linii. Popraw błąd, wtedy zapis się odblokuje.
+- **Nie widzę pliku wgranego inaczej niż przez VibeSSH** — wejdź do folderu ponownie, żeby odświeżyć listę.
+- **Plik się nie otwiera** — pliki powyżej 1 MB nie otwierają się w edytorze. Pobierz go.
+
+## Więcej informacji
+
+Zapis pliku `.yml` jest blokowany przy błędzie składni, bo taki plik zatrzymałby serwer przy starcie. Ostrzeżenia nie blokują. Lista pokazuje maksymalnie 200 pozycji — w większym folderze użyj pola **Filtruj**.

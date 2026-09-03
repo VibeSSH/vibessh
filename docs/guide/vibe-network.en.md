@@ -3,67 +3,60 @@ id: vibe-network
 title: Vibe Network
 section: network
 route: /vibe-network
-order: 40
+order: 70
 ---
 
-Vibe Network is a private network joining your Nodes over a WireGuard tunnel. It is what lets an application on one server talk to a database on another without exposing that database's port to the internet.
-
-## Where it is
-
-The sidebar -> **Vibe Network**. Three tabs: **Nodes**, **Endpoints**, **Private DNS**.
+Vibe Network lets applications on different servers talk to each other privately, without exposing ports to the internet.
 
 ![Two Nodes in the network, both with an active tunnel and a recent handshake](images/vibe-network-nodes.png)
 
-## Joining a Node
+## How to add a Node to the network
 
-**Add node** takes a server from the list and does the whole job on it: installs `wireguard-tools` if they are missing, generates a key pair, allocates an address on the private network, and reconciles the configuration with every other member.
+1. Open **Vibe Network**.
+2. Click **Add node**.
+3. Choose a server from the list.
+4. Wait until the **Connection** row reads **Active**.
+5. Repeat for the other servers.
 
-**The private key never leaves the Node.** It is generated on its own disk and only the public key comes back to the app.
+The Node needs WireGuard. If it is missing, install it from the Node setup screen with **Install automatically**.
 
-A separate interface (`wg-vibessh0`) and an unusual UDP port are used, so as not to collide with WireGuard that may already be on that server.
+## How to connect two applications
 
-## What a Node card says
+1. Open the application -> the **Ports** tab.
+2. Scroll to the **Connections** card.
+3. In **Connect to**, choose the other application.
+4. Click **Connect**.
 
-| Row | Meaning |
+The connection works both ways and applies immediately.
+
+## How to check it works
+
+- Both Node cards read **Connection: Active**.
+- The **Last handshake** row shows a time measured in seconds or minutes.
+- The **Connections** card lists the other application with the name it is reachable as.
+
+## How to check the whole network
+
+1. Click **Sync Vibe Network**.
+2. A list of Nodes with the result appears under the button.
+
+## What the "Connection" row means
+
+| Value | What it means |
 | --- | --- |
-| DNS name | The name the Node answers to on the private network. |
-| Connection | The state of the **tunnel**, not of SSH. Values below. |
-| Latency | How long the Node takes to answer. |
-| Applications | How many run on it. |
-| Endpoints | How many ports it exposes. |
-| Last handshake | When WireGuard last agreed keys with a peer. |
+| **Active** | The tunnel is working. |
+| **Not established** | The tunnel is up but has never connected. |
+| **Idle** | It connected, but a while ago. |
+| **No tunnel** | The Node has no network interface for this. |
+| **Unknown** | The state could not be read. The reason is in the row below. |
+| **Node not answering** | The server did not respond. |
 
-The **Online / Offline** badge at the top says whether the Node answered SSH. That is a separate question from the state of the tunnel, which is why it is a separate indicator.
+## Common problems
 
-### Connection states
+- **Sync says it succeeded but the connection says "Not established"** - check that your VPS provider is not blocking UDP. Vibe Network uses UDP port `54221`.
+- **The applications still cannot see each other** - the tunnel joins servers, not applications. Add a connection on the **Connections** card.
+- **No tunnel** - the Node has no WireGuard, or has not been synchronised yet.
 
-- **Active** - the tunnel is up and the handshake is recent.
-- **Not established** - the tunnel is up but has never handshaked.
-- **Idle** - there was a handshake, but a while ago.
-- **No tunnel** - the interface is not on the Node. It has not joined, or has not been reconciled since joining.
-- **Unknown** - the state could not be read. The reason appears in the **Tunnel status** row below.
-- **Node not answering** - it could not be reached, so nothing was checked.
+## More detail
 
-> The configuration sets `PersistentKeepalive = 25`, so **a working tunnel handshakes within half a minute of coming up, whether or not anybody sends traffic**. "Not established" that persists is a real problem, not an absence of traffic.
-
-An **Unknown peers** row appears when a Node reports a peer whose key belongs to no member of this network. That is what a Node re-keyed outside the app looks like.
-
-## Synchronising
-
-**Sync Vibe Network** brings everything to the declared state: it reconciles WireGuard peers on every Node, applies firewall rules, and pushes the private DNS entries. Every Node and each of those three steps runs independently - one unreachable Node does not block the others.
-
-The result appears as a list under the button, with a reason next to each failure.
-
-## Private DNS
-
-Gives Nodes and applications names like `vps.vibe`, so configuration can point at a name rather than at an address that changes when something moves.
-
-## Endpoints
-
-A view of every application port, gathered per Node. It is the same data as an application's Ports tab seen from the other side - there is nothing separate to configure here.
-
-## Common mistakes
-
-- **Sync says it succeeded but the connection says "Not established"** - synchronising distributes configuration; it is not what performs a handshake. Check that WireGuard's UDP port is allowed by your VPS provider's firewall.
-- **The applications still can't see each other** - a tunnel alone does not grant that. Connections between applications are granted separately, on an application's Ports tab.
-- **I removed a Node from the network and its key is gone** - it is not. Leaving takes down the interface and its config, but the key pair stays, so rejoining does not change the Node's identity.
+Vibe Network uses WireGuard. The private key is generated on the server and never leaves it. The **Private DNS** tab gives servers names like `vps.vibe`, so configuration can point at a name instead of an IP address.

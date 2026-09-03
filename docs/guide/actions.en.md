@@ -3,42 +3,50 @@ id: actions
 title: Actions
 section: nodes
 route: /actions
-order: 68
+order: 120
 ---
 
-Actions shows what runs on a Node **outside** VibeSSH: systemd services and Docker containers you did not create here as applications.
-
-Applications are managed in the Applications module. This screen is for the rest of the machine - system services, other people's containers, things set up by hand before VibeSSH existed.
-
-## Where it is
-
-The sidebar -> **Actions**, once a server is chosen.
+Actions lets you manage a server's system services and containers - the ones you did not create as applications in VibeSSH.
 
 ![systemd services and Docker containers on a Node](images/actions.png)
 
-## systemd services
+## How to open it
 
-A list of units with two independent states that are easy to confuse:
+1. Open **Actions** in the sidebar.
+2. Choose a server.
 
-- **Active / Inactive** - whether the service is running **right now**.
-- **Enabled / Disabled** - whether it comes back **after a reboot**.
+## How to manage a service
 
-These are separate things. A service can be running and not enabled (it disappears when the server reboots), or enabled and not running (it failed and is waiting for the next start).
+1. Find the service in the **systemd services** list. Use **Filter by name**.
+2. Click an action icon on the service: start, stop, restart.
+3. To make it come back after a reboot, use the enable action.
 
-The available operations are start, stop, restart, and enable or disable at boot. The name filter narrows the list - a typical server has over a hundred.
+## Two independent states
+
+| State | What it means |
+| --- | --- |
+| **Active** / **Inactive** | Whether it is running right now. |
+| **Enabled** / **Disabled** | Whether it comes back after a reboot. |
+
+A service can be running and not enabled - it disappears when the server reboots.
 
 ## Docker containers
 
-The containers on the Node, with their state and a log view. An empty list means the Node has no containers, or no Docker.
+The **Docker containers** section lists the server's containers. You can start, stop, restart and view their logs.
 
-## A word of caution
+Applications created in VibeSSH are managed in the **Applications** module, not here.
 
-This screen acts on the Node's real system. Stopping a service something else depends on stops that too - and there is no confirmation describing the consequences, because VibeSSH does not know what a given unit does in your setup.
+## How to check it works
 
-Be especially careful with networking and SSH: stopping `ssh` cuts VibeSSH off from the Node, and the only way back is your VPS provider's console.
+- The service changes to **Active**.
+- The container changes to running.
 
-## Common mistakes
+## Common problems
 
-- **I stopped an application's container here** - you can, but managing an application belongs in its own view, alongside its console, ports and backups.
-- **The service runs but is gone after a reboot** - it was active but not enabled. Two different things.
-- **I see no containers** - check that Docker is installed and that the account can reach it.
+- **No containers** - the server has no Docker, or the account cannot reach it.
+- **The service runs but is gone after a reboot** - it was active but not enabled.
+- **I cannot stop a service** - the account has no `sudo`.
+
+## More detail
+
+Stopping a service also stops everything that depends on it. Do not stop the `ssh` service - you will lose access to the server from VibeSSH.

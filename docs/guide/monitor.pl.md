@@ -3,39 +3,46 @@ id: monitor
 title: Monitor
 section: nodes
 route: /monitor
-order: 65
+order: 110
 ---
 
-Monitor pokazuje, co węzeł robi w tej chwili: zużycie zasobów, ruch sieciowy i listę procesów. To odczyt na żywo, a nie system historii — dane zbierają się, dopóki strona jest otwarta.
-
-## Gdzie to jest
-
-Menu boczne → **Monitor**, po wybraniu serwera.
+Monitor pokazuje, jak obciążony jest serwer i co na nim działa.
 
 ![Monitor: zasoby, wykresy historii i lista procesów posortowana po pamięci](images/monitor.png)
 
-## Zasoby
+## Jak otworzyć
 
-Cztery odczyty, odświeżane co kilka sekund: **CPU**, **RAM**, **Sieć — odbiór** i **Sieć — wysyłka**.
+1. Otwórz **Monitor** w menu bocznym.
+2. Wybierz serwer.
 
-CPU i przepustowość sieci to **różnice między dwoma odczytami**, a nie wartości, które system podaje wprost. Dlatego pierwszy odczyt po wejściu pokazuje „zbieranie danych…" — nie ma jeszcze z czym go porównać.
+Strona odświeża się co 5 sekund.
 
-## Historia
+## Co oznaczają wartości
 
-Wykres ostatnich kilkunastu minut, budowany od momentu otwarcia strony. Nic go nie zapisuje: po wyjściu i powrocie zaczyna się od nowa. Wykres, który udawałby przeszłość, której nikt nie rejestrował, byłby gorszy niż pusty.
+| Wartość | Znaczenie | Kiedy jest problem |
+| --- | --- | --- |
+| **CPU** | Obciążenie procesora. | Stale powyżej 90%. |
+| **RAM** | Zajęta pamięć. | Blisko 100% — serwer zacznie zwalniać albo zabijać procesy. |
+| **Dysk** | Zajęte miejsce. | Powyżej 90% — brak miejsca zatrzyma aplikacje i backupy. |
+| **Sieć** | Ruch przychodzący i wychodzący. | Nietypowo wysoki bez powodu. |
 
-## Procesy
+## Jak znaleźć, co obciąża serwer
 
-Lista uruchomionych procesów posortowana po zużyciu pamięci, z PID-em, użytkownikiem, CPU, RAM-em i poleceniem.
+1. Zjedź do sekcji **Procesy**.
+2. Lista jest posortowana po zużyciu pamięci.
+3. Sprawdź kolumny **CPU**, **RAM** i **Polecenie**.
 
-Sortowanie po pamięci jest celowe: proces zjadający pamięć to najczęstsza przyczyna tego, że węzeł nagle zwalnia albo że jądro zabija serwer gry.
+## Jak sprawdzić, czy działa
 
-## Odświeżanie
+- Paski CPU, RAM i Dysk pokazują wartości procentowe.
+- Na liście **Procesy** widać uruchomione programy.
 
-Strona odpytuje węzeł co kilka sekund i **przestaje, gdy okno jest schowane**, a rusza od razu po powrocie. Każdy odczyt to połączenie SSH — monitor zostawiony na noc bez tego kosztowałby tysiące zbędnych połączeń.
+## Najczęstsze problemy
 
-## Częste pomyłki
+- **Wszędzie „zbieranie danych…"** — poczekaj na drugi odczyt. Procent CPU liczy się z różnicy dwóch pomiarów.
+- **Wykresy zniknęły po wyjściu ze strony** — historia zbiera się tylko przy otwartej stronie i nie jest zapisywana.
+- **RAM prawie w całości zajęty** — Linux używa wolnej pamięci na bufory i oddaje ją, gdy jest potrzebna. Patrz na pamięć zajętą przez procesy.
 
-- **Zamknąłem stronę i historia przepadła** — tak ma być, nic jej nie utrwala. Do obserwacji długoterminowej potrzebne jest osobne narzędzie na węźle.
-- **CPU pokazuje 0%** — to najpewniej pierwszy odczyt. Poczekaj na drugi.
-- **RAM wygląda na zajęty w całości** — Linux używa wolnej pamięci na cache dyskowy i oddaje ją, gdy jest potrzebna. Interesująca jest pamięć zajęta przez procesy, a nie „wolna".
+## Więcej informacji
+
+Odświeżanie zatrzymuje się, gdy okno jest schowane, i rusza po powrocie. Każdy odczyt to połączenie z serwerem.

@@ -3,69 +3,76 @@ id: applications
 title: Aplikacje
 section: applications
 route: /applications
-order: 10
+order: 20
 ---
 
-Aplikacja to jedna rzecz, która działa na węźle: serwer Minecrafta, proxy Velocity, baza, bot. VibeSSH prowadzi jej cały cykl życia — utworzenie, start, konfigurację, pliki, backupy — i robi to zdalnie po SSH, bez agenta na węźle, chyba że sam go zainstalujesz.
-
-## Blueprint
-
-Aplikację tworzy się z blueprintu, czyli gotowego przepisu: jaki obraz, jakie porty, jakie pliki konfiguracyjne, jakie zmienne. Blueprint jest punktem wyjścia, a nie klatką — po utworzeniu każdą z tych rzeczy możesz zmienić.
-
-Jedyne, czego blueprint pilnuje na stałe, to porty oznaczone jako **Wymagane**: można je edytować, ale nie usunąć.
-
-## Środowisko uruchomieniowe
-
-| Typ | Co to znaczy |
-| --- | --- |
-| Docker | Aplikacja żyje w kontenerze na węźle. Domyślne i najlepiej wspierane. |
-| Systemd | Usługa systemowa na węźle. |
-| Proces lokalny | Proces na tym komputerze, nie na węźle. |
-
-Reszta poradnika opisuje przede wszystkim Dockera, bo to on stoi za pojęciami takimi jak odtworzenie kontenera czy publikowane porty.
+Aplikacja to jedna rzecz działająca na Node: serwer Minecraft, proxy, bot, baza.
 
 ![Przegląd aplikacji: konsola z pokolorowanymi logami i zużycie zasobów obok](images/app-overview.png)
 
-## Operacje
+## Jak utworzyć aplikację
 
-- **Uruchom** — bez pytania o potwierdzenie. Start niczym nie ryzykuje i cofa się jednym kliknięciem.
-- **Zatrzymaj** — z potwierdzeniem, bo zrywa połączenia wszystkim, którzy są w środku.
-- **Uruchom ponownie** — zatrzymanie i start tego samego kontenera.
-- **Wymuś zakończenie** — zabija proces bez czekania. Serwer nie zapisze świata. Ostatnia deska ratunku, nie codzienne narzędzie.
-- **Odtwórz kontener** — usuwa kontener i tworzy go od nowa z aktualnej konfiguracji. **Nie rusza danych** — pliki aplikacji leżą poza kontenerem.
+1. Otwórz **Aplikacje**.
+2. Kliknij **Utwórz aplikację**.
+3. **Krok 1 — Lokalizacja i podstawy**: w polu **Gdzie ma działać?** wybierz Node. Wpisz **Nazwę** i **Katalog roboczy**, np. `/srv/paper`.
+4. **Krok 2 — Obraz i runtime**: wybierz **Obraz** (np. Paper) i **Runtime**.
+5. **Krok 3 — Konfiguracja**: wybierz wersję. Dla serwerów Javy wybierz też instalację Javy.
+6. **Krok 4 — Zmienne środowiskowe**: możesz pominąć. Zmienne dodasz później.
+7. **Krok 5 — Podsumowanie**: sprawdź dane i zatwierdź.
+8. Na stronie aplikacji kliknij **Uruchom**.
 
-### Kiedy potrzebne jest odtworzenie
+Kreator nie ustawia RAM-u ani portów. Robisz to po utworzeniu, w zakładkach **Ustawienia** i **Porty**.
 
-Docker zapisuje część konfiguracji w kontenerze w chwili jego tworzenia, a nie odczytuje jej przy każdym starcie: publikowane porty, limity zasobów, zmienne środowiskowe, obraz. Zwykły restart użyłby tego samego, nieaktualnego kontenera.
+## Sterowanie aplikacją
 
-Dlatego zmiana tych rzeczy na **działającej** aplikacji odtwarza kontener automatycznie. Aplikacja zatrzymana zostaje zatrzymana i dostanie nową konfigurację przy najbliższym starcie.
+Przyciski na górze strony aplikacji:
+
+| Przycisk | Co robi |
+| --- | --- |
+| **Uruchom** | Startuje aplikację. |
+| **Zatrzymaj** | Zatrzymuje w sposób kontrolowany. |
+| **Uruchom ponownie** | Zatrzymuje i uruchamia. |
+| **Wymuś zakończenie** | Ubija natychmiast. Serwer nie zapisze świata. |
+| **Odtwórz kontener** | Buduje kontener od nowa. Nie kasuje plików aplikacji. |
+| **Migruj do innego Node'a** | Przenosi aplikację razem z danymi. |
 
 ## Konsola
 
-Konsola na zakładce Przegląd pokazuje wyjście aplikacji i pozwala wysyłać do niej polecenia.
+Konsola jest w zakładce **Przegląd**.
 
-Dla aplikacji dockerowej na węźle po SSH to **prawdziwy strumień** (`docker logs -f`) — linie pojawiają się w momencie, w którym proces je wypisuje. Dla pozostałych środowisk konsola odpytuje logi co dwie sekundy. Znacznik przy nagłówku mówi, który tryb jest aktywny: *Na żywo* albo *Odpytywanie*.
+1. Wpisz komendę w polu na dole.
+2. Wciśnij Enter albo kliknij **Wyślij**.
 
-Linie są kolorowane po poziomie ważności — ostrzeżenia na pomarańczowo, błędy na czerwono.
+Ostrzeżenia są pomarańczowe, błędy czerwone.
 
-Jeśli strumień się urwie (np. węzeł odświeżył połączenie), konsola próbuje wznowić kilka razy z rosnącym odstępem, a dopiero potem schodzi na odpytywanie.
+## Ustawienie RAM-u i CPU
 
-## Zakładki
+1. Wejdź w zakładkę **Ustawienia**.
+2. Znajdź kartę **Limity zasobów** i kliknij **Edytuj**.
+3. **Pamięć** — wpisz w MB, np. `2048`. Puste pole oznacza brak limitu.
+4. **CPU** — wpisz liczbę rdzeni, np. `1.5`.
+5. Zapisz.
 
-- **Przegląd** — status, konsola, wykresy CPU i RAM, podstawowe fakty.
-- **Pliki** — przeglądarka i edytor plików aplikacji.
-- **Logi** — pełniejszy odczyt logów niż okno konsoli.
-- **Porty** — co jest wystawione i dla kogo.
-- **Bazy danych** — bazy przypisane do tej aplikacji.
-- **Backupy** — kopie katalogu roboczego.
-- **Ustawienia** — konfiguracja, obraz, limity zasobów, zmienne środowiskowe, health check.
+## Zmienne środowiskowe
 
-## Migracja na inny węzeł
+1. Wejdź w zakładkę **Ustawienia**.
+2. Kliknij **Dodaj zmienną**.
+3. Wpisz **Klucz** i **Wartość**.
+4. Dla haseł i kluczy API zaznacz **Sekret**.
+5. Zapisz.
 
-Przenosi aplikację razem z danymi na inny węzeł. Operacja jest długa i wymaga, żeby oba węzły były osiągalne. To nie jest sposób na klonowanie — źródło przestaje być właścicielem aplikacji.
+## Jak sprawdzić, czy działa
 
-## Częste pomyłki
+- Status aplikacji to **Działa**.
+- W konsoli pojawiają się nowe linie.
+- Karta **Zużycie zasobów** pokazuje CPU i RAM.
 
-- **Zmieniłem konfigurację i nic się nie stało** — jeśli aplikacja była zatrzymana, zmiana czeka na start. Jeśli działała, kontener został odtworzony.
-- **Konsola nic nie pokazuje** — sprawdź, czy aplikacja działa. Zatrzymany kontener nie produkuje wyjścia, a poprzednie linie znikają po odtworzeniu kontenera.
-- **Wymuś zakończenie zamiast Zatrzymaj** — serwer gry nie zdąży zapisać świata. Zatrzymuj normalnie, chyba że proces przestał odpowiadać.
+## Najczęstsze problemy
+
+- **Zmieniłem konfigurację i nic się nie stało** — jeśli aplikacja była zatrzymana, zmiana zadziała przy starcie.
+- **Konsola jest pusta** — aplikacja nie działa albo kontener został właśnie odtworzony.
+- **Aplikacja nie startuje** — otwórz zakładkę **Logi** i przeczytaj ostatnie linie.
+
+## Więcej informacji
+
+Docker zapisuje porty, limity, zmienne i obraz w kontenerze w chwili jego tworzenia. Dlatego zmiana któregokolwiek z nich na działającej aplikacji odtwarza kontener automatycznie. Dane aplikacji leżą w katalogu roboczym poza kontenerem i nie są przy tym ruszane.

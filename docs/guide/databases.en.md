@@ -3,51 +3,57 @@ id: databases
 title: Databases
 section: applications
 route: /database-hosts
-order: 45
+order: 60
 ---
 
-VibeSSH creates MySQL/MariaDB databases for applications and looks after their credentials. It is not a database manager - there is no table browsing and no query editor; phpMyAdmin is for that, and you can reach it from here.
+VibeSSH creates MySQL/MariaDB databases for applications and looks after their credentials.
 
 ![A database created for an application, with its generated name and user](images/databases-tab.png)
 
-## Two levels
+## How to add a database host
 
-A **database host** is the engine: a MySQL or MariaDB server on which databases are created. You register one once, from the sidebar under **Databases**.
+A host is the database server the databases are created on. You add one once.
 
-An **application database** is a specific database created for one application on a chosen host. You create it in the application, on its Databases tab.
+1. Open **Databases** in the sidebar.
+2. Click **Add host**.
+3. Enter the address, port and an administrative account for the database server.
+4. Save.
 
-With no host registered the tab in an application has nothing to offer, and says so plainly.
+If a Node has no database engine yet, click **Install MariaDB** and wait for it to finish.
 
-## Registering a host
+## How to create a database for an application
 
-You give the address, the port and an administrative account for the engine. That account needs the right to create databases and users - VibeSSH uses it for nothing else.
+1. Open the application -> the **Databases** tab.
+2. Choose the database host in the selector.
+3. **Purpose** - optional, e.g. `luckperms`.
+4. Click **New database**.
 
-If a Node has no engine yet, an **Install MariaDB** button is available. That is an operator's deliberate decision rather than something that happens by itself while creating an application: installing a database server changes the Node permanently.
+The database name, user and password are generated for you.
 
-## Creating a database for an application
+## How to copy the connection details
 
-You pick a host, optionally give a purpose (`luckperms`, say), and that is all. **The database name, user and password are generated** - you do not invent them and you do not have to record them anywhere.
+1. Click the eye icon on the database.
+2. You will see **Host**, **Database**, **User** and **Password**.
+3. Copy them into the plugin's or application's configuration.
 
-A separate account per database is the point rather than decoration: an application gets access to its own database and to nothing else.
+## How to delete a database
 
-## Credentials
+1. Click the bin icon on the database.
+2. Confirm.
 
-The eye button shows the host, database name, user and password - to paste into a plugin's or an application's configuration.
+Deleting drops the database with its data. It cannot be undone.
 
-**The password is not kept in the application's configuration.** It is shown on request. If you lose it you do not recover it - you generate a new one with the reset button, which changes the password in the engine immediately.
+## How to check it works
 
-> After resetting a password you have to update the application's configuration and restart it. Nothing does that for you - the old password stops working the same instant.
+- The database is in the list with its name and user.
+- The plugin or application connects without an error.
 
-## phpMyAdmin
+## Common problems
 
-If a host has phpMyAdmin configured, the button opens it for this database. It is a hand-off to an external tool; VibeSSH does not sit between you and your queries.
+- **No database host registered** - add a host from the **Databases** entry in the sidebar first.
+- **The application cannot connect** - check that the database's port is set to **Vibe Network only** and that both Nodes are on Vibe Network.
+- **I reset the password and it stopped working** - update the password in the application's configuration and restart it.
 
-## Deleting
+## More detail
 
-Deleting a database drops it in the engine, with its data. It cannot be undone and there is no backup of it here - application backups cover the working directory, not database contents.
-
-## Common mistakes
-
-- **"No database host registered"** - add a host from the sidebar first, then create the database in the application.
-- **The application cannot connect** - check that it can see the host. A database on another Node needs a Vibe Network connection or an exposed port; both Nodes being yours does not by itself give them connectivity.
-- **I reset the password and the server broke** - the application's configuration still has the old one. Update it and restart.
+Each database gets its own user, so an application can reach only its own. The password is not stored in the application's configuration - you reveal it on request. Application backups do not include database contents.

@@ -3,59 +3,63 @@ id: firewall
 title: Firewall
 section: nodes
 route: /firewall
-order: 70
+order: 80
 ---
 
-Firewall to miejsce, w którym poziomy dostępu zadeklarowane przy portach aplikacji stają się prawdziwymi regułami na węźle. Bez niego „tylko Vibe Network" jest opisem intencji, a nie ograniczeniem.
-
-## Gdzie to jest
-
-Menu boczne → **Firewall**, po wybraniu serwera.
+Firewall kontroluje, które porty Node są dostępne z internetu.
 
 ![Firewall węzła: backend ufw, egzekwowanie aktywne i cztery reguły](images/firewall.png)
 
-## Stan
+## Jak włączyć firewall
 
-Dwa pola, które trzeba czytać razem:
+1. Otwórz **Firewall** i wybierz serwer.
+2. Sprawdź kartę **Stan**.
+3. Jeśli **Egzekwowanie** jest **Nieaktywne**, kliknij **Zabezpiecz**.
+4. Poczekaj, aż **Egzekwowanie** zmieni się na **Aktywne**.
 
-- **Backend** — który firewall wykryto na węźle (`ufw`). „brak" oznacza, że nie ma czym egzekwować reguł.
-- **Egzekwowanie** — czy ten firewall jest **aktywny**. Backend obecny, ale nieaktywny, to najgorszy przypadek: reguły są zapisane i nic ich nie wymusza.
+Reguła dla SSH powstaje przed włączeniem firewalla, więc nie stracisz dostępu.
 
-Przycisk **Zabezpiecz** włącza firewall — i robi to w kolejności, która nie odcina Ci dostępu: reguła dla SSH powstaje przed włączeniem egzekwowania.
+## Jak zobaczyć reguły
 
-## Skąd biorą się reguły
-
-Lista pokazuje przy każdej regule jej pochodzenie:
+Karta **Reguły** wypisuje wszystkie otwarte porty. Przy każdym widać, skąd pochodzi:
 
 | Pochodzenie | Znaczenie |
 | --- | --- |
-| SSH (zawsze dozwolone) | Port, przez który VibeSSH łączy się z węzłem. Zawsze otwarty — inaczej stracisz dostęp. |
-| WireGuard (Vibe Network) | Port tunelu prywatnej sieci. |
-| `nazwa` — port „…” | Wyliczona z portu aplikacji i jego poziomu dostępu. |
-| Reguła ręczna | Dodana tutaj przez Ciebie. |
+| **SSH (zawsze dozwolone)** | Port, przez który łączy się VibeSSH. |
+| **WireGuard (Vibe Network)** | Port prywatnej sieci. |
+| nazwa aplikacji — port | Wyliczone z portu aplikacji. |
+| **Reguła ręczna** | Dodana przez Ciebie. |
 
-Trzy pierwsze rodzaje są **wyliczane, a nie pamiętane**. Synchronizacja liczy je od nowa z aktualnego stanu aplikacji i nakłada w całości, usuwając to, co przestało być potrzebne. Dlatego edytowanie ich ręcznie na węźle nie ma sensu — najbliższa synchronizacja i tak przywróci stan wyliczony.
+## Jak dodać własną regułę
 
-## Reguły ręczne
+1. Kliknij **Dodaj regułę**.
+2. **Etykieta** — opcjonalnie, np. `debugowanie`.
+3. **Port** — numer portu.
+4. **Protokół** — `TCP` albo `UDP`.
+5. Aby ograniczyć dostęp, zaznacz **Ogranicz do konkretnej sieci** i wpisz **Zakres źródłowy (CIDR)**, np. `203.0.113.0/24`.
+6. Zapisz.
 
-**Dodaj regułę** otwiera port, którego nie zadeklarowała żadna aplikacja — na przykład na czas debugowania.
+## Jak usunąć regułę
 
-| Pole | Znaczenie |
-| --- | --- |
-| Etykieta | Opis dla Ciebie, żeby za tydzień wiedzieć, po co ta reguła. |
-| Port | Numer portu (1–65535). |
-| Protokół | TCP albo UDP. |
-| Ogranicz do konkretnej sieci | Po zaznaczeniu reguła obowiązuje tylko dla podanego zakresu. |
-| Zakres źródłowy (CIDR) | Np. `203.0.113.0/24`. |
+1. Znajdź regułę z oznaczeniem **Reguła ręczna**.
+2. Kliknij ikonę kosza.
+3. Potwierdź.
 
-Ograniczenie do zakresu jest tym, co odróżnia „otworzyłem port dla siebie" od „otworzyłem port dla internetu". Jeśli znasz swój adres, użyj go.
+Reguł aplikacji nie usuwa się tutaj. Zmień **Dostęp sieciowy** portu w zakładce **Porty** aplikacji.
 
-## Synchronizuj teraz
+## Jak sprawdzić, czy działa
 
-Nakłada wyliczony zestaw reguł. To samo robi **Zsynchronizuj firewall** na zakładce Porty aplikacji i pełna synchronizacja Vibe Network — trzy drogi do tej samej operacji.
+- **Backend** pokazuje `ufw`.
+- **Egzekwowanie** pokazuje **Aktywne**.
+- Na liście są tylko te porty, które mają być otwarte.
 
-## Częste pomyłki
+## Najczęstsze problemy
 
-- **Port jest otwarty w VibeSSH, a i tak niedostępny** — dostawcy VPS często mają własny firewall przed maszyną. VibeSSH go nie widzi i nie zmieni.
-- **Włączyłem firewall i straciłem SSH** — nie powinno się zdarzyć, bo reguła SSH powstaje pierwsza. Jeśli jednak łączysz się z innego portu niż ten skonfigurowany w VibeSSH, ten port nie jest chroniony tą gwarancją.
-- **Usunąłem regułę aplikacji, a wróciła** — reguły aplikacji są wyliczane. Żeby zniknęła na stałe, zmień dostęp portu w aplikacji.
+- **Backend: brak** — na Node nie ma ufw. Zainstaluj go w konfiguracji Node'a.
+- **Reguły nieegzekwowane** — firewall jest zainstalowany, ale wyłączony. Kliknij **Zabezpiecz**.
+- **Port otwarty w VibeSSH, a i tak niedostępny** — sprawdź firewall w panelu dostawcy VPS.
+- **Usunięta reguła aplikacji wróciła** — to normalne. Reguły aplikacji są wyliczane z ustawień portów.
+
+## Więcej informacji
+
+Aplikacje backendowe — bazy danych, panele administracyjne, RCON — powinny mieć dostęp **Tylko Vibe Network**, a nie **Publiczny**. Publiczny jest dla portów, na które łączą się gracze lub użytkownicy.

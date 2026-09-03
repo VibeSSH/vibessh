@@ -3,39 +3,46 @@ id: monitor
 title: Monitor
 section: nodes
 route: /monitor
-order: 65
+order: 110
 ---
 
-Monitor shows what a Node is doing right now: resource usage, network throughput and the process list. It is a live reading, not a history system - data accumulates while the page is open.
-
-## Where it is
-
-The sidebar -> **Monitor**, once a server is chosen.
+Monitor shows how loaded a server is and what is running on it.
 
 ![Monitor: resources, the history charts, and the process list sorted by memory](images/monitor.png)
 
-## Resources
+## How to open it
 
-Four readings, refreshed every few seconds: **CPU**, **RAM**, **Network in** and **Network out**.
+1. Open **Monitor** in the sidebar.
+2. Choose a server.
 
-CPU and network throughput are **differences between two readings**, not values the system reports directly. That is why the first reading after arriving says "collecting..." - there is nothing yet to compare it against.
+The page refreshes every 5 seconds.
 
-## History
+## What the values mean
 
-A chart of the last several minutes, built from the moment the page opened. Nothing persists it: leave and come back and it starts again. A chart implying a past nobody recorded would be worse than an empty one.
+| Value | Meaning | When it is a problem |
+| --- | --- | --- |
+| **CPU** | Processor load. | Consistently above 90%. |
+| **RAM** | Memory in use. | Near 100% - the server will slow down or kill processes. |
+| **Disk** | Space used. | Above 90% - running out stops applications and backups. |
+| **Network** | Traffic in and out. | Unusually high for no reason. |
 
-## Processes
+## How to find what is loading the server
 
-The running processes sorted by memory use, with PID, user, CPU, memory and command.
+1. Scroll to the **Processes** section.
+2. The list is sorted by memory use.
+3. Read the **CPU**, **RAM** and **Command** columns.
 
-Sorting by memory is deliberate: a process eating memory is the most common reason a Node suddenly slows down, or the kernel kills a game server.
+## How to check it works
 
-## Refreshing
+- The CPU, RAM and Disk bars show percentages.
+- The **Processes** list shows running programs.
 
-The page polls the Node every few seconds and **stops while the window is hidden**, resuming as soon as it returns. Each reading is an SSH connection - a monitor left open overnight would otherwise cost thousands of pointless ones.
+## Common problems
 
-## Common mistakes
+- **Everything says "collecting..."** - wait for the second reading. A CPU percentage is the difference between two measurements.
+- **The charts vanished when I left the page** - history is collected only while the page is open and is not saved.
+- **Memory is almost entirely used** - Linux spends free memory on buffers and gives it back when needed. Look at memory held by processes.
 
-- **I closed the page and the history was gone** - that is intended; nothing persists it. Long-term observation needs a dedicated tool on the Node.
-- **CPU reads 0%** - that is most likely the first sample. Wait for the second.
-- **Memory looks entirely used** - Linux spends free memory on disk cache and gives it back when it is needed. What matters is memory held by processes, not "free".
+## More detail
+
+Refreshing stops while the window is hidden and resumes when it returns. Each reading is a connection to the server.

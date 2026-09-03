@@ -6,50 +6,52 @@ route: /
 order: 1
 ---
 
-Od pustej aplikacji do działającego serwera prowadzi pięć kroków. Każdy z nich ma tu własny rozdział; ten pokazuje kolejność i to, co wynika z jednego kroku dla następnego.
+Od pustej aplikacji do działającego serwera w pięciu krokach.
 
 ## 1. Dodaj serwer
 
-**Serwery → Dodaj serwer**. Adres, użytkownik, hasło albo klucz. Użyj **Testuj połączenie**, zanim zapiszesz — otwiera prawdziwe połączenie i nic nie zapisuje, więc poprawki nic nie kosztują.
+1. Otwórz **Serwery**.
+2. Kliknij **Dodaj serwer**.
+3. Wypełnij pola i kliknij **Testuj połączenie**.
+4. Kliknij **Zapisz serwer**.
 
-Konto powinno mieć `sudo`. Bez tego część rzeczy zadziała, ale instalacja Dockera, reguły firewalla i konta dedykowane dla aplikacji — nie.
+Szczegóły: rozdział **Serwery**.
 
-## 2. Utwórz aplikację
+## 2. Skonfiguruj Node
 
-**Aplikacje → Nowa aplikacja**, wybór blueprintu i węzła. Blueprint to punkt wyjścia: obraz, porty, pliki konfiguracyjne. Wszystko da się potem zmienić.
+1. Na karcie serwera kliknij ikonę konfiguracji.
+2. Przy brakujących pozycjach kliknij **Zainstaluj automatycznie**.
+3. Poczekaj, aż wszystkie wymagania mają status **Zainstalowane**.
 
-Po utworzeniu aplikacja jeszcze nie działa — uruchamiasz ją przyciskiem **Uruchom**.
+## 3. Utwórz aplikację
 
-## 3. Otwórz port
+1. Otwórz **Aplikacje**.
+2. Kliknij **Utwórz aplikację**.
+3. Przejdź pięć kroków kreatora i zatwierdź.
+4. Na stronie aplikacji kliknij **Uruchom**.
 
-**Aplikacja → Porty**. Blueprint zwykle deklaruje port już przy tworzeniu; sprawdź, czy ma właściwy poziom dostępu.
+## 4. Otwórz port
 
-Sam poziom dostępu to deklaracja. Egzekwuje ją firewall węzła, więc kliknij **Zsynchronizuj firewall**.
-
-> Dostawcy VPS często mają własny firewall przed maszyną. VibeSSH go nie widzi — jeśli port nie odpowiada mimo poprawnych ustawień, sprawdź panel dostawcy.
-
-## 4. Skonfiguruj
-
-**Aplikacja → Pliki**. Edytor koloruje składnię, a pliki YAML dodatkowo sprawdza — przy błędzie składni zapis jest zablokowany, bo taki plik zatrzymałby serwer przy starcie.
-
-Po zapisaniu konfiguracji zrestartuj aplikację: większość serwerów czyta pliki tylko przy starcie.
+1. Wejdź w aplikację → zakładka **Porty**.
+2. Sprawdź, czy port ma właściwy **Dostęp sieciowy**.
+3. Kliknij **Zsynchronizuj firewall**.
 
 ## 5. Włącz backupy
 
-**Aplikacja → Backupy**. Ustaw harmonogram, zanim będzie potrzebny.
+1. Wejdź w aplikację → zakładka **Backupy**.
+2. Zaznacz **Twórz backupy automatycznie**.
+3. Ustaw odstęp i ile kopii zachować.
+4. Kliknij zapis.
 
-Dwie rzeczy warto wiedzieć od razu: harmonogram działa **tylko przy otwartym VibeSSH**, a backup leżący na tym samym węźle co aplikacja nie chroni przed utratą węzła. Cel zewnętrzny (S3) konfiguruje się w Ustawieniach.
+## Jak sprawdzić, czy działa
 
-## Co dalej
+- Node ma status **Online**.
+- Aplikacja ma status **Działa**.
+- W zakładce **Przegląd** widać konsolę z logami.
+- Gracze łączą się na adres IP serwera i port z zakładki **Porty**.
 
-- **Kilka serwerów, które mają się widzieć** → rozdział Vibe Network.
-- **Baza dla aplikacji** → rozdział Bazy danych.
-- **Coś nie działa i nie wiadomo dlaczego** → rozdział Vibe AI, tryb Diagnoza.
-- **Dostęp do czegoś, co nie ma być publiczne** → rozdział Tunele SSH.
+## Najczęstsze problemy
 
-## Kolejność, która oszczędza kłopotów
-
-1. Test połączenia przed zapisaniem serwera.
-2. Synchronizacja firewalla po każdej zmianie dostępu portu.
-3. Restart aplikacji po każdej zmianie pliku konfiguracyjnego.
-4. Backup przed każdą zmianą, której nie umiesz cofnąć.
+- **Nie mogę utworzyć aplikacji** — na Node brakuje Dockera. Wróć do kroku 2.
+- **Port nie odpowiada z internetu** — sprawdź **Dostęp sieciowy** i kliknij **Zsynchronizuj firewall**. Sprawdź też firewall w panelu dostawcy VPS.
+- **Zmieniłem plik konfiguracyjny i nic się nie zmieniło** — zrestartuj aplikację przyciskiem **Uruchom ponownie**.

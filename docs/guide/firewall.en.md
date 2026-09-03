@@ -3,59 +3,63 @@ id: firewall
 title: Firewall
 section: nodes
 route: /firewall
-order: 70
+order: 80
 ---
 
-The firewall is where the access levels declared on application ports become real rules on the Node. Without it, "Vibe Network only" is a description of intent rather than a restriction.
-
-## Where it is
-
-The sidebar -> **Firewall**, once a server is chosen.
+The firewall controls which of a Node's ports are reachable from the internet.
 
 ![A Node's firewall: the ufw backend, enforcement active, and four rules](images/firewall.png)
 
-## Status
+## How to turn the firewall on
 
-Two fields that have to be read together:
+1. Open **Firewall** and choose a server.
+2. Look at the **Status** card.
+3. If **Enforcement** reads **Inactive**, click **Secure**.
+4. Wait until **Enforcement** reads **Active**.
 
-- **Backend** - which firewall was found on the Node (`ufw`). "none" means there is nothing to enforce rules with.
-- **Enforcement** - whether that firewall is **active**. A backend present but inactive is the worst case: the rules are written and nothing is applying them.
+The SSH rule is created before the firewall is enabled, so you will not lose access.
 
-The **Secure** button turns the firewall on - in an order that does not lock you out: the SSH rule is created before enforcement is enabled.
+## How to see the rules
 
-## Where rules come from
-
-The list shows each rule's origin:
+The **Rules** card lists every open port with where it came from:
 
 | Origin | Meaning |
 | --- | --- |
-| SSH (always allowed) | The port VibeSSH connects to the Node on. Always open - otherwise you lose access. |
-| WireGuard (Vibe Network) | The private network's tunnel port. |
-| `name` - port "..." | Derived from an application port and its access level. |
-| Custom rule | One you added here. |
+| **SSH (always allowed)** | The port VibeSSH connects on. |
+| **WireGuard (Vibe Network)** | The private network's port. |
+| application name - port | Derived from an application's port. |
+| **Custom rule** | One you added. |
 
-The first three kinds are **derived, not remembered**. A sync recomputes them from the current state of the applications and applies the whole set, removing what is no longer wanted. Editing them by hand on the Node therefore achieves nothing - the next sync restores the derived state.
+## How to add your own rule
 
-## Custom rules
+1. Click **Add rule**.
+2. **Label** - optional, e.g. `debugging`.
+3. **Port** - the port number.
+4. **Protocol** - `TCP` or `UDP`.
+5. To restrict access, tick **Restrict to a specific network** and enter a **Source range (CIDR)**, e.g. `203.0.113.0/24`.
+6. Save.
 
-**Add rule** opens a port no application declared - while debugging, for instance.
+## How to remove a rule
 
-| Field | Meaning |
-| --- | --- |
-| Label | A note to yourself, so next week you know what this was for. |
-| Port | The port number (1-65535). |
-| Protocol | TCP or UDP. |
-| Restrict to a specific network | When ticked, the rule applies only to the range you give. |
-| Source range (CIDR) | e.g. `203.0.113.0/24`. |
+1. Find a rule marked **Custom rule**.
+2. Click the bin icon.
+3. Confirm.
 
-Restricting to a range is what separates "I opened a port for myself" from "I opened a port to the internet". If you know your address, use it.
+Application rules are not removed here. Change the port's **Network access** on the application's **Ports** tab.
 
-## Sync now
+## How to check it works
 
-Applies the derived rule set. **Sync firewall** on an application's Ports tab and a full Vibe Network sync do the same thing - three routes to one operation.
+- **Backend** reads `ufw`.
+- **Enforcement** reads **Active**.
+- The list contains only the ports that should be open.
 
-## Common mistakes
+## Common problems
 
-- **The port is open in VibeSSH and still unreachable** - VPS providers often have their own firewall in front of the machine. VibeSSH cannot see it and will not change it.
-- **I enabled the firewall and lost SSH** - this should not happen, because the SSH rule is created first. But if you connect on a different port from the one configured in VibeSSH, that port is not covered by the guarantee.
-- **I deleted an application's rule and it came back** - application rules are derived. To remove one for good, change that port's access level in the application.
+- **Backend: none** - the Node has no ufw. Install it from the Node setup screen.
+- **Rules not enforced** - the firewall is installed but switched off. Click **Secure**.
+- **The port is open in VibeSSH and still unreachable** - check your VPS provider's firewall.
+- **A deleted application rule came back** - that is expected. Application rules are derived from the port settings.
+
+## More detail
+
+Back-end applications - databases, admin panels, RCON - should use **Vibe Network only**, not **Public**. Public is for the ports players or users connect to.

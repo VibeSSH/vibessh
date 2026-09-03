@@ -3,41 +3,50 @@ id: port-forwarding
 title: Tunele SSH
 section: nodes
 route: /port-forwarding
-order: 75
+order: 90
 ---
 
-Tunel SSH przenosi ruch przez połączenie z węzłem. Służy do sięgnięcia po coś, co nie jest i nie ma być wystawione na świat — panel bazy danych, port administracyjny, usługa słuchająca tylko na localhoście węzła.
+Tunel pozwala połączyć się z usługą na serwerze, która nie jest dostępna z internetu — na przykład z panelem bazy danych.
 
-To osobna rzecz niż porty aplikacji i firewall. Tam deklarujesz, co ma być dostępne na stałe; tutaj otwierasz sobie przejście na chwilę.
+## Jak utworzyć tunel
 
-## Gdzie to jest
+1. Otwórz **Przekierowanie portów** i wybierz serwer.
+2. Kliknij **Nowy tunel**.
+3. **Typ tunelu** — wybierz **Lokalny**.
+4. **Adres nasłuchu** — wpisz `127.0.0.1`.
+5. **Port nasłuchu** — numer na Twoim komputerze, np. `3306`. Wpisz `0`, żeby system wybrał wolny.
+6. **Adres docelowy** — adres widziany z serwera, zwykle `127.0.0.1`.
+7. **Port docelowy** — port usługi na serwerze, np. `3306`.
+8. Kliknij **Uruchom**.
 
-Menu boczne → **Przekierowanie portów**, po wybraniu serwera.
+## Przykład
 
-> Tunele **nie są zapisywane**. Działają tylko dopóki VibeSSH jest otwarte, a po ponownym uruchomieniu trzeba je otworzyć na nowo. To celowe — trwały tunel to w praktyce otwarty port, o którym się zapomina.
+Dostęp do bazy MariaDB na serwerze:
 
-## Trzy typy
+- Typ tunelu: **Lokalny**
+- Adres nasłuchu: `127.0.0.1`
+- Port nasłuchu: `3306`
+- Adres docelowy: `127.0.0.1`
+- Port docelowy: `3306`
 
-**Lokalny** — port na Twoim komputerze prowadzi do adresu widzianego z węzła. Najczęstszy przypadek: `localhost:3306` u Ciebie wchodzi na `127.0.0.1:3306` na serwerze, i klient bazy łączy się tak, jakby baza była lokalna.
+Po uruchomieniu w kliencie bazy łączysz się z `127.0.0.1:3306`.
 
-**Zdalny** — odwrotnie: port na serwerze prowadzi do adresu widzianego z Twojego komputera. Używane, gdy to serwer ma sięgnąć po coś u Ciebie.
+## Jak zatrzymać tunel
 
-**Dynamiczny (SOCKS5)** — proxy na Twoim komputerze, przez które ruch wychodzi z węzła. Nie wskazujesz jednego celu; wskazuje go aplikacja korzystająca z proxy.
+1. Znajdź tunel na liście.
+2. Kliknij ikonę zatrzymania.
 
-## Pola
+## Jak sprawdzić, czy działa
 
-| Pole | Znaczenie | Przykład |
-| --- | --- | --- |
-| Adres nasłuchu | Gdzie tunel przyjmuje połączenia. `127.0.0.1` udostępnia go tylko Tobie. | `127.0.0.1` |
-| Port nasłuchu | Numer, na którym słucha. `0` = dowolny wolny port. | `3306` |
-| Adres docelowy | Dokąd prowadzi, widziany z drugiej strony. | `127.0.0.1` |
-| Port docelowy | Port po drugiej stronie. | `3306` |
+- Tunel jest na liście aktywnych.
+- Program na Twoim komputerze łączy się z podanym portem lokalnym.
 
-Adres docelowy dla tunelu lokalnego jest rozwiązywany **na węźle**, nie u Ciebie. Dlatego `127.0.0.1` oznacza tam „ten serwer", a nie Twój komputer — i dlatego to działa dla usług przywiązanych do localhosta węzła.
+## Najczęstsze problemy
 
-## Częste pomyłki
+- **Port nasłuchu jest zajęty** — coś na Twoim komputerze już go używa. Wpisz `0`.
+- **Tunel zniknął po restarcie aplikacji** — tunele nie są zapisywane. Utwórz go ponownie.
+- **Nie łączy się z celem** — **Adres docelowy** jest rozwiązywany po stronie serwera. Wpisz adres, który widzi serwer, zwykle `127.0.0.1`.
 
-- **Wpisałem adres docelowy widziany z mojego komputera** — cel jest rozwiązywany po stronie węzła. Wpisz to, co widzi serwer.
-- **Tunel zniknął** — zamknięcie VibeSSH zamyka wszystkie. Nic ich nie odtwarza.
-- **Port nasłuchu zajęty** — coś na Twoim komputerze już go trzyma. Wpisz `0`, a system przydzieli wolny.
-- **Chcę stałego dostępu** — to nie jest do tego. Do stałego dostępu służy port aplikacji z odpowiednim poziomem dostępu, najlepiej „Vibe Network".
+## Więcej informacji
+
+Tunele działają tylko wtedy, gdy VibeSSH jest otwarte. Do stałego dostępu użyj portu aplikacji z odpowiednim **Dostępem sieciowym**. Typ **Zdalny** działa odwrotnie: port na serwerze prowadzi do Twojego komputera. **Dynamiczny (SOCKS5)** tworzy proxy, przez które ruch wychodzi z serwera.

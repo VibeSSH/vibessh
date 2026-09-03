@@ -3,49 +3,34 @@ id: dashboard
 title: Dashboard
 section: getting-started
 route: /
-order: 2
+order: 5
 ---
 
-The dashboard answers one question: is anything asking for my attention. If nothing is, you come here for a second and leave.
+The dashboard shows the state of every server and application in one place.
 
 ![The dashboard: overall state, Node tiles and alerts](images/dashboard.png)
 
-## The header
+## What is on it
 
-The overall state: **All good** or **Needs attention**, and how many Nodes are online. It is derived from the alerts below, so when it reads as a warning the reason is on the same page.
+1. **Header** - the overall state: **All good** or **Needs attention**.
+2. **Nodes** - a tile per server with CPU, memory and uptime.
+3. **Alerts** - a list of problems: a server offline, an application failing.
+4. **Tasks** - things one click can do, such as synchronising a Node.
 
-## Nodes
+## How to look at one server
 
-A tile per Node, carrying CPU, memory, uptime and its Vibe Network sync state.
+1. Click the server's tile.
+2. **Applications**, **Terminal** and **Activity** tabs appear below.
+3. Click **All Nodes** to go back to the overview.
 
-- **In sync** - the configuration on the Node matches what the app declares.
-- **Out of sync** - something has drifted. **Sync** brings that one Node to the intended state.
-- **Collecting...** - the Node answers but there is no first metrics sample yet. A CPU percentage is the difference between two readings, so the first has nothing to compare against.
-- **Offline** - the Node did not answer.
+## How to check it works
 
-## Alerts
+- The tiles show CPU and memory percentages.
+- Servers read **Online**.
+- The **Alerts** section is empty.
 
-The things worth knowing without looking for them: a server offline, a Node unreachable on Vibe Network, an application reporting failure. An empty list is real information, not missing data.
+## Common problems
 
-## Tasks
-
-Outstanding work that one click can do - usually a Node waiting to be synchronised. The section appears only when there is something in it.
-
-## The tabs underneath
-
-Once a Node tile is selected:
-
-- **Applications** - what runs on it.
-- **Terminal** - a shell to that Node without going to the Terminal module. SSH Nodes only.
-- **Activity** - recent events. Nodes in Agent mode have no CPU/memory metrics, only a sync state.
-
-**All Nodes** clears the selection and returns to the overview.
-
-## How often this refreshes
-
-Node metrics every few seconds, the dashboard as a whole less often. Refreshing stops while the window is hidden and resumes the moment it comes back - each reading is an SSH connection to a Node, not a free request.
-
-## Common mistakes
-
-- **The dashboard says offline but the server is up** - check that VibeSSH can reach it over SSH. The dashboard reports what it managed to do, not whether the machine is alive.
-- **The metrics are frozen** - if the window was hidden, the last reading is from before it was hidden.
+- **A server shows offline but is running** - VibeSSH could not connect. Check it in the **Servers** module.
+- **A tile says "Collecting..."** - the second reading has not arrived. Wait a moment.
+- **The metrics are frozen** - the window was hidden. Refreshing resumes when it returns.

@@ -3,50 +3,55 @@ id: servers
 title: Serwery
 section: nodes
 route: /servers
-order: 1
+order: 10
 ---
 
-Serwer, nazywany też węzłem, to maszyna, którą VibeSSH obsługuje. Wszystko inne — aplikacje, pliki, terminal, monitoring — dzieje się na którymś z nich, więc dodanie serwera jest pierwszą rzeczą, jaką się tutaj robi.
+Node to serwer lub VPS dodany do VibeSSH.
 
 ![Lista serwerów z ich adresami i stanem](images/servers-list.png)
 
-## Dwa tryby połączenia
+## Jak dodać Node
 
-**Połącz przez SSH** — VibeSSH łączy się z serwerem tak, jak zrobiłby to człowiek: po SSH, Twoimi poświadczeniami. Na serwerze nie instaluje się nic. To domyślny i najlepiej wspierany tryb.
+1. Otwórz **Serwery**.
+2. Kliknij **Dodaj serwer**.
+3. Zostaw wybraną zakładkę **Połącz przez SSH**.
+4. **Nazwa** — dowolna nazwa dla Ciebie, np. `Serwer produkcyjny`.
+5. **Host** — adres IP serwera, np. `203.0.113.10`.
+6. **Port** — zostaw `22`, chyba że dostawca podał inny.
+7. **Nazwa użytkownika** — konto na serwerze, zwykle `root`.
+8. **Uwierzytelnianie** — wybierz **Hasło** albo **Klucz SSH**.
+9. Przy haśle wpisz hasło. Przy kluczu wskaż plik klucza na tym komputerze.
+10. Kliknij **Testuj połączenie**. Powinno pojawić się **Połączono pomyślnie**.
+11. Kliknij **Zapisz serwer**.
 
-**Zainstaluj Vibe Agenta** — na serwerze stoi mała usługa, z którą aplikacja rozmawia własnym protokołem. Przydaje się tam, gdzie SSH nie jest wygodne. Węzeł w trybie Agent nie raportuje metryk CPU i RAM, tylko stan synchronizacji, i nie ma do niego terminala z tej aplikacji.
+## Jak skonfigurować Node
 
-## Pola połączenia SSH
+1. Na karcie serwera kliknij ikonę konfiguracji Node'a.
+2. W sekcji **Wymagania** zobaczysz Docker, WireGuard i Firewall (ufw).
+3. Przy pozycji ze statusem **Brak** kliknij **Zainstaluj automatycznie**.
+4. Poczekaj, aż status zmieni się na **Zainstalowane**.
+5. Kliknij **Sprawdź ponownie**, jeśli chcesz odświeżyć stan.
 
-| Pole | Znaczenie | Przykład |
-| --- | --- | --- |
-| Nazwa | Etykieta w aplikacji. Możesz ją zmieniać dowolnie. | `Serwer produkcyjny` |
-| Host | Adres IP albo nazwa domenowa. | `203.0.113.10` |
-| Port | Port SSH. | `22` |
-| Nazwa użytkownika | Konto na serwerze. | `root` |
-| Uwierzytelnianie | Hasło albo klucz SSH. | `Klucz SSH` |
-| Ścieżka klucza | Plik klucza prywatnego na tym komputerze. | `C:\Users\ty\.ssh\id_ed25519` |
+## Jak usunąć Node
 
-**Hasła i hasła kluczy trafiają do magazynu poświadczeń systemu**, nigdy do zwykłego pliku konfiguracyjnego. Przy edycji istniejącego serwera puste pole hasła oznacza „zostaw obecne", a nie „usuń".
+1. Otwórz **Serwery**.
+2. Na karcie serwera kliknij ikonę kosza.
+3. Potwierdź.
 
-## Testuj połączenie
+Usunięcie Node'a w VibeSSH nie kasuje niczego na samym serwerze.
 
-Otwiera prawdziwe połączenie SSH i natychmiast je zamyka. **Nic nie zapisuje** — możesz testować, poprawiać i testować ponownie, zanim cokolwiek trafi na listę.
+## Jak sprawdzić, czy działa
 
-Warto go użyć zawsze przy pierwszym dodaniu: błąd zobaczysz od razu i z konkretnym powodem, zamiast dowiadywać się o nim przy pierwszej operacji na plikach.
+- Serwer ma status **Online**.
+- Na karcie widać CPU, RAM i czas pracy.
+- **Terminal** otwiera połączenie z serwerem.
 
-## Klucz hosta
+## Najczęstsze problemy
 
-Przy pierwszym połączeniu VibeSSH zapamiętuje klucz publiczny serwera. Jeśli przy kolejnym połączeniu klucz się nie zgadza, połączenie jest **przerywane z błędem**, a nie po cichu akceptowane.
+- **Testuj połączenie kończy się błędem** — sprawdź adres IP, port i nazwę użytkownika. Sprawdź, czy serwer jest włączony.
+- **Test przechodzi, ale instalacja Dockera się nie udaje** — konto nie ma uprawnień `sudo`. Użyj konta `root` albo nadaj uprawnienia.
+- **Nagle pojawia się ostrzeżenie o kluczu hosta** — VibeSSH zapamiętał wcześniejszy klucz serwera. Jeśli sam stawiałeś serwer od nowa, wszystko się zgadza. Jeśli nie, nie łącz się i sprawdź, co się stało.
 
-Zwykle znaczy to, że serwer został postawiony od nowa albo przeinstalowany. Ale to jest dokładnie ten sam sygnał, który pojawia się przy podszywaniu się pod serwer, więc VibeSSH nie zgaduje, o który przypadek chodzi — decyzja należy do Ciebie.
+## Więcej informacji
 
-## Uprawnienia
-
-Wiele operacji na węźle wymaga `sudo`: instalacja Dockera, reguły firewalla, zakładanie kont dedykowanych dla aplikacji, WireGuard. Konto bez `sudo` obsłuży część funkcji, ale nie wszystkie, a komunikat błędu powie wprost, że sudo odmówiło.
-
-## Częste pomyłki
-
-- **Test przechodzi, a operacje padają** — najczęściej brak `sudo` dla tego konta.
-- **Nagle „niezgodność klucza hosta"** — potraktuj to poważnie, zanim usuniesz wpis. Jeśli to Ty przeinstalowałeś maszynę, wszystko się zgadza; jeśli nie, warto sprawdzić dlaczego.
-- **Zmieniłem hasło i przestało działać** — hasło trzymane jest w magazynie systemowym per serwer. Po zmianie na serwerze trzeba je zaktualizować także tutaj.
+Hasła i hasła kluczy trafiają do magazynu poświadczeń systemu, nie do pliku konfiguracyjnego. Przy edycji serwera puste pole hasła oznacza „zostaw obecne". Tryb **Zainstaluj Vibe Agenta** instaluje usługę na serwerze zamiast łączyć się po SSH; Node w tym trybie nie pokazuje CPU i RAM i nie ma do niego terminala.

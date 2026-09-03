@@ -3,51 +3,56 @@ id: vibe-ai
 title: Vibe AI
 section: ai
 route: /vibe-ai
-order: 80
+order: 130
 ---
 
-Vibe AI odpowiada na pytania o VibeSSH i pomaga zdiagnozować węzeł albo aplikację, która sprawia problemy. Czyta ten sam poradnik, który masz otwarty, więc odpowiedzi opisują tę wersję aplikacji, a nie ogólną wiedzę o Dockerze z internetu.
+Vibe AI pomaga analizować błędy i konfigurację.
 
-## Czego asystent nie robi
+## Jak skonfigurować
 
-To jest równie ważne jak to, co robi:
+1. Otwórz **Ustawienia**.
+2. Znajdź kartę **Vibe AI**.
+3. Zaznacz **Włącz asystenta Vibe AI**.
+4. **Dostawca** — wybierz z listy.
+5. **Adres bazowy** — adres API dostawcy.
+6. **Model** — nazwa modelu.
+7. **Klucz API** — wklej swój klucz.
+8. Kliknij test połączenia.
+9. Zapisz.
 
-- **Nie ma dostępu do terminala** i nie wykonuje poleceń. Może powiedzieć, co wpisać — wpisujesz Ty.
-- **Nie zmienia niczego** w konfiguracji, plikach ani stanie aplikacji.
-- **Nie działa w tle.** Nie ma tu autonomicznego agenta obserwującego Twoje węzły.
+Model współdzielony działa bez własnego klucza i ma dzienny limit pytań.
 
-## Dwa tryby
+## Jak zadać pytanie
 
-**Pytanie** — odpowiada na pytania o VibeSSH. **Nic nie jest odczytywane z Twoich węzłów.** Do tego trybu nadają się pytania w rodzaju „co robi odtworzenie kontenera" albo „czym różni się dostęp Vibe Network od publicznego".
+1. Otwórz **Vibe AI** w menu bocznym.
+2. Wybierz tryb:
+   - **Pytanie** — odpowiedzi o VibeSSH. Nic nie jest odczytywane z Twoich serwerów.
+   - **Diagnoza** — dodatkowo wysyła dane wybranego serwera lub aplikacji.
+3. W trybie **Diagnoza** wybierz serwer albo aplikację.
+4. Wpisz pytanie i wciśnij Enter.
 
-**Diagnoza** — dodatkowo wysyła migawkę wybranego węzła albo aplikacji: status, ostatnie logi, konfigurację. Tego trybu używasz, gdy coś nie działa i nie wiadomo dlaczego.
+## Jak zapytać o błąd aplikacji
 
-## Co dokładnie zostanie wysłane
+1. Otwórz aplikację, która zgłasza błąd.
+2. Kliknij **Zapytaj Vibe AI**.
+3. Asystent otworzy się z gotowym pytaniem i wybranym kontekstem.
 
-Panel **Co zostanie wysłane** pokazuje dokładną treść, która pojedzie razem z Twoją wiadomością. Nie streszczenie i nie opis — to samo, co zobaczy model.
+## Co zostanie wysłane
 
-Przed wysłaniem migawka jest czyszczona: **hasła, tokeny, klucze prywatne, sekretne zmienne środowiskowe i hasła w connection stringach są usuwane.** Dotyczy to również wartości podanych w wierszu poleceń kontenera i nagłówków autoryzacji w logach.
+Panel **Co zostanie wysłane** pokazuje dokładną treść, która pojedzie z Twoją wiadomością. Hasła, tokeny, klucze prywatne i sekretne zmienne środowiskowe są wcześniej usuwane.
 
-Zaglądaj do tego panelu, jeśli masz wątpliwości. Jest po to, żeby nie trzeba było ufać opisowi.
+## Jak sprawdzić, czy działa
 
-## Konfiguracja
+- Test połączenia kończy się powodzeniem.
+- Po wysłaniu pytania pojawia się odpowiedź.
+- W trybie **Diagnoza** panel **Co zostanie wysłane** pokazuje dane wybranej aplikacji.
 
-**Ustawienia → AI**. Model współdzielony (Qwen) działa bez własnego klucza i ma dzienny limit pytań na użytkownika — licznik zużycia jest w tym samym miejscu.
+## Najczęstsze problemy
 
-Chcąc użyć innego modelu, podajesz własne dane dostępowe: adres bazowy, nazwę modelu i klucz API. **Klucz trafia do magazynu poświadczeń systemu**, nigdy do pliku konfiguracyjnego, i nie wraca do interfejsu po zapisaniu. **Testuj połączenie** sprawdza, czy ustawienia działają, zanim zadasz pierwsze pytanie.
+- **Asystent nie jest skonfigurowany** — brak ustawień w **Ustawieniach** albo wyczerpany dzienny limit modelu współdzielonego.
+- **Odpowiedź nie zna mojej aplikacji** — tryb **Pytanie** nic nie odczytuje z serwerów. Przełącz na **Diagnoza**.
+- **Poprosiłem, żeby coś naprawił, i nic się nie stało** — asystent nie wykonuje żadnych operacji. Opisze, co zrobić.
 
-## Zapytaj Vibe AI z miejsca błędu
+## Więcej informacji
 
-Tam, gdzie aplikacja zgłasza błąd, pojawia się przycisk **Zapytaj Vibe AI**. Otwiera asystenta z już wybranym kontekstem i gotowym pytaniem, więc nie trzeba przepisywać komunikatu ręcznie.
-
-## Jak czytać odpowiedzi
-
-Asystent ma wskazać **jedną prawdopodobną przyczynę** i konkretny następny krok, a nie wyliczać wszystkiego, co teoretycznie mogło zawieść. Jeśli odpowiedź rozjeżdża się w listę możliwości, zwykle znaczy to, że w kontekście było za mało — spróbuj w trybie Diagnoza z wybraną właściwą aplikacją.
-
-Odpowiedź może być niepełna, jeśli zatrzymasz ją przyciskiem **Zatrzymaj** — jest to wtedy wyraźnie oznaczone.
-
-## Częste pomyłki
-
-- **„Asystent nie jest jeszcze skonfigurowany"** — brak konfiguracji w Ustawieniach albo wyczerpany dzienny limit modelu współdzielonego.
-- **Odpowiedź nie zna mojej aplikacji** — tryb Pytanie nic nie odczytuje z węzłów. Przełącz na Diagnozę i wybierz aplikację.
-- **Poprosiłem, żeby coś naprawił** — asystent nie wykona żadnej operacji. Opisze, co zrobić.
+Klucz API trafia do magazynu poświadczeń systemu i nie wraca do interfejsu po zapisaniu. Asystent nie ma dostępu do terminala i nie działa w tle.

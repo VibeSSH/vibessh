@@ -6,50 +6,52 @@ route: /
 order: 1
 ---
 
-Five steps take you from an empty app to a running server. Each has its own topic here; this one gives the order, and what each step means for the next.
+From an empty app to a running server in five steps.
 
 ## 1. Add a server
 
-**Servers -> Add server**. Address, user, password or key. Use **Test connection** before saving - it opens a real connection and saves nothing, so corrections cost you nothing.
+1. Open **Servers**.
+2. Click **Add server**.
+3. Fill in the fields and click **Test connection**.
+4. Click **Save server**.
 
-The account should have `sudo`. Without it some things work, but installing Docker, firewall rules and the dedicated accounts applications use do not.
+Details: the **Servers** topic.
 
-## 2. Create an application
+## 2. Set the Node up
 
-**Applications -> New application**, choosing a blueprint and a Node. A blueprint is a starting point: image, ports, configuration files. All of it can be changed afterwards.
+1. On the server card, click the setup icon.
+2. Next to anything missing, click **Install automatically**.
+3. Wait until every requirement reads **Installed**.
 
-A newly created application is not running yet - **Start** does that.
+## 3. Create an application
 
-## 3. Open a port
+1. Open **Applications**.
+2. Click **Create application**.
+3. Go through the five wizard steps and confirm.
+4. On the application's page, click **Start**.
 
-**Application -> Ports**. A blueprint usually declares a port at creation; check it has the right access level.
+## 4. Open a port
 
-The access level is a declaration. The Node's firewall is what enforces it, so use **Sync firewall**.
-
-> VPS providers often have their own firewall in front of the machine. VibeSSH cannot see it - if a port does not answer despite correct settings, check the provider's panel.
-
-## 4. Configure it
-
-**Application -> Files**. The editor highlights syntax, and checks YAML as well - a syntax error blocks saving, because a file like that would stop the server from starting.
-
-After saving configuration, restart the application: most servers read their files only at start.
+1. Open the application -> the **Ports** tab.
+2. Check the port has the right **Network access**.
+3. Click **Sync firewall**.
 
 ## 5. Turn on backups
 
-**Application -> Backups**. Set the schedule before you need it.
+1. Open the application -> the **Backups** tab.
+2. Tick **Back up automatically**.
+3. Set the interval and how many copies to keep.
+4. Save.
 
-Two things to know straight away: the schedule runs **only while VibeSSH is open**, and a backup on the same Node as the application does not protect you from losing that Node. The external destination (S3) is configured in Settings.
+## How to check it works
 
-## Where to go next
+- The Node reads **Online**.
+- The application reads **Running**.
+- The **Overview** tab shows a console with log lines.
+- Players connect to the server's IP address and the port from the **Ports** tab.
 
-- **Several servers that should see each other** -> the Vibe Network topic.
-- **A database for an application** -> the Databases topic.
-- **Something is broken and it is not obvious why** -> the Vibe AI topic, Diagnose mode.
-- **Access to something that should not be public** -> the SSH tunnels topic.
+## Common problems
 
-## An order that saves trouble
-
-1. Test the connection before saving a server.
-2. Sync the firewall after every change to a port's access.
-3. Restart the application after every change to a configuration file.
-4. Back up before any change you cannot undo.
+- **I cannot create an application** - Docker is missing on the Node. Go back to step 2.
+- **The port does not answer from the internet** - check **Network access** and click **Sync firewall**. Check your VPS provider's own firewall too.
+- **I changed a configuration file and nothing happened** - restart the application with **Restart**.

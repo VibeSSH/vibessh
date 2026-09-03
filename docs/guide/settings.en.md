@@ -3,51 +3,54 @@ id: settings
 title: Settings
 section: getting-started
 route: /settings
-order: 90
+order: 140
 ---
 
-Settings gathers what applies to the whole app rather than to one Node: the language, access to external services, and the assistant's configuration.
+Settings gathers the options that apply to the whole app.
 
-## Preferences
+## How to change the language
 
-**Language** switches the interface between Polish and English. It is personal and **only on this device** - it syncs nowhere.
+1. Open **Settings**.
+2. In the **Preferences** card, choose **Language**.
 
-The guide follows this setting. A topic not yet written in your language appears in the language it exists in, and says so.
+The setting applies to this device only.
 
-## Backup destination
+## How to set a backup destination (S3)
 
-An S3-compatible store that application backups are copied to. You fill in **Endpoint**, **Region**, **Bucket** and a key pair.
+1. Find the **Backup destination** card.
+2. Tick **Upload backups to external storage**.
+3. **Endpoint** - the storage address.
+4. **Region**, **Bucket** - from your storage provider.
+5. **Access Key ID** and **Secret Access Key** - the access keys.
+6. For MinIO, tick **Path-style addressing**.
+7. Click **Test connection**.
+8. Save.
 
-**Path-style addressing** has to be ticked for most MinIO installations - it is not cosmetic; without it the connection simply does not work.
+## How to add a private Docker registry
 
-When editing, **an empty Secret Access Key means "keep the current one"**, not "clear it". The key goes into the operating system's credential store.
+1. Find the **Private Docker registries** card.
+2. Click **Add registry**.
+3. **Registry address** - e.g. `ghcr.io`.
+4. **Username** and **Password / access token**.
+5. Save.
 
-**Test connection** checks access before the first backup tries to upload. Worth doing - otherwise you find out the configuration was wrong at the moment a backup was supposed to already exist.
+Public images work without signing in.
 
-> A backup that lives only on the same Node as the application protects you from a mistake, but not from losing the Node.
+## How to change the DNS suffix
 
-## Private Docker registries
+1. Find the **DNS suffix** card.
+2. Enter the new ending, e.g. `vibe`.
+3. Save.
+4. Open **Vibe Network** and click **Sync Vibe Network**.
 
-Credentials for image registries. **Public images work without signing in** - you add a registry only when you need a private image.
+## How to check it works
 
-One entry per registry, used by every application whose image comes from there. The address is the host: `docker.io`, `ghcr.io`, or your own registry's address. The password or access token goes into the credential store.
+- The interface changes language immediately.
+- The storage connection test succeeds.
+- The **About** card shows the version and the backend's answer.
 
-## DNS suffix
+## Common problems
 
-The ending for names in Vibe Network's private DNS - `.vibe` by default, so a Node is `server.vibe`. Changing it affects every alias, so synchronise Vibe Network afterwards.
-
-## Vibe AI
-
-Turning the assistant on, the provider, base URL, model, API key and a connection test. The shared model's daily usage is shown here too. The Vibe AI topic covers the detail.
-
-**The API key goes into the operating system's credential store and is not returned to the interface after saving.** An empty field when editing means "keep the current one".
-
-## About
-
-The version, and a check that the Rust backend is answering. If it sits on "Waiting for the backend", the interface works but nothing beneath it does - no operation will succeed.
-
-## Common mistakes
-
-- **I cleared the key field to remove it** - an empty field keeps the current key. Removing one is a separate action on that entry.
-- **Backups are not reaching S3** - use Test connection and check path-style; with MinIO that is the usual cause.
-- **I changed language and the guide is in English** - that topic has no version in the chosen language yet. The page says so.
+- **Backups are not reaching S3** - use **Test connection**. With MinIO the usual cause is **Path-style addressing** being unticked.
+- **I cleared the key field to remove it and nothing changed** - an empty field keeps the current key.
+- **"Waiting for the backend"** - the interface works but nothing beneath it does. Restart the app.
