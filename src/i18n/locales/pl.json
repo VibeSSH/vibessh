@@ -770,6 +770,17 @@
     "addRuleError": "Nie udało się dodać reguły.",
     "addRuleNote": "Reguła zostanie zastosowana od razu, jeśli serwer jest osiągalny - w przeciwnym razie użyj potem „Synchronizuj teraz”."
   },
+  "forcePassword": {
+    "body": "Hasło do konta {{email}} ustawiła osoba, która to konto założyła, więc je zna. Wybierz własne, żeby zacząć korzystać z aplikacji.",
+    "confirm": "Powtórz nowe hasło",
+    "current": "Obecne hasło",
+    "mismatch": "Oba pola muszą być takie same.",
+    "next": "Nowe hasło",
+    "signOut": "Wyloguj się",
+    "submit": "Ustaw hasło",
+    "title": "Ustaw własne hasło",
+    "tooShort": "Co najmniej 8 znaków."
+  },
   "guide": {
     "emptyDescription": "Poradnik składa się z rozdziałów; żaden nie został jeszcze dodany.",
     "emptyTitle": "Jeszcze pusto",
@@ -1019,6 +1030,24 @@
     "saveError": "Nie udało się zapisać portu.",
     "syncFirewall": "Zsynchronizuj firewall",
     "title": "Porty"
+  },
+  "provisionMember": {
+    "copied": "Skopiowano",
+    "copy": "Kopiuj",
+    "createdToast": "Utworzono konto dla {{email}}.",
+    "displayName": "Nazwa (opcjonalnie)",
+    "displayNamePlaceholder": "Puste — weźmiemy z adresu e-mail",
+    "email": "E-mail",
+    "emailPlaceholder": "imie@example.com",
+    "forcedChangeNote": "Osoba loguje się tym hasłem i musi je od razu zmienić — do tego czasu konto nie może zrobić nic innego.",
+    "noRole": "Na razie bez roli",
+    "noRoleWarning": "Nie nadano roli, więc to konto widzi zespół i nic poza tym. Nadaj rolę w zakładce Role.",
+    "resultNote": "Pokazujemy raz. Nic nie przechowuje go w czytelnej formie i żaden ekran go nie odtworzy — przekaż je, zanim zamkniesz.",
+    "resultTitle": "Hasło dla {{email}}",
+    "role": "Rola",
+    "submit": "Utwórz konto",
+    "subtitle": "Załóż komuś konto i od razu dodaj go do zespołu.",
+    "title": "Utwórz konto"
   },
   "rail": {
     "addServer": "Dodaj serwer",

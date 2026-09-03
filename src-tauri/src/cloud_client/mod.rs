@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     CloudAiAnswer, CloudAiQuota,
-    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,
+    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole,
+    CloudRoleWithPermissions, CloudServer,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 
@@ -259,6 +260,41 @@ impl CloudClient {
 
     pub async fn list_invitations(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
         self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/invitations"), Some(access_token), None).await
+    }
+
+    /// Creates an account for somebody and adds them to the team.
+    ///
+    /// The password comes back in the response and is not obtainable again
+    /// from anywhere - see the backend's `teams::provision_member`.
+    pub async fn provision_member(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        email: &str,
+        display_name: Option<&str>,
+        role_id: Option<Uuid>,
+    ) -> AppResult<CloudProvisionedMember> {
+        self.send(
+            Method::POST,
+            &format!("/teams/{team_id}/members/provision"),
+            Some(access_token),
+            Some(&json!({ "email": email, "displayName": display_name, "roleId": role_id })),
+        )
+        .await
+    }
+
+    /// Replaces the signed-in account's own password.
+    ///
+    /// Returns a fresh session, because the backend ends every other one -
+    /// including, from its point of view, this caller's.
+    pub async fn change_password(&self, access_token: &str, current_password: &str, new_password: &str) -> AppResult<CloudAuthResponse> {
+        self.send(
+            Method::POST,
+            "/auth/password",
+            Some(access_token),
+            Some(&json!({ "currentPassword": current_password, "newPassword": new_password })),
+        )
+        .await
     }
 
     pub async fn create_invitation(

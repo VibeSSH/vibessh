@@ -29,7 +29,8 @@ pub use backup_destination::{BackupDestinationConfig, SetBackupDestinationInput}
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType, DefaultPort, KnownFile};
 pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, DatabaseEngine, DatabaseHost};
 pub use cloud::{
-    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer,
+    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole,
+    CloudRoleWithPermissions, CloudServer,
     CloudSessionInfo, CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 pub use dns::{DnsRecord, DnsRecordInput, DnsView, DnsViewKind};

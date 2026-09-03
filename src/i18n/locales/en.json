@@ -769,6 +769,17 @@
     "addRuleError": "Couldn't add the rule.",
     "addRuleNote": "Applied right away if the server is reachable - otherwise use \"Sync now\" afterward."
   },
+  "forcePassword": {
+    "body": "The password for {{email}} was set by whoever created this account, so they know it. Choose your own to start using the app.",
+    "confirm": "Repeat the new password",
+    "current": "Current password",
+    "mismatch": "The two do not match.",
+    "next": "New password",
+    "signOut": "Sign out",
+    "submit": "Set password",
+    "title": "Set your own password",
+    "tooShort": "At least 8 characters."
+  },
   "guide": {
     "emptyDescription": "The guide is written as topics; none have been added yet.",
     "emptyTitle": "Nothing here yet",
@@ -1018,6 +1029,24 @@
     "saveError": "Couldn't save the port.",
     "syncFirewall": "Sync Firewall",
     "title": "Ports"
+  },
+  "provisionMember": {
+    "copied": "Copied",
+    "copy": "Copy",
+    "createdToast": "Account created for {{email}}.",
+    "displayName": "Name (optional)",
+    "displayNamePlaceholder": "Taken from the e-mail if left empty",
+    "email": "E-mail",
+    "emailPlaceholder": "name@example.com",
+    "forcedChangeNote": "They sign in with this password and must replace it immediately - until they do, the account can do nothing else.",
+    "noRole": "No role for now",
+    "noRoleWarning": "No role was assigned, so this account can see the team and nothing else. Give it a role on the Roles tab.",
+    "resultNote": "Shown once. Nothing stores it in readable form and no screen can produce it again - pass it on before closing this.",
+    "resultTitle": "Password for {{email}}",
+    "role": "Role",
+    "submit": "Create account",
+    "subtitle": "Make an account for somebody and put them straight into the team.",
+    "title": "Create an account"
   },
   "rail": {
     "addServer": "Add server",

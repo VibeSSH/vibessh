@@ -1,0 +1,75 @@
+/*
+ * The panel that shows a generated password.
+ *
+ * Framed and accented rather than shown as ordinary text, because it is the
+ * only copy that will ever exist: it has to look like something to act on
+ * before leaving the screen, not like a line of output.
+ */
+.provision-result {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.provision-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.provision-result-header svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.provision-result-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.provision-result-note {
+  margin: 6px 0 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.provision-password-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Monospace and generously spaced: this gets read aloud and typed by hand,
+   so the characters have to be told apart. */
+.provision-password {
+  flex: 1;
+  min-width: 220px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.provision-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Aligned with the bottom of the select beside it rather than the top of
+   its label. */
+.provision-submit {
+  align-items: flex-end;
+}

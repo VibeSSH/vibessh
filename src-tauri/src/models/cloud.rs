@@ -13,6 +13,28 @@ pub struct CloudUserProfile {
     pub email: String,
     pub display_name: String,
     pub created_at: DateTime<Utc>,
+    /// True for an account somebody else created, until its owner sets a
+    /// password of their own. The backend refuses every other request while
+    /// it holds, so this is what lets the app go straight to that screen
+    /// instead of discovering it one failed call at a time.
+    ///
+    /// Defaulted rather than required: a desktop build newer than the
+    /// backend it is talking to must keep working, and "not told" is
+    /// correctly read as "nothing to do".
+    #[serde(default)]
+    pub must_change_password: bool,
+}
+
+/// The account a team lead just created, with the one readable copy of its
+/// password.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudProvisionedMember {
+    pub user: CloudUserProfile,
+    /// Shown once and never obtainable again - it exists only to be passed
+    /// to the person the account belongs to.
+    pub temporary_password: String,
+    pub role_assigned: bool,
 }
 
 #[derive(Debug, Deserialize)]

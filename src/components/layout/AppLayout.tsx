@@ -5,6 +5,7 @@ import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
+import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
 import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
 import { Sidebar } from "./Sidebar";
@@ -14,6 +15,10 @@ import "./AppLayout.css";
 
 export function AppLayout() {
   const setUser = useAuthStore((s) => s.setUser);
+  // An account holding a password somebody else set can do nothing until
+  // it replaces it - the backend refuses every other request - so the
+  // whole interface is covered rather than letting them wander into it.
+  const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword ?? false);
   useBackupScheduler();
 
   useEffect(() => {
@@ -37,6 +42,7 @@ export function AppLayout() {
 
   return (
     <div className="app-shell chrome-frame">
+      {mustChangePassword && <ForcePasswordChange />}
       <TitleBar />
       <div className="app-body">
         <Rail />

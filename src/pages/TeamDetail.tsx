@@ -10,6 +10,7 @@ import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { AuditLogSection } from "@/components/teams/AuditLogSection";
 import { InvitationsSection } from "@/components/teams/InvitationsSection";
+import { ProvisionMemberSection } from "@/components/teams/ProvisionMemberSection";
 import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
 import { RolesSection } from "@/components/teams/RolesSection";
 import { ServersSection } from "@/components/teams/ServersSection";
@@ -183,7 +184,15 @@ export function TeamDetail() {
 
       {tab === "roles" && <RolesSection teamId={teamId} canManage={canManageRoles} />}
       {tab === "servers" && <ServersSection teamId={teamId} canManage={canManageServers} />}
-      {tab === "invitations" && canManageMembers && <InvitationsSection teamId={teamId} canManage={canManageMembers} />}
+      {tab === "invitations" && canManageMembers && (
+        <>
+          {/* Above the invitations, because it is now the ordinary way to
+              bring somebody in: an invitation only reaches a person who has
+              already registered on their own. */}
+          <ProvisionMemberSection teamId={teamId} canAdd={canManageMembers} />
+          <InvitationsSection teamId={teamId} canManage={canManageMembers} />
+        </>
+      )}
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
 
       {confirmingDelete && (

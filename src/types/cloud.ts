@@ -4,6 +4,19 @@ export interface CloudUserProfile {
   email: string;
   displayName: string;
   createdAt: string;
+  /** True for an account somebody else created, until its owner sets a
+   * password of their own. The backend refuses everything else while it
+   * holds, so the app sends them to that screen rather than letting them
+   * discover it one failed call at a time. */
+  mustChangePassword: boolean;
+}
+
+/** The account a team lead just created, with the only readable copy of its
+ * password. Shown once - nothing can produce it again. */
+export interface CloudProvisionedMember {
+  user: CloudUserProfile;
+  temporaryPassword: string;
+  roleAssigned: boolean;
 }
 
 export interface CloudSessionInfo {

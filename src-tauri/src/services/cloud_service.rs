@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo,
+    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole, CloudRoleWithPermissions,
+    CloudServer, CloudSessionInfo,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 use crate::state::cloud_session::{CloudSession, CloudState};
@@ -240,6 +241,50 @@ pub async fn list_invitations(state: &CloudState, team_id: Uuid) -> AppResult<Ve
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;
     inner.client.list_invitations(&token, team_id).await
+}
+
+/// Creates an account for somebody and puts them in the team.
+///
+/// The returned password is the only copy that will ever exist outside an
+/// Argon2 hash, so it is passed straight back to the caller and this layer
+/// keeps none of it.
+pub async fn provision_member(
+    state: &CloudState,
+    team_id: Uuid,
+    email: &str,
+    display_name: Option<&str>,
+    role_id: Option<Uuid>,
+) -> AppResult<CloudProvisionedMember> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.provision_member(&token, team_id, email, display_name, role_id).await
+}
+
+/// Replaces the signed-in account's own password and adopts the session the
+/// backend issues in return.
+///
+/// Storing the new session is not optional bookkeeping: the change ends
+/// every previous session, so the tokens this app is holding stop working
+/// the moment the call succeeds. Without this the user would be signed out
+/// by their own password change.
+pub async fn change_password(state: &CloudState, current_password: &str, new_password: &str) -> AppResult<CloudUserProfile> {
+    let token = ensure_valid_access_token(state).await?;
+    let response = {
+        let inner = state.inner.lock().await;
+        inner.client.change_password(&token, current_password, new_password).await?
+    };
+    // Same shape as `login`: keep the refresh token where the keyring
+    // expects it and adopt the access token, or this app is holding a
+    // session the backend has just ended.
+    let user = response.user.clone();
+    credentials::store_cloud_refresh_token(&response.refresh_token)?;
+    let mut inner = state.inner.lock().await;
+    inner.session = Some(CloudSession {
+        access_token: response.access_token,
+        access_token_expires_at: response.access_token_expires_at,
+        user: response.user,
+    });
+    Ok(user)
 }
 
 pub async fn create_invitation(

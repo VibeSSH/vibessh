@@ -225,7 +225,7 @@ const fixtures: Record<string, unknown> = {
   get_ai_quota: null,
   // Signed in, with one team, so the Teams screens can be looked at and
   // photographed like every other part of the app.
-  cloud_session_info: { userId: "user-1", email: "ty@example.com", displayName: "Ty" },
+  cloud_session_info: { user: { id: "user-1", email: "ty@example.com", displayName: "Ty", createdAt: "2026-08-20T09:00:00Z", mustChangePassword: false } },
   cloud_list_teams: [{ id: "team-1", name: "test", ownerId: "user-1", createdAt: "2026-08-20T09:00:00Z" }],
   cloud_get_team: { id: "team-1", name: "test", ownerId: "user-1", createdAt: "2026-08-20T09:00:00Z" },
   cloud_list_permissions: [
@@ -297,6 +297,11 @@ const fixtures: Record<string, unknown> = {
     "servers.manage",
   ],
   cloud_list_members: [{ userId: "user-1", email: "ty@example.com", displayName: "Ty", joinedAt: "2026-08-20T09:00:00Z" }],
+  cloud_provision_member: {
+    user: { id: "user-2", email: "nowy@example.com", displayName: "nowy", createdAt: "2026-09-03T00:00:00Z", mustChangePassword: true },
+    temporaryPassword: "hK4mRtq7VzXpAe2Nsbwd",
+    roleAssigned: true,
+  },
   cloud_list_member_roles: [],
   cloud_list_invitations: [],
   cloud_list_servers: [],

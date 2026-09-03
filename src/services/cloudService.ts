@@ -3,6 +3,7 @@ import type {
   CloudAuditEvent,
   CloudCreatedInvitation,
   CloudInvitation,
+  CloudProvisionedMember,
   CloudRole,
   CloudRoleWithPermissions,
   CloudServer,
@@ -136,6 +137,31 @@ export function cloudDeleteTeam(teamId: string): Promise<void> {
 
 export function cloudListInvitations(teamId: string): Promise<CloudInvitation[]> {
   return callCommand<CloudInvitation[]>("cloud_list_invitations", { teamId });
+}
+
+/**
+ * Creates an account for somebody and adds them to the team.
+ *
+ * The password in the result is the only copy that will exist outside a
+ * hash - show it, let it be copied, and do not try to store it.
+ */
+export function cloudProvisionMember(
+  teamId: string,
+  email: string,
+  displayName: string | null,
+  roleId: string | null,
+): Promise<CloudProvisionedMember> {
+  return callCommand<CloudProvisionedMember>("cloud_provision_member", { teamId, email, displayName, roleId });
+}
+
+/**
+ * Replaces the signed-in account's own password.
+ *
+ * Every other session ends server-side; the Rust side adopts the session
+ * that comes back, so this app stays signed in.
+ */
+export function cloudChangePassword(currentPassword: string, newPassword: string): Promise<CloudUserProfile> {
+  return callCommand<CloudUserProfile>("cloud_change_password", { currentPassword, newPassword });
 }
 
 export function cloudCreateInvitation(

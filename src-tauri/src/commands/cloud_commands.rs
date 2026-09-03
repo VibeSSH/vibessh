@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use crate::errors::AppResult;
 use crate::models::{
-    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudRole, CloudRoleWithPermissions, CloudServer, CloudSessionInfo,
+    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole, CloudRoleWithPermissions,
+    CloudServer, CloudSessionInfo,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
 use crate::services;
@@ -161,6 +162,22 @@ pub async fn cloud_delete_team(state: State<'_, CloudState>, team_id: Uuid) -> A
 #[tauri::command]
 pub async fn cloud_list_invitations(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
     services::cloud_list_invitations(&state, team_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_provision_member(
+    state: State<'_, CloudState>,
+    team_id: Uuid,
+    email: String,
+    display_name: Option<String>,
+    role_id: Option<Uuid>,
+) -> AppResult<CloudProvisionedMember> {
+    services::cloud_provision_member(&state, team_id, &email, display_name.as_deref(), role_id).await
+}
+
+#[tauri::command]
+pub async fn cloud_change_password(state: State<'_, CloudState>, current_password: String, new_password: String) -> AppResult<CloudUserProfile> {
+    services::cloud_change_password(&state, &current_password, &new_password).await
 }
 
 #[tauri::command]
