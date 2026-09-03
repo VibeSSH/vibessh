@@ -16,11 +16,15 @@ The sidebar -> **Teams**. The entry appears once you are signed in.
 
 You create a team by giving it a name. Whoever created it is the **owner**.
 
-## Inviting
+## Adding someone
 
-You invite someone and they receive an **invitation code**. They paste it into "Got an invitation code?" on their side and accept or decline.
+Team -> **Members** -> **Create an account**. Give an email, optionally a name, and pick a role. The account is created already in the team with that role, and you get a generated password to pass on.
 
-An invitation is a code rather than an automatic addition: until the other person uses it, nothing has happened.
+**The password is shown once.** Nothing stores it in readable form and no screen can produce it again - pass it on before closing the panel. If it is lost, provision the account again.
+
+That person signs in with it and **must replace it immediately**. Until they do, the backend refuses every other request from the account, so it is a rule rather than a prompt - a password you know is not yet their password. Changing it also ends every other session for that account.
+
+This used to work through invitation codes. That was removed: an invitation could only reach somebody who had already registered on their own, which is backwards for the case it existed for.
 
 ## Roles
 
@@ -28,7 +32,7 @@ Members have roles that decide what they can do with the servers shared in the t
 
 ## Operation permissions - and what they are not
 
-Beyond permissions over the team itself (members, roles, invitations), roles also carry permissions over operations: creating applications, ports, files, backups, the firewall, the terminal, installing software, Vibe Network.
+Beyond permissions over the team itself (members, roles, the audit log), roles also carry permissions over operations: creating applications, ports, files, backups, the firewall, the terminal, installing software, Vibe Network.
 
 > **These are guard rails, not a security boundary.** They hide and disable actions inside VibeSSH, so a new member does not click something by accident. They cannot stop somebody who does not want to be stopped.
 

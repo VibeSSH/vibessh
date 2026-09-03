@@ -16,11 +16,15 @@ Menu boczne → **Zespoły**. Pozycja pojawia się po zalogowaniu.
 
 Tworzysz zespół, podając nazwę. Osoba, która go utworzyła, jest **właścicielem**.
 
-## Zapraszanie
+## Dodawanie osoby
 
-Zapraszasz kogoś, a on dostaje **kod zaproszenia**. Kod wkleja u siebie w polu „Masz kod zaproszenia?" i akceptuje albo odrzuca.
+Zespół → **Członkowie** → **Utwórz konto**. Podajesz e-mail, opcjonalnie nazwę i wybierasz rolę. Konto powstaje od razu w zespole, z nadaną rolą, a Ty dostajesz wygenerowane hasło do przekazania.
 
-Zaproszenie jest kodem, a nie automatycznym dodaniem: dopóki druga strona go nie użyje, nic się nie dzieje.
+**Hasło pokazujemy raz.** Nic nie trzyma go w czytelnej formie i żaden ekran go nie odtworzy — przekaż je, zanim zamkniesz panel. Jeśli przepadnie, trzeba założyć konto ponownie.
+
+Ta osoba loguje się tym hasłem i **musi je natychmiast zmienić**. Do tego czasu backend odrzuca każde inne żądanie z tego konta, więc nie jest to prośba, tylko reguła — hasło, które znasz Ty, nie jest jeszcze hasłem tej osoby. Zmiana kończy przy okazji wszystkie inne sesje tego konta.
+
+Wcześniej działało to przez kody zaproszeń. Zostało usunięte: zaproszenie docierało wyłącznie do kogoś, kto sam wcześniej się zarejestrował, czyli odwrotnie niż w przypadku, dla którego istniało.
 
 ## Role
 
@@ -28,7 +32,7 @@ Członkowie mają role określające, co mogą robić z serwerami dzielonymi w z
 
 ## Uprawnienia do operacji — i czym one nie są
 
-Poza uprawnieniami do samego zespołu (członkowie, role, zaproszenia) role niosą też uprawnienia do operacji: tworzenie aplikacji, porty, pliki, backupy, firewall, terminal, instalacja oprogramowania, Vibe Network.
+Poza uprawnieniami do samego zespołu (członkowie, role, audyt) role niosą też uprawnienia do operacji: tworzenie aplikacji, porty, pliki, backupy, firewall, terminal, instalacja oprogramowania, Vibe Network.
 
 > **To są barierki, nie granica bezpieczeństwa.** Ukrywają i blokują akcje wewnątrz VibeSSH, dzięki czemu nowy członek nie kliknie czegoś przez pomyłkę. Nie zatrzymają kogoś, kto nie chce być zatrzymany.
 

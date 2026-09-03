@@ -1,0 +1,21 @@
+-- The invitation flow is gone: a team lead now provisions the account
+-- directly (`teams::provision_member`), which is the same job done in one
+-- step instead of two, and works for somebody who has never heard of the
+-- app. Two ways to add a person was one too many.
+--
+-- The permission that guarded the removed endpoints goes with them. A
+-- permission nothing checks is a checkbox that lies, which is what
+-- `permissions::every_permission_is_referenced_by_a_handler` exists to
+-- catch - so the key is deleted from the catalog in code, and the rows
+-- holding it are deleted here. Leaving them would make every affected
+-- role fail validation on its next update, because the key would no
+-- longer be recognised.
+DELETE FROM role_permissions WHERE permission_key = 'team.invitations.manage';
+
+-- The `invitations` table itself is deliberately left in place.
+--
+-- Dropping it would destroy every record of who was invited and by whom,
+-- irreversibly, to save nothing that matters: an unused table costs
+-- storage and no correctness. If it is ever genuinely in the way, dropping
+-- it is one statement and should be its own decision, made deliberately
+-- and not as a side effect of removing a screen.

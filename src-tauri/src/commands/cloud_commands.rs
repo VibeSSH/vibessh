@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::errors::AppResult;
 use crate::models::{
-    CloudAuditEvent, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole, CloudRoleWithPermissions,
+    CloudAuditEvent, CloudProvisionedMember, CloudRole, CloudRoleWithPermissions,
     CloudServer, CloudSessionInfo,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
@@ -160,11 +160,6 @@ pub async fn cloud_delete_team(state: State<'_, CloudState>, team_id: Uuid) -> A
 }
 
 #[tauri::command]
-pub async fn cloud_list_invitations(state: State<'_, CloudState>, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
-    services::cloud_list_invitations(&state, team_id).await
-}
-
-#[tauri::command]
 pub async fn cloud_provision_member(
     state: State<'_, CloudState>,
     team_id: Uuid,
@@ -178,32 +173,6 @@ pub async fn cloud_provision_member(
 #[tauri::command]
 pub async fn cloud_change_password(state: State<'_, CloudState>, current_password: String, new_password: String) -> AppResult<CloudUserProfile> {
     services::cloud_change_password(&state, &current_password, &new_password).await
-}
-
-#[tauri::command]
-pub async fn cloud_create_invitation(
-    state: State<'_, CloudState>,
-    team_id: Uuid,
-    email: String,
-    role_id: Option<Uuid>,
-    expires_in_days: Option<i64>,
-) -> AppResult<CloudCreatedInvitation> {
-    services::cloud_create_invitation(&state, team_id, &email, role_id, expires_in_days).await
-}
-
-#[tauri::command]
-pub async fn cloud_revoke_invitation(state: State<'_, CloudState>, team_id: Uuid, invitation_id: Uuid) -> AppResult<()> {
-    services::cloud_revoke_invitation(&state, team_id, invitation_id).await
-}
-
-#[tauri::command]
-pub async fn cloud_accept_invitation(state: State<'_, CloudState>, token: String) -> AppResult<CloudTeam> {
-    services::cloud_accept_invitation(&state, &token).await
-}
-
-#[tauri::command]
-pub async fn cloud_decline_invitation(state: State<'_, CloudState>, token: String) -> AppResult<()> {
-    services::cloud_decline_invitation(&state, &token).await
 }
 
 #[tauri::command]

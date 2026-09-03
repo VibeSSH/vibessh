@@ -25,12 +25,6 @@ pub const TEAM_ROLES_MANAGE: &str = "team.roles.manage";
 /// this - see `authorize_any` at the call sites - so no existing role loses
 /// anything by this existing.
 pub const TEAM_ROLES_ASSIGN: &str = "team.roles.assign";
-/// Create, list and revoke invitations.
-///
-/// Also additive: this was `TEAM_MEMBERS_ADD`, which conflates "may bring
-/// somebody into the team" with "may see and cancel everybody's pending
-/// invitations". Roles holding `TEAM_MEMBERS_ADD` keep both.
-pub const TEAM_INVITATIONS_MANAGE: &str = "team.invitations.manage";
 pub const AUDIT_VIEW: &str = "audit.view";
 pub const SERVERS_MANAGE: &str = "servers.manage";
 
@@ -76,7 +70,6 @@ pub const ALL_PERMISSIONS: &[&str] = &[
     TEAM_MEMBERS_REMOVE,
     TEAM_ROLES_MANAGE,
     TEAM_ROLES_ASSIGN,
-    TEAM_INVITATIONS_MANAGE,
     AUDIT_VIEW,
     SERVERS_MANAGE,
     APPLICATIONS_VIEW,
@@ -171,7 +164,6 @@ mod catalog_growth_tests {
         let sources = [
             include_str!("teams.rs"),
             include_str!("roles.rs"),
-            include_str!("invitations.rs"),
             include_str!("audit.rs"),
             include_str!("team_servers.rs"),
         ];
@@ -196,7 +188,6 @@ mod catalog_growth_tests {
     #[test]
     fn split_permissions_still_accept_the_permission_they_came_from() {
         assert!(include_str!("roles.rs").contains("TEAM_ROLES_MANAGE, permissions::TEAM_ROLES_ASSIGN"));
-        assert!(include_str!("invitations.rs").contains("TEAM_MEMBERS_ADD, permissions::TEAM_INVITATIONS_MANAGE"));
     }
 }
 

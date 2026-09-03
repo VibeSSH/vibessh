@@ -349,7 +349,7 @@ interface CredentialRowProps {
   value: string;
 }
 
-/** One copyable connection-detail field - reuses the same `.code-block`/`.code-block-copy` monospace-value-plus-copy-button pattern `InvitationsSection.tsx` already established for a single token, just repeated per field here (host/database/user/password). */
+/** One copyable connection-detail field - the same monospace-value-plus-copy-button pattern used wherever a credential has to be read and passed on, repeated per field here (host/database/user/password). */
 function CredentialRow({ label, value }: CredentialRowProps) {
   async function handleCopy() {
     try {

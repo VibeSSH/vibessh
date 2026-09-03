@@ -14,10 +14,11 @@ import "./ProvisionMemberSection.css";
 /**
  * Creating an account for somebody, rather than asking them to make one.
  *
- * The invitation flow below this can only reach a person who has already
- * registered - which is the wrong way round for the case it exists for.
- * Here a lead types an email, picks the role, and gets a password to pass
- * on; the account is already in the team and already able to do its job.
+ * The one way to bring somebody in. It replaced an invitation flow that
+ * could only reach a person who had already registered on their own -
+ * backwards for the case it existed for. Here a lead types an email, picks
+ * the role, and gets a password to pass on; the account is already in the
+ * team and already able to do its job.
  *
  * The password is shown exactly once. Nothing stores it in the clear and no
  * request can produce it again, so the panel that displays it says so

@@ -372,13 +372,8 @@ pub fn run() {
             commands::cloud_commands::cloud_my_permissions,
             commands::cloud_commands::cloud_remove_member,
             commands::cloud_commands::cloud_delete_team,
-            commands::cloud_commands::cloud_list_invitations,
             commands::cloud_commands::cloud_provision_member,
             commands::cloud_commands::cloud_change_password,
-            commands::cloud_commands::cloud_create_invitation,
-            commands::cloud_commands::cloud_revoke_invitation,
-            commands::cloud_commands::cloud_accept_invitation,
-            commands::cloud_commands::cloud_decline_invitation,
             commands::cloud_commands::cloud_list_audit_events,
         ])
         .run(tauri::generate_context!())

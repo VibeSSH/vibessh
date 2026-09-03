@@ -30,7 +30,6 @@ pub mod jwt;
 pub mod models;
 pub mod password;
 pub mod permissions;
-pub mod invitations;
 pub mod refresh_token;
 pub mod roles;
 pub mod team_servers;
@@ -94,10 +93,6 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/teams/:team_id/members/:user_id/roles/:role_id", delete(roles::unassign_role))
         .route("/teams/:team_id/me/permissions", get(roles::my_permissions))
         .route("/teams/:team_id/audit", get(audit::list_audit_events))
-        .route("/teams/:team_id/invitations", get(invitations::list_invitations).post(invitations::create_invitation))
-        .route("/teams/:team_id/invitations/:invitation_id", delete(invitations::revoke_invitation))
-        .route("/invitations/:token/accept", post(invitations::accept_invitation))
-        .route("/invitations/:token/decline", post(invitations::decline_invitation))
         .route("/teams/:team_id/servers", get(team_servers::list_servers).post(team_servers::create_server))
         .route("/teams/:team_id/servers/:server_id", delete(team_servers::delete_server))
         .with_state(state)

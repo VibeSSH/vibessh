@@ -61,24 +61,6 @@ export interface CloudServer {
   createdAt: string;
 }
 
-export type InvitationStatus = "pending" | "accepted" | "declined" | "revoked" | "expired";
-
-export interface CloudInvitation {
-  id: string;
-  teamId: string;
-  email: string;
-  roleId: string | null;
-  status: InvitationStatus;
-  invitedBy: string | null;
-  createdAt: string;
-  expiresAt: string;
-}
-
-/** Only ever returned once, right after creating an invitation - see cloudCreateInvitation. */
-export interface CloudCreatedInvitation extends CloudInvitation {
-  token: string;
-}
-
 export interface CloudAuditEvent {
   id: string;
   action: string;

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
     CloudAiAnswer, CloudAiQuota,
-    CloudAuditEvent, CloudAuthResponse, CloudCreatedInvitation, CloudInvitation, CloudProvisionedMember, CloudRole,
+    CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
@@ -258,10 +258,6 @@ impl CloudClient {
         self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}"), Some(access_token), None).await
     }
 
-    pub async fn list_invitations(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudInvitation>> {
-        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/invitations"), Some(access_token), None).await
-    }
-
     /// Creates an account for somebody and adds them to the team.
     ///
     /// The password comes back in the response and is not obtainable again
@@ -295,39 +291,6 @@ impl CloudClient {
             Some(&json!({ "currentPassword": current_password, "newPassword": new_password })),
         )
         .await
-    }
-
-    pub async fn create_invitation(
-        &self,
-        access_token: &str,
-        team_id: Uuid,
-        email: &str,
-        role_id: Option<Uuid>,
-        expires_in_days: Option<i64>,
-    ) -> AppResult<CloudCreatedInvitation> {
-        self.send(
-            Method::POST,
-            &format!("/teams/{team_id}/invitations"),
-            Some(access_token),
-            Some(&json!({ "email": email, "roleId": role_id, "expiresInDays": expires_in_days })),
-        )
-        .await
-    }
-
-    pub async fn revoke_invitation(&self, access_token: &str, team_id: Uuid, invitation_id: Uuid) -> AppResult<()> {
-        self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}/invitations/{invitation_id}"), Some(access_token), None)
-            .await
-    }
-
-    /// Not team-scoped like everything else here - the invitee doesn't
-    /// necessarily belong to (or even know the id of) the team they're
-    /// accepting into yet, only the raw token they were given out of band.
-    pub async fn accept_invitation(&self, access_token: &str, token: &str) -> AppResult<CloudTeam> {
-        self.send::<(), _>(Method::POST, &format!("/invitations/{token}/accept"), Some(access_token), None).await
-    }
-
-    pub async fn decline_invitation(&self, access_token: &str, token: &str) -> AppResult<()> {
-        self.send_no_content::<()>(Method::POST, &format!("/invitations/{token}/decline"), Some(access_token), None).await
     }
 
     pub async fn list_audit_events(&self, access_token: &str, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {
