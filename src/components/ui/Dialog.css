@@ -1,0 +1,26 @@
+/*
+ * The panel is portalled to the end of `body`, so it is no longer a child of
+ * the flex backdrop that used to centre it - Radix renders the overlay and
+ * the content as siblings. It centres itself instead.
+ *
+ * Everything else about how a dialog looks still comes from `.modal-panel`
+ * in AddServerModal.css: one set of widths, radii, shadows and the open
+ * animation, shared with the modals that have not moved across yet.
+ */
+.dialog-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  /* Explicit, because the overlay below carries one: a positioned sibling
+     with `z-index: auto` paints *under* any sibling with a real z-index, so
+     leaving this out puts the backdrop over the dialog. */
+  z-index: var(--z-modal);
+}
+
+/* The overlay has no children now, so its centring is dead weight, and its
+   z-index has to sit under the panel rather than over it. */
+.dialog-overlay {
+  display: block;
+  z-index: calc(var(--z-modal) - 1);
+}
