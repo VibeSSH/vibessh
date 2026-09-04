@@ -247,7 +247,11 @@
     "workingDirectory": "Katalog roboczy",
     "noPorts": "Nie skonfigurowano żadnych portów.",
     "cpuChartLabel": "Użycie CPU z ostatnich kilku minut, teraz {{value}} procent",
-    "ramChartLabel": "Użycie pamięci z ostatnich kilku minut, teraz {{value}} megabajtów"
+    "ramChartLabel": "Użycie pamięci z ostatnich kilku minut, teraz {{value}} megabajtów",
+    "renameTitle": "Zmień nazwę aplikacji",
+    "renameLabel": "Nazwa",
+    "renameAria": "Zmień nazwę aplikacji {{name}}",
+    "renameNote": "Pod tą nazwą znajdują tę aplikację inne aplikacje połączone z nią w prywatnej sieci. Nowa nazwa zacznie tam obowiązywać dopiero po restarcie."
   },
   "applicationFileEditor": {
     "backAria": "Wróć do listy plików",
@@ -264,7 +268,9 @@
     "savedToast": "Zapisano „{{name}}”.",
     "saving": "Zapisywanie…",
     "searchAria": "Szukaj w pliku (Ctrl+F)",
-    "tooLarge": "Plik jest za duży, żeby edytować go bezpośrednio."
+    "windowNote": "Plik jest za duży, żeby go edytować, więc wczytuję go fragmentami do odczytu. Wczytano {{loaded}} z {{total}}.",
+    "loadMore": "Wczytaj dalszą część",
+    "windowLoading": "Wczytuję…"
   },
   "applicationFilesTab": {
     "loadError": "Nie udało się wczytać plików.",
@@ -275,6 +281,7 @@
     "newFile": "Nowy plik",
     "upload": "Prześlij",
     "uploadTitle": "Prześlij pliki",
+    "dropTitle": "Upuść pliki, aby wysłać",
     "uploadError": "Nie udało się przesłać pliku.",
     "downloadAria": "Pobierz {{name}}",
     "downloadTitle": "Pobierz plik",
@@ -613,13 +620,13 @@
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
-    "body": "Usunąć <1>{{name}}</1>? Usuwa to również jej kontener, bazy danych, reguły firewalla i konto na Node. Pliki w katalogu roboczym zostają. Tej operacji nie można cofnąć.",
+    "body": "Usunąć <1>{{name}}</1>? Usuwa to również jej kontener, bazy danych, reguły firewalla i konto na Node. Tej operacji nie można cofnąć.",
     "removeFiles": "Usuń też pliki aplikacji",
     "removeFilesNote": "Katalog roboczy ze światem, pluginami i konfiguracją. Tego nie da się cofnąć. Zaznacz, jeśli zaraz importujesz ten serwer od nowa — kopiowanie dolewa do istniejącego katalogu, zamiast go zastąpić.",
     "titleMany_few": "Usuń {{count}} aplikacje",
     "titleMany_many": "Usuń {{count}} aplikacji",
-    "bodyMany_few": "Usunąć <1>{{count}}</1> aplikacje? Dotyczy: {{names}}. Każda zostanie rozebrana: kontener, reguły firewalla, konto na nodzie i jej bazy danych.",
-    "bodyMany_many": "Usunąć <1>{{count}}</1> aplikacji? Dotyczy: {{names}}. Każda zostanie rozebrana: kontener, reguły firewalla, konto na nodzie i jej bazy danych."
+    "bodyMany_few": "Usunąć <1>{{count}}</1> aplikacje? Dotyczy: {{names}}. Każda zostanie rozebrana: kontener, reguły firewalla, konto na nodzie i jej bazy danych. Tej operacji nie można cofnąć.",
+    "bodyMany_many": "Usunąć <1>{{count}}</1> aplikacji? Dotyczy: {{names}}. Każda zostanie rozebrana: kontener, reguły firewalla, konto na nodzie i jej bazy danych. Tej operacji nie można cofnąć."
   },
   "deleteDialog": {
     "title": "Usuń serwer",
@@ -691,7 +698,9 @@
     "savedToast": "Zapisano {{name}}",
     "saving": "Zapisywanie...",
     "searchAria": "Szukaj w pliku (Ctrl+F)",
-    "tooLarge": "Ten plik jest większy niż 1 MB - zbyt duży, aby edytować go tutaj. Użyj terminala, aby nad nim pracować."
+    "windowNote": "Plik jest za duży, żeby go edytować, więc wczytuję go fragmentami do odczytu. Wczytano {{loaded}} z {{total}}.",
+    "loadMore": "Wczytaj dalszą część",
+    "windowLoading": "Wczytuję…"
   },
   "fileHistory": {
     "title": "Historia wersji - {{name}}",
@@ -715,6 +724,7 @@
     "emptyTitle": "Pusty katalog",
     "emptyDescription": "Nic tu nie ma.",
     "uploadedToast": "Wysłano {{name}}",
+    "dropTitle": "Upuść pliki, aby wysłać",
     "downloadedToast": "Pobrano {{name}}",
     "createdFolderToast": "Utworzono {{name}}",
     "createdFileToast": "Utworzono {{name}}",
@@ -1693,5 +1703,26 @@
     "applyMachines": "Zastosuj i przebuduj plan",
     "noDatabaseHosts": "Te serwery mają bazy danych, ale VibeSSH nie ma jeszcze żadnego hosta baz, więc nie ma dokąd ich przenieść.",
     "noDatabaseHostsLink": "Dodaj host w sekcji Bazy danych"
+  },
+  "applicationTabs": {
+    "close": "Zamknij zakładkę {{name}}",
+    "label": "Otwarte aplikacje"
+  },
+  "theme": {
+    "title": "Motyw",
+    "description": "Kolory interfejsu. Reszta wyglądu wylicza się z nich sama.",
+    "customName": "Własny",
+    "edit": "Edytuj kolory",
+    "editClose": "Zamknij edycję",
+    "copy": "Kopiuj motyw",
+    "paste": "Wklej motyw",
+    "save": "Zapisz jako własny",
+    "importInvalid": "To nie jest poprawny motyw. Oczekuję JSON-a z kompletem kolorów w zapisie szesnastkowym.",
+    "editorNote": "Zmiany widać od razu. Zapisz, żeby zostały po zamknięciu aplikacji.",
+    "groupSurfaces": "Tła",
+    "groupText": "Tekst",
+    "groupAccent": "Akcent i obramowania",
+    "groupStatus": "Stany",
+    "tokenCount": "Motyw to {{count}} kolorów. Odstępy, zaokrąglenia i warstwy nie są zmienialne — zły kolor jest brzydki, zmieniony układ bywa nie do naprawienia okiem."
   }
 }

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import {
   connectPterodactyl,
   forgetPterodactyl,
@@ -330,20 +331,17 @@ export function PterodactylMigration() {
                     {node.nodeName}
                     <span className="ptero-muted"> {node.fqdn}</span>
                   </span>
-                  <select
-                    className="form-input ptero-host-select"
+                  <Select
+                    className="ptero-host-select"
                     value={nodeChoices[node.fqdn] ?? node.matchedServerId ?? ""}
-                    onChange={(event) => setNodeChoices({ ...nodeChoices, [node.fqdn]: event.target.value })}
+                    onChange={(value) => setNodeChoices({ ...nodeChoices, [node.fqdn]: value })}
                     disabled={running || planning}
                     aria-label={t("pterodactyl.machineFor", { name: node.nodeName })}
-                  >
-                    <option value="">{t("pterodactyl.machineNone")}</option>
-                    {servers.map((server) => (
-                      <option key={server.id} value={server.id}>
-                        {server.name} ({server.host})
-                      </option>
-                    ))}
-                  </select>
+                    items={[
+                      { value: "", label: t("pterodactyl.machineNone") },
+                      ...servers.map((server) => ({ value: server.id, label: `${server.name} (${server.host})` })),
+                    ]}
+                  />
                 </li>
               ))}
             </ul>
@@ -379,19 +377,16 @@ export function PterodactylMigration() {
               ) : (
                 <label className="ptero-run-hosts">
                   <span className="ptero-run-note">{t("pterodactyl.databaseTarget")}</span>
-                  <select
-                    className="form-input ptero-host-select"
+                  <Select
+                    className="ptero-host-select"
                     value={databaseHostId}
-                    onChange={(event) => setDatabaseHostId(event.target.value)}
+                    onChange={setDatabaseHostId}
                     disabled={running}
-                  >
-                    <option value="">{t("pterodactyl.databaseTargetNone")}</option>
-                    {databaseHosts.map((host) => (
-                      <option key={host.id} value={host.id}>
-                        {host.name}
-                      </option>
-                    ))}
-                  </select>
+                    items={[
+                      { value: "", label: t("pterodactyl.databaseTargetNone") },
+                      ...databaseHosts.map((host) => ({ value: host.id, label: host.name })),
+                    ]}
+                  />
                 </label>
               ))}
             {progress && (
