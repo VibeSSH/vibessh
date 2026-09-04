@@ -1708,5 +1708,19 @@
     "groupAccent": "Accent and borders",
     "groupStatus": "Status",
     "tokenCount": "A theme is {{count}} colours. Spacing, radii and layering are not themable - a bad colour is ugly, a changed layout can be unfixable by eye."
+  },
+  "update": {
+    "title": "Updates",
+    "checking": "Checking…",
+    "upToDate": "You are on the latest version.",
+    "checkNow": "Check now",
+    "checkAria": "Check for updates",
+    "available": "Version {{version}} is available",
+    "availableAria": "Update to version {{version}} is available",
+    "restartWarning": "Installing closes and reopens the app. Open terminals will be disconnected.",
+    "install": "Download and install",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "ready": "Done. The app will restart."
   }
 }

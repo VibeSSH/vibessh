@@ -1724,5 +1724,19 @@
     "groupAccent": "Akcent i obramowania",
     "groupStatus": "Stany",
     "tokenCount": "Motyw to {{count}} kolorów. Odstępy, zaokrąglenia i warstwy nie są zmienialne — zły kolor jest brzydki, zmieniony układ bywa nie do naprawienia okiem."
+  },
+  "update": {
+    "title": "Aktualizacje",
+    "checking": "Sprawdzam…",
+    "upToDate": "Masz najnowszą wersję.",
+    "checkNow": "Sprawdź teraz",
+    "checkAria": "Sprawdź aktualizacje",
+    "available": "Dostępna wersja {{version}}",
+    "availableAria": "Dostępna aktualizacja do wersji {{version}}",
+    "restartWarning": "Instalacja zamknie i uruchomi aplikację ponownie. Otwarte terminale zostaną rozłączone.",
+    "install": "Pobierz i zainstaluj",
+    "downloading": "Pobieram…",
+    "downloadingPercent": "Pobieram… {{percent}}%",
+    "ready": "Gotowe. Aplikacja uruchomi się ponownie."
   }
 }

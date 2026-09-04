@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
+import { startUpdateChecks } from "@/stores/updateStore";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
 import { cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
@@ -20,6 +21,9 @@ export function AppLayout() {
   useSmoothScroll(scrollWrapperRef, scrollContentRef);
 
   const setUser = useAuthStore((s) => s.setUser);
+
+  // One periodic check for the whole app, started where the shell is.
+  useEffect(startUpdateChecks, []);
   // An account holding a password somebody else set can do nothing until
   // it replaces it - the backend refuses every other request - so the
   // whole interface is covered rather than letting them wander into it.
