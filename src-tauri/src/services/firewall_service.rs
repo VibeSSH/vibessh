@@ -31,7 +31,15 @@ use crate::storage::server_repository::ServerRepository;
 pub enum FirewallRuleOrigin {
     Ssh,
     WireGuard,
+    // The `rename_all` on the enum above renames the *variants*, not the
+    // fields inside them - so without these the payload carried
+    // `application_name` while the interface read `applicationName`, and
+    // every application rule rendered as `- port ""`. Per-variant rather
+    // than `rename_all_fields`, which needs a newer serde than this
+    // workspace pins.
+    #[serde(rename_all = "camelCase")]
     Application { application_id: Uuid, application_name: String, port_name: String },
+    #[serde(rename_all = "camelCase")]
     Custom { rule_id: Uuid, label: Option<String> },
 }
 
@@ -742,6 +750,27 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
     /// `"¡\u{a0}0 a\u{2000}0"`. `split_whitespace` splits on every Unicode
     /// space, so a line of unexpected text can leave a bare "0" in the
     /// column the local address should be in.
+    /// The interface reads these keys, and nothing else checks that they
+    /// are the keys actually sent. They were not: every application rule
+    /// rendered as `- port ""` because the fields went out in snake_case.
+    #[test]
+    fn a_rule_origin_serialises_the_field_names_the_interface_reads() {
+        let origin = FirewallRuleOrigin::Application {
+            application_id: Uuid::nil(),
+            application_name: "dev".to_string(),
+            port_name: "primary".to_string(),
+        };
+        let json = serde_json::to_value(&origin).unwrap();
+        assert_eq!(json["kind"], "application");
+        assert_eq!(json["applicationName"], "dev");
+        assert_eq!(json["portName"], "primary");
+
+        let custom = FirewallRuleOrigin::Custom { rule_id: Uuid::nil(), label: Some("anti-DDoS".to_string()) };
+        let json = serde_json::to_value(&custom).unwrap();
+        assert_eq!(json["ruleId"], Uuid::nil().to_string());
+        assert_eq!(json["label"], "anti-DDoS");
+    }
+
     /// The line behind a message nobody could act on. `ss` reports a
     /// process by the kernel's comm name, cut at 15 characters, so
     /// "systemd-socket-proxyd" arrives as "systemd-socket-" - a name that
