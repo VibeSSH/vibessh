@@ -187,6 +187,31 @@ impl ApplicationFileProvider for LocalApplicationFileProvider {
         tokio::fs::read(&resolved).await.map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", resolved.display())))
     }
 
+    async fn read_file_range(&self, path: &str, offset: u64, len: usize) -> AppResult<Vec<u8>> {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+        let resolved = self.resolve(path)?;
+        let mut file = tokio::fs::File::open(&resolved)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't open {}: {err}", resolved.display())))?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't seek in {}: {err}", resolved.display())))?;
+        let mut buf = vec![0u8; len];
+        let mut filled = 0usize;
+        while filled < len {
+            let read = file
+                .read(&mut buf[filled..])
+                .await
+                .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", resolved.display())))?;
+            if read == 0 {
+                break;
+            }
+            filled += read;
+        }
+        buf.truncate(filled);
+        Ok(buf)
+    }
+
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         let resolved = self.resolve(path)?;
         tokio::fs::write(&resolved, contents).await.map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", resolved.display())))

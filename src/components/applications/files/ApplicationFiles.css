@@ -109,3 +109,59 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
+
+
+/*
+ * The drop target.
+ *
+ * Tauri reports a drag over the whole window, not over an element, so this
+ * appears whenever something is dragged anywhere onto the app while the file
+ * list is open. That is the honest thing to show: the drop will be caught
+ * wherever it lands, so promising it only over one rectangle would be a lie.
+ */
+.application-files-card {
+  position: relative;
+}
+
+.application-files-card-dropping {
+  border-color: var(--accent);
+}
+
+.application-files-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: inherit;
+  border: 2px dashed var(--accent);
+  /* Opaque enough to read against, sheer enough that the directory you are
+     dropping into stays visible behind it. */
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.application-files-drop-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.application-files-drop-path {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Przycisk doczytania kolejnego fragmentu pod podglądem dużego pliku. */
+.file-editor-window-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-3);
+}

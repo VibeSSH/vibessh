@@ -24,6 +24,7 @@ import {
   extractRemoteArchive,
   listRemoteDirectory,
   renameRemotePath,
+  uploadRemoteDirectory,
   uploadRemoteFile,
   writeRemoteFile,
 } from "@/services/filesService";
@@ -34,6 +35,8 @@ import "./pages.css";
 import "./Servers.css";
 import "./Files.css";
 import { errorMessage } from "@/services/tauri";
+import { useFileDrop } from "@/hooks/useFileDrop";
+import { localPathIsDirectory } from "@/services/applicationFilesService";
 
 /** The real filesystem root, not the SFTP login user's home directory - every OpenSSH server understands an absolute path here the same way, so this is what a plain SFTP client would show first (var/lib/root/... siblings visible immediately, not just reachable by navigating up from wherever the account happens to land). */
 /// Matches the cap the Actions page already uses. Large enough that an
@@ -136,6 +139,10 @@ export function FilesPage() {
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
   const truncated = matchingEntries.length > visibleEntries.length;
 
+  // Not while the editor is open: it covers the page, and a file dropped
+  // onto it should not quietly upload behind it.
+  const dragging = useFileDrop(uploadLocalFiles, !openFile);
+
   if (openFile) {
     return (
       <div className="page files-editor-page">
@@ -154,17 +161,38 @@ export function FilesPage() {
   }
 
   async function handleUpload() {
+    const picked = await open({ multiple: true, title: "Upload file" });
+    if (!picked) return;
+    await uploadLocalFiles(Array.isArray(picked) ? picked : [picked]);
+  }
+
+  /**
+   * Local paths, from the picker or dropped onto the window.
+   *
+   * One after another rather than all at once: they share a single SSH
+   * connection, so racing them finishes no sooner and makes the progress of
+   * any one of them impossible to report. A failure is reported per file and
+   * does not stop the rest.
+   */
+  async function uploadLocalFiles(paths: string[]) {
     if (!serverId) return;
-    const localPath = await open({ multiple: false, title: "Upload file" });
-    if (!localPath || Array.isArray(localPath)) return;
-    const fileName = localPath.split(/[/\\]/).pop() ?? localPath;
+    // Which of them are folders, asked once for the whole batch.
+    const kinds = await Promise.all(paths.map((candidate) => localPathIsDirectory(candidate)));
     setUploading(true);
     try {
-      await uploadRemoteFile(serverId, localPath, joinRemotePath(path, fileName));
-      toastSuccess(t("filesPage.uploadedToast", { name: fileName }));
+      for (const [index, localPath] of paths.entries()) {
+        const fileName = localPath.split(/[/\\]/).pop() ?? localPath;
+        try {
+          // A folder is handed its parent and keeps its shape on the far
+          // side; a file is handed its own destination path.
+          if (kinds[index]) await uploadRemoteDirectory(serverId, localPath, path);
+          else await uploadRemoteFile(serverId, localPath, joinRemotePath(path, fileName));
+          toastSuccess(t("filesPage.uploadedToast", { name: fileName }));
+        } catch (err) {
+          toastError(err instanceof Error ? err.message : t("filesPage.couldntUpload", { name: fileName }));
+        }
+      }
       load(path);
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : t("filesPage.couldntUpload", { name: fileName }));
     } finally {
       setUploading(false);
     }
@@ -316,7 +344,14 @@ export function FilesPage() {
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card>
+      <Card className={`files-card ${dragging ? "files-card-dropping" : ""}`.trim()}>
+        {dragging && (
+          <div className="files-drop" aria-hidden="true">
+            <Icon name="upload" size={28} />
+            <p className="files-drop-title">{t("filesPage.dropTitle")}</p>
+            <p className="files-drop-path">{path}</p>
+          </div>
+        )}
         {loading ? (
           <SkeletonRows />
         ) : entries.length === 0 ? (

@@ -51,9 +51,42 @@ export function downloadApplicationFile(applicationId: string, path: string, loc
   return callCommand<void>("download_application_file", { applicationId, path, localDest, transferId });
 }
 
-/** `localSrc` comes from a native open-file dialog. */
+/** `localSrc` comes from a native open-file dialog, or from a file dropped onto the window. */
+/** One window of a file: the bytes, the file's current size, and where the next window starts. */
+export interface FileWindow {
+  bytes: number[];
+  totalSize: number;
+  nextOffset: number;
+}
+
+/**
+ * Reads part of a file, for looking at one too big to load whole.
+ *
+ * The result is a slice, not the file. Anything built on it must stay
+ * read-only until the whole file is in - saving a partial buffer would
+ * truncate everything after it.
+ */
+export function readApplicationFileWindow(applicationId: string, path: string, offset: number, length: number): Promise<FileWindow> {
+  return callCommand<FileWindow>("read_application_file_window", { applicationId, path, offset, length });
+}
+
 export function uploadApplicationFile(applicationId: string, localSrc: string, path: string, transferId: string): Promise<void> {
   return callCommand<void>("upload_application_file", { applicationId, localSrc, path, transferId });
+}
+
+/** Uploads a whole local folder into `path`, keeping its shape. Progress is the sum over every file in it. */
+export function uploadApplicationDirectory(applicationId: string, localSrc: string, path: string, transferId: string): Promise<void> {
+  return callCommand<void>("upload_application_directory", { applicationId, localSrc, path, transferId });
+}
+
+/**
+ * Whether a path on this machine is a folder.
+ *
+ * A drop reports paths but not what they are, and folders take a different
+ * route than files, so something has to look before choosing.
+ */
+export function localPathIsDirectory(path: string): Promise<boolean> {
+  return callCommand<boolean>("local_path_is_directory", { path });
 }
 
 /** `true` if a running transfer was actually found and aborted - `false` means it already finished. */

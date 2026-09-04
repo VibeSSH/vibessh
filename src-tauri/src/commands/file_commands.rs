@@ -39,6 +39,21 @@ pub async fn read_remote_file(
     services::read_remote_file(&repo, &sessions, server_id, &path).await
 }
 
+/// The windowed counterpart of `read_remote_file`, for files too big to load
+/// whole. See `services::read_file_window` for why the result has to stay
+/// read-only.
+#[tauri::command]
+pub async fn read_remote_file_window(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    path: String,
+    offset: u64,
+    length: u32,
+) -> AppResult<services::FileWindow> {
+    services::read_remote_file_window(&repo, &sessions, server_id, &path, offset, length as usize).await
+}
+
 #[tauri::command]
 pub async fn write_remote_file(
     repo: State<'_, ServerRepository>,
@@ -74,6 +89,18 @@ pub async fn upload_remote_file(
     remote_path: String,
 ) -> AppResult<()> {
     services::upload_remote_file(&repo, &sessions, server_id, &local_path, &remote_path).await
+}
+
+/// The folder counterpart of `upload_remote_file`.
+#[tauri::command]
+pub async fn upload_remote_directory(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    local_path: PathBuf,
+    remote_path: String,
+) -> AppResult<()> {
+    services::upload_remote_directory(&repo, &sessions, server_id, &local_path, &remote_path).await
 }
 
 /// Covers both "Rename" (same parent, new name) and "Move" (new parent) -

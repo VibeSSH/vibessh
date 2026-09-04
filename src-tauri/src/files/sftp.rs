@@ -139,6 +139,11 @@ impl ApplicationFileProvider for SftpApplicationFileProvider {
         self.connection.read_file(&resolved).await
     }
 
+    async fn read_file_range(&self, path: &str, offset: u64, len: usize) -> AppResult<Vec<u8>> {
+        let resolved = self.resolve(path).await?;
+        self.connection.read_file_range(&resolved, offset, len).await
+    }
+
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         let resolved = self.resolve(path).await?;
         self.connection.write_file(&resolved, contents).await

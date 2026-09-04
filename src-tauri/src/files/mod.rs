@@ -65,6 +65,12 @@ pub trait ApplicationFileProvider: Send + Sync {
     /// `size` against their own limit first (the file editor does, before
     /// ever calling this - see `commands::application_file_commands`).
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
+    /// Reads at most `len` bytes from `offset`.
+    ///
+    /// Exists so a file too large to edit can still be *looked at*, a window
+    /// at a time, instead of being refused outright. A short result means the
+    /// end of the file was reached - it is not an error.
+    async fn read_file_range(&self, path: &str, offset: u64, len: usize) -> AppResult<Vec<u8>>;
     /// Create-or-truncate "save" semantics - matches every other writer in
     /// this codebase (`ssh::sftp::write_file`, `LocalFileProvider`-to-be).
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()>;
@@ -122,5 +128,194 @@ pub fn provider_for(application: &Application, runtime_config: &serde_json::Valu
                 Ok(Box::new(sftp::SftpApplicationFileProvider::new(connection, application.working_directory.clone())))
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Walking a local folder that somebody dropped onto the window.
+//
+// Shared because both upload paths need it and neither owns it: an
+// Application's files go through `ApplicationFileProvider`, a Node's go
+// straight through the SSH session, but the local half of the work - which
+// files exist, how deep, what they are called - is identical.
+// ---------------------------------------------------------------------------
+
+/// How deep a dropped folder may nest before the walk gives up.
+///
+/// Not a guess about real projects - a plugins directory is three or four
+/// deep - but a stop for a tree that turns out to be unbounded. Without it a
+/// pathological layout walks until it runs out of memory, with nothing on
+/// screen to say why.
+pub const MAX_UPLOAD_DEPTH: usize = 32;
+
+/// One file the walk decided to send, and where it goes.
+#[derive(Debug)]
+pub struct PlannedFile {
+    pub local: std::path::PathBuf,
+    pub remote: String,
+    pub size: u64,
+}
+
+/// Joins a remote path the way the Files tab does, so a directory dropped
+/// into the application root lands beside the entries already listed there
+/// rather than under a literal `./`.
+pub fn join_remote(parent: &str, name: &str) -> String {
+    if parent == "." || parent.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{name}", parent.trim_end_matches('/'))
+    }
+}
+
+/// Walks `local_root`, returning the directories to create (parents first)
+/// and the files to send.
+///
+/// **Symlinks are skipped, not followed.** A link pointing back up its own
+/// tree makes the walk endless, and one pointing outside it would copy files
+/// the user never dropped onto the window - both are worse than a folder that
+/// arrives without its links.
+pub async fn plan_directory_upload(local_root: &Path, remote_root: &str) -> AppResult<(Vec<String>, Vec<PlannedFile>)> {
+    let mut directories = vec![remote_root.to_string()];
+    let mut files: Vec<PlannedFile> = Vec::new();
+    let mut queue: std::collections::VecDeque<(std::path::PathBuf, String, usize)> =
+        std::collections::VecDeque::from([(local_root.to_path_buf(), remote_root.to_string(), 0usize)]);
+
+    while let Some((local_dir, remote_dir, depth)) = queue.pop_front() {
+        if depth >= MAX_UPLOAD_DEPTH {
+            return Err(AppError::InvalidInput(format!(
+                "{} nests deeper than {MAX_UPLOAD_DEPTH} levels - upload it in parts",
+                local_root.display()
+            )));
+        }
+        let mut entries = tokio::fs::read_dir(&local_dir)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_dir.display())))?;
+
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_dir.display())))?
+        {
+            // `file_type` on the entry does not follow the link, which is the
+            // whole point - `metadata` would.
+            let file_type = entry
+                .file_type()
+                .await
+                .map_err(|err| AppError::Internal(format!("couldn't inspect {}: {err}", entry.path().display())))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // These names come off the local filesystem, so they are already
+            // single components - checked anyway, because they are about to
+            // become a remote path.
+            if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+                continue;
+            }
+            let remote = join_remote(&remote_dir, &name);
+
+            if file_type.is_dir() {
+                directories.push(remote.clone());
+                queue.push_back((entry.path(), remote, depth + 1));
+            } else if file_type.is_file() {
+                let size = entry
+                    .metadata()
+                    .await
+                    .map_err(|err| AppError::Internal(format!("couldn't measure {}: {err}", entry.path().display())))?
+                    .len();
+                files.push(PlannedFile { local: entry.path(), remote, size });
+            }
+        }
+    }
+
+    Ok((directories, files))
+}
+
+#[cfg(test)]
+mod upload_walk_tests {
+    use super::*;
+
+    /// A scratch tree, removed when the test finishes.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!("vibessh-walk-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+        fn dir(&self, rel: &str) -> std::path::PathBuf {
+            let path = self.0.join(rel);
+            std::fs::create_dir_all(&path).unwrap();
+            path
+        }
+        fn file(&self, rel: &str, bytes: &[u8]) {
+            let path = self.0.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_root_of_dot_does_not_become_a_literal_path_segment() {
+        // The Files tab uses "." for an Application's own directory, so a
+        // naive join would send everything to "./plugins" rather than
+        // "plugins" and create a directory actually called ".".
+        assert_eq!(join_remote(".", "plugins"), "plugins");
+        assert_eq!(join_remote("", "plugins"), "plugins");
+        assert_eq!(join_remote("plugins", "config"), "plugins/config");
+        assert_eq!(join_remote("/srv/app/", "world"), "/srv/app/world");
+    }
+
+    #[tokio::test]
+    async fn the_walk_keeps_the_shape_of_the_tree() {
+        let scratch = Scratch::new();
+        let root = scratch.dir("bundle");
+        scratch.file("bundle/config.yml", b"a");
+        scratch.file("bundle/nested/deep/data.bin", b"bb");
+        scratch.dir("bundle/empty");
+
+        let (mut directories, mut files) = plan_directory_upload(&root, "remote/bundle").await.unwrap();
+        directories.sort();
+        files.sort_by(|a, b| a.remote.cmp(&b.remote));
+
+        assert_eq!(
+            directories,
+            vec![
+                "remote/bundle".to_string(),
+                "remote/bundle/empty".to_string(),
+                "remote/bundle/nested".to_string(),
+                "remote/bundle/nested/deep".to_string(),
+            ],
+            "an empty directory still has to be created - it is part of the shape"
+        );
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].remote, "remote/bundle/config.yml");
+        assert_eq!(files[0].size, 1);
+        assert_eq!(files[1].remote, "remote/bundle/nested/deep/data.bin");
+        assert_eq!(files[1].size, 2);
+    }
+
+    #[tokio::test]
+    async fn a_tree_deeper_than_the_limit_is_refused_rather_than_walked_forever() {
+        let scratch = Scratch::new();
+        let mut rel = String::from("deep");
+        for _ in 0..(MAX_UPLOAD_DEPTH + 2) {
+            rel.push_str("/x");
+        }
+        scratch.file(&format!("{rel}/leaf.txt"), b"x");
+
+        let err = plan_directory_upload(&scratch.0.join("deep"), "remote/deep").await.unwrap_err();
+        assert!(
+            format!("{err:?}").contains("nests deeper"),
+            "expected the depth limit to be the reason, got {err:?}"
+        );
     }
 }
