@@ -122,9 +122,14 @@ jobs:
           # An unsigned installer must stop the build. Publishing one would
           # leave the app unable to tell a real update from anything else that
           # manages to answer the update URL.
+          #
+          # Two things silence the signing, and the first is easy to mistake
+          # for the second: `createUpdaterArtifacts` in tauri.conf.json is off
+          # by default, and with it off the bundler never signs anything, so a
+          # perfectly good key looks like a broken one.
           $sig = "$($installer.FullName).sig"
           if (-not (Test-Path $sig)) {
-            Write-Error "the installer is not signed - check TAURI_SIGNING_PRIVATE_KEY"
+            Write-Error "no signature beside the installer - check bundle.createUpdaterArtifacts in tauri.conf.json, then TAURI_SIGNING_PRIVATE_KEY"
             exit 1
           }
 
