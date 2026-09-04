@@ -68,6 +68,7 @@ jobs:
           Write-Host "version $conf"
 
       - name: Build and sign
+        id: build
         uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -78,16 +79,41 @@ jobs:
           includeUpdaterJson: true
           args: --verbose
 
+      # The action reports what it produced, rather than this guessing where
+      # it went. The first attempt looked under `src-tauri/target`, which does
+      # not exist here: this is a Cargo workspace, so the target directory sits
+      # at the repository root. Reading the action's own output means the
+      # layout stops mattering.
       - name: Collect what was built
         id: artifacts
         shell: pwsh
+        env:
+          ARTIFACT_PATHS: ${{ steps.build.outputs.artifactPaths }}
         run: |
-          $bundle = "src-tauri/target/release/bundle"
-          $files = Get-ChildItem -Path $bundle -Recurse -Include *.exe, latest.json
-          if (-not $files) { Write-Error "nothing was produced under $bundle"; exit 1 }
           New-Item -ItemType Directory -Force -Path dist-release | Out-Null
-          $files | ForEach-Object { Copy-Item $_.FullName dist-release/ -Force }
-          Get-ChildItem dist-release | ForEach-Object { Write-Host $_.Name $_.Length }
+
+          $paths = $env:ARTIFACT_PATHS | ConvertFrom-Json
+          foreach ($p in $paths) {
+            if (Test-Path $p) { Copy-Item $p dist-release/ -Force }
+          }
+
+          # `latest.json` is written beside the bundle rather than listed as an
+          # artifact, so it is fetched by name from wherever the build put it.
+          # Without it the updater has nothing to read.
+          Get-ChildItem -Path . -Recurse -Filter latest.json -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*bundle*" } |
+            ForEach-Object { Copy-Item $_.FullName dist-release/ -Force }
+
+          $built = Get-ChildItem dist-release
+          if (-not $built) { Write-Error "the build produced nothing to publish"; exit 1 }
+          $built | ForEach-Object { Write-Host ("{0}  {1:N0} B" -f $_.Name, $_.Length) }
+
+          if (-not (Test-Path dist-release/latest.json)) {
+            Write-Error "no latest.json - the app would have nothing to check for updates"
+            exit 1
+          }
+          Write-Host "--- latest.json ---"
+          Get-Content dist-release/latest.json
 
       - name: Publish to the public releases repository
         if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true
