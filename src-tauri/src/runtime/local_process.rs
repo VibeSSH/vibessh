@@ -35,6 +35,22 @@ use super::{health_check, ApplicationConsole, ApplicationRuntime, HealthCheckSpe
 /// chatty process can't grow this without limit for as long as VibeSSH runs.
 const OUTPUT_HISTORY_LINES: usize = 1000;
 
+/// How long a stop typed into the console is given before the caller is told
+/// it is done. A Minecraft server with plugins and worlds to write out takes
+/// well over the ten seconds a signalled process is given.
+const STOP_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Said when there is no stop command and the signal could not be delivered.
+///
+/// Which on Windows is always, for a packaged build: `GenerateConsoleCtrlEvent`
+/// can only be sent by a process that owns a console, and a release build is
+/// a GUI process (`windows_subsystem = "windows"`), so it has none. A debug
+/// build does, which is why this never showed up while developing.
+#[cfg(windows)]
+const SIGNAL_FAILED_HELP: &str = "this application has no stop command, and Windows offers no way to ask a process started by a windowed app to stop. Set a stop command in Settings (e.g. 'stop' for a Minecraft server), or use Force stop - which does not let it save first.";
+#[cfg(unix)]
+const SIGNAL_FAILED_HELP: &str = "couldn't signal the process to stop - it may already be gone. Force stop will end it outright.";
+
 /// What `runtime_config` deserializes into for `RuntimeType::LocalProcess` -
 /// see `Application`'s own doc comment for why the shape is typed here,
 /// downstream, rather than in the shared model.
@@ -43,6 +59,12 @@ pub struct LocalProcessConfig {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// What to type into the process's console to ask it to shut down.
+    ///
+    /// Optional, and absent from every configuration written before this
+    /// existed - which is why stopping still falls back to a signal.
+    #[serde(default, rename = "stopCommand")]
+    pub stop_command: Option<String>,
 }
 
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<LocalProcessConfig> {
@@ -345,8 +367,26 @@ impl ApplicationRuntime for LocalProcessRuntime {
             return Ok(());
         }
         self.manager.mark_stop_requested(ctx.application.id).await;
+
+        // Preferred over a signal wherever the application has a command of
+        // its own, because it is the shutdown the program actually knows
+        // about: a game server saves its world and unloads its plugins, a
+        // database flushes. A signal only asks the process to die.
+        let config = parse_config(ctx)?;
+        if let Some(command) = config.stop_command.as_deref().map(str::trim).filter(|text| !text.is_empty()) {
+            self.manager.write_stdin(ctx.application.id, format!("{command}
+").into_bytes()).await?;
+            if graceful {
+                // Longer than the signal path below: a server with plugins
+                // and worlds to save routinely takes more than ten seconds,
+                // and cutting it short is the data loss this avoids.
+                wait_for_exit(&self.manager, ctx.application.id, STOP_COMMAND_TIMEOUT).await;
+            }
+            return Ok(());
+        }
+
         if !graceful_stop(snapshot.pid) {
-            return Err(AppError::Internal(format!("couldn't signal process {}", snapshot.pid)));
+            return Err(AppError::Internal(SIGNAL_FAILED_HELP.to_string()));
         }
         if graceful {
             wait_for_exit(&self.manager, ctx.application.id, Duration::from_secs(10)).await;
@@ -474,22 +514,23 @@ mod tests {
             LocalProcessConfig {
                 command: "cmd".into(),
                 args: vec!["/C".into(), "echo hello-from-local-process && ping -n 6 127.0.0.1 >NUL".into()],
+                stop_command: None,
             }
         }
         #[cfg(not(windows))]
         {
-            LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), "echo hello-from-local-process; sleep 5".into()] }
+            LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), "echo hello-from-local-process; sleep 5".into()], stop_command: None }
         }
     }
 
     fn instant_exit_command(code: i32) -> LocalProcessConfig {
         #[cfg(windows)]
         {
-            LocalProcessConfig { command: "cmd".into(), args: vec!["/C".into(), format!("exit {code}")] }
+            LocalProcessConfig { command: "cmd".into(), args: vec!["/C".into(), format!("exit {code}")], stop_command: None }
         }
         #[cfg(not(windows))]
         {
-            LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), format!("exit {code}")] }
+            LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), format!("exit {code}")], stop_command: None }
         }
     }
 
@@ -527,6 +568,71 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         status
+    }
+
+    /// A process that quits when told to, rather than when signalled.
+    ///
+    /// `set /p` and `read` both block until a line arrives on stdin, so the
+    /// process stays up until the stop command is typed - which is what makes
+    /// this a test of the stop and not of a process that was going to exit
+    /// anyway.
+    fn waits_for_a_console_command() -> LocalProcessConfig {
+        #[cfg(windows)]
+        {
+            LocalProcessConfig {
+                command: "cmd".into(),
+                args: vec!["/C".into(), "set /p line= && echo stopping".into()],
+                stop_command: Some("stop".into()),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            LocalProcessConfig {
+                command: "sh".into(),
+                args: vec!["-c".into(), "read line; echo stopping".into()],
+                stop_command: Some("stop".into()),
+            }
+        }
+    }
+
+    /// The regression this guards.
+    ///
+    /// Stopping used to be a console control event on Windows, which can only
+    /// be sent by a process that owns a console. A packaged build is a GUI
+    /// process and owns none, so every stop failed with "couldn't signal
+    /// process" - and only in the packaged build, since a debug build does
+    /// have a console. Typing the application's own quit command into its
+    /// stdin works in both, and is the only stop that lets a server save on
+    /// the way out.
+    #[tokio::test]
+    async fn a_stop_command_shuts_the_process_down_without_a_signal() {
+        let manager = Arc::new(LocalProcessManager::new());
+        let runtime = LocalProcessRuntime::new(manager.clone());
+        let application_id = Uuid::new_v4();
+        let application = stub_application(application_id);
+        let config = serde_json::to_value(waits_for_a_console_command()).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
+
+        runtime.start(&ctx).await.unwrap();
+        assert_eq!(runtime.status(&ctx).await.unwrap(), ApplicationStatus::Running);
+
+        runtime.stop(&ctx, true).await.unwrap();
+
+        assert_eq!(wait_until_status_settles(&runtime, &ctx).await, ApplicationStatus::Stopped);
+        // The status alone would not prove much: under cargo test there *is*
+        // a console, so a control event could have ended the process too.
+        // This line is only printed by a process that read the command off
+        // its own stdin. Polled, because the process exits the moment it has
+        // printed and the pump reading its stdout is a separate task.
+        let mut said_so = false;
+        for _ in 0..30 {
+            if manager.tail(application_id, 20).await.iter().any(|line| line.contains("stopping")) {
+                said_so = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(said_so, "the process should have shut down on the command it was sent, not on a signal");
     }
 
     #[tokio::test]
@@ -660,9 +766,9 @@ mod tests {
         let application = stub_application(application_id);
 
         #[cfg(windows)]
-        let config = LocalProcessConfig { command: "cmd".into(), args: vec!["/C".into(), "echo %VIBESSH_TEST_VAR%".into()] };
+        let config = LocalProcessConfig { command: "cmd".into(), args: vec!["/C".into(), "echo %VIBESSH_TEST_VAR%".into()], stop_command: None };
         #[cfg(not(windows))]
-        let config = LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), "echo $VIBESSH_TEST_VAR".into()] };
+        let config = LocalProcessConfig { command: "sh".into(), args: vec!["-c".into(), "echo $VIBESSH_TEST_VAR".into()], stop_command: None };
 
         let config_value = serde_json::to_value(config).unwrap();
         let environment = vec![EnvironmentVariable { key: "VIBESSH_TEST_VAR".into(), value: "vibessh-marker-42".into(), is_secret: false }];
@@ -700,7 +806,7 @@ mod tests {
         let runtime = LocalProcessRuntime::new(manager.clone());
         let application_id = Uuid::new_v4();
         let application = stub_application(application_id);
-        let config = serde_json::to_value(LocalProcessConfig { command: "  ".into(), args: vec![] }).unwrap();
+        let config = serde_json::to_value(LocalProcessConfig { command: "  ".into(), args: vec![], stop_command: None }).unwrap();
         let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
 
         assert!(runtime.validate(&ctx).await.is_err());

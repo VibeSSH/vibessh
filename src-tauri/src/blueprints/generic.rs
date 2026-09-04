@@ -37,6 +37,26 @@ impl GenericBlueprint {
                         help_text: Some("The executable to run, e.g. /usr/bin/python3".to_string()),
                     },
                     BlueprintField {
+                        key: "stopCommand".to_string(),
+                        label: "Stop command".to_string(),
+                        field_type: BlueprintFieldType::Text,
+                        required: false,
+                        default_value: None,
+                        // The reason this field exists rather than the runtime
+                        // always sending a signal: on Windows a GUI process
+                        // has no console, and a console control event - the
+                        // only graceful equivalent of SIGTERM there - can only
+                        // be sent from a process that has one. Typing the
+                        // program's own quit command into its console is the
+                        // graceful stop that does work, and for a game server
+                        // it is the only one that saves the world on the way
+                        // out.
+                        help_text: Some(
+                            "Typed into the application's console to shut it down, e.g. 'stop' for a Minecraft server or 'end' for a proxy. Left empty, stopping sends a signal instead - which on Windows cannot reach a process started by this app."
+                                .to_string(),
+                        ),
+                    },
+                    BlueprintField {
                         key: "args".to_string(),
                         label: "Arguments".to_string(),
                         field_type: BlueprintFieldType::TextList,
@@ -69,7 +89,14 @@ impl BlueprintHandler for GenericBlueprint {
         validate_inputs(&self.definition, inputs)?;
         let command = text_input(inputs, &self.definition, "command")?;
         let args = text_list_input(inputs, &self.definition, "args")?;
-        Ok(serde_json::json!({ "command": command, "args": args }))
+        let stop_command = text_input(inputs, &self.definition, "stopCommand")?;
+        let mut config = serde_json::json!({ "command": command, "args": args });
+        // Omitted rather than written as an empty string, so a configuration
+        // without one is the same shape it has always been.
+        if !stop_command.trim().is_empty() {
+            config["stopCommand"] = serde_json::Value::String(stop_command.trim().to_string());
+        }
+        Ok(config)
     }
 }
 
