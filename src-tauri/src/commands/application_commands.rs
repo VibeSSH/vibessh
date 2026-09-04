@@ -476,6 +476,19 @@ pub async fn refresh_application_status(
     services::refresh_application_status(&repo, &server_repo, &sessions, &local_process_manager, id).await
 }
 
+/// Renames an Application. See `services::rename_application` for what a
+/// rename does and does not move - notably the network alias other
+/// Applications resolve this one by, which follows the name from the next
+/// restart onwards.
+#[tauri::command]
+pub async fn rename_application(
+    repo: State<'_, ApplicationRepository>,
+    id: Uuid,
+    name: String,
+) -> AppResult<ApplicationDetail> {
+    services::rename_application(&repo, id, &name)
+}
+
 #[tauri::command]
 pub async fn get_application_resource_usage(
     repo: State<'_, ApplicationRepository>,

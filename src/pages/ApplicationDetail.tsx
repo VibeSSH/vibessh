@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,8 +7,11 @@ import { queryKeys } from "@/services/queryKeys";
 import { AskVibeAiButton } from "@/components/ai/AskVibeAiButton";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { ApplicationTabs } from "@/components/applications/ApplicationTabs";
+import { useApplicationTabsStore } from "@/stores/applicationTabsStore";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { Sparkline } from "@/components/ui/Sparkline";
@@ -32,6 +35,7 @@ import {
   listBlueprints,
   migrateApplication,
   recreateApplication,
+  renameApplication,
   restartApplication,
   startApplication,
   stopApplication,
@@ -81,6 +85,9 @@ export function ApplicationDetail() {
 
   const queryClient = useQueryClient();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   /**
    * Recent samples, for the charts under the console.
    *
@@ -144,6 +151,24 @@ export function ApplicationDetail() {
     refetchInterval: POLL_INTERVALS.applicationDetail,
   });
   const application = applicationQuery.data ?? null;
+
+  // Opening an Application puts it in the strip. Done here rather than at
+  // the click that navigated, because an Application can be reached from a
+  // link, a quick action or a pasted URL, and all of them should leave a tab
+  // behind.
+  const openTab = useApplicationTabsStore((state) => state.open);
+  // The name the strip already knows, used while the Application itself is
+  // still loading. Without it the title showed the raw id for a moment on
+  // every switch, which is the whole of what made switching feel abrupt.
+  //
+  // Deliberately only the *name*. Carrying the previous Application's status
+  // and ports across would look smoother still and would be dangerous: the
+  // buttons act on the id in the URL, so a stale "Running" under a tab you
+  // have already switched away from invites stopping the wrong server.
+  const knownName = useApplicationTabsStore((state) => state.tabs.find((tab) => tab.id === id)?.name);
+  useEffect(() => {
+    if (id && application) openTab({ id, name: application.name });
+  }, [id, application, openTab]);
 
   /**
    * Resource usage, on its own query.
@@ -326,6 +351,10 @@ export function ApplicationDetail() {
   const canStopOrRestart = canLifecycle && (application ? ["running", "starting"].includes(application.status) : false);
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
   const features = blueprint?.features ?? [];
+  /* Held steady across this page's five-second poll. Written inline it was a
+     fresh array literal on every render, which is enough on its own to make
+     the memoised rows inside the Files tab miss every time. */
+  const knownFiles = useMemo(() => blueprint?.knownFiles ?? [], [blueprint]);
   const migrationTargets = servers.filter((s) => s.id !== application?.serverId);
   const migrateTargetWarning =
     migrateTargetServerId &&
@@ -335,9 +364,23 @@ export function ApplicationDetail() {
 
   return (
     <div className="page page-wide">
+      {id && <ApplicationTabs activeId={id} />}
       <div className="page-header page-header-row">
         <div>
-          <h1 className="page-title">{application ? application.name : id}</h1>
+          <div className="application-detail-title-row">
+            <h1 className="page-title">{application?.name ?? knownName ?? id}</h1>
+            {application && (
+              <IconButton
+                icon="edit"
+                size="sm"
+                title={t("applicationDetail.renameAria", { name: application.name })}
+                onClick={() => {
+                  setRenameError(null);
+                  setRenaming(application.name);
+                }}
+              />
+            )}
+          </div>
           <p className="page-subtitle">{blueprint ? blueprint.name : application?.blueprintId}</p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/applications")}>
@@ -346,10 +389,60 @@ export function ApplicationDetail() {
         </Button>
       </div>
 
+      {renaming !== null && id && (
+        <Dialog open onClose={() => setRenaming(null)} size="sm" dismissable={!renameBusy} title={t("applicationDetail.renameTitle")}>
+          <form
+            className="modal-body"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (renameBusy) return;
+              setRenameBusy(true);
+              setRenameError(null);
+              try {
+                await renameApplication(id, renaming);
+                setRenaming(null);
+                reload();
+              } catch (err) {
+                setRenameError(errorMessage(err, t));
+              } finally {
+                setRenameBusy(false);
+              }
+            }}
+          >
+            <label className="form-field">
+              <span className="form-label">{t("applicationDetail.renameLabel")}</span>
+              <input
+                className="form-input"
+                value={renaming}
+                onChange={(event) => setRenaming(event.target.value)}
+                maxLength={60}
+                autoFocus
+              />
+            </label>
+            {/* Worth saying here rather than in a doc comment nobody reads:
+                this name is how linked Applications find this one. */}
+            <p className="form-note">{t("applicationDetail.renameNote")}</p>
+            {renameError && <p className="form-note form-note-danger form-note-spaced">{renameError}</p>}
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={() => setRenaming(null)} disabled={renameBusy}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={renameBusy || renaming.trim().length === 0}>
+                {t("common.save")}
+              </Button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
       {loadError && <p className="page-error-note">{loadError}</p>}
 
       {application && (
-        <>
+        // Keyed by id so React remounts the body on a switch rather than
+        // reconciling one Application's panels into another's - which is
+        // what makes the fade read as a new page arriving instead of the
+        // old one mutating in place.
+        <div key={application.id} className="page-switch-fade">
           <div className="application-detail-header-row">
             <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
             <div className="application-detail-actions">
@@ -600,9 +693,9 @@ export function ApplicationDetail() {
 
           {tab === "databases" && <DatabasesTab applicationId={id} />}
 
-          {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={blueprint?.knownFiles ?? []} />}
+          {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
-        </>
+        </div>
       )}
 
       {confirming && (

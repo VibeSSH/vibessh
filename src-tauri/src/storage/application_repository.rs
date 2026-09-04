@@ -137,6 +137,27 @@ impl ApplicationRepository {
     /// which patches just the memory/CPU limit keys inside whatever shape
     /// the application's own runtime type already uses, not a full
     /// application edit.
+    /// Changes only the name.
+    ///
+    /// Narrow on purpose. `update` rewrites the working directory, the runtime
+    /// config and the metadata alongside the name, so routing a rename through
+    /// it would make a one-word edit capable of resetting how the Application
+    /// runs if any caller ever passed a stale copy of those.
+    pub fn rename(&self, id: Uuid, name: &str) -> AppResult<ApplicationDetail> {
+        let conn = self.lock();
+        let affected = conn
+            .execute(
+                "UPDATE applications SET name = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id.to_string(), name, Utc::now().to_rfc3339()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to rename application: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("application {id}")));
+        }
+        drop(conn);
+        self.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))
+    }
+
     pub fn update_runtime_config(&self, id: Uuid, runtime_config: &serde_json::Value) -> AppResult<ApplicationDetail> {
         let conn = self.lock();
         let affected = conn
