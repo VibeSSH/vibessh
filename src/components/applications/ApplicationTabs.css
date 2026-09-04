@@ -1,0 +1,71 @@
+/*
+ * The open-Applications strip.
+ *
+ * Sits above the page title, where a browser puts its tabs, because that is
+ * where the hand goes looking. Scrolls sideways rather than wrapping: a
+ * second row would move the page title down as tabs are opened, and a title
+ * that jumps is worse than a strip that scrolls.
+ */
+.application-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.application-tab {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  max-width: 220px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.application-tab:hover {
+  border-color: var(--border-hover);
+}
+
+/* The active tab is marked by a colour and a border, not by size: a tab that
+   grows when selected shifts every tab after it, and the strip is meant to
+   be a stable set of targets. */
+.application-tab-active {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.application-tab-name {
+  max-width: 170px;
+  padding: 6px 4px 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.application-tab-active .application-tab-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Deliberately quiet. This control sits a few pixels from buttons that stop
+   and delete real servers, and it only drops a bookmark - it must not read
+   as one of them. */
+.application-tab-close {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 2px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.application-tab-close:hover {
+  color: var(--text-primary);
+}
