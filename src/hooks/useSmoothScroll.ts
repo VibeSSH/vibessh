@@ -17,7 +17,7 @@ import { useEffect, type RefObject } from "react";
  * Anything added later can opt out with `data-lenis-prevent`, which Lenis
  * honours on its own; this list covers the scrollers that predate it.
  */
-const OWN_SCROLLERS = [
+export const OWN_SCROLLERS = [
   ".application-console-output",
   ".container-logs-output",
   ".vibe-ai-transcript",

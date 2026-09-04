@@ -116,6 +116,10 @@
      blueprint can never push the wizard's own buttons off the screen. */
   max-height: 244px;
   overflow-y: auto;
+  /* Stops the page behind the dialog taking over once the list reaches its
+     end - the modal does not lock the page scroll, so without this the wheel
+     carries straight through. */
+  overscroll-behavior: contain;
   padding-right: 4px;
 }
 

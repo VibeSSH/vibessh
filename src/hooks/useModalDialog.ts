@@ -106,6 +106,12 @@ export function useModalDialog(onClose: () => void, options: { labelledBy?: stri
       // Focusable so the panel can hold focus when it contains nothing
       // focusable, and so Escape reaches the handler either way.
       tabIndex: -1,
+      // Hands the wheel back to the browser inside the dialog. Lenis captures
+      // wheel events on the content wrapper, and these dialogs - unlike the
+      // Radix ones - render in the tree rather than in a portal, so anything
+      // scrollable inside them scrolled the page underneath instead of
+      // itself. Read as the dialog simply refusing to scroll.
+      "data-lenis-prevent": true,
       onKeyDown,
       // Clicks inside must not reach the backdrop's close handler.
       onClick: (event: MouseEvent<HTMLDivElement>) => event.stopPropagation(),
