@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
@@ -368,19 +369,27 @@ function PortFormModal({ applicationId, application, editingPort, onClose, onSav
             <div className="form-row">
               <label className="form-field form-field-narrow">
                 <span className="form-label">{t("portsTab.protocol")}</span>
-                <select className="form-input" value={protocol} onChange={(e) => setProtocol(e.target.value as PortProtocol)}>
-                  <option value="tcp">TCP</option>
-                  <option value="udp">UDP</option>
-                </select>
+                <Select
+                  value={protocol}
+                  onChange={(value) => setProtocol(value as PortProtocol)}
+                  items={[
+                    { value: "tcp", label: "TCP" },
+                    { value: "udp", label: "UDP" },
+                  ]}
+                />
               </label>
               <label className="form-field form-field-grow">
                 <span className="form-label">{t("applicationNetwork.access")}</span>
-                <select className="form-input" value={visibility} onChange={(e) => setVisibility(e.target.value as PortVisibility)}>
-                  <option value="public">{t("applicationNetwork.visibility.public")}</option>
-                  <option value="vibeNetwork">{t("applicationNetwork.visibility.vibeNetwork")}</option>
-                  <option value="localhost">{t("applicationNetwork.visibility.localhost")}</option>
-                  <option value="custom">{t("applicationNetwork.visibility.custom")}</option>
-                </select>
+                <Select
+                  value={visibility}
+                  onChange={(value) => setVisibility(value as PortVisibility)}
+                  items={[
+                    { value: "public", label: t("applicationNetwork.visibility.public") },
+                    { value: "vibeNetwork", label: t("applicationNetwork.visibility.vibeNetwork") },
+                    { value: "localhost", label: t("applicationNetwork.visibility.localhost") },
+                    { value: "custom", label: t("applicationNetwork.visibility.custom") },
+                  ]}
+                />
               </label>
             </div>
             <p className="form-note">{t(`applicationNetwork.visibilityHelp.${visibility}`)}</p>

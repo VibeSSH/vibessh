@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { HelpHint } from "@/components/ui/HelpHint";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { createApplication, detectJavaInstallations, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
@@ -360,16 +361,15 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 {selectedBlueprint && availableRuntimeTypes.length > 1 && (
                   <label className="form-field">
                     <span className="form-label">{t("createApplicationWizard.runtimeType")}</span>
-                    <select className="form-input" value={runtimeType ?? ""} onChange={(e) => setRuntimeType(e.target.value as RuntimeType)}>
-                      <option value="" disabled>
-                        {t("createApplicationWizard.runtimeTypePlaceholder")}
-                      </option>
-                      {availableRuntimeTypes.map((rt) => (
-                        <option key={rt} value={rt}>
-                          {t(`createApplicationWizard.runtimeTypeOption.${rt}`)}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={runtimeType ?? ""}
+                      onChange={(value) => setRuntimeType(value as RuntimeType)}
+                      placeholder={t("createApplicationWizard.runtimeTypePlaceholder")}
+                      items={availableRuntimeTypes.map((rt) => ({
+                        value: rt,
+                        label: t(`createApplicationWizard.runtimeTypeOption.${rt}`),
+                      }))}
+                    />
                   </label>
                 )}
                 {selectedBlueprint && availableRuntimeTypes.length === 0 && (
@@ -672,21 +672,18 @@ function JavaVersionFieldInput({ field, value, onChange, serverId }: JavaVersion
   return (
     <label className="form-field">
       {label}
-      <select
-        className="form-input"
+      <Select
         value={matchesDetected ? currentValue : ""}
-        onChange={(e) => (e.target.value === "__custom__" ? setCustomPath(true) : onChange(e.target.value))}
-      >
-        <option value="" disabled>
-          {t("createApplicationWizard.chooseJava")}
-        </option>
-        {installations.map((installation) => (
-          <option key={installation.path} value={installation.path} title={installation.path}>
-            {t("createApplicationWizard.javaOption", { major: installation.majorVersion })}
-          </option>
-        ))}
-        <option value="__custom__">{t("createApplicationWizard.customJavaPath")}</option>
-      </select>
+        onChange={(value) => (value === "__custom__" ? setCustomPath(true) : onChange(value))}
+        placeholder={t("createApplicationWizard.chooseJava")}
+        items={[
+          ...installations.map((installation) => ({
+            value: installation.path,
+            label: t("createApplicationWizard.javaOption", { major: installation.majorVersion }),
+          })),
+          { value: "__custom__", label: t("createApplicationWizard.customJavaPath") },
+        ]}
+      />
       {field.helpText && <p className="form-note">{field.helpText}</p>}
     </label>
   );
@@ -757,16 +754,12 @@ function PapermcVersionFieldInput({ field, value, onChange }: PapermcVersionFiel
   return (
     <label className="form-field">
       {label}
-      <select className="form-input" value={currentValue} onChange={(e) => onChange(e.target.value)}>
-        <option value="" disabled>
-          {t("createApplicationWizard.chooseVersion")}
-        </option>
-        {versions.map((version) => (
-          <option key={version} value={version}>
-            {version}
-          </option>
-        ))}
-      </select>
+      <Select
+        value={currentValue}
+        onChange={onChange}
+        placeholder={t("createApplicationWizard.chooseVersion")}
+        items={versions.map((version) => ({ value: version, label: version }))}
+      />
       {field.helpText && <p className="form-note">{field.helpText}</p>}
     </label>
   );

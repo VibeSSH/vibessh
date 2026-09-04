@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { cloudListRoles, cloudProvisionMember } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
@@ -124,14 +125,11 @@ export function ProvisionMemberSection({ teamId, canAdd }: { teamId: string; can
         <div className="form-row">
           <label className="form-field form-field-grow">
             <span className="form-label">{t("provisionMember.role")}</span>
-            <select className="form-input" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
-              <option value="">{t("provisionMember.noRole")}</option>
-              {roles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={roleId}
+              onChange={setRoleId}
+              items={[{ value: "", label: t("provisionMember.noRole") }, ...roles.map((role) => ({ value: role.id, label: role.name }))]}
+            />
           </label>
           <div className="form-actions provision-submit">
             <Button type="submit" disabled={busy || !email.trim()}>

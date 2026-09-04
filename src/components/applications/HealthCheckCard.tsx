@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { getApplicationHealth, setApplicationHealthCheck } from "@/services/applicationService";
@@ -163,12 +164,16 @@ function HealthCheckFormModal({ applicationId, application, onClose, onSaved }: 
 
             <label className="form-field">
               <span className="form-label">{t("healthCheck.type")}</span>
-              <select className="form-input" value={type} onChange={(e) => setType(e.target.value as HealthCheckType)}>
-                <option value="process">{t("healthCheck.typeOption.process")}</option>
-                <option value="tcp">{t("healthCheck.typeOption.tcp")}</option>
-                <option value="http">{t("healthCheck.typeOption.http")}</option>
-                <option value="minecraftStatus">{t("healthCheck.typeOption.minecraftStatus")}</option>
-              </select>
+              <Select
+                value={type}
+                onChange={(value) => setType(value as HealthCheckType)}
+                items={[
+                  { value: "process", label: t("healthCheck.typeOption.process") },
+                  { value: "tcp", label: t("healthCheck.typeOption.tcp") },
+                  { value: "http", label: t("healthCheck.typeOption.http") },
+                  { value: "minecraftStatus", label: t("healthCheck.typeOption.minecraftStatus") },
+                ]}
+              />
             </label>
 
             {needsPort &&
@@ -177,16 +182,12 @@ function HealthCheckFormModal({ applicationId, application, onClose, onSaved }: 
               ) : (
                 <label className="form-field">
                   <span className="form-label">{t("healthCheck.port")}</span>
-                  <select className="form-input" value={portId} onChange={(e) => setPortId(e.target.value)}>
-                    <option value="" disabled>
-                      {t("healthCheck.choosePort")}
-                    </option>
-                    {tcpPorts.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.internalPort})
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={portId}
+                    onChange={setPortId}
+                    placeholder={t("healthCheck.choosePort")}
+                    items={tcpPorts.map((p) => ({ value: p.id, label: `${p.name} (${p.internalPort})` }))}
+                  />
                 </label>
               ))}
 

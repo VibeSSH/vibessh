@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import {
@@ -136,14 +137,13 @@ export function ConnectionsCard({ application }: ConnectionsCardProps) {
         <div className="form-row">
           <label className="form-field form-field-grow">
             <span className="form-label">{t("connections.addLabel")}</span>
-            <select className="form-input" value={selected} onChange={(event) => setSelected(event.target.value)} disabled={busy}>
-              <option value="">{t("connections.addPlaceholder")}</option>
-              {available.map((app) => (
-                <option key={app.id} value={app.id}>
-                  {app.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={selected}
+              onChange={setSelected}
+              disabled={busy}
+              placeholder={t("connections.addPlaceholder")}
+              items={available.map((app) => ({ value: app.id, label: app.name }))}
+            />
           </label>
           <div className="form-actions">
             <Button size="sm" disabled={busy || selected === ""} onClick={() => void run(() => connectApplications(application.id, selected))}>

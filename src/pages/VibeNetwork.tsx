@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { RowPicker, serverRowPickerOption, type RowPickerOption } from "@/components/ui/RowPicker";
@@ -729,13 +730,7 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
             {!editing && (
               <label className="form-field">
                 <span className="form-label">{t("vibeNetwork.chooseApplication")}</span>
-                <select className="form-input" value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
-                  {applications.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={applicationId} onChange={setApplicationId} items={applications.map((a) => ({ value: a.id, label: a.name }))} />
               </label>
             )}
             <label className="form-field">
@@ -745,10 +740,14 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
             <div className="form-row">
               <label className="form-field form-field-narrow">
                 <span className="form-label">{t("portsTab.protocol")}</span>
-                <select className="form-input" value={protocol} onChange={(e) => setProtocol(e.target.value as "tcp" | "udp")}>
-                  <option value="tcp">TCP</option>
-                  <option value="udp">UDP</option>
-                </select>
+                <Select
+                  value={protocol}
+                  onChange={(value) => setProtocol(value as "tcp" | "udp")}
+                  items={[
+                    { value: "tcp", label: "TCP" },
+                    { value: "udp", label: "UDP" },
+                  ]}
+                />
               </label>
               <label className="form-field">
                 <span className="form-label">{t("portsTab.internalPort")}</span>
@@ -769,12 +768,16 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
             </div>
             <label className="form-field">
               <span className="form-label">{t("applicationNetwork.access")}</span>
-              <select className="form-input" value={visibility} onChange={(e) => setVisibility(e.target.value as NodeEndpoint["visibility"])}>
-                <option value="public">{t("applicationNetwork.visibility.public")}</option>
-                <option value="vibeNetwork">{t("applicationNetwork.visibility.vibeNetwork")}</option>
-                <option value="localhost">{t("applicationNetwork.visibility.localhost")}</option>
-                <option value="custom">{t("applicationNetwork.visibility.custom")}</option>
-              </select>
+              <Select
+                value={visibility}
+                onChange={(value) => setVisibility(value as NodeEndpoint["visibility"])}
+                items={[
+                  { value: "public", label: t("applicationNetwork.visibility.public") },
+                  { value: "vibeNetwork", label: t("applicationNetwork.visibility.vibeNetwork") },
+                  { value: "localhost", label: t("applicationNetwork.visibility.localhost") },
+                  { value: "custom", label: t("applicationNetwork.visibility.custom") },
+                ]}
+              />
               <p className="form-note">{t(`applicationNetwork.visibilityHelp.${visibility}`)}</p>
             </label>
             {visibility === "custom" && (
@@ -1015,13 +1018,7 @@ function DnsFormModal({ applications, editing, onClose, onSaved }: DnsFormModalP
             {!editing && (
               <label className="form-field">
                 <span className="form-label">{t("vibeNetwork.chooseApplication")}</span>
-                <select className="form-input" value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
-                  {applications.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={applicationId} onChange={setApplicationId} items={applications.map((a) => ({ value: a.id, label: a.name }))} />
               </label>
             )}
             <label className="form-field">
