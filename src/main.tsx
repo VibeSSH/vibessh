@@ -10,6 +10,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "./styles/globals.css";
 import "./i18n";
+import { applyStoredTheme } from "@/theme/themeStore";
 
 // A desktop app has no business showing the WebView's own native menu
 // (Back/Reload/Save As/Print/Inspect Element) - nothing here intercepted
@@ -17,7 +18,17 @@ import "./i18n";
 // not per-component: a row that wants its own context menu (the Files
 // browser) still gets one - it just renders through React state from its
 // own onContextMenu handler, entirely separate from this native fallback.
-document.addEventListener("contextmenu", (e) => e.preventDefault());
+// Shift is the escape hatch, the same one browsers use: holding it lets the
+// native menu through, which is the only way to reach "Inspect" in a window
+// with no menu bar. Without it, suppressing right-click also suppressed the
+// developer's own way into the page.
+// Before React mounts, so the window never paints once in the shipped palette
+// and then again in the chosen one.
+applyStoredTheme();
+
+document.addEventListener("contextmenu", (e) => {
+  if (!e.shiftKey) e.preventDefault();
+});
 
 function render() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

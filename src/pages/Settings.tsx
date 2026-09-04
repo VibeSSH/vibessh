@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ThemePicker } from "@/components/settings/ThemePicker";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
@@ -66,6 +68,14 @@ export function Settings() {
             ))}
           </div>
         </div>
+
+        <div className="settings-preference-row settings-preference-row-stacked">
+          <div>
+            <p className="settings-preference-label">{t("theme.title")}</p>
+            <p className="settings-muted">{t("theme.description")}</p>
+          </div>
+        </div>
+        <ThemePicker />
       </Card>
 
       <AiCard />
@@ -213,10 +223,14 @@ function AiCard() {
             <>
               <label className="form-field">
                 <span className="form-label">{t("settings.aiProvider")}</span>
-                <select className="form-input" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderKind)}>
-                  <option value="vibeSshHosted">{t("settings.aiProviderHosted")}</option>
-                  <option value="openAiCompatible">{t("settings.aiProviderOpenAiCompatible")}</option>
-                </select>
+                <Select
+                  value={provider}
+                  onChange={(value) => setProvider(value as AiProviderKind)}
+                  items={[
+                    { value: "vibeSshHosted", label: t("settings.aiProviderHosted") },
+                    { value: "openAiCompatible", label: t("settings.aiProviderOpenAiCompatible") },
+                  ]}
+                />
                 <span className="form-note">
                   {provider === "vibeSshHosted" ? t("settings.aiProviderHostedNote") : t("settings.aiProviderNote")}
                 </span>
