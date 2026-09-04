@@ -18,6 +18,20 @@
   height: 100%;
 }
 
+/*
+ * xterm.css paints the viewport pure black. Against this app's navy panel
+ * that showed as darker bands along the edges wherever the character grid did
+ * not reach - the terminal never fills its box exactly, since it can only be
+ * a whole number of cells tall and wide.
+ *
+ * Transparent rather than set to a token: the panel behind it is already the
+ * right colour, and matching a second colour to it is one more thing to keep
+ * in step when a theme changes.
+ */
+.terminal-view .xterm-viewport {
+  background-color: transparent;
+}
+
 .terminal-search-bar {
   position: absolute;
   top: 10px;
