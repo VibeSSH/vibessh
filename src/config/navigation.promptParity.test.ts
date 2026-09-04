@@ -21,7 +21,13 @@ describe("the system prompt's list of screens", () => {
   const prompt = promptSource;
   // The prompt wraps long lines with a trailing backslash, so a name can be
   // split across two source lines.
-  const unwrapped = prompt.replace(/\\r?\n\s*/g, "");
+  //
+  // \\r? and not r?: the second is the letter r, which matches nothing
+  // here. On a checkout with CRLF endings - any default Windows one - a CR
+  // then sits between the backslash and the newline, so no line is
+  // unwrapped and every screen whose name the prompt wraps is reported
+  // missing.
+  const unwrapped = prompt.replace(/\\\r?\n\s*/g, "");
 
   // Scoped to the enumeration itself. Matching the whole file would pass on
   // any screen whose name happens to appear somewhere else in the prompt -
