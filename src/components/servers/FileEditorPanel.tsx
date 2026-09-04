@@ -10,7 +10,8 @@ import { Icon } from "@/components/ui/Icon";
 import { vibesshEditorTheme } from "./cmTheme";
 import { languageExtensionFor } from "./editorLanguage";
 import { useBlockingProblems } from "./fileProblems";
-import { bytesToText, readRemoteFile, textToBytes, writeRemoteFile } from "@/services/filesService";
+import { bytesToText, readRemoteFile, readRemoteFileWindow, textToBytes, writeRemoteFile } from "@/services/filesService";
+import { formatBytes } from "@/utils/formatBytes";
 import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
 import "./forms.css";
@@ -19,6 +20,14 @@ import { errorMessage } from "@/services/tauri";
 
 /** Above this, decoding the whole file into a textarea isn't a good idea - point at the terminal instead. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
+
+/**
+ * How much of an oversized file is fetched at a time.
+ *
+ * Matches the Application-files editor - the same decision, made once about
+ * how much context is worth waiting for before the first screen appears.
+ */
+const WINDOW_SIZE = 512 * 1024;
 
 interface FileEditorPanelProps {
   serverId: string;
@@ -44,6 +53,11 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const [loading, setLoading] = useState(!tooLarge);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // How much of an oversized file has been pulled in, and how big it turned
+  // out to be when last measured.
+  const [loadedBytes, setLoadedBytes] = useState(0);
+  const [knownSize, setKnownSize] = useState(entry.size);
+  const [windowLoading, setWindowLoading] = useState(false);
   // See ApplicationFileEditorPanel: a file that does not parse is not a
   // file worth writing.
   const blocking = useBlockingProblems(entry.name, content, t);
@@ -59,6 +73,46 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId, entry.path]);
+
+  /**
+   * Pulls in the next window of a file too large to edit.
+   *
+   * Appends rather than replaces, so reading stays where it was and the
+   * content only ever grows towards the whole file.
+   */
+  function loadMore() {
+    setWindowLoading(true);
+    setError(null);
+    readRemoteFileWindow(serverId, entry.path, loadedBytes, WINDOW_SIZE)
+      .then((window) => {
+        setContent((previous) => previous + bytesToText(window.bytes));
+        setLoadedBytes(window.nextOffset);
+        setKnownSize(window.totalSize);
+      })
+      .catch((err) => setError(errorMessage(err, t)))
+      .finally(() => setWindowLoading(false));
+  }
+
+  // The first window arrives on its own; every one after it is asked for.
+  // Deliberately keyed on the file rather than on `loadMore`, which changes
+  // identity with every offset and would fetch the whole file in a loop.
+  useEffect(() => {
+    if (!tooLarge) return;
+    setContent("");
+    setLoadedBytes(0);
+    setKnownSize(entry.size);
+    setWindowLoading(true);
+    setError(null);
+    readRemoteFileWindow(serverId, entry.path, 0, WINDOW_SIZE)
+      .then((window) => {
+        setContent(bytesToText(window.bytes));
+        setLoadedBytes(window.nextOffset);
+        setKnownSize(window.totalSize);
+      })
+      .catch((err) => setError(errorMessage(err, t)))
+      .finally(() => setWindowLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverId, entry.path, tooLarge]);
 
   async function handleSave() {
     if (blocking.length > 0) return;
@@ -107,7 +161,31 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
 
       <div className="file-editor-tab-body">
         {tooLarge ? (
-          <p className="form-note">{t("fileEditor.tooLarge")}</p>
+          <>
+            {/* Read-only, and said rather than merely disabled: writing back a
+                partly loaded file would truncate everything after the part
+                that is in. */}
+            <p className="form-note">
+              {t("fileEditor.windowNote", { loaded: formatBytes(loadedBytes), total: formatBytes(knownSize) })}
+            </p>
+            <CodeMirror
+              className="file-editor-tab-codemirror"
+              value={content}
+              minHeight="320px"
+              maxHeight="calc(100vh - 340px)"
+              theme="none"
+              extensions={extensions}
+              editable={false}
+              onCreateEditor={(view) => (editorViewRef.current = view)}
+            />
+            {loadedBytes < knownSize && (
+              <div className="file-editor-window-actions">
+                <Button variant="secondary" size="sm" onClick={loadMore} disabled={windowLoading}>
+                  {windowLoading ? t("fileEditor.windowLoading") : t("fileEditor.loadMore")}
+                </Button>
+              </div>
+            )}
+          </>
         ) : loading ? (
           <p className="form-note">{t("fileEditor.loading")}</p>
         ) : (

@@ -60,6 +60,23 @@ pub async fn read_application_file(
     services::read_application_file(&app_repo, &server_repo, &sessions, application_id, &path).await
 }
 
+/// One window of a file, for looking at one too big for `read_application_file`.
+///
+/// The result is a slice, not the file - see `services::read_file_window` for
+/// why anything built on it has to stay read-only until the whole file is in.
+#[tauri::command]
+pub async fn read_application_file_window(
+    app_repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    application_id: Uuid,
+    path: String,
+    offset: u64,
+    length: u32,
+) -> AppResult<services::FileWindow> {
+    services::read_application_file_window(&app_repo, &server_repo, &sessions, application_id, &path, offset, length as usize).await
+}
+
 /// Plain create-or-truncate write - "New File" and similar, not the
 /// editor's own Save (see `save_application_file`).
 #[tauri::command]
@@ -214,6 +231,62 @@ pub async fn upload_application_file(
     let result = join_transfer(task).await;
     transfers.clear(&transfer_id).await;
     result
+}
+
+/// The same as `upload_application_file`, for a whole folder.
+///
+/// A separate command rather than a flag on the file one: the two report
+/// progress differently (one file's bytes against a sum over many) and only
+/// one of them can stage through `.vibessh-partial`, so folding them together
+/// would mean a command whose behaviour changes shape halfway through.
+#[tauri::command]
+pub async fn upload_application_directory(
+    app: AppHandle,
+    transfers: State<'_, FileTransferManager>,
+    application_id: Uuid,
+    local_src: String,
+    path: String,
+    transfer_id: String,
+) -> AppResult<()> {
+    let app_for_task = app.clone();
+    let progress_event = format!("application-files://{transfer_id}/progress");
+    let local_src = std::path::PathBuf::from(local_src);
+
+    let task = tokio::spawn(async move {
+        let app_repo = app_for_task.state::<ApplicationRepository>();
+        let server_repo = app_for_task.state::<ServerRepository>();
+        let sessions = app_for_task.state::<SshSessionManager>();
+        let app_for_emit = app_for_task.clone();
+        services::upload_application_directory(
+            &app_repo,
+            &server_repo,
+            &sessions,
+            application_id,
+            &local_src,
+            &path,
+            move |transferred, total| {
+                let _ = app_for_emit.emit(&progress_event, TransferProgress { transferred, total });
+            },
+        )
+        .await
+    });
+
+    transfers.register(transfer_id.clone(), task.abort_handle()).await;
+    let result = join_transfer(task).await;
+    transfers.clear(&transfer_id).await;
+    result
+}
+
+/// Whether a path on *this* machine is a directory.
+///
+/// The window reports dropped paths but not what they are, and the two
+/// uploads take different routes, so something has to look. Answering `false`
+/// for a path that cannot be read is deliberate: the upload that follows will
+/// fail with a message about that actual file, which is more use than a
+/// message about a failed stat.
+#[tauri::command]
+pub async fn local_path_is_directory(path: String) -> bool {
+    tokio::fs::metadata(&path).await.map(|meta| meta.is_dir()).unwrap_or(false)
 }
 
 async fn join_transfer(task: tokio::task::JoinHandle<AppResult<()>>) -> AppResult<()> {

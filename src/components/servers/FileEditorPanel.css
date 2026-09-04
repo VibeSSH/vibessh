@@ -94,3 +94,10 @@
   flex-shrink: 0;
   color: var(--danger);
 }
+
+/* Przycisk doczytania kolejnego fragmentu pod podglądem dużego pliku. */
+.file-editor-window-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-3);
+}

@@ -13,7 +13,8 @@ import { vibesshEditorTheme } from "@/components/servers/cmTheme";
 import { languageExtensionFor } from "@/components/servers/editorLanguage";
 import { useBlockingProblems } from "@/components/servers/fileProblems";
 import { bytesToText, textToBytes } from "@/services/filesService";
-import { readApplicationFile, saveApplicationFile } from "@/services/applicationFilesService";
+import { readApplicationFile, readApplicationFileWindow, saveApplicationFile } from "@/services/applicationFilesService";
+import { formatBytes } from "@/utils/formatBytes";
 import { toastSuccess } from "@/stores/toastStore";
 import { FileHistoryModal } from "./FileHistoryModal";
 import type { RemoteFileEntry } from "@/types/files";
@@ -24,6 +25,15 @@ import { errorMessage } from "@/services/tauri";
 
 /** Matches services::application_files_service::MAX_EDITABLE_FILE_SIZE - the server enforces this too (the actual trust boundary), this is just so the UI doesn't even try. */
 const MAX_EDITABLE_SIZE = 1024 * 1024;
+
+/**
+ * How much of an oversized file is fetched at a time.
+ *
+ * Large enough that a server log opens with plenty of context in one go,
+ * small enough that the first window appears immediately even over a slow
+ * link and that the choice to keep going stays the reader's.
+ */
+const WINDOW_SIZE = 512 * 1024;
 const BACKUP_PREFERENCE_KEY = "vibessh_files_backup_before_save";
 
 function readBackupPreference(): boolean {
@@ -59,12 +69,58 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   const [backupBeforeSave, setBackupBeforeSave] = useState(readBackupPreference);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // How much of an oversized file has been pulled in so far, and how big it
+  // turned out to be when last measured.
+  const [loadedBytes, setLoadedBytes] = useState(0);
+  const [knownSize, setKnownSize] = useState(entry.size);
+  const [windowLoading, setWindowLoading] = useState(false);
   const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name, t), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
   const dirty = content !== savedContent;
   // A config file that does not parse is not a file worth writing: the
   // service reading it fails minutes later, somewhere else, with the
   // cause out of sight. Save is refused while that is true.
   const blocking = useBlockingProblems(entry.name, content, t);
+
+  /**
+   * Pulls in the next window of a file too large to edit.
+   *
+   * Appends rather than replaces, so reading stays where it was and the
+   * content only ever grows towards the whole file.
+   */
+  const loadMore = useCallback(() => {
+    setWindowLoading(true);
+    setError(null);
+    readApplicationFileWindow(applicationId, entry.path, loadedBytes, WINDOW_SIZE)
+      .then((window) => {
+        setContent((previous) => previous + bytesToText(window.bytes));
+        setLoadedBytes(window.nextOffset);
+        setKnownSize(window.totalSize);
+      })
+      .catch((err) => setError(errorMessage(err, t)))
+      .finally(() => setWindowLoading(false));
+  }, [applicationId, entry.path, loadedBytes, t]);
+
+  // The first window arrives on its own; every one after it is asked for.
+  // Keyed on the file rather than on `loadMore`, which changes identity with
+  // every offset and would fetch the whole file in a loop. Resets first, so
+  // opening a second large file does not append to the previous one.
+  useEffect(() => {
+    if (!tooLarge) return;
+    setContent("");
+    setLoadedBytes(0);
+    setKnownSize(entry.size);
+    setWindowLoading(true);
+    setError(null);
+    readApplicationFileWindow(applicationId, entry.path, 0, WINDOW_SIZE)
+      .then((window) => {
+        setContent(bytesToText(window.bytes));
+        setLoadedBytes(window.nextOffset);
+        setKnownSize(window.totalSize);
+      })
+      .catch((err) => setError(errorMessage(err, t)))
+      .finally(() => setWindowLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationId, entry.path, tooLarge]);
 
   const load = useCallback(() => {
     if (tooLarge) return;
@@ -168,7 +224,34 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
 
       <div className="file-editor-tab-body">
         {tooLarge ? (
-          <p className="form-note">{t("applicationFileEditor.tooLarge")}</p>
+          <>
+            {/* Read-only, and said out loud rather than just disabled: a
+                partly loaded file written back would truncate everything
+                after the part that is in. */}
+            <p className="form-note">
+              {t("applicationFileEditor.windowNote", {
+                loaded: formatBytes(loadedBytes),
+                total: formatBytes(knownSize),
+              })}
+            </p>
+            <CodeMirror
+              className="file-editor-tab-codemirror"
+              value={content}
+              minHeight="320px"
+              maxHeight="calc(100vh - 340px)"
+              theme="none"
+              extensions={extensions}
+              editable={false}
+              onCreateEditor={(view) => (editorViewRef.current = view)}
+            />
+            {loadedBytes < knownSize && (
+              <div className="file-editor-window-actions">
+                <Button variant="secondary" size="sm" onClick={loadMore} disabled={windowLoading}>
+                  {windowLoading ? t("applicationFileEditor.windowLoading") : t("applicationFileEditor.loadMore")}
+                </Button>
+              </div>
+            )}
+          </>
         ) : loading ? (
           <p className="form-note">{t("applicationFileEditor.loading")}</p>
         ) : (

@@ -245,6 +245,40 @@ pub async fn get_metadata(
 /// checks a file's size before ever offering to open it in the editor, but
 /// this is the actual trust boundary; a stale or buggy frontend check isn't
 /// one.
+/// One window of a file, plus what the caller needs to ask for the next one.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWindow {
+    pub bytes: Vec<u8>,
+    /// The file's size right now, so the caller can show how far through it
+    /// is and know when it has reached the end.
+    pub total_size: u64,
+    /// Where the next window starts. Equal to `total_size` at the end.
+    pub next_offset: u64,
+}
+
+/// Reads part of a file, for looking at one too large to load whole.
+///
+/// **What the caller must not do with the result.** This is a window, not the
+/// file. Writing a partially loaded buffer back would truncate everything
+/// after it - for a log or a world data file that is silent, total loss. The
+/// editor keeps a partly loaded file read-only for exactly this reason, and
+/// nothing here can enforce that on its behalf.
+pub async fn read_file_window(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    path: &str,
+    offset: u64,
+    len: usize,
+) -> AppResult<FileWindow> {
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+    let total_size = provider.metadata(path).await?.size;
+    let bytes = provider.read_file_range(path, offset, len).await?;
+    Ok(FileWindow { next_offset: offset + bytes.len() as u64, bytes, total_size })
+}
+
 pub async fn read_file_for_editor(
     app_repo: &ApplicationRepository,
     server_repo: &ServerRepository,
@@ -384,6 +418,60 @@ pub async fn download_file(
     let total = provider.metadata(path).await?.size;
     let mut reporter = throttled_reporter(total, on_progress);
     provider.download_file(path, local_dest, &mut reporter).await
+}
+
+/// Uploads a whole local directory into `path`, keeping its shape.
+///
+/// The progress this reports is the sum over every file, not per file, so a
+/// folder of four hundred small files shows one bar that fills once rather
+/// than four hundred that each fill instantly.
+///
+/// Unlike the single-file upload there is no `.vibessh-partial` staging here:
+/// that trick protects one known destination path, and a half-finished
+/// directory has no single path to protect. An interrupted folder upload
+/// therefore leaves what it managed to send, which is visible in the Files
+/// tab rather than hidden.
+pub async fn upload_directory(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    local_src: &Path,
+    path: &str,
+    on_progress: impl FnMut(u64, u64) + Send + 'static,
+) -> AppResult<()> {
+    let name = local_src
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| AppError::InvalidInput(format!("{} has no name to copy", local_src.display())))?;
+    let remote_root = crate::files::join_remote(path, &name);
+
+    let (directories, files) = crate::files::plan_directory_upload(local_src, &remote_root).await?;
+    let total: u64 = files.iter().map(|f| f.size).sum();
+
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+
+    // Parents before children: the walk is breadth-first, so the order it
+    // produced is already correct. An existing directory is not an error -
+    // dropping a folder onto one that is already there should merge into it,
+    // the way copying a directory does everywhere else.
+    for directory in &directories {
+        if let Err(err) = provider.create_directory(directory).await {
+            if provider.metadata(directory).await.is_err() {
+                return Err(err);
+            }
+        }
+    }
+
+    let mut reporter = throttled_reporter(total, on_progress);
+    for file in &files {
+        provider.upload_file(&file.local, &file.remote, &mut reporter).await?;
+    }
+    // A folder of nothing but empty files still deserves a finished bar.
+    if total == 0 {
+        reporter(0);
+    }
+    Ok(())
 }
 
 pub async fn upload_file(
