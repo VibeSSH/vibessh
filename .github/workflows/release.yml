@@ -152,6 +152,17 @@ jobs:
           Write-Host "--- latest.json ---"
           Get-Content dist-release/latest.json
 
+      # Kept whatever happens next. Publishing is a handful of API calls that
+      # can fail for reasons having nothing to do with the build - an empty
+      # repository, an expired token - and without this a signed installer that
+      # took twenty minutes to produce would be thrown away each time.
+      - name: Keep the installer regardless of what publishing does
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibessh-installer
+          path: dist-release/*
+          retention-days: 30
+
       - name: Publish to the public releases repository
         if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true
         shell: pwsh
