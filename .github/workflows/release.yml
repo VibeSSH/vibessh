@@ -161,6 +161,12 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
+
+          # Deliberately not --prerelease, beta tags included. The app asks
+          # GitHub for `releases/latest/download/latest.json`, and GitHub does
+          # not count a pre-release as the latest one - so the flag would leave
+          # every installed copy getting a 404 on every check. The version in
+          # the tag is what says this is a beta.
           gh release create $tag (Get-ChildItem dist-release | ForEach-Object { $_.FullName }) `
             --repo VibeSSH/vibessh-releases `
             --title "VibeSSH $tag" `
