@@ -1,4 +1,5 @@
-import { useDeferredValue, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/services/queryKeys";
 import { useTranslation } from "react-i18next";
@@ -15,6 +16,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
+import { useFileDrop } from "@/hooks/useFileDrop";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { restartApplication } from "@/services/applicationService";
 import {
@@ -27,6 +29,8 @@ import {
   onTransferProgress,
   renameApplicationFile,
   setApplicationFilePermissions,
+  localPathIsDirectory,
+  uploadApplicationDirectory,
   uploadApplicationFile,
   writeApplicationFile,
   listApplicationFiles,
@@ -48,6 +52,63 @@ import { errorMessage } from "@/services/tauri";
 
 /// Matches the Node Files page and the Actions page.
 const MAX_ROWS_SHOWN = 200;
+
+interface FileRowProps {
+  entry: RemoteFileEntry;
+  /** Passed in rather than read from i18n here, so a language change still reaches a memoised row. */
+  language: string;
+  onOpen: (entry: RemoteFileEntry) => void;
+  onDownload: (entry: RemoteFileEntry) => void;
+  onContextMenu: (event: ReactMouseEvent, entry: RemoteFileEntry) => void;
+  buildMenuItems: (entry: RemoteFileEntry) => ContextMenuItem[];
+}
+
+/**
+ * One file or directory.
+ *
+ * **Why this is a component of its own, and memoised.** This tab is rendered
+ * inline by ApplicationDetail, which polls the application every five
+ * seconds. Nothing in between was memoised, so every poll rebuilt all two
+ * hundred rows - and a row is not cheap: an iconify SVG, a name button, an
+ * IconButton that wraps itself in a Tooltip, an OverflowMenu, sometimes a
+ * Badge. Well over a thousand components reconciled every five seconds, on
+ * the same thread that is meant to be producing scroll frames.
+ *
+ * The memo only holds because the props above are stable: TanStack Query's
+ * structural sharing keeps each `entry` identical across a refetch that did
+ * not change it, and the four callbacks are pinned in the parent.
+ */
+const FileRow = memo(function FileRow({ entry, language, onOpen, onDownload, onContextMenu, buildMenuItems }: FileRowProps) {
+  const { t } = useTranslation();
+  return (
+    <li className="server-list-item" onContextMenu={(event) => onContextMenu(event, entry)}>
+      <div className="server-list-icon">
+        <Icon name={entry.isDir ? "folder" : "file"} size={16} />
+      </div>
+      <button className="files-entry-name" title={entry.name} onClick={() => onOpen(entry)}>
+        {entry.name}
+        {entry.isSymlink && <Badge tone="neutral">{t("applicationFilesTab.symlink")}</Badge>}
+      </button>
+      <div className="application-files-entry-meta">
+        {!entry.isDir && <span>{formatSize(entry.size)}</span>}
+        {entry.modifiedAt && <span>{formatShortDate(entry.modifiedAt, language)}</span>}
+        {entry.permissions !== undefined && <span>{formatOctal(entry.permissions)}</span>}
+      </div>
+      {!entry.isDir && (
+        <IconButton
+          icon="download"
+          size="sm"
+          title={t("applicationFilesTab.downloadAria", { name: entry.name })}
+          onClick={() => onDownload(entry)}
+        />
+      )}
+      {/* Built on open, not on render - see OverflowMenu's own note. This
+          list can be two hundred rows, each with six translated menu labels
+          nobody has asked to see. */}
+      <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={() => buildMenuItems(entry)} />
+    </li>
+  );
+});
 
 const ROOT_PATH = ".";
 
@@ -167,13 +228,23 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
 
   const segments = path === ROOT_PATH ? [] : path.split("/").filter(Boolean);
 
-  async function runUpload(localSrc: string, targetPath: string) {
+  async function runUpload(localSrc: string, targetPath: string, isDirectory = false) {
     const transferId = crypto.randomUUID();
     const fileName = targetPath.split("/").pop() ?? targetPath;
-    addTransfer({ id: transferId, name: fileName, direction: "upload", total: 0, retry: () => runUpload(localSrc, targetPath) });
+    addTransfer({
+      id: transferId,
+      name: fileName,
+      direction: "upload",
+      total: 0,
+      retry: () => runUpload(localSrc, targetPath, isDirectory),
+    });
     const unlisten = await onTransferProgress(transferId, ({ transferred, total }) => updateProgress(transferId, transferred, total));
     try {
-      await uploadApplicationFile(applicationId, localSrc, targetPath, transferId);
+      // A folder keeps its shape on the far side, so the backend gets the
+      // parent directory and works the rest out; a file gets its own
+      // destination path.
+      if (isDirectory) await uploadApplicationDirectory(applicationId, localSrc, path, transferId);
+      else await uploadApplicationFile(applicationId, localSrc, targetPath, transferId);
       markDone(transferId);
       load(path);
     } catch (err) {
@@ -202,9 +273,23 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   async function handleUpload() {
     const selected = await open({ multiple: true, title: t("applicationFilesTab.uploadTitle") });
     if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
+    uploadPaths(Array.isArray(selected) ? selected : [selected]);
+  }
 
-    if (paths.length === 1) {
+  /**
+   * Local paths, from the picker or from a drop - the two are the same thing
+   * by the time they get here, so the JAR warning guards both. That warning
+   * only makes sense for a single file: a drop of twenty is not somebody
+   * carefully replacing the server jar.
+   */
+  async function uploadPaths(paths: string[]) {
+    // Which of them are folders - asked once for the whole batch rather than
+    // inside the loop below.
+    const kinds = await Promise.all(paths.map((candidate) => localPathIsDirectory(candidate)));
+
+    // The jar warning is about replacing one file; a dropped folder is never
+    // that, so it goes straight through.
+    if (paths.length === 1 && !kinds[0]) {
       const localSrc = paths[0];
       const fileName = localSrc.split(/[/\\]/).pop() ?? localSrc;
       const targetPath = joinPath(path, fileName);
@@ -215,11 +300,16 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       runUpload(localSrc, targetPath);
       return;
     }
-    for (const localSrc of paths) {
+    for (const [index, localSrc] of paths.entries()) {
       const fileName = localSrc.split(/[/\\]/).pop() ?? localSrc;
-      runUpload(localSrc, joinPath(path, fileName));
+      runUpload(localSrc, joinPath(path, fileName), kinds[index]);
     }
   }
+
+  // Only while the file list is on screen: the editor panel takes over the
+  // whole tab, and dropping a file onto an open editor should not quietly
+  // upload it somewhere behind that editor.
+  const dragging = useFileDrop(uploadPaths, !openFile);
 
   async function handleJarUploadOnly() {
     if (!jarWarning) return;
@@ -301,6 +391,29 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
     }
   }
 
+  /**
+   * The row's callbacks, pinned.
+   *
+   * Every handler below closes over state this component re-renders on, so
+   * handing them straight to a memoised row would defeat the memo on the
+   * first poll. Reading them through a ref keeps the identity the row sees
+   * constant while the behaviour behind it stays current - the usual shape
+   * for an event callback that must not take part in memoisation.
+   */
+  const latest = useRef({ load, setOpenFile, runDownload, buildMenuItems, openContextMenu: contextMenu.open });
+  latest.current = { load, setOpenFile, runDownload, buildMenuItems, openContextMenu: contextMenu.open };
+
+  const handleOpenEntry = useCallback((entry: RemoteFileEntry) => {
+    if (entry.isDir) latest.current.load(entry.path);
+    else latest.current.setOpenFile(entry);
+  }, []);
+  const handleDownloadEntry = useCallback((entry: RemoteFileEntry) => void latest.current.runDownload(entry), []);
+  const buildRowMenuItems = useCallback((entry: RemoteFileEntry) => latest.current.buildMenuItems(entry), []);
+  const handleRowContextMenu = useCallback(
+    (event: ReactMouseEvent, entry: RemoteFileEntry) => latest.current.openContextMenu(event, latest.current.buildMenuItems(entry)),
+    [],
+  );
+
   /** Shared by the per-row "..." button and right-click - same actions
    * either way, just two different ways to reach them (the global
    * native-context-menu suppression in main.tsx means right-click would
@@ -373,7 +486,17 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
 
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card>
+      <Card className={`application-files-card ${dragging ? "application-files-card-dropping" : ""}`.trim()}>
+        {/* The drop target is the whole card rather than the list, so a drop
+            still lands when the directory is empty and the list is an empty
+            state instead of rows. */}
+        {dragging && (
+          <div className="application-files-drop" aria-hidden="true">
+            <Icon name="upload" size={28} />
+            <p className="application-files-drop-title">{t("applicationFilesTab.dropTitle")}</p>
+            <p className="application-files-drop-path">{path === ROOT_PATH ? "/" : `/${path}`}</p>
+          </div>
+        )}
         {loading ? (
           <SkeletonRows />
         ) : entries.length === 0 ? (
@@ -395,36 +518,15 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           ) : (
           <ul className="server-list">
             {visibleEntries.map((entry) => (
-              <li key={entry.path} className="server-list-item" onContextMenu={(e) => contextMenu.open(e, buildMenuItems(entry))}>
-                <div className="server-list-icon">
-                  <Icon name={entry.isDir ? "folder" : "file"} size={16} />
-                </div>
-                <button
-                  className="files-entry-name"
-                  title={entry.name}
-                  onClick={() => (entry.isDir ? load(entry.path) : setOpenFile(entry))}
-                >
-                  {entry.name}
-                  {entry.isSymlink && <Badge tone="neutral">{t("applicationFilesTab.symlink")}</Badge>}
-                </button>
-                <div className="application-files-entry-meta">
-                  {!entry.isDir && <span>{formatSize(entry.size)}</span>}
-                  {entry.modifiedAt && <span>{formatShortDate(entry.modifiedAt, i18n.language)}</span>}
-                  {entry.permissions !== undefined && <span>{formatOctal(entry.permissions)}</span>}
-                </div>
-                {!entry.isDir && (
-                  <IconButton
-                    icon="download"
-                    size="sm"
-                    title={t("applicationFilesTab.downloadAria", { name: entry.name })}
-                    onClick={() => runDownload(entry)}
-                  />
-                )}
-                {/* Built on open, not on render - see OverflowMenu's own note. This
-                    list can be two hundred rows, each with six translated
-                    menu labels nobody has asked to see. */}
-                <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={() => buildMenuItems(entry)} />
-              </li>
+              <FileRow
+                key={entry.path}
+                entry={entry}
+                language={i18n.language}
+                onOpen={handleOpenEntry}
+                onDownload={handleDownloadEntry}
+                onContextMenu={handleRowContextMenu}
+                buildMenuItems={buildRowMenuItems}
+              />
             ))}
           </ul>
           )}

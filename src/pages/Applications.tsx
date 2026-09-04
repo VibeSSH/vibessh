@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import { DndContext, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
+import { CardPointerSensor, SortableApplicationCard } from "@/components/applications/SortableApplicationCard";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { ApplicationCard } from "@/components/applications/ApplicationCard";
+import { ApplicationTabs } from "@/components/applications/ApplicationTabs";
 import { CreateApplicationWizard } from "@/components/applications/CreateApplicationWizard";
 import { DeleteApplicationDialog } from "@/components/applications/DeleteApplicationDialog";
 import {
@@ -38,7 +43,62 @@ import { errorMessage } from "@/services/tauri";
  */
 type GroupBy = "none" | "egg" | "runtimeType" | "server";
 const GROUP_BY_STORAGE_KEY = "vibessh.applications.groupBy";
+const ORDER_STORAGE_KEY = "vibessh.applications.order";
+
+/**
+ * How long a card has to be held before it is picked up, and how far the
+ * pointer may drift in that time.
+ *
+ * The card already answers a plain click by selecting itself, so a drag
+ * cannot start on press alone. The tolerance is what keeps a hand that is not
+ * perfectly still from cancelling the hold.
+ */
+const DRAG_HOLD_MS = 220;
+const DRAG_TOLERANCE_PX = 6;
 const RUNTIME_TYPE_ORDER: RuntimeType[] = ["docker", "systemd", "remoteProcess", "localProcess"];
+
+/**
+ * The order the user dragged their Applications into, as a list of ids.
+ *
+ * Kept on this machine rather than in the database: it is a preference about
+ * how one person likes to look at their own screen, not a property of the
+ * Applications themselves, and two people sharing a team should not be
+ * rearranging each other's grids.
+ */
+function loadOrder(): string[] {
+  try {
+    const stored = localStorage.getItem(ORDER_STORAGE_KEY);
+    if (!stored) return [];
+    const parsed: unknown = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    // Unreadable or not JSON - the natural order is a fine fallback, and
+    // there is nothing here worth reporting to anybody.
+    return [];
+  }
+}
+
+function saveOrder(order: string[]) {
+  try {
+    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order));
+  } catch {
+    // Storage unavailable. The order still holds for this session; it just
+    // will not survive a restart, which is not worth an error toast.
+  }
+}
+
+/**
+ * Applies the saved order, putting anything it does not mention at the end.
+ *
+ * New Applications appear last rather than in the middle, and one deleted
+ * elsewhere simply stops matching - so a stale saved order degrades into a
+ * partial one instead of hiding or duplicating anything.
+ */
+function applyOrder(applications: Application[], order: string[]): Application[] {
+  if (order.length === 0) return applications;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...applications].sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+}
 
 function loadGroupBy(): GroupBy {
   try {
@@ -125,6 +185,8 @@ export function Applications() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [groupBy, setGroupBy] = useState<GroupBy>(loadGroupBy);
+  const [order, setOrder] = useState<string[]>(loadOrder);
+  const sensors = useSensors(useSensor(CardPointerSensor, { activationConstraint: { delay: DRAG_HOLD_MS, tolerance: DRAG_TOLERANCE_PX } }));
 
   function reload() {
     listApplications()
@@ -156,7 +218,27 @@ export function Applications() {
     }
   }
 
-  const groups = useMemo(() => groupApplications(applications, groupBy, blueprints, servers, t), [applications, groupBy, blueprints, servers, t]);
+  const ordered = useMemo(() => applyOrder(applications, order), [applications, order]);
+  const groups = useMemo(() => groupApplications(ordered, groupBy, blueprints, servers, t), [ordered, groupBy, blueprints, servers, t]);
+
+  /**
+   * Moves a card, writing the result back as a full ordering.
+   *
+   * The saved list covers every Application, not just the group that was
+   * dragged in - otherwise the ones in other groups would have no rank and
+   * would all pile up at the end the moment anything moved.
+   */
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = ordered.map((application) => application.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from === -1 || to === -1) return;
+    const next = arrayMove(ids, from, to);
+    setOrder(next);
+    saveOrder(next);
+  }
 
   async function runAction(id: string, action: () => Promise<unknown>) {
     setActionError(null);
@@ -247,6 +329,10 @@ export function Applications() {
 
   return (
     <div className="page">
+      {/* Also here, not only inside an Application: this is the page people
+          land on, and the strip is what stops them walking the list again to
+          get back to what they were doing. */}
+      <ApplicationTabs />
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{t("applications.title")}</h1>
@@ -256,12 +342,16 @@ export function Applications() {
           {applications.length > 0 && (
             <label className="applications-group-by">
               <span className="form-label">{t("applications.groupByLabel")}</span>
-              <select className="form-input" value={groupBy} onChange={(e) => handleGroupByChange(e.target.value as GroupBy)}>
-                <option value="none">{t("applications.groupByNone")}</option>
-                <option value="egg">{t("applications.groupByEgg")}</option>
-                <option value="runtimeType">{t("applications.groupByRuntimeType")}</option>
-                <option value="server">{t("applications.groupByServer")}</option>
-              </select>
+              <Select
+                value={groupBy}
+                onChange={(value) => handleGroupByChange(value as GroupBy)}
+                items={[
+                  { value: "none", label: t("applications.groupByNone") },
+                  { value: "egg", label: t("applications.groupByEgg") },
+                  { value: "runtimeType", label: t("applications.groupByRuntimeType") },
+                  { value: "server", label: t("applications.groupByServer") },
+                ]}
+              />
             </label>
           )}
           <Button onClick={() => setWizardOpen(true)}>
@@ -281,10 +371,15 @@ export function Applications() {
         groups.map((group) => (
           <section key={group.key} className="applications-group">
             {group.label && <h2 className="applications-group-title">{group.label}</h2>}
-            <div className="applications-grid">
-              {group.applications.map((application) => (
+            {/* A context per group, so a card cannot be dragged into another
+                one. The groups are a way of looking at the list - by Node, by
+                image - not somewhere an Application can be moved to. */}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={group.applications.map((application) => application.id)} strategy={rectSortingStrategy}>
+                <div className="applications-grid">
+                  {group.applications.map((application) => (
+                    <SortableApplicationCard key={application.id} id={application.id}>
                 <ApplicationCard
-                  key={application.id}
                   application={application}
                   serverName={servers.find((s) => s.id === application.serverId)?.name}
                   busy={busyId === application.id}
@@ -300,8 +395,11 @@ export function Applications() {
                     setDeletingApplication(application);
                   }}
                 />
-              ))}
-            </div>
+                    </SortableApplicationCard>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </section>
         ))
       )}

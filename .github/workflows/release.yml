@@ -1,0 +1,104 @@
+# Builds a signed Windows installer and publishes it where the app can find
+# it.
+#
+# **Why the artifacts go to a second repository.** This one is private, and
+# GitHub serves release assets from a private repository only with an
+# Authorization header. An updater that needed one would mean shipping a token
+# inside the app - which is a token for the private source, handed to everyone
+# who installs it. `VibeSSH/vibessh-releases` is public and holds nothing but
+# installers and their manifest.
+#
+# **The signature is the part that matters.** `latest.json` carries a minisign
+# signature over the installer, checked against a public key compiled into the
+# app. Without it an update mechanism is remote code execution with extra
+# steps: anything able to answer the update URL could hand over an installer
+# of its own and the app would run it. The private half lives only in this
+# repository's secrets and never in the tree.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Buildable by hand for a dry run that publishes nothing.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build the installer but publish nothing
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The version the installer carries comes from tauri.conf.json, not from
+      # the tag. Checking they agree here turns a silent mismatch - an update
+      # the app can never see as newer - into a failed build.
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          if ($conf -ne $tag) {
+            Write-Error "tauri.conf.json says $conf, the tag says $tag"
+            exit 1
+          }
+          Write-Host "version $conf"
+
+      - name: Build and sign
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # No release is created here - this repository is private, so a
+          # release in it would be unreachable by the updater.
+          includeUpdaterJson: true
+          args: --verbose
+
+      - name: Collect what was built
+        id: artifacts
+        shell: pwsh
+        run: |
+          $bundle = "src-tauri/target/release/bundle"
+          $files = Get-ChildItem -Path $bundle -Recurse -Include *.exe, latest.json
+          if (-not $files) { Write-Error "nothing was produced under $bundle"; exit 1 }
+          New-Item -ItemType Directory -Force -Path dist-release | Out-Null
+          $files | ForEach-Object { Copy-Item $_.FullName dist-release/ -Force }
+          Get-ChildItem dist-release | ForEach-Object { Write-Host $_.Name $_.Length }
+
+      - name: Publish to the public releases repository
+        if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true
+        shell: pwsh
+        env:
+          # A token with write access to VibeSSH/vibessh-releases only. The
+          # workflow's own GITHUB_TOKEN cannot reach another repository.
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release create $tag (Get-ChildItem dist-release | ForEach-Object { $_.FullName }) `
+            --repo VibeSSH/vibessh-releases `
+            --title "VibeSSH $tag" `
+            --notes "Installer and update manifest for $tag. Source: private repository."

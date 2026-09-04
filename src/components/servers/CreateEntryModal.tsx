@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import "./AddServerModal.css";
@@ -91,13 +92,7 @@ export function CreateEntryModal({ mode, onClose, onCreate }: CreateEntryModalPr
             {mode === "file" && (
               <label className="form-field">
                 <span className="form-label">{t("filesPage.format")}</span>
-                <select className="form-input" value={format} onChange={(e) => setFormat(e.target.value)}>
-                  {FILE_FORMATS.map((f) => (
-                    <option key={f.label} value={f.extension}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
+                <Select value={format} onChange={setFormat} items={FILE_FORMATS.map((f) => ({ value: f.extension, label: f.label }))} />
               </label>
             )}
 

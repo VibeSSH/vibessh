@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
@@ -302,10 +303,14 @@ function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormM
             <div className="form-row">
               <label className="form-field form-field-narrow">
                 <span className="form-label">{t("databaseHosts.engine")}</span>
-                <select className="form-input" value={engine} onChange={(e) => setEngine(e.target.value as DatabaseEngine)}>
-                  <option value="mysql">MySQL</option>
-                  <option value="mariadb">MariaDB</option>
-                </select>
+                <Select
+                  value={engine}
+                  onChange={(value) => setEngine(value as DatabaseEngine)}
+                  items={[
+                    { value: "mysql", label: "MySQL" },
+                    { value: "mariadb", label: "MariaDB" },
+                  ]}
+                />
               </label>
               <label className="form-field form-field-grow">
                 <span className="form-label">{t("databaseHosts.host")}</span>
@@ -403,14 +408,14 @@ function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProp
             ) : (
               <label className="form-field">
                 <span className="form-label">{t("databaseHosts.phpmyadminApplication")}</span>
-                <select className="form-input" value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
-                  <option value="">{t("databaseHosts.phpmyadminNone")}</option>
-                  {applications.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  value={applicationId}
+                  onChange={setApplicationId}
+                  items={[
+                    { value: "", label: t("databaseHosts.phpmyadminNone") },
+                    ...applications.map((a) => ({ value: a.id, label: a.name })),
+                  ]}
+                />
               </label>
             )}
             <div className="form-actions">

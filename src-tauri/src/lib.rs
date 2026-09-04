@@ -106,6 +106,8 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
         .manage(PairingSession::new())
         .manage(SshSessionManager::new())
@@ -245,6 +247,7 @@ pub fn run() {
             commands::application_commands::kill_application,
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,
+            commands::application_commands::rename_application,
             commands::application_commands::get_application_logs,
             commands::application_commands::write_application_console,
             commands::application_commands::get_application_health,
@@ -272,6 +275,7 @@ pub fn run() {
             commands::application_file_commands::list_application_files,
             commands::application_file_commands::get_application_file_metadata,
             commands::application_file_commands::read_application_file,
+            commands::application_file_commands::read_application_file_window,
             commands::application_file_commands::write_application_file,
             commands::application_file_commands::save_application_file,
             commands::application_file_commands::create_application_directory,
@@ -281,6 +285,8 @@ pub fn run() {
             commands::application_file_commands::set_application_file_permissions,
             commands::application_file_commands::download_application_file,
             commands::application_file_commands::upload_application_file,
+            commands::application_file_commands::upload_application_directory,
+            commands::application_file_commands::local_path_is_directory,
             commands::application_file_commands::cancel_application_file_transfer,
             commands::application_file_commands::extract_application_archive,
             commands::application_file_commands::list_application_file_history,
@@ -336,9 +342,11 @@ pub fn run() {
             commands::file_commands::list_remote_directory,
             commands::file_commands::create_remote_directory,
             commands::file_commands::read_remote_file,
+            commands::file_commands::read_remote_file_window,
             commands::file_commands::write_remote_file,
             commands::file_commands::download_remote_file,
             commands::file_commands::upload_remote_file,
+            commands::file_commands::upload_remote_directory,
             commands::file_commands::rename_remote_path,
             commands::file_commands::delete_remote_path,
             commands::file_commands::set_remote_permissions,

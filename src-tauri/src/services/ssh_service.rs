@@ -142,6 +142,24 @@ pub async fn read_file(
     session.read_file(path).await
 }
 
+/// One window of a file on a Node, for looking at one too large to load
+/// whole. The same shape - and the same caveat - as the Application-files
+/// version: this is a slice, and writing a partial buffer back would truncate
+/// the file.
+pub async fn read_file_window(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    path: &str,
+    offset: u64,
+    len: usize,
+) -> AppResult<crate::services::FileWindow> {
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    let total_size = session.symlink_metadata(path).await?.size;
+    let bytes = session.read_file_range(path, offset, len).await?;
+    Ok(crate::services::FileWindow { next_offset: offset + bytes.len() as u64, bytes, total_size })
+}
+
 pub async fn write_file(
     repo: &ServerRepository,
     sessions: &SshSessionManager,
@@ -183,6 +201,48 @@ pub async fn upload_file(
 ) -> AppResult<()> {
     let session = get_or_connect(repo, sessions, server_id).await?;
     session.upload_file(local_path, remote_path).await
+}
+
+/// Uploads a whole local directory into `remote_path`, keeping its shape.
+///
+/// Shares the local half of the work with the Application-files upload -
+/// `crate::files::plan_directory_upload` decides what to send, and only the
+/// remote calls differ between the two. See that function for why symlinks
+/// are skipped rather than followed.
+///
+/// An existing directory is not an error: dropping a folder onto one that is
+/// already there merges into it, the way copying a directory does everywhere
+/// else.
+pub async fn upload_directory(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    local_path: &Path,
+    remote_path: &str,
+) -> AppResult<()> {
+    let name = local_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| AppError::InvalidInput(format!("{} has no name to copy", local_path.display())))?;
+    let remote_root = crate::files::join_remote(remote_path, &name);
+
+    let (directories, files) = crate::files::plan_directory_upload(local_path, &remote_root).await?;
+    let session = get_or_connect(repo, sessions, server_id).await?;
+
+    // Parents before children - the walk is breadth-first, so its order is
+    // already right.
+    for directory in &directories {
+        // `symlink_metadata` rather than a stat that follows: this only needs
+        // to know whether something is already there under that name.
+        if session.create_directory(directory).await.is_err() && session.symlink_metadata(directory).await.is_err() {
+            return Err(AppError::Connection(format!("couldn't create {directory}")));
+        }
+    }
+
+    for file in &files {
+        session.upload_file(&file.local, &file.remote).await?;
+    }
+    Ok(())
 }
 
 /// An `ApplicationFileProvider` rooted at "/" - not jailed to anything,

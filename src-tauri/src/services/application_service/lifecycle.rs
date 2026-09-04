@@ -161,6 +161,38 @@ pub async fn refresh_application_status(
     .await
 }
 
+/// The longest an Application name may be.
+///
+/// Not a storage limit - the column takes anything - but a display one: past
+/// this the name stops fitting anywhere it is shown, and the DNS label
+/// derived from it is capped at 63 characters regardless.
+const MAX_APPLICATION_NAME: usize = 60;
+
+/// Renames an Application.
+///
+/// **What this changes beyond the label.** The name is what
+/// `docker::network_alias` turns into the hostname other Applications use to
+/// reach this one on their shared private network. Renaming therefore changes
+/// that hostname - but only from the next restart, since the alias is applied
+/// when the container is created. An Application that something else connects
+/// to by name keeps answering under the old one until it is restarted, and
+/// under the new one afterwards.
+///
+/// Nothing else moves: the container is named from the UUID, not the name,
+/// so there is no orphaned container and no data to migrate.
+pub fn rename_application(repo: &ApplicationRepository, id: Uuid, name: &str) -> AppResult<ApplicationDetail> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::InvalidInput("an application needs a name".into()));
+    }
+    if trimmed.chars().count() > MAX_APPLICATION_NAME {
+        return Err(AppError::InvalidInput(format!(
+            "that name is longer than {MAX_APPLICATION_NAME} characters"
+        )));
+    }
+    repo.rename(id, trimmed)
+}
+
 pub async fn application_resource_usage(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,

@@ -1,0 +1,21 @@
+/*
+ * The card being dragged.
+ *
+ * `touch-action: none` is what lets a hold-and-drag work at all on a
+ * touchscreen: without it the browser claims the gesture as a scroll before
+ * the sensor's hold has elapsed.
+ */
+.sortable-card {
+  touch-action: none;
+}
+
+/* Lifted out of the grid rather than merely tinted: the card follows the
+   pointer, so it has to sit above the ones it passes over, and the shadow is
+   what says it is off the surface. */
+.sortable-card-dragging {
+  position: relative;
+  z-index: 3;
+  opacity: 0.9;
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 55%);
+  cursor: grabbing;
+}

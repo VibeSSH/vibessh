@@ -31,10 +31,12 @@ describe("the system prompt's list of screens", () => {
   const start = unwrapped.indexOf(marker);
   const list = start === -1 ? "" : unwrapped.slice(start + marker.length, unwrapped.indexOf(".", start + marker.length));
 
-  const labels = sidebarGroups.flatMap((group) => group.items).map((item) => ({
-    id: item.id,
-    label: (en.nav as Record<string, string>)[item.labelKey.replace(/^nav\./, "")],
-  }));
+  const labels = sidebarGroups
+    .flatMap((group) => group.items)
+    .map((item) => ({
+      id: item.id,
+      label: (en.nav as Record<string, string>)[item.labelKey.replace(/^nav\./, "")],
+    }));
 
   it("still contains the enumeration this test is about", () => {
     expect(start, `"${marker}" is gone from the prompt`).toBeGreaterThan(-1);

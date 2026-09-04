@@ -64,10 +64,13 @@ describe("DeleteApplicationDialog", () => {
     expect(body).toMatch(/container/);
     expect(body).toMatch(/databases/);
     expect(body).toMatch(/firewall/);
-    expect(body).toMatch(/can't be undone/);
-    // Files are deliberately kept - saying otherwise would be a lie in the
-    // more alarming direction.
-    expect(body).toMatch(/working directory are kept/);
+    expect(body).toMatch(/cannot be undone/);
+    // The body used to promise "files in its working directory are kept".
+    // That was true while keeping them was the only behaviour; it became a
+    // sentence contradicting the option three lines below it, so the promise
+    // moved out of the prose and into the checkbox - which is unticked, and
+    // has its own test above.
+    expect(body).not.toMatch(/working directory/);
   });
 
   it("confirms when the destructive button is pressed", async () => {

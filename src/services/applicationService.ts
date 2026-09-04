@@ -74,6 +74,17 @@ export function deleteApplication(id: string, removeFiles = false): Promise<Appl
 }
 
 /** Re-renders `runtimeConfig` from the blueprint after merging `fieldValues` on top of whatever was stored at creation (or the last edit) - see the Rust `update_application_config`'s own doc comment. A restart is required for a running process to actually pick up the new config, same as an uploaded jar replacement. */
+/**
+ * Renames an Application.
+ *
+ * The name is also the hostname other Applications resolve this one by on
+ * their shared private network, and that follows the new name only from the
+ * next restart - see the Rust side for why.
+ */
+export function renameApplication(id: string, name: string): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("rename_application", { id, name });
+}
+
 export function updateApplicationConfig(id: string, fieldValues: Record<string, unknown>): Promise<ApplicationDetail> {
   return callCommand<ApplicationDetail>("update_application_config", { id, fieldValues });
 }

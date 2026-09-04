@@ -65,17 +65,28 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
    * exactly one source ever fills the buffer.
    */
   const [source, setSource] = useState<"deciding" | "stream" | "poll">("deciding");
+  // Read by the reconnect below, which lives inside an effect and would
+  // otherwise see the line count as it was when that effect first ran.
+  const lineCountRef = useRef(0);
+  /** Why the last read failed, shown only while nothing has ever arrived. */
+  const [readFailure, setReadFailure] = useState<string | null>(null);
   const streaming = source === "stream";
 
   const poll = useCallback(async () => {
     try {
-      setLines(await getApplicationLogs(applicationId, TAIL_LINES));
-    } catch {
-      // The Overview tab already surfaces the application's own load error
-      // elsewhere - a failed poll here just leaves the last-known output in
-      // place rather than piling on a second error banner.
+      const fetched = await getApplicationLogs(applicationId, TAIL_LINES);
+      lineCountRef.current = fetched.length;
+      setLines(fetched);
+      setReadFailure(null);
+    } catch (err) {
+      // A failed poll leaves the last-known output in place rather than
+      // piling on a second error banner - the Overview tab already surfaces
+      // the application's own load error. But when nothing has *ever*
+      // arrived, that silence renders as "no logs yet", which is a different
+      // claim and a false one. The reason is kept for that case only.
+      setReadFailure(errorMessage(err, t));
     }
-  }, [applicationId]);
+  }, [applicationId, t]);
 
   // Only while there is no stream. Running both would deliver every line
   // twice: the follow pushes it, and the next poll re-reads the same tail.
@@ -96,10 +107,16 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     /**
      * Opens one stream.
      *
-     * `seedTail` is 200 the first time and 0 on every reconnect. A follow
-     * asks the Node for `--tail N` so a console does not open empty, but a
-     * reconnect already has those lines on screen - replaying them would
-     * repeat the whole window each time the transport blinked.
+     * `seedTail` is the history to ask the Node for. Full on the first
+     * connect, and on any reconnect that has nothing on screen; zero only
+     * when there is already a window to append to, since replaying it would
+     * repeat the whole thing each time the transport blinked.
+     *
+     * That condition used to be "is this a reconnect", which is not the same
+     * question: a stream that dies before delivering a line leaves an empty
+     * buffer, and asking for zero then shows nothing at all until the
+     * container writes something new - on a server that has finished
+     * booting, that is a console labelled "live" and containing nothing.
      */
     async function open(seedTail: number) {
       const followId = crypto.randomUUID();
@@ -111,7 +128,9 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
         // unbounded array is a memory leak with a scrollbar.
         setLines((previous) => {
           const next = [...previous, line];
-          return next.length > TAIL_LINES ? next.slice(next.length - TAIL_LINES) : next;
+          const capped = next.length > TAIL_LINES ? next.slice(next.length - TAIL_LINES) : next;
+          lineCountRef.current = capped.length;
+          return capped;
         });
       });
 
@@ -173,7 +192,8 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       attempt += 1;
       setSource("deciding");
       retryTimer = window.setTimeout(() => {
-        if (!cancelled) void open(0);
+        // Nothing on screen means nothing to duplicate, so ask for history.
+        if (!cancelled) void open(lineCountRef.current > 0 ? 0 : TAIL_LINES);
       }, delay);
     }
 
@@ -236,7 +256,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       </div>
       <pre className="application-console-output" ref={outputRef} onScroll={handleOutputScroll}>
         {lines.length === 0
-          ? t("applicationConsole.empty")
+          ? (readFailure ?? t("applicationConsole.empty"))
           : // One element per line rather than one joined string, so each can
             // carry its own severity. Keyed by index because these lines are
             // an append-only window with no identity of their own - two

@@ -31,6 +31,8 @@ const ICON_NAMES = [
   "chevron-left",
   "chevron-right",
   "chevron-down",
+  "chevron-up",
+  "external-link",
   "chevrons-left",
   "chevrons-right",
   "plug",

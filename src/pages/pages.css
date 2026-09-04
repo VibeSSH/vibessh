@@ -146,11 +146,41 @@
   color: var(--text-primary);
 }
 
-.application-card-check {
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
-  margin-right: 2px;
-  accent-color: var(--accent);
-  cursor: pointer;
+/*
+ * Switching between Applications.
+ *
+ * The tab strip and the title stay put - the strip because it is the thing
+ * being clicked, the title because the name is known from the strip before
+ * the Application loads. Only the body below them changes, and it arrives
+ * rather than snapping in.
+ */
+.page-switch-fade {
+  animation: page-switch-fade-in 140ms ease-out;
+}
+
+@keyframes page-switch-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Respects the system setting: the movement is decoration, the content is
+   what matters. */
+@media (prefers-reduced-motion: reduce) {
+  .page-switch-fade {
+    animation: none;
+  }
+}
+
+/* Nazwa aplikacji i przycisk zmiany nazwy w jednej linii - ikona przy tytule,
+   a nie pod nim, bo dotyczy właśnie jego. */
+.application-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

@@ -6,6 +6,22 @@
   gap: 16px;
 }
 
+/* Każda preferencja po pierwszej odsuwa się od poprzedniej i dostaje kreskę.
+   Reguła na rodzeństwie, a nie na pojedynczej klasie, żeby następna dołożona
+   preferencja była oddzielona bez dopisywania czegokolwiek. */
+.settings-preference-row + .settings-preference-row {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/* Nagłówek nad czymś, co zajmuje całą szerokość pod nim - opis nie ma z czym
+   dzielić linii, więc nie próbuje. */
+.settings-preference-row-stacked {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
 .settings-preference-label {
   margin: 0 0 2px;
   font-size: 13px;

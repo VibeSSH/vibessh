@@ -10,6 +10,41 @@
   gap: 10px;
 }
 
+/*
+ * The whole card is the selection target where the list offers one - the
+ * first version used only the header, so clicking the action row or the
+ * padding did nothing, which is most of the card refusing a click it looks
+ * like it accepts.
+ */
+.application-card-selectable {
+  cursor: pointer;
+}
+
+.application-card-selectable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The controls keep their own cursor - the gaps around them are card, and
+   selectable like the rest of it. */
+.application-card-selectable .application-card-actions button {
+  cursor: pointer;
+}
+
+/*
+ * Selected.
+ *
+ * Red rather than the accent, because selection in this list leads exactly
+ * one place - the removal bar at the bottom - so "these are the ones about
+ * to go" is what the colour is actually saying. The ring is drawn with
+ * `box-shadow` rather than a border so the card does not change size when
+ * it is picked, which would shift every card after it in the grid.
+ */
+.application-card-selected {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
 .application-card-icon {
   display: flex;
   align-items: center;

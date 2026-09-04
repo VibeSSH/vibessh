@@ -1,0 +1,144 @@
+/*
+ * The dropdown, drawn by the app rather than by Windows.
+ *
+ * The trigger deliberately matches `.form-input`: a select and a text field
+ * sit next to each other in every form here, and two controls of different
+ * heights in one row is the first thing an eye catches.
+ */
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-trigger:hover:not([data-disabled]) {
+  border-color: var(--border-hover);
+}
+
+.select-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.select-trigger[data-disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* The placeholder is a value that is not yet chosen, so it reads as absent
+   rather than as an option someone picked. */
+.select-trigger [data-placeholder] {
+  color: var(--text-tertiary);
+}
+
+/* A long node or application name shortens rather than stretching the
+   trigger past whatever width the page gave it. */
+.select-value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-trigger-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/*
+ * The list.
+ *
+ * `--radix-select-content-available-height` is the room the primitive
+ * measured between the trigger and the screen edge; using it means a long
+ * list scrolls inside itself instead of running off the window.
+ */
+.select-content {
+  /* The same tier as Tooltip, OverflowMenu and RowPicker. A dropdown is very
+     often opened from inside a modal, and anything below `--z-modal` (100)
+     paints behind that modal's own opaque panel - which is exactly what a
+     hardcoded 60 here did. */
+  z-index: var(--z-modal-popover);
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 45%);
+}
+
+.select-viewport {
+  padding: 4px;
+}
+
+.select-group-label {
+  padding: 6px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+/* Radix marks the item under the keyboard or pointer with `data-highlighted`
+   - one state for both, which is what keeps arrow keys and the mouse from
+   disagreeing about where you are. */
+.select-item[data-highlighted] {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.select-item[data-state="checked"] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.select-item[data-disabled] {
+  color: var(--text-tertiary);
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Reserved whether or not the tick is drawn, so labels do not shift as the
+   selection moves. */
+.select-item-check {
+  display: flex;
+  flex-shrink: 0;
+  width: 13px;
+  color: var(--accent);
+}
+
+.select-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  cursor: default;
+}

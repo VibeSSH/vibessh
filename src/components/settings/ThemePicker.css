@@ -1,0 +1,110 @@
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-3);
+}
+
+.theme-swatch-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.theme-swatch-card:hover {
+  border-color: var(--border-hover);
+}
+.theme-swatch-card-active {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
+/* The swatches are painted from the theme's own values rather than from the
+   live tokens, so a card shows what it would look like, not what is on
+   screen now. */
+.theme-swatch-row {
+  display: flex;
+  gap: 4px;
+}
+
+.theme-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid rgb(0 0 0 / 35%);
+}
+
+.theme-swatch-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.theme-swatch-credit {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.theme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.theme-editor-group-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.theme-editor-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.theme-editor-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The native colour input draws its own chrome; stripping it back to the
+   swatch keeps a row of them from looking like a row of buttons. */
+.theme-editor-field input[type="color"] {
+  width: 40px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-hover);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.theme-editor-token {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}

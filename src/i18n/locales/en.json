@@ -247,7 +247,11 @@
     "workingDirectory": "Working directory",
     "noPorts": "No ports configured.",
     "cpuChartLabel": "CPU use over the last few minutes, now {{value}} percent",
-    "ramChartLabel": "Memory use over the last few minutes, now {{value}} megabytes"
+    "ramChartLabel": "Memory use over the last few minutes, now {{value}} megabytes",
+    "renameTitle": "Rename application",
+    "renameLabel": "Name",
+    "renameAria": "Rename the application {{name}}",
+    "renameNote": "Applications linked to this one find it by this name on their private network. The new name reaches them only after a restart."
   },
   "applicationFileEditor": {
     "backAria": "Back to the file list",
@@ -264,7 +268,9 @@
     "savedToast": "Saved \"{{name}}\".",
     "saving": "Saving…",
     "searchAria": "Search in file (Ctrl+F)",
-    "tooLarge": "File is too large to edit directly."
+    "windowNote": "This file is too large to edit, so it is loaded a part at a time for reading. {{loaded}} of {{total}} loaded.",
+    "loadMore": "Load more",
+    "windowLoading": "Loading…"
   },
   "applicationFilesTab": {
     "loadError": "Couldn't load files.",
@@ -275,6 +281,7 @@
     "newFile": "New file",
     "upload": "Upload",
     "uploadTitle": "Upload files",
+    "dropTitle": "Drop files to upload",
     "uploadError": "Couldn't upload the file.",
     "downloadAria": "Download {{name}}",
     "downloadTitle": "Download file",
@@ -609,11 +616,11 @@
   },
   "deleteApplicationDialog": {
     "title": "Delete application",
-    "body": "Delete <1>{{name}}</1>? This also removes its container, its databases, its firewall rules and its Node account. Files in its working directory are kept. This can't be undone.",
+    "body": "Delete <1>{{name}}</1>? This also removes its container, its databases, its firewall rules and its Node account. This cannot be undone.",
     "removeFiles": "Also remove the application's files",
     "removeFilesNote": "The working directory - world, plugins, configuration. This cannot be undone. Tick it if you are about to import this server again: copying merges into an existing directory rather than replacing it.",
     "titleMany_other": "Remove {{count}} applications",
-    "bodyMany_other": "Remove <1>{{count}}</1> applications? These: {{names}}. Each is torn down: its container, firewall rules, Node account and its databases."
+    "bodyMany_other": "Remove <1>{{count}}</1> applications? These: {{names}}. Each is torn down: its container, firewall rules, Node account and its databases. This cannot be undone."
   },
   "deleteDialog": {
     "title": "Remove server",
@@ -684,7 +691,9 @@
     "savedToast": "Saved {{name}}",
     "saving": "Saving...",
     "searchAria": "Search in file (Ctrl+F)",
-    "tooLarge": "This file is larger than 1 MB - too large to edit here. Use the terminal to work with it instead."
+    "windowNote": "This file is too large to edit, so it is loaded a part at a time for reading. {{loaded}} of {{total}} loaded.",
+    "loadMore": "Load more",
+    "windowLoading": "Loading…"
   },
   "fileHistory": {
     "title": "Version history - {{name}}",
@@ -708,6 +717,7 @@
     "emptyTitle": "Empty directory",
     "emptyDescription": "Nothing here.",
     "uploadedToast": "Uploaded {{name}}",
+    "dropTitle": "Drop files to upload",
     "downloadedToast": "Downloaded {{name}}",
     "createdFolderToast": "Created {{name}}",
     "createdFileToast": "Created {{name}}",
@@ -1677,5 +1687,40 @@
     "applyMachines": "Apply and rebuild the plan",
     "noDatabaseHosts": "These servers have databases, but VibeSSH has no database host yet, so there is nowhere to move them to.",
     "noDatabaseHostsLink": "Add one under Databases"
+  },
+  "applicationTabs": {
+    "close": "Close the {{name}} tab",
+    "label": "Open applications"
+  },
+  "theme": {
+    "title": "Theme",
+    "description": "The interface colours. Everything else is computed from them.",
+    "customName": "Custom",
+    "edit": "Edit colours",
+    "editClose": "Close editor",
+    "copy": "Copy theme",
+    "paste": "Paste theme",
+    "save": "Save as custom",
+    "importInvalid": "That is not a valid theme. A JSON object with every colour as a hex value is expected.",
+    "editorNote": "Changes show immediately. Save to keep them after the app closes.",
+    "groupSurfaces": "Surfaces",
+    "groupText": "Text",
+    "groupAccent": "Accent and borders",
+    "groupStatus": "Status",
+    "tokenCount": "A theme is {{count}} colours. Spacing, radii and layering are not themable - a bad colour is ugly, a changed layout can be unfixable by eye."
+  },
+  "update": {
+    "title": "Updates",
+    "checking": "Checking…",
+    "upToDate": "You are on the latest version.",
+    "checkNow": "Check now",
+    "checkAria": "Check for updates",
+    "available": "Version {{version}} is available",
+    "availableAria": "Update to version {{version}} is available",
+    "restartWarning": "Installing closes and reopens the app. Open terminals will be disconnected.",
+    "install": "Download and install",
+    "downloading": "Downloading…",
+    "downloadingPercent": "Downloading… {{percent}}%",
+    "ready": "Done. The app will restart."
   }
 }

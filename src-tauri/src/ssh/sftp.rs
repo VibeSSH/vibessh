@@ -7,7 +7,7 @@ use std::path::Path;
 
 use russh_sftp::protocol::OpenFlags;
 use tokio::fs::File as LocalFile;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use vibessh_protocol::RemoteFileEntry;
 
@@ -191,6 +191,36 @@ impl SshSession {
 
     /// The upload counterpart of `download_file` - same streaming-copy
     /// reasoning, same create-or-truncate "save" semantics as `write_file`.
+    /// Reads at most `len` bytes starting at `offset`.
+    ///
+    /// Short reads are normal here rather than an error: near the end of the
+    /// file there is simply less than `len` left, and that is how the caller
+    /// learns it has reached the end.
+    pub async fn read_file_range(&self, path: &str, offset: u64, len: usize) -> AppResult<Vec<u8>> {
+        let sftp = self.sftp().await?;
+        let mut file = sftp
+            .open(path)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open {path}: {err}")))?;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't seek in {path}: {err}")))?;
+        let mut buf = vec![0u8; len];
+        let mut filled = 0usize;
+        while filled < len {
+            let read = file
+                .read(&mut buf[filled..])
+                .await
+                .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")))?;
+            if read == 0 {
+                break;
+            }
+            filled += read;
+        }
+        buf.truncate(filled);
+        Ok(buf)
+    }
+
     pub async fn upload_file(&self, local_path: &Path, remote_path: &str) -> AppResult<()> {
         let mut local = LocalFile::open(local_path)
             .await

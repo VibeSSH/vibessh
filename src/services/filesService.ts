@@ -28,6 +28,11 @@ export function uploadRemoteFile(serverId: string, localPath: string, remotePath
   return callCommand<void>("upload_remote_file", { serverId, localPath, remotePath });
 }
 
+/** Uploads a whole local folder into `remotePath`, keeping its shape. */
+export function uploadRemoteDirectory(serverId: string, localPath: string, remotePath: string): Promise<void> {
+  return callCommand<void>("upload_remote_directory", { serverId, localPath, remotePath });
+}
+
 /** Covers both "Rename" (same parent, new name) and "Move" (new parent) - the same underlying primitive either way, the caller just builds a different `to`. */
 export function renameRemotePath(serverId: string, from: string, to: string): Promise<void> {
   return callCommand<void>("rename_remote_path", { serverId, from, to });
@@ -46,6 +51,23 @@ export function extractRemoteArchive(serverId: string, archivePath: string, dest
 /** Compresses `paths` into a new `.zip` written to `destinationPath`. */
 export function compressRemotePaths(serverId: string, paths: string[], destinationPath: string): Promise<void> {
   return callCommand<void>("compress_remote_paths", { serverId, paths, destinationPath });
+}
+
+/** One window of a file: the bytes, the file's current size, and where the next window starts. */
+export interface FileWindow {
+  bytes: number[];
+  totalSize: number;
+  nextOffset: number;
+}
+
+/**
+ * Reads part of a file, for looking at one too big to load whole.
+ *
+ * A slice, not the file. Anything built on it stays read-only until the whole
+ * file is in - writing a partial buffer back would truncate the rest.
+ */
+export function readRemoteFileWindow(serverId: string, path: string, offset: number, length: number): Promise<FileWindow> {
+  return callCommand<FileWindow>("read_remote_file_window", { serverId, path, offset, length });
 }
 
 export function bytesToText(bytes: number[]): string {

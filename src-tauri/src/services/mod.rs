@@ -31,7 +31,9 @@ pub use application_files_service::{
     download_file as download_application_file, extract_archive as extract_application_archive, get_metadata as get_application_file_metadata,
     list_directory as list_application_files, list_file_history, read_file_for_editor as read_application_file, rename as rename_application_file,
     restore_file_history, save_file as save_application_file, set_permissions as set_application_file_permissions,
-    upload_file as upload_application_file, write_file as write_application_file, FileHistoryVersion,
+    read_file_window as read_application_file_window, FileWindow,
+    upload_directory as upload_application_directory, upload_file as upload_application_file,
+    write_file as write_application_file, FileHistoryVersion,
 };
 pub use ai_service::{
     ai_config_view, ai_quota, build_ai_context, resolve_provider as resolve_ai_provider, run_turn as run_ai_turn,
@@ -39,6 +41,7 @@ pub use ai_service::{
 };
 pub use application_service::{
     add_application_port, application_console_write, application_health_check, application_logs, application_resource_usage,
+    rename_application,
     follow_application_logs,
     refresh_vibe_network_bind_addresses,
     create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
@@ -137,6 +140,7 @@ pub use ssh_service::{
     compress_paths as compress_remote_paths, container_logs as server_container_logs, create_directory as create_remote_directory,
     delete_path as delete_remote_path, disable_service as disable_server_service,
     download_file as download_remote_file, enable_service as enable_server_service,
+    read_file_window as read_remote_file_window,
     execute_command as execute_ssh_command, extract_archive as extract_remote_archive, get_metrics as get_server_metrics,
     list_containers as list_server_containers,
     list_directory as list_remote_directory, list_processes as list_server_processes,
@@ -144,5 +148,6 @@ pub use ssh_service::{
     remove_container as remove_server_container, rename_path as rename_remote_path, restart_container as restart_server_container,
     restart_service as restart_server_service, set_permissions as set_remote_permissions, start_container as start_server_container,
     start_port_forward, start_service as start_server_service, stop_container as stop_server_container, stop_service as stop_server_service,
-    test_connection as test_ssh_connection, upload_file as upload_remote_file, write_file as write_remote_file,
+    test_connection as test_ssh_connection, upload_directory as upload_remote_directory,
+    upload_file as upload_remote_file, write_file as write_remote_file,
 };

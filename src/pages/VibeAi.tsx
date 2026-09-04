@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -8,6 +8,7 @@ import { AiUsageModal } from "@/components/ai/AiUsageModal";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select, type SelectItem } from "@/components/ui/Select";
 import { getAiConfig, getAiQuota, previewAiContext } from "@/services/aiService";
 import { listApplications } from "@/services/applicationService";
 import { queryKeys } from "@/services/queryKeys";
@@ -135,7 +136,36 @@ export function VibeAi() {
     void send(question);
   }
 
-  /// The subject is encoded as "kind:id" because a <select> carries one
+  /// The subjects a Diagnose turn can be about, grouped the way the sidebar
+  /// groups them. A context seeded by a quick action is listed even when it
+  /// is in neither list - the lists may not have loaded, and without its own
+  /// entry the picker would read as empty while a subject was in fact
+  /// attached to the turn.
+  const subjectItems = useMemo<SelectItem[]>(() => {
+    const items: SelectItem[] = [{ value: "", label: t("vibeAi.subjectNone") }];
+    const selected = context ? `${context.kind}:${context.id}` : "";
+    const listed =
+      servers.some((server) => `node:${server.id}` === selected) ||
+      applications.some((application) => `application:${application.id}` === selected);
+    if (context && !listed) {
+      items.push({ value: selected, label: contextLabel ?? t("vibeAi.contextUnnamed") });
+    }
+    if (servers.length > 0) {
+      items.push({
+        label: t("vibeAi.subjectNodes"),
+        options: servers.map((server) => ({ value: `node:${server.id}`, label: server.name })),
+      });
+    }
+    if (applications.length > 0) {
+      items.push({
+        label: t("vibeAi.subjectApplications"),
+        options: applications.map((application) => ({ value: `application:${application.id}`, label: application.name })),
+      });
+    }
+    return items;
+  }, [applications, context, contextLabel, servers, t]);
+
+  /// The subject is encoded as "kind:id" because the picker carries one
   /// string, and both halves are needed to build the reference.
   function handleSubjectChange(value: string) {
     if (value === "") {
@@ -224,41 +254,13 @@ export function VibeAi() {
                 * cure was to leave, find the Node and come back through a
                 * quick action. The same spot now picks the subject. */}
               {mode === "diagnose" && (
-                <select
-                  className="form-input vibe-ai-subject"
+                <Select
+                  className={`vibe-ai-subject ${context ? "" : "vibe-ai-subject-empty"}`.trim()}
                   value={context ? `${context.kind}:${context.id}` : ""}
-                  onChange={(event) => handleSubjectChange(event.target.value)}
+                  onChange={handleSubjectChange}
                   aria-label={t("vibeAi.subjectLabel")}
-                  data-empty={context ? undefined : "true"}
-                >
-                  <option value="">{t("vibeAi.subjectNone")}</option>
-                  {/* A context seeded by a quick action, when the lists did
-                    * not load. Without it the picker would read as empty
-                    * while a subject was in fact attached to the turn. */}
-                  {context &&
-                    !servers.some((server) => `node:${server.id}` === `${context.kind}:${context.id}`) &&
-                    !applications.some((application) => `application:${application.id}` === `${context.kind}:${context.id}`) && (
-                      <option value={`${context.kind}:${context.id}`}>{contextLabel ?? t("vibeAi.contextUnnamed")}</option>
-                    )}
-                  {servers.length > 0 && (
-                    <optgroup label={t("vibeAi.subjectNodes")}>
-                      {servers.map((server) => (
-                        <option key={server.id} value={`node:${server.id}`}>
-                          {server.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {applications.length > 0 && (
-                    <optgroup label={t("vibeAi.subjectApplications")}>
-                      {applications.map((application) => (
-                        <option key={application.id} value={`application:${application.id}`}>
-                          {application.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                  items={subjectItems}
+                />
               )}
               {mode === "diagnose" && context && (
                 <Button variant="secondary" size="sm" onClick={() => void togglePreview()} aria-expanded={previewOpen}>

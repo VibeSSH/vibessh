@@ -17,33 +17,44 @@
 
 .terminal-tabs {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
   flex-wrap: wrap;
 }
 
+/*
+ * Free-standing pills, matching the open-Applications strip.
+ *
+ * They used to be drawn as attached tabs - rounded on top only, no bottom
+ * border - which only works when something sits flush underneath. The page's
+ * own 20px gap and the terminal's fully rounded panel meant nothing ever did,
+ * so the tab hung over a rounded box with an open edge pointing at nothing.
+ */
 .terminal-tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px 6px 12px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 5px 8px 5px 12px;
+  border-radius: var(--radius-sm);
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-bottom: none;
   color: var(--text-secondary);
   font-size: 12px;
-  font-family: var(--font-mono);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .terminal-tab:hover {
   color: var(--text-primary);
-}
-.terminal-tab-active {
-  background: var(--surface-bg);
-  color: var(--accent);
   border-color: var(--border-hover);
+}
+
+/* Marked by its border and surface rather than by coloured text: the label
+   was in the accent colour and a monospace face, which read as terminal
+   output rather than as the name of a tab. */
+.terminal-tab-active {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 /* The tab's own selectable label - a real `<button>`, sibling to (not

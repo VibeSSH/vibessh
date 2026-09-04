@@ -1,6 +1,41 @@
 @import "tailwindcss";
 
 /*
+ * EXPERIMENT (see /ui-proof) - shadcn/ui's token vocabulary aliased onto this
+ * app's own. Their components are written against `bg-primary`,
+ * `text-foreground`, `border-input` and so on; this is the entire adapter
+ * that makes them come out in VibeSSH's palette instead of shadcn's default
+ * slate. It defines new Tailwind utilities and changes nothing that already
+ * exists - remove the block to undo it.
+ *
+ * The mapping is a judgement in a few places. shadcn's `accent` is the
+ * hover surface, not an accent colour, so it points at `--surface-3` rather
+ * than at our teal; our teal is their `primary`.
+ */
+@theme inline {
+  --color-background: var(--surface-bg);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface-1);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-contrast);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--text-tertiary);
+  --color-accent: var(--surface-3);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --radius-md: var(--radius-sm);
+  --radius-lg: var(--radius-md);
+}
+
+/*
  * Palette values are ported from Voltius's own default dark theme
  * (github.com/VoltiusApp/voltius, AGPL-3.0 — same license, same product
  * category), not copied component code: a deep navy ground instead of a
@@ -29,6 +64,9 @@
   --text-tertiary: #8296ab;
 
   --accent: #57c7d8;
+  /* The checkbox tick, used as a mask so it takes `--accent-contrast`
+     rather than carrying a colour of its own. */
+  --checkbox-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23000' d='M6.2 11.6 2.9 8.3l1.1-1.1 2.2 2.2 5.8-5.8 1.1 1.1z'/%3E%3C/svg%3E");
   --accent-hover: #5fe2f7;
   --accent-contrast: #04141c;
 
@@ -404,4 +442,91 @@ textarea:focus-visible,
 .ripple-host {
   position: relative;
   overflow: hidden;
+}
+
+/*
+ * Checkboxes.
+ *
+ * The app had no rule for these at all, so each one was the platform
+ * control: a bright grey square with a system-blue tick, on a palette where
+ * nothing else looks like that. `accent-color` only reaches the checked
+ * state, and unchecked is the state a checkbox spends most of its life in.
+ *
+ * The tick is a mask rather than a background image, so it is painted in
+ * `--accent-contrast` and stays legible if the accent is ever re-themed -
+ * a tick baked into the SVG would not.
+ */
+/* `:not(.checkbox-input)` because `ui/Checkbox` keeps its native input in
+   the DOM, visually hidden and sized to overlap the box it draws - styling
+   it here would shrink that click target to this rule's own size. */
+input[type="checkbox"]:not(.checkbox-input) {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  border: 1px solid var(--border-hover);
+  border-radius: 4px;
+  background: var(--surface-bg);
+  cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease;
+}
+
+input[type="checkbox"]:not(.checkbox-input):hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:not(.checkbox-input):checked {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: none;
+  -webkit-mask-image: none;
+}
+
+/* The tick, drawn on top of the filled box. `::after` works here because
+   the control is `appearance: none`, which takes it out of the replaced-
+   element behaviour that would otherwise drop generated content. */
+input[type="checkbox"]:not(.checkbox-input):checked::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--accent-contrast);
+  -webkit-mask: var(--checkbox-tick) center / 10px 10px no-repeat;
+  mask: var(--checkbox-tick) center / 10px 10px no-repeat;
+}
+
+input[type="checkbox"]:not(.checkbox-input):disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Keyboard focus has to be visible on both states - the border alone is not
+   enough once the box is filled with the accent. */
+input[type="checkbox"]:not(.checkbox-input):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * An option inside a confirmation dialog.
+ *
+ * Set apart from the sentence above it: the body text says what will happen,
+ * this changes what will happen, and the two reading as one paragraph is how
+ * somebody agrees to something they did not notice. The note belongs to the
+ * checkbox, so it is indented under it rather than floating at the margin.
+ */
+.dialog-option {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-bg);
+}
+
+.dialog-option-note {
+  margin: 6px 0 0 26px;
 }

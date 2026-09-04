@@ -1,0 +1,97 @@
+.rail-update {
+  position: relative;
+}
+
+/*
+ * The cloud only turns green when there is genuinely something to take.
+ * A permanently lit badge trains people to stop looking at it, and this one
+ * has to be worth noticing on the one day it changes.
+ */
+.rail-update-btn-available {
+  color: var(--success);
+}
+.rail-update-btn-available:hover {
+  color: var(--success);
+}
+
+.rail-update-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  /* Ringed in the rail's own colour so the dot reads as sitting on the icon
+     rather than floating over whatever is behind it. */
+  box-shadow: 0 0 0 2px var(--surface-bg);
+}
+
+.rail-update-panel {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 10px);
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 260px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--t-bg-modal);
+  box-shadow: var(--t-ring-strong), var(--t-elev-3);
+  animation: scaleIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rail-update-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rail-update-version {
+  margin: 0;
+  font-size: 13px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.rail-update-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rail-update-error {
+  color: var(--danger-text);
+}
+
+/* Release notes are somebody else's prose of unknown length - it scrolls
+   rather than pushing the button off the panel. */
+.rail-update-notes {
+  margin: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+}
+
+.rail-update-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+/* No width until the server declares a content length: a bar that sits at
+   zero says "stuck", where an indeterminate stripe says "working". */
+.rail-update-bar-fill {
+  height: 100%;
+  width: 30%;
+  border-radius: 3px;
+  background: var(--success);
+  transition: width 200ms ease;
+}

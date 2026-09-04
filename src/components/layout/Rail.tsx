@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { UpdateButton } from "./UpdateButton";
 import { useNavigate } from "react-router-dom";
 import { HostAddress } from "@/components/ui/HostAddress";
 import { useCachedServerMetrics, useServerMetricsStore } from "@/stores/serverMetricsStore";
@@ -315,6 +316,7 @@ export function Rail() {
 
       <div className="rail-spacer" />
 
+      <UpdateButton />
       <AccountButton />
       <NotificationBell />
     </div>

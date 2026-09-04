@@ -38,6 +38,24 @@ interface TerminalViewProps {
  * is GPU-accelerated rendering with a graceful fallback to the default
  * canvas renderer on context loss, and search backs the Ctrl+F bar below.
  */
+/**
+ * The terminal's palette, read from the tokens the rest of the interface uses.
+ *
+ * Was three hardcoded hex values, which meant the terminal stayed the old
+ * navy while every surface around it changed colour. The fallbacks are the
+ * shipped palette, for the moment before a theme has been applied.
+ */
+function readTerminalTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    background: token("--surface-bg", "#0b1220"),
+    foreground: token("--text-primary", "#dbe6f5"),
+    cursor: token("--accent", "#57c7d8"),
+    selectionBackground: token("--surface-3", "#2a3f5a"),
+  };
+}
+
 export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,12 +76,19 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
       cursorBlink: true,
       fontFamily: "'JetBrains Mono', Consolas, 'SF Mono', monospace",
       fontSize: 13,
-      theme: {
-        background: "#0b1220",
-        foreground: "#9effff",
-        cursor: "#57c7d8",
-      },
+      theme: readTerminalTheme(),
     });
+
+    // xterm paints into its own canvas, so it cannot inherit a CSS variable
+    // the way everything else does - the colours have to be handed to it.
+    // Watching the root element's inline style is what keeps it in step:
+    // that is exactly where `applyTheme` writes, so switching theme repaints
+    // an open terminal instead of leaving it in the previous palette until
+    // it is reopened.
+    const themeWatcher = new MutationObserver(() => {
+      term.options.theme = readTerminalTheme();
+    });
+    themeWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -183,6 +208,7 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
       unlistenOutput();
       unlistenClosed();
       if (terminalId) closeTerminal(terminalId).catch(() => {});
+      themeWatcher.disconnect();
       term.dispose();
       searchAddonRef.current = null;
     };

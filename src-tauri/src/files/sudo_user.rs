@@ -186,6 +186,17 @@ case "$op" in
     cp -- "$target" "$staging"
     chmod 600 "$staging"
     ;;
+  readrange)
+    target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such path" >&2; exit 4; }}
+    require_within_root "$target"
+    staging="$2"
+    require_staging "$staging"
+    # tail+head rather than dd: dd's skip is in blocks, and getting a byte
+    # offset out of it means bs=1, which reads a large file one byte at a
+    # time. tail -c +N is a byte offset by definition and is POSIX.
+    tail -c "+$(($3 + 1))" -- "$target" | head -c "$4" > "$staging"
+    chmod 600 "$staging"
+    ;;
   write)
     target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such directory" >&2; exit 4; }}
     require_within_root "$target"
@@ -517,6 +528,23 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
         result
     }
 
+    /// The same staging dance as `read_file`, but the helper only copies the
+    /// window that was asked for - so looking at a slice of a huge log does
+    /// not first duplicate the whole thing into /tmp under the application's
+    /// own account.
+    async fn read_file_range(&self, path: &str, offset: u64, len: usize) -> AppResult<Vec<u8>> {
+        let resolved = self.resolve(path)?;
+        self.ensure_staging_dir().await?;
+        let staging = staging_path(self.application_id);
+        self.run_helper("readrange", &[&resolved, &staging, &offset.to_string(), &len.to_string()]).await?;
+        let result = match self.claim_staging(&staging).await {
+            Ok(()) => self.connection.read_file(&staging).await,
+            Err(err) => Err(err),
+        };
+        self.discard_staging(&staging).await;
+        result
+    }
+
     async fn write_file(&self, path: &str, contents: &[u8]) -> AppResult<()> {
         let resolved = self.resolve(path)?;
         self.ensure_staging_dir().await?;
@@ -661,7 +689,7 @@ mod tests {
         let script = helper_script();
         assert!(script.starts_with("#!/bin/sh"));
         assert!(script.contains(STAGING_ROOT));
-        for op in ["realpath", "list", "stat", "read", "write", "mkdir", "delete", "rename", "copy", "chmod", "cleanup"] {
+        for op in ["realpath", "list", "stat", "read", "readrange", "write", "mkdir", "delete", "rename", "copy", "chmod", "cleanup"] {
             assert!(script.contains(&format!("{op})")), "missing '{op}' case in helper script");
         }
         // No stray unescaped format-brace made it into the generated

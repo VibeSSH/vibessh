@@ -1,0 +1,85 @@
+import Lenis from "lenis";
+// The package's own stylesheet. Only two of its rules reach a wrapper-mounted
+// instance - `overscroll-behavior: contain` on the opted-out scrollers, and
+// killing pointer events on iframes mid-scroll - but they are its rules to
+// own rather than ours to copy.
+import "lenis/dist/lenis.css";
+import { useEffect, type RefObject } from "react";
+
+/**
+ * Elements inside the content area that scroll on their own.
+ *
+ * Lenis captures wheel events on the wrapper, so anything scrollable *inside*
+ * it would otherwise scroll the page instead of itself. Portalled surfaces -
+ * modals, dropdowns, tooltips - are absent from this list because they render
+ * at the end of `body`, outside the wrapper, and never reach these handlers.
+ *
+ * Anything added later can opt out with `data-lenis-prevent`, which Lenis
+ * honours on its own; this list covers the scrollers that predate it.
+ */
+const OWN_SCROLLERS = [
+  ".application-console-output",
+  ".container-logs-output",
+  ".vibe-ai-transcript",
+  ".vibe-ai-preview-body",
+  ".xterm-viewport",
+  ".xterm-screen",
+  ".cm-scroller",
+  "[data-lenis-prevent]",
+].join(",");
+
+/**
+ * Interpolated wheel scrolling for the main content area.
+ *
+ * **The measurement this exists for.** Scrolling this app by hand for five
+ * seconds produced 721 frames, every one of them cheap - a 7ms median, not a
+ * single frame over 20ms - and the scroll position changed in only 203 of
+ * them. Each wheel notch arrives as a flat 100px and the browser's own
+ * animation spends it in about four frames, leaving ten frames of stillness
+ * before the next notch. The picture is not slow; it is intermittent, and on
+ * a 144Hz display intermittent reads as slow.
+ *
+ * So this smooths *when* the distance is spent, not how fast anything is
+ * drawn. It cannot help a page whose frames are expensive, and would make one
+ * worse by handing scrolling to the same busy thread.
+ *
+ * **Why `duration` and not `lerp`.** A lerp is applied per frame, so its
+ * meaning changes with the refresh rate: a value tuned at 60Hz converges two
+ * and a half times faster at 144Hz and gives most of the stutter back. A
+ * duration is wall-clock and behaves the same on any display. Lenis supplies
+ * its own front-loaded easing alongside it, which is what keeps a short
+ * duration from feeling like a delay - most of the distance is covered in the
+ * first third of it.
+ *
+ * Attached to `.app-layout-content` because that is the element that actually
+ * scrolls here; the window itself never does.
+ *
+ * `prefers-reduced-motion` is honoured by Lenis and deliberately not
+ * overridden - interpolated scrolling is exactly the kind of movement people
+ * turn that setting on to avoid.
+ */
+export function useSmoothScroll(wrapperRef: RefObject<HTMLElement | null>, contentRef: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const content = contentRef.current;
+    if (!wrapper || !content) return;
+
+    const lenis = new Lenis({
+      wrapper,
+      content,
+      autoRaf: true,
+      smoothWheel: true,
+      // Touch is left alone: a trackpad and a touch screen interpolate in the
+      // driver already, and smoothing on top of that is what makes a
+      // two-finger scroll feel like it is sliding on ice.
+      syncTouch: false,
+      // Long enough to bridge the ~100ms between wheel notches, so the
+      // position keeps moving instead of arriving and waiting; short enough
+      // that the content is not still drifting after the wheel stops.
+      duration: 0.35,
+      prevent: (node) => node instanceof HTMLElement && node.closest(OWN_SCROLLERS) !== null,
+    });
+
+    return () => lenis.destroy();
+  }, [wrapperRef, contentRef]);
+}

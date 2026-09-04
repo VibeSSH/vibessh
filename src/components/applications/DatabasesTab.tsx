@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
@@ -275,13 +276,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       ) : (
         <form className="databases-tab-create-form" onSubmit={handleCreate}>
           <div className="form-row">
-            <select className="form-input" value={effectiveHostId} onChange={(e) => setDatabaseHostId(e.target.value)}>
-              {hosts.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
+            <Select value={effectiveHostId} onChange={setDatabaseHostId} items={hosts.map((h) => ({ value: h.id, label: h.name }))} />
             <input
               className="form-input"
               placeholder={t("databasesTab.purposePlaceholder")}

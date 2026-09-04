@@ -48,21 +48,14 @@ export function ApplicationCard({
   const canStart = application.status === "stopped" || application.status === "failed" || application.status === "unknown";
   const canStopOrRestart = application.status === "running" || application.status === "starting";
 
-  return (
-    <Card className="application-card">
-      <div className="application-card-header">
-        {/* Only drawn when the list actually offers a selection, so a card
-            outside that context is exactly what it was. */}
-        {onSelectedChange && (
-          <input
-            type="checkbox"
-            className="application-card-check"
-            checked={selected ?? false}
-            onChange={(event) => onSelectedChange(event.target.checked)}
-            aria-label={t("applicationCard.selectAria", { name: application.name })}
-          />
-        )}
-        <div className="application-card-icon">
+  // The header is the selection target when the list offers one, and inert
+  // markup when it does not - a card outside that context is exactly what it
+  // was. A `button` rather than a div with a handler, so it is reachable by
+  // keyboard and announces its state; nothing inside it is interactive, so
+  // there is no button nested in a button.
+  const header = (
+    <>
+      <div className="application-card-icon">
           <BlueprintIcon blueprintId={application.blueprintId} size={16} />
         </div>
         <div className="application-card-title-col">
@@ -73,8 +66,56 @@ export function ApplicationCard({
             {isLocal ? t("applicationCard.local") : (serverName ?? t("applicationCard.remote"))} · {application.blueprintId}
           </p>
         </div>
-        <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
-      </div>
+      <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
+    </>
+  );
+
+  const isSelected = selected ?? false;
+
+  /**
+   * A click anywhere on the card selects it - except on a control, which
+   * already means something specific.
+   *
+   * The exclusion is the controls themselves, not the row they sit in: the
+   * gaps between those buttons are card, and a card that ignores clicks in
+   * some of its own empty space is the "I click and nothing happens" this
+   * was meant to fix.
+   */
+  function handleCardClick(event: React.MouseEvent) {
+    if (!onSelectedChange) return;
+    if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+    onSelectedChange(!isSelected);
+  }
+
+  // Not a `<button>` element: the card contains real buttons, and nesting
+  // those inside one is invalid markup that browsers resolve by dropping
+  // them out. The role, the tab stop and the key handler give the same
+  // behaviour to a keyboard and to a screen reader.
+  const selectionProps = onSelectedChange
+    ? {
+        role: "button" as const,
+        tabIndex: 0,
+        "aria-pressed": isSelected,
+        "aria-label": t("applicationCard.selectAria", { name: application.name }),
+        onClick: handleCardClick,
+        onKeyDown: (event: React.KeyboardEvent) => {
+          // Only when the card itself has focus - Enter inside the action
+          // row belongs to whichever button is focused there.
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelectedChange(!isSelected);
+          }
+        },
+      }
+    : {};
+
+  return (
+    <Card
+      className={`application-card${onSelectedChange ? " application-card-selectable" : ""}${selected ? " application-card-selected" : ""}`}
+      {...selectionProps}
+    >
+      <div className="application-card-header">{header}</div>
 
       <div className="application-card-actions">
         <div className="application-card-actions-group">

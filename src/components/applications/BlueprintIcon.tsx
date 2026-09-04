@@ -11,11 +11,11 @@ interface BlueprintIconProps {
  * The icon for an Application's blueprint, or the generic glyph when there
  * isn't one.
  *
- * Monochrome paths inherit `currentColor`, so they take the surrounding
- * theme's colour and stay legible in either palette. Lettermarks carry their
- * own tint on purpose - four Minecraft server projects rendered in one accent
- * would be exactly as indistinguishable as the boxes they replaced, which is
- * the problem this solves.
+ * Each mark carries its own brand colour. That was true of the lettermarks
+ * from the start, for a reason that applies just as much to the rest: four
+ * projects rendered in one accent are exactly as indistinguishable as the
+ * boxes they replaced. A path with no tint falls back to `currentColor` and
+ * takes the surrounding theme, so nothing disappears in either palette.
  */
 export function BlueprintIcon({ blueprintId, size = 16 }: BlueprintIconProps) {
   const icon = blueprintIcon(blueprintId);
@@ -51,8 +51,11 @@ export function BlueprintIcon({ blueprintId, size = 16 }: BlueprintIconProps) {
     );
   }
 
+  // The brand colour when the icon has one, and the surrounding theme when
+  // it does not - so an icon added without a tint still renders sensibly in
+  // both palettes rather than disappearing.
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" role="img" aria-hidden="true" focusable="false">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={icon.tint ?? "currentColor"} role="img" aria-hidden="true" focusable="false">
       <path d={icon.d} />
     </svg>
   );
