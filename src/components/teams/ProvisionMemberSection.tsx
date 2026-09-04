@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { copyToClipboard } from "@/utils/copyToClipboard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -64,12 +65,11 @@ export function ProvisionMemberSection({ teamId, canAdd }: { teamId: string; can
 
   async function copyPassword() {
     if (!created) return;
-    try {
-      await navigator.clipboard.writeText(created.temporaryPassword);
+    // The inline "copied" label stays as well as the toast: this one is a
+    // password shown once, and the label is still on screen a minute later
+    // when a toast has long gone.
+    if (await copyToClipboard(created.temporaryPassword, { copied: t("common.copied"), failed: t("common.copyFailed") })) {
       setCopied(true);
-    } catch {
-      // Clipboard access can be refused; the password is on screen and
-      // selectable either way, so this is not worth an error banner.
     }
   }
 

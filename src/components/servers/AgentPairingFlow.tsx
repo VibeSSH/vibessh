@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { copyToClipboard } from "@/utils/copyToClipboard";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useServersStore } from "@/stores/serversStore";
@@ -154,11 +155,7 @@ export function AgentPairingFlow({ onPaired, upgradeExistingServer }: AgentPairi
   }
 
   async function handleCopy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // clipboard access denied - nothing useful to do about it here
-    }
+    await copyToClipboard(text, { copied: t("common.copied"), failed: t("common.copyFailed") });
   }
 
   const expired = remainingSeconds === 0 && connectionState?.status !== "connected";

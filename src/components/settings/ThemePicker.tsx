@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { copyToClipboard } from "@/utils/copyToClipboard";
 import { Button } from "@/components/ui/Button";
 import { applyTheme, clearTheme, parseColor, parseTheme } from "@/theme/applyTheme";
 import { allThemes, loadSelectedThemeId, resolveTheme, saveCustomTheme, saveSelectedThemeId } from "@/theme/themeStore";
@@ -68,7 +69,7 @@ export function ThemePicker() {
   function exportTheme() {
     const theme = selected === "custom" ? { id: "custom", name: t("theme.customName"), colors: draft } : resolveTheme(selected);
     if (!theme) return;
-    void navigator.clipboard.writeText(JSON.stringify(theme, null, 2));
+    void copyToClipboard(JSON.stringify(theme, null, 2), { copied: t("common.copied"), failed: t("common.copyFailed") });
   }
 
   async function importTheme() {

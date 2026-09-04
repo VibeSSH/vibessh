@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/services/queryKeys";
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
+import { copyToClipboard } from "@/utils/copyToClipboard";
 import { open } from "@tauri-apps/plugin-shell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -376,12 +377,10 @@ interface CredentialRowProps {
 
 /** One copyable connection-detail field - the same monospace-value-plus-copy-button pattern used wherever a credential has to be read and passed on, repeated per field here (host/database/user/password). */
 function CredentialRow({ label, value }: CredentialRowProps) {
+  const { t } = useTranslation();
+
   async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // clipboard access denied - nothing useful to do about it here
-    }
+    await copyToClipboard(value, { copied: t("common.copied"), failed: t("common.copyFailed") });
   }
 
   return (

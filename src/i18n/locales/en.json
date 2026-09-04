@@ -422,6 +422,8 @@
     "minecraft": "Minecraft"
   },
   "common": {
+    "copied": "Copied to the clipboard",
+    "copyFailed": "The clipboard could not be written to",
     "cancel": "Cancel",
     "close": "Close",
     "back": "Back",
