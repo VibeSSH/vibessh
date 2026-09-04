@@ -79,3 +79,25 @@
     padding: var(--space-4);
   }
 }
+
+/*
+ * Lenis moves the scroll position of `.app-layout-content` itself rather than
+ * transforming this element; it exists only as something Lenis can watch for
+ * resizes, since a wrapper's own box does not change when its contents grow.
+ *
+ * `height: 100%` with `overflow: visible`, not `min-height` and not a flex
+ * column. Three pages - the terminal, the file editor and Vibe AI - fill the
+ * viewport with `height: 100%`, and a percentage height needs a parent whose
+ * height is *definite*: under `min-height` it is not, so those pages fell
+ * back to their content height and ended up overflowing the scroller by the
+ * width of its own padding. That reads as a terminal cut off at the bottom.
+ *
+ * A fixed height would normally clip a long page, but `overflow: visible`
+ * means an overflowing child still extends the scrollable area of
+ * `.app-layout-content` above it - so short pages get an exact height to
+ * resolve against and long ones still scroll.
+ */
+.app-layout-scroll-content {
+  height: 100%;
+  overflow: visible;
+}

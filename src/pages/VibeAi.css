@@ -343,7 +343,7 @@
   padding: 5px 9px;
   font-size: 12px;
 }
-.vibe-ai-subject[data-empty="true"] {
+.vibe-ai-subject-empty {
   border-color: color-mix(in srgb, var(--warning, #f59e0b) 55%, transparent);
   color: var(--text-secondary);
 }

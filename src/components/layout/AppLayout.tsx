@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet } from "react-router-dom";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
+import { useSmoothScroll } from "@/hooks/useSmoothScroll";
 import { cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
 import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
@@ -14,6 +15,10 @@ import { TitleBar } from "./TitleBar";
 import "./AppLayout.css";
 
 export function AppLayout() {
+  const scrollWrapperRef = useRef<HTMLElement | null>(null);
+  const scrollContentRef = useRef<HTMLDivElement | null>(null);
+  useSmoothScroll(scrollWrapperRef, scrollContentRef);
+
   const setUser = useAuthStore((s) => s.setUser);
   // An account holding a password somebody else set can do nothing until
   // it replaces it - the backend refuses every other request - so the
@@ -53,8 +58,13 @@ export function AppLayout() {
           </div>
           <div className="app-layout-row">
             <Sidebar />
-            <main className="app-layout-content">
-              <Outlet />
+            {/* Lenis needs one element holding everything that scrolls, to
+                watch it for resizes - a route renders whatever it likes,
+                sometimes a fragment. This wrapper is that element. */}
+            <main className="app-layout-content" ref={scrollWrapperRef}>
+              <div className="app-layout-scroll-content" ref={scrollContentRef}>
+                <Outlet />
+              </div>
             </main>
           </div>
         </div>
