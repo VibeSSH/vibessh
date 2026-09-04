@@ -171,6 +171,15 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   } = useQuery({
     queryKey: queryKeys.applicationFiles(applicationId, path),
     queryFn: () => listApplicationFiles(applicationId, path),
+    // Against the global default, and only here. That default is off because
+    // alt-tabbing back would otherwise fire every mounted query at once - a
+    // burst of SSH channels for readings that are usually still fine. A
+    // directory listing is the exception: the files are not this app's, and
+    // the likeliest thing to have happened while the window was in the
+    // background is that somebody changed them. One listing is also a cheap
+    // question, unlike the dashboard-wide burst that default is guarding
+    // against.
+    refetchOnWindowFocus: true,
   });
 
   const error = actionError ?? (loadError ? errorMessage(loadError, t) : null);

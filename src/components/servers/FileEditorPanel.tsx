@@ -10,7 +10,8 @@ import { Icon } from "@/components/ui/Icon";
 import { vibesshEditorTheme } from "./cmTheme";
 import { languageExtensionFor } from "./editorLanguage";
 import { useBlockingProblems } from "./fileProblems";
-import { bytesToText, readRemoteFile, readRemoteFileWindow, textToBytes, writeRemoteFile } from "@/services/filesService";
+import { bytesToText, listRemoteDirectory, readRemoteFile, readRemoteFileWindow, textToBytes, writeRemoteFile } from "@/services/filesService";
+import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { formatBytes } from "@/utils/formatBytes";
 import { toastSuccess } from "@/stores/toastStore";
 import type { RemoteFileEntry } from "@/types/files";
@@ -51,6 +52,9 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(!tooLarge);
+  // Bumped to ask the reading effect to run again - the effect owns the
+  // fetch, so re-reading is a change to what it depends on.
+  const [reloadToken, setReloadToken] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // How much of an oversized file has been pulled in, and how big it turned
@@ -58,9 +62,54 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   const [loadedBytes, setLoadedBytes] = useState(0);
   const [knownSize, setKnownSize] = useState(entry.size);
   const [windowLoading, setWindowLoading] = useState(false);
+  // Enough dirty tracking to answer one question: may this editor replace
+  // what is on screen without asking? It is deliberately not the full
+  // unsaved-changes handling the application editor has - just the part that
+  // stops a refresh from throwing away something typed.
+  const [savedContent, setSavedContent] = useState("");
+  const [changedOnDisk, setChangedOnDisk] = useState(false);
+  // What the file looked like when this editor last agreed with it, seeded
+  // from the listing that opened it.
+  const baseline = useRef({ size: entry.size, modifiedAt: entry.modifiedAt });
   // See ApplicationFileEditorPanel: a file that does not parse is not a
   // file worth writing.
   const blocking = useBlockingProblems(entry.name, content, t);
+  const dirty = content !== savedContent;
+  // Read inside a callback that outlives the render it was made in.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  /**
+   * Looks for an edit made somewhere else, when the window comes back.
+   *
+   * There is no command that stats one remote path, so this reads the parent
+   * directory and picks the entry out of it - the same listing the browser
+   * behind this editor would ask for anyway.
+   *
+   * Skipped for the windowed viewer, which holds a prefix of a file being
+   * read in pieces; re-reading from the top would fight whoever is still
+   * writing to it.
+   */
+  useWindowFocus(() => {
+    if (tooLarge || loading || saving) return;
+    const parent = entry.path.slice(0, entry.path.lastIndexOf("/")) || "/";
+    listRemoteDirectory(serverId, parent)
+      .then((listing) => {
+        const now = listing.find((candidate) => candidate.path === entry.path);
+        // Gone, most likely deleted. That belongs to the listing behind this
+        // editor, not to a bar over the text.
+        if (!now) return;
+        if (now.size === baseline.current.size && now.modifiedAt === baseline.current.modifiedAt) return;
+        baseline.current = { size: now.size, modifiedAt: now.modifiedAt };
+        // Nothing of the user's to lose, so this just catches up quietly.
+        if (!dirtyRef.current) {
+          setReloadToken((n) => n + 1);
+          return;
+        }
+        setChangedOnDisk(true);
+      })
+      .catch(() => undefined);
+  });
   const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name, t), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
 
   useEffect(() => {
@@ -68,11 +117,16 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setLoading(true);
     setError(null);
     readRemoteFile(serverId, entry.path)
-      .then((bytes) => setContent(bytesToText(bytes)))
+      .then((bytes) => {
+        const text = bytesToText(bytes);
+        setContent(text);
+        setSavedContent(text);
+        setChangedOnDisk(false);
+      })
       .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverId, entry.path]);
+  }, [serverId, entry.path, reloadToken]);
 
   /**
    * Pulls in the next window of a file too large to edit.
@@ -120,6 +174,8 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
     setError(null);
     try {
       await writeRemoteFile(serverId, entry.path, textToBytes(content));
+      setSavedContent(content);
+      setChangedOnDisk(false);
       toastSuccess(t("fileEditor.savedToast", { name: entry.name }));
     } catch (err) {
       setError(errorMessage(err, t));
@@ -151,6 +207,16 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
           )}
         </div>
       </div>
+
+      {changedOnDisk && (
+        <p className="file-editor-tab-changed">
+          <Icon name="alert-triangle" size={14} />
+          <span>{t("fileEditor.changedOnDisk")}</span>
+          <Button variant="secondary" size="sm" onClick={() => setReloadToken((n) => n + 1)}>
+            {t("fileEditor.reloadFromDisk")}
+          </Button>
+        </p>
+      )}
 
       {blocking.length > 0 && (
         <p className="file-editor-tab-blocked">

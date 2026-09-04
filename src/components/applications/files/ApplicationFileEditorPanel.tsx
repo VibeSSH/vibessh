@@ -13,7 +13,8 @@ import { vibesshEditorTheme } from "@/components/servers/cmTheme";
 import { languageExtensionFor } from "@/components/servers/editorLanguage";
 import { useBlockingProblems } from "@/components/servers/fileProblems";
 import { bytesToText, textToBytes } from "@/services/filesService";
-import { readApplicationFile, readApplicationFileWindow, saveApplicationFile } from "@/services/applicationFilesService";
+import { getApplicationFileMetadata, readApplicationFile, readApplicationFileWindow, saveApplicationFile } from "@/services/applicationFilesService";
+import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { formatBytes } from "@/utils/formatBytes";
 import { toastSuccess } from "@/stores/toastStore";
 import { FileHistoryModal } from "./FileHistoryModal";
@@ -74,8 +75,19 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   const [loadedBytes, setLoadedBytes] = useState(0);
   const [knownSize, setKnownSize] = useState(entry.size);
   const [windowLoading, setWindowLoading] = useState(false);
+  // Set when the file changed underneath an editor that has unsaved work in
+  // it. Never acted on without asking: the whole point is that both versions
+  // are somebody's, and picking one silently throws the other away.
+  const [changedOnDisk, setChangedOnDisk] = useState(false);
+  // What the file looked like when this editor last agreed with it. Seeded
+  // from the listing, so a change is caught even if it happens before the
+  // first check.
+  const baseline = useRef({ size: entry.size, modifiedAt: entry.modifiedAt });
   const extensions = useMemo(() => [...vibesshEditorTheme(), ...languageExtensionFor(entry.name, t), ...searchExtensions(searchPhrases(t))], [entry.name, t]);
   const dirty = content !== savedContent;
+  // Read inside a callback that outlives the render it was made in.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   // A config file that does not parse is not a file worth writing: the
   // service reading it fails minutes later, somewhere else, with the
   // cause out of sight. Save is refused while that is true.
@@ -122,6 +134,21 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId, entry.path, tooLarge]);
 
+  /**
+   * Records what the file looks like right now, so the next check compares
+   * against this editor's own writes rather than reporting them as somebody
+   * else's.
+   */
+  const refreshBaseline = useCallback(async () => {
+    try {
+      const meta = await getApplicationFileMetadata(applicationId, entry.path);
+      baseline.current = { size: meta.size, modifiedAt: meta.modifiedAt };
+    } catch {
+      // Not worth surfacing: the worst case is one spurious "changed on
+      // disk" notice, which asks rather than acts.
+    }
+  }, [applicationId, entry.path]);
+
   const load = useCallback(() => {
     if (tooLarge) return;
     setLoading(true);
@@ -131,10 +158,41 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         const text = bytesToText(bytes);
         setContent(text);
         setSavedContent(text);
+        setChangedOnDisk(false);
+        void refreshBaseline();
       })
       .catch((err) => setError(errorMessage(err, t)))
       .finally(() => setLoading(false));
-  }, [applicationId, entry.path, tooLarge, t]);
+  }, [applicationId, entry.path, tooLarge, refreshBaseline, t]);
+
+  /**
+   * Looks for an edit made somewhere else.
+   *
+   * Only when the window comes back, because that is when there is somebody
+   * to tell. A file the app cannot stat any more is left alone - it was
+   * probably deleted, and the listing behind this editor is where that
+   * belongs, not a bar over the text.
+   *
+   * Skipped for the windowed viewer: it holds a prefix of a file being
+   * re-read in pieces, and re-reading from the top on every change would
+   * fight whoever is still writing to it.
+   */
+  const checkForExternalEdit = useCallback(() => {
+    if (tooLarge || loading || saving) return;
+    getApplicationFileMetadata(applicationId, entry.path)
+      .then((meta) => {
+        if (meta.size === baseline.current.size && meta.modifiedAt === baseline.current.modifiedAt) return;
+        // Nothing of the user's to lose, so this just catches up quietly.
+        if (!dirtyRef.current) {
+          load();
+          return;
+        }
+        setChangedOnDisk(true);
+      })
+      .catch(() => undefined);
+  }, [applicationId, entry.path, tooLarge, loading, saving, load]);
+
+  useWindowFocus(checkForExternalEdit);
 
   useEffect(load, [load]);
 
@@ -145,6 +203,8 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     try {
       await saveApplicationFile(applicationId, entry.path, textToBytes(content), backupBeforeSave);
       setSavedContent(content);
+      setChangedOnDisk(false);
+      void refreshBaseline();
       toastSuccess(t("applicationFileEditor.savedToast", { name: entry.name }));
       onSaved();
     } catch (err) {
@@ -152,7 +212,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     } finally {
       setSaving(false);
     }
-  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, saving, tooLarge, blocking.length, onSaved, t]);
+  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, saving, tooLarge, blocking.length, onSaved, refreshBaseline, t]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -219,6 +279,16 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         <p className="file-editor-tab-blocked">
           <Icon name="alert-triangle" size={14} />
           {t("fileEditor.blockedBySyntax", { line: blocking[0].line, message: blocking[0].message, count: blocking.length })}
+        </p>
+      )}
+
+      {changedOnDisk && (
+        <p className="file-editor-tab-changed">
+          <Icon name="alert-triangle" size={14} />
+          <span>{t("applicationFileEditor.changedOnDisk")}</span>
+          <Button variant="secondary" size="sm" onClick={load}>
+            {t("applicationFileEditor.reloadFromDisk")}
+          </Button>
         </p>
       )}
 

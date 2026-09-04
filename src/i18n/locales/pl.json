@@ -263,6 +263,8 @@
     "discardTitle": "Odrzucić niezapisane zmiany?",
     "historyAria": "Historia wersji",
     "loading": "Wczytywanie…",
+        "changedOnDisk": "Plik zmienił się na dysku, a tutaj masz niezapisane zmiany.",
+    "reloadFromDisk": "Wczytaj wersję z dysku",
     "reloadAria": "Wczytaj ponownie z dysku",
     "save": "Zapisz",
     "savedToast": "Zapisano „{{name}}”.",
@@ -688,6 +690,8 @@
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",
+    "changedOnDisk": "Plik zmienił się na dysku, a tutaj masz niezapisane zmiany.",
+    "reloadFromDisk": "Wczytaj wersję z dysku",
     "blockedBySyntax": "Nie zapisano: linia {{line}} - {{message}}",
     "blockedBySyntax_few": "Nie zapisano: {{count}} błędy składni, pierwszy w linii {{line}} - {{message}}",
     "blockedBySyntax_many": "Nie zapisano: {{count}} błędów składni, pierwszy w linii {{line}} - {{message}}",

@@ -90,6 +90,38 @@
   line-height: 1.4;
 }
 
+/*
+ * Said when the file changed underneath the editor and there is unsaved work
+ * in it. Warning rather than danger: nothing is broken and nothing is lost -
+ * it is a choice between two versions, and the button is how it gets made.
+ *
+ * `background-color`, not the `background` shorthand: a `color-mix()` in the
+ * shorthand is dropped silently.
+ */
+.file-editor-tab-changed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  background-color: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.file-editor-tab-changed span {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-editor-tab-changed svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
 .file-editor-tab-blocked svg {
   flex-shrink: 0;
   color: var(--danger);

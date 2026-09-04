@@ -16,6 +16,7 @@ import { CreateEntryModal } from "@/components/servers/CreateEntryModal";
 import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
 import { RenameOrMoveModal } from "@/components/applications/files/RenameOrMoveModal";
 import { useModalDialog } from "@/hooks/useModalDialog";
+import { useWindowFocus } from "@/hooks/useWindowFocus";
 import {
   compressRemotePaths,
   createRemoteDirectory,
@@ -83,10 +84,17 @@ export function FilesPage() {
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
   const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntries(null), { labelledBy: "files-dialog-title-1" });
 
+  /**
+   * Reads a directory.
+   *
+   * `quiet` leaves the spinner alone, for a refresh nobody asked for: the
+   * listing on screen is replaced only once the new one has arrived, so
+   * coming back to the window does not blank the file list for a moment.
+   */
   const load = useCallback(
-    (targetPath: string) => {
+    (targetPath: string, quiet = false) => {
       if (!serverId) return;
-      setLoading(true);
+      if (!quiet) setLoading(true);
       setError(null);
       listRemoteDirectory(serverId, targetPath)
         .then((loaded) => {
@@ -107,6 +115,11 @@ export function FilesPage() {
     load(ROOT_PATH);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
+
+  // These files belong to the machine, not to this app, and the likeliest
+  // thing to have happened while the window was in the background is that
+  // something changed them. Asked quietly, so the list does not flicker.
+  useWindowFocus(() => load(path, true));
 
   if (!serverId) {
     return <Navigate to="/servers" replace />;
