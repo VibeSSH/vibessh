@@ -48,6 +48,9 @@
           "Polish",
           "English"
         ],
+        "customLanguageFiles": {
+          "Polish": "nsis/Polish.nsh"
+        },
         "displayLanguageSelector": true,
         "compression": "lzma"
       }
