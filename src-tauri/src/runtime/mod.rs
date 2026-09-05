@@ -10,6 +10,7 @@
 //! process) and every call site genuinely goes through it.
 
 pub mod docker;
+pub mod docker_command;
 pub mod health_check;
 pub mod local_process;
 pub mod remote_process;
