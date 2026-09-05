@@ -63,6 +63,38 @@ function readConsoleTheme() {
 }
 
 /**
+ * Minecraft's own colour codes, translated into the ones xterm understands.
+ *
+ * xterm speaks ANSI and nothing else, so a section-sign code would otherwise
+ * sit in the output as a literal character - which is what the hand-rolled
+ * parser this replaced used to handle. Vanilla chat does not reach the log
+ * with these in it; a plugin logging its own formatted output does.
+ *
+ * The section sign only, never the ampersand people type into config files:
+ * in a log line an ampersand is overwhelmingly an ampersand, and rendering
+ * "R&D" as red text would corrupt ordinary output to catch a code the server
+ * did not send.
+ */
+const MINECRAFT_SGR: Record<string, string> = {
+  "0": "30", "1": "34", "2": "32", "3": "36", "4": "31", "5": "35", "6": "33", "7": "37",
+  "8": "90", "9": "94", a: "92", b: "96", c: "91", d: "95", e: "93", f: "97",
+  // A colour clears the formatting with it, which is Minecraft's own rule -
+  // hence the leading reset on every colour above being unnecessary and the
+  // formatting codes below standing alone.
+  l: "1", o: "3", n: "4", m: "9", r: "0",
+};
+
+export function translateMinecraftCodes(line: string): string {
+  if (!line.includes("§")) return line;
+  return line.replace(/§([0-9a-fk-or])/gi, (_whole, code: string) => {
+    const sgr = MINECRAFT_SGR[code.toLowerCase()];
+    if (sgr === undefined) return "";
+    // A colour resets what came before it; a formatting code adds to it.
+    return /[0-9a-f]/i.test(code) ? `\u001b[0;${sgr}m` : `\u001b[${sgr}m`;
+  });
+}
+
+/**
  * Shades a line the server did not colour itself.
  *
  * This is the one thing xterm cannot do for us, and it is worth keeping: only
@@ -73,7 +105,8 @@ function readConsoleTheme() {
  * it. Guessing at a line the server has already made a decision about would
  * be overriding it, and the server knows what it meant.
  */
-function withLevelColour(line: string): string {
+export function withLevelColour(raw: string): string {
+  const line = translateMinecraftCodes(raw);
   if (line.includes("\u001b")) return line;
 
   const colour = LEVEL_COLOURS[logLevelOf(line)];
