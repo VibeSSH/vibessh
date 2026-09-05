@@ -167,7 +167,19 @@ impl LocalProcessManager {
         #[cfg(windows)]
         {
             const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-            command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+            // Windows gives a console program a console of its own whenever
+            // its parent has none, and a packaged build has none - it is a
+            // GUI process. So starting a server used to raise an empty black
+            // window beside the app: empty because stdout and stderr are
+            // piped into the console this app draws itself, and unclosable
+            // without killing the server it belongs to.
+            //
+            // This does not cost anything that worked. A console the parent
+            // cannot reach is no use for stopping the process either - see
+            // `SIGNAL_FAILED_HELP` - which is why stopping goes through the
+            // application's own quit command instead.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
         }
 
         let mut child = command
