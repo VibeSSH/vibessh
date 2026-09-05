@@ -80,6 +80,48 @@ export function useSmoothScroll(wrapperRef: RefObject<HTMLElement | null>, conte
       prevent: (node) => node instanceof HTMLElement && node.closest(OWN_SCROLLERS) !== null,
     });
 
-    return () => lenis.destroy();
+    /*
+     * Tells Lenis the page changed length.
+     *
+     * It re-measures only when one of its own two ResizeObservers fires: one
+     * on the wrapper, one on the content element. The wrapper's only changes
+     * with the window. The content element's never fires at all, because
+     * `.app-layout-scroll-content` is `height: 100%` - which is what gives
+     * the terminal a definite height to fill - and its children overflow it
+     * instead of stretching it. Measured in the running app: appending a
+     * 2000px child left the content box at 576px while the wrapper's
+     * scrollHeight went to 2420.
+     *
+     * So the scroll range stayed frozen at whatever the first page needed,
+     * and a longer one could not be scrolled to the bottom until the window
+     * was resized. This is the cost of that `height: 100%`, paid here rather
+     * than by giving the height back and breaking the terminal again.
+     */
+    let frame = 0;
+    let measured = wrapper.scrollHeight;
+
+    const remeasure = () => {
+      frame = 0;
+      // The read is the expensive part, so nothing else happens unless it
+      // actually changed.
+      if (wrapper.scrollHeight === measured) return;
+      measured = wrapper.scrollHeight;
+      lenis.resize();
+    };
+
+    const growth = new MutationObserver((records) => {
+      // The terminal and the console rewrite their own DOM continuously and
+      // scroll inside themselves, so they never change how long the page is.
+      // Ignoring them keeps this from running on every line of output.
+      if (records.every((record) => record.target instanceof Element && record.target.closest(OWN_SCROLLERS))) return;
+      if (!frame) frame = requestAnimationFrame(remeasure);
+    });
+    growth.observe(content, { childList: true, subtree: true });
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      growth.disconnect();
+      lenis.destroy();
+    };
   }, [wrapperRef, contentRef]);
 }
