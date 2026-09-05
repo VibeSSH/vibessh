@@ -7,6 +7,7 @@ mod cloud_service;
 mod database_service;
 mod dns_service;
 mod firewall_service;
+pub mod java_runtime_service;
 mod java_service;
 mod migration_service;
 mod network_service;
