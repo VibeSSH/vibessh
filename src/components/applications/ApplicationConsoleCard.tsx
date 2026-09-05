@@ -16,6 +16,7 @@ import {
 import "@/components/servers/forms.css";
 import "./ApplicationConsoleCard.css";
 import { errorMessage } from "@/services/tauri";
+import { parseAnsi } from "@/utils/ansi";
 import { logLevelOf } from "./logLevel";
 
 interface ApplicationConsoleCardProps {
@@ -44,6 +45,50 @@ const TAIL_LINES = 200;
  * `runtime::ApplicationConsole`'s own doc comment) instead of letting the
  * user keep retrying into the same dead end.
  */
+/**
+ * One line of output, coloured by whatever the server said about it.
+ *
+ * Two sources of colour, and they do not compete. A line the server coloured
+ * itself - an ANSI sequence, or a section sign out of chat - is drawn the way
+ * the server meant it. A line with no codes keeps the severity shading this
+ * console has always had, read out of the text: that is what keeps a stack
+ * trace legible, since only its first line carries the word ERROR and none of
+ * them carries an escape sequence.
+ */
+function ConsoleLine({ line }: { line: string }) {
+  const segments = parseAnsi(line);
+  const coloured = segments.length > 1 || segments[0].color !== undefined || segments[0].bold === true;
+
+  if (!coloured) {
+    return (
+      <span className={`application-console-line application-console-line-${logLevelOf(line)}`}>
+        {line}
+        {"\n"}
+      </span>
+    );
+  }
+
+  return (
+    <span className="application-console-line">
+      {segments.map((segment, index) => (
+        <span
+          key={index}
+          style={{
+            color: segment.color,
+            backgroundColor: segment.background,
+            fontWeight: segment.bold ? 600 : undefined,
+            fontStyle: segment.italic ? "italic" : undefined,
+            textDecoration: segment.underline ? "underline" : segment.strikethrough ? "line-through" : undefined,
+          }}
+        >
+          {segment.text}
+        </span>
+      ))}
+      {"\n"}
+    </span>
+  );
+}
+
 export function ApplicationConsoleCard({ applicationId, isRunning }: ApplicationConsoleCardProps) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
@@ -261,12 +306,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
             // carry its own severity. Keyed by index because these lines are
             // an append-only window with no identity of their own - two
             // identical lines are genuinely two events, not one repeated.
-            lines.map((line, index) => (
-              <span key={index} className={`application-console-line application-console-line-${logLevelOf(line)}`}>
-                {line}
-                {"\n"}
-              </span>
-            ))}
+            lines.map((line, index) => <ConsoleLine key={index} line={line} />)}
       </pre>
       {unsupported ? (
         <p className="form-note form-note-danger form-note-spaced">{unsupported}</p>
