@@ -99,11 +99,56 @@ verify_checksum() {
     [ "$expected" = "$actual" ] || die "checksum mismatch (expected $expected, got $actual)"
 }
 
-# No code-signing pipeline exists yet (would need a real release CI and a
-# signing key) - checksum verification proves the download wasn't corrupted
-# or MITM'd in a way that doesn't also compromise the checksum file itself.
-# Real signature verification is a reasonable Etap K follow-up, not skipped
-# by accident.
+# Verifies the release signature over a downloaded file.
+#
+# **Why this exists and the checksum does not replace it.** A checksum proves
+# the download matches a file published beside it. It says nothing about who
+# published it: anyone able to serve the binary can serve a matching checksum.
+# This installs a root-owned systemd service, so "the download was not
+# corrupted" is not the question worth answering.
+#
+# The signature is the same minisign key the desktop app's updater checks,
+# and its public half is below - it is public by construction, since every
+# copy of the app carries it.
+#
+# **Why openssl rather than minisign.** Almost no VPS has minisign installed
+# and almost all have openssl. What that costs is this function: Tauri writes
+# the prehashed minisign variant, so the Ed25519 signature covers the
+# BLAKE2b-512 of the file rather than the file, and the raw key has to be
+# wrapped in DER before openssl will read it.
+PUBKEY_BASE64="${VIBESSH_INSTALL_PUBKEY:-RWT3fZFYjZIq2uShgMUHstxNCuGSvunuLV3bGKnn92dLSsiSoNslDm+i}"
+
+verify_signature() {
+    binary_file="$1"
+    signature_file="$2"
+    work_dir="$3"
+
+    command -v openssl >/dev/null 2>&1 || die "openssl is needed to verify the download's signature - install it and run this again"
+
+    # The last 32 bytes of the key are the Ed25519 key itself; the first ten
+    # are the algorithm and the key id.
+    printf '%s' "$PUBKEY_BASE64" | base64 -d 2>/dev/null | tail -c 32 > "$work_dir/pub.raw" \
+        || die "the built-in public key could not be decoded"
+    [ -s "$work_dir/pub.raw" ] || die "the built-in public key could not be decoded"
+
+    # A fixed DER header for an Ed25519 SubjectPublicKeyInfo, written as octal
+    # so this needs no xxd - which a minimal image often does not have.
+    { printf '\060\052\060\005\006\003\053\145\160\003\041\000'; cat "$work_dir/pub.raw"; } > "$work_dir/pub.der"
+
+    # Tauri's .sig is base64 of a whole minisign file; its second line holds
+    # the signature, whose last 64 bytes are the Ed25519 signature.
+    base64 -d < "$signature_file" 2>/dev/null | sed -n '2p' | base64 -d 2>/dev/null | tail -c 64 > "$work_dir/sig.raw" \
+        || die "the signature file could not be decoded"
+    [ -s "$work_dir/sig.raw" ] || die "the signature file could not be decoded"
+
+    openssl dgst -blake2b512 -binary "$binary_file" > "$work_dir/hash.bin" \
+        || die "this openssl cannot compute BLAKE2b-512, which the signature is over"
+
+    openssl pkeyutl -verify -pubin -inkey "$work_dir/pub.der" -keyform DER \
+        -rawin -in "$work_dir/hash.bin" -sigfile "$work_dir/sig.raw" >/dev/null 2>&1 \
+        || die "the downloaded agent is not signed by VibeSSH - refusing to install it"
+}
+
 fetch_and_verify() {
     target="$1" # e.g. linux-amd64
     tmp_dir="$2"
@@ -118,9 +163,16 @@ fetch_and_verify() {
     log "downloading ${asset_url}"
     download "$asset_url" "$tmp_dir/$asset"
     download "${asset_url}.sha256" "$tmp_dir/$asset.sha256"
+    download "${asset_url}.sig" "$tmp_dir/$asset.sig"
 
+    # The checksum stays as the cheap answer to "did this arrive intact",
+    # and runs first so a truncated download is reported as that rather than
+    # as a signature failure.
     log "verifying checksum"
     verify_checksum "$tmp_dir/$asset" "$tmp_dir/$asset.sha256"
+
+    log "verifying signature"
+    verify_signature "$tmp_dir/$asset" "$tmp_dir/$asset.sig" "$tmp_dir"
 
     echo "$tmp_dir/$asset"
 }

@@ -150,6 +150,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Only for `tauri signer` below - the agent itself is plain Cargo.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
@@ -176,6 +182,9 @@ jobs:
       # The names and the checksum format are what `agent-install/install.sh`
       # asks for: `vibe-agent-linux-<arch>` beside a `.sha256` in sha256sum's
       # own "<digest>  <filename>" layout.
+      - name: Install the signing tool
+        run: npm ci
+
       - name: Name them what the installer looks for
         run: |
           mkdir -p dist
@@ -191,6 +200,27 @@ jobs:
             sha256sum "$file" > "$file.sha256"
           done
           ls -l
+
+      # The same key the desktop updater checks. A checksum only says the
+      # download arrived intact - anyone able to serve the binary can serve a
+      # matching checksum - and this installs a root-owned systemd service, so
+      # "who published it" is the question worth answering.
+      - name: Sign the binaries
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for file in dist/vibe-agent-linux-amd64 dist/vibe-agent-linux-arm64; do
+            npx tauri signer sign "$file"
+            # Never published unsigned: the installer refuses an unsigned
+            # binary, so shipping one would only produce a confusing failure
+            # on the user's machine instead of here.
+            if [ ! -s "$file.sig" ]; then
+              echo "::error::$file was not signed"
+              exit 1
+            fi
+          done
+          ls -l dist
 
       - uses: actions/upload-artifact@v4
         with:
