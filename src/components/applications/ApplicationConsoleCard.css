@@ -27,19 +27,35 @@
   background: #28c840;
 }
 
+/*
+ * The box xterm draws into.
+ *
+ * No font, colour or wrapping here any more: the terminal owns all of that
+ * and reads its palette from the same tokens through `readConsoleTheme`.
+ * What is left is the frame around it.
+ */
 .application-console-output {
   height: 420px;
-  overflow: auto;
   margin: 0 0 var(--space-3);
-  padding: var(--space-3);
-  background: var(--surface-bg);
+  padding: var(--space-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  white-space: pre-wrap;
+  overflow: hidden;
+}
+
+/* xterm.css paints its viewport black, which shows as darker bands wherever
+   the character grid does not reach - a terminal is only ever a whole number
+   of cells wide and tall. Transparent instead, so the frame above shows
+   through. Same fix `TerminalView.css` already carries. */
+.application-console-output .xterm-viewport {
+  background-color: transparent;
+}
+
+.application-console-empty {
+  margin: -8px 0 var(--space-3);
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .application-console-input-row {

@@ -16,7 +16,13 @@ import {
 import "@/components/servers/forms.css";
 import "./ApplicationConsoleCard.css";
 import { errorMessage } from "@/services/tauri";
-import { parseAnsi } from "@/utils/ansi";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
+import "@xterm/xterm/css/xterm.css";
 import { logLevelOf } from "./logLevel";
 
 interface ApplicationConsoleCardProps {
@@ -45,49 +51,42 @@ const TAIL_LINES = 200;
  * `runtime::ApplicationConsole`'s own doc comment) instead of letting the
  * user keep retrying into the same dead end.
  */
-/**
- * One line of output, coloured by whatever the server said about it.
- *
- * Two sources of colour, and they do not compete. A line the server coloured
- * itself - an ANSI sequence, or a section sign out of chat - is drawn the way
- * the server meant it. A line with no codes keeps the severity shading this
- * console has always had, read out of the text: that is what keeps a stack
- * trace legible, since only its first line carries the word ERROR and none of
- * them carries an escape sequence.
- */
-function ConsoleLine({ line }: { line: string }) {
-  const segments = parseAnsi(line);
-  const coloured = segments.length > 1 || segments[0].color !== undefined || segments[0].bold === true;
-
-  if (!coloured) {
-    return (
-      <span className={`application-console-line application-console-line-${logLevelOf(line)}`}>
-        {line}
-        {"\n"}
-      </span>
-    );
-  }
-
-  return (
-    <span className="application-console-line">
-      {segments.map((segment, index) => (
-        <span
-          key={index}
-          style={{
-            color: segment.color,
-            backgroundColor: segment.background,
-            fontWeight: segment.bold ? 600 : undefined,
-            fontStyle: segment.italic ? "italic" : undefined,
-            textDecoration: segment.underline ? "underline" : segment.strikethrough ? "line-through" : undefined,
-          }}
-        >
-          {segment.text}
-        </span>
-      ))}
-      {"\n"}
-    </span>
-  );
+/** The console's palette, taken from the same tokens the rest of the app uses. */
+function readConsoleTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    background: token("--surface-2", "#0e1626"),
+    foreground: token("--text-primary", "#dbe6f5"),
+    selectionBackground: token("--surface-3", "#2a3f5a"),
+  };
 }
+
+/**
+ * Shades a line the server did not colour itself.
+ *
+ * This is the one thing xterm cannot do for us, and it is worth keeping: only
+ * the first line of a stack trace carries the word ERROR, and without it the
+ * twenty continuation lines beneath it are the same grey as ordinary output.
+ *
+ * A line that already carries an escape is left exactly as the server sent
+ * it. Guessing at a line the server has already made a decision about would
+ * be overriding it, and the server knows what it meant.
+ */
+function withLevelColour(line: string): string {
+  if (line.includes("\u001b")) return line;
+
+  const colour = LEVEL_COLOURS[logLevelOf(line)];
+  return colour ? `\u001b[${colour}m${line}\u001b[0m` : line;
+}
+
+/** SGR codes rather than hex, so the terminal's own palette stays in charge. */
+const LEVEL_COLOURS: Record<string, string | undefined> = {
+  error: "31",
+  warn: "33",
+  info: undefined,
+  debug: "90",
+};
 
 export function ApplicationConsoleCard({ applicationId, isRunning }: ApplicationConsoleCardProps) {
   const { t } = useTranslation();
@@ -95,8 +94,19 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [unsupported, setUnsupported] = useState<string | null>(null);
-  const outputRef = useRef<HTMLPreElement>(null);
-  const stickToBottom = useRef(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  /**
+   * What the terminal has already been shown.
+   *
+   * `lines` is replaced wholesale by a poll and appended to by the stream,
+   * and the terminal is a stream of writes with no notion of either. Keeping
+   * the last rendered array is what lets an append be written as an append
+   * rather than as a clear-and-redraw, which would throw away the scrollback
+   * somebody is reading.
+   */
+  const renderedRef = useRef<string[]>([]);
 
   /**
    * Which source is filling the output, and the reason this is three states
@@ -255,17 +265,95 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     };
   }, [applicationId]);
 
+  // The terminal itself, created once. Everything about colour, selection,
+  // scrollback and following the tail is xterm's job now - the same library
+  // the Node terminal has always used, and the reason that one never had any
+  // of the escape-sequence problems this console kept growing.
   useEffect(() => {
-    if (stickToBottom.current && outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [lines]);
+    const container = containerRef.current;
+    if (!container) return;
 
-  function handleOutputScroll() {
-    const el = outputRef.current;
-    if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-  }
+    const term = new Terminal({
+      // Read-only: commands go through the form below, so a keystroke here
+      // would be a character typed into a window that cannot send it.
+      disableStdin: true,
+      cursorBlink: false,
+      cursorStyle: "bar",
+      fontFamily: "'JetBrains Mono', Consolas, 'SF Mono', monospace",
+      fontSize: 12,
+      // Log lines arrive ending in a bare newline, not CRLF.
+      convertEol: true,
+      scrollback: 5000,
+      theme: readConsoleTheme(),
+    });
+
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.loadAddon(new SearchAddon());
+    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new ClipboardAddon());
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // No WebGL here - the canvas renderer still draws everything.
+    }
+
+    term.open(container);
+    fit.fit();
+    termRef.current = term;
+    fitRef.current = fit;
+
+    const resize = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        // Fitting a terminal with no layout yet throws; the next resize
+        // catches it.
+      }
+    });
+    resize.observe(container);
+
+    // xterm paints into its own canvas, so it cannot inherit a CSS variable.
+    // Watching the root element's inline style is what keeps it in step:
+    // that is where `applyTheme` writes.
+    const themeWatcher = new MutationObserver(() => {
+      term.options.theme = readConsoleTheme();
+    });
+    themeWatcher.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+
+    return () => {
+      themeWatcher.disconnect();
+      resize.disconnect();
+      termRef.current = null;
+      fitRef.current = null;
+      renderedRef.current = [];
+      term.dispose();
+    };
+  }, []);
+
+  // What the terminal has not been shown yet.
+  //
+  // A stream appends, and a poll replaces the whole window - so an append is
+  // written as an append and only a genuine replacement clears. Redrawing
+  // everything on each new line would discard the scrollback somebody is
+  // reading, and flicker while doing it.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+
+    const rendered = renderedRef.current;
+    const isAppend = lines.length >= rendered.length && rendered.every((line, index) => line === lines[index]);
+
+    if (!isAppend) {
+      term.clear();
+      for (const line of lines) term.writeln(withLevelColour(line));
+    } else {
+      for (const line of lines.slice(rendered.length)) term.writeln(withLevelColour(line));
+    }
+    renderedRef.current = lines;
+  }, [lines]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -275,7 +363,9 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     try {
       await writeApplicationConsole(applicationId, trimmed);
       setInput("");
-      stickToBottom.current = true;
+      // Sending a command is a reason to want the newest output, and xterm
+      // only follows the tail while the view is already at it.
+      termRef.current?.scrollToBottom();
       if (!streaming) {
         setLines(await getApplicationLogs(applicationId, TAIL_LINES));
       }
@@ -299,15 +389,11 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           {source === "stream" ? t("applicationConsole.live") : source === "poll" ? t("applicationConsole.polled") : t("applicationConsole.connecting")}
         </span>
       </div>
-      <pre className="application-console-output" ref={outputRef} onScroll={handleOutputScroll}>
-        {lines.length === 0
-          ? (readFailure ?? t("applicationConsole.empty"))
-          : // One element per line rather than one joined string, so each can
-            // carry its own severity. Keyed by index because these lines are
-            // an append-only window with no identity of their own - two
-            // identical lines are genuinely two events, not one repeated.
-            lines.map((line, index) => <ConsoleLine key={index} line={line} />)}
-      </pre>
+      {/* xterm draws into this; React never renders the lines themselves.
+          The empty state stays React's, because a terminal showing one line
+          of explanatory prose reads as output the server produced. */}
+      <div className="application-console-output" ref={containerRef} />
+      {lines.length === 0 && <p className="application-console-empty">{readFailure ?? t("applicationConsole.empty")}</p>}
       {unsupported ? (
         <p className="form-note form-note-danger form-note-spaced">{unsupported}</p>
       ) : (
