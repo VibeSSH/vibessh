@@ -30,7 +30,15 @@ const TOTAL_STEPS = 5;
 
 /** Runtime types a Local application can use vs a Remote one - `localProcess` needs no `RuntimeContext.connection`, the other three need one. Intersected with the chosen blueprint's own `supportedRuntimeTypes` to get the real, capability-driven options for a given step (never a hardcoded "always offer Docker" list - only `generic-docker` declares Docker support, so it's the only blueprint that offers it). */
 function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): RuntimeType[] {
-  return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" : rt !== "localProcess"));
+  // Docker is offered locally as well as remotely. It used to be remote-only,
+  // not by design but because the Docker runtime spoke POSIX shell over SSH -
+  // every invocation a `sudo docker ...` string. It now builds arguments and
+  // hands them to whichever daemon the Application belongs to, and an
+  // Application with no Node is exactly the one that means this machine.
+  //
+  // `localProcess` stays the other way round: it runs a program here, so it
+  // has nothing to say about a remote Node.
+  return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" || rt === "docker" : rt !== "localProcess"));
 }
 
 export function fieldValueOrDefault(field: BlueprintField, values: Record<string, unknown>): unknown {

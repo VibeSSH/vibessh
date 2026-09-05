@@ -11,6 +11,7 @@
 
 pub mod docker;
 pub mod docker_command;
+pub mod local_docker_console;
 pub mod health_check;
 pub mod local_process;
 pub mod remote_process;

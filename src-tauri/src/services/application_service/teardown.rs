@@ -228,7 +228,7 @@ pub async fn delete_application(
         match get_or_connect(server_repo, sessions, server_id).await {
             Ok(connection) => {
                 cleanup_node_artifacts(&connection, id, wants_dedicated_user, &mut report).await;
-                report.warnings.extend(crate::runtime::docker::remove_networks(&connection, id, &former_peers).await);
+                report.warnings.extend(crate::runtime::docker::remove_networks(connection.as_ref(), id, &former_peers).await);
                 if options.remove_files {
                     match remove_working_directory(&connection, &working_directory).await {
                         Ok(()) => report.working_directory_removed = true,

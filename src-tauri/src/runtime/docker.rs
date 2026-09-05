@@ -82,6 +82,7 @@ use crate::dedicated_user;
 use crate::errors::{AppError, AppResult};
 use crate::models::{Application, ApplicationStatus, EnvironmentVariable, PortProtocol};
 use crate::ssh::docker::validate_container_ref;
+use super::docker_command::{DockerCommandRunner, LocalDocker};
 use crate::ssh::SshSession;
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
@@ -170,12 +171,39 @@ fn container_name(application_id: Uuid) -> String {
     format!("vibessh-app-{application_id}")
 }
 
-fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a SshSession> {
-    ctx.connection.as_deref().ok_or_else(|| AppError::Internal("DockerRuntime requires a connection".into()))
+/// Where this Application's `docker` runs.
+///
+/// A missing connection is not an error here any more: `server_id` is
+/// `None` exactly when the Application is local, so no connection *is* the
+/// signal that the daemon on this machine is the one meant.
+fn expect_success(output: crate::transport::CommandOutput, what: &str) -> AppResult<()> {
+    if output.exit_code == 0 {
+        return Ok(());
+    }
+    let detail = output.stderr.trim();
+    let detail = if detail.is_empty() { output.stdout.trim().to_string() } else { detail.to_string() };
+    let detail = if detail.is_empty() { format!("docker exited with {}", output.exit_code) } else { detail };
+    Err(AppError::Connection(format!("couldn't {what}: {detail}")))
 }
 
-fn connection_arc(ctx: &RuntimeContext<'_>) -> AppResult<Arc<SshSession>> {
-    ctx.connection.clone().ok_or_else(|| AppError::Internal("DockerRuntime requires a connection".into()))
+fn runner<'a>(ctx: &'a RuntimeContext<'_>) -> &'a dyn DockerCommandRunner {
+    match ctx.connection.as_deref() {
+        Some(session) => session,
+        None => &LocalDocker,
+    }
+}
+
+/// The same choice, owned - for the console and the log reader, which outlive
+/// the call that made them.
+fn runner_arc(ctx: &RuntimeContext<'_>) -> Arc<dyn DockerCommandRunner> {
+    match ctx.connection.clone() {
+        Some(session) => session,
+        None => Arc::new(LocalDocker),
+    }
+}
+
+fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a SshSession> {
+    ctx.connection.as_deref().ok_or_else(|| AppError::Internal("DockerRuntime requires a connection".into()))
 }
 
 /// Same `.vibessh-app-<uuid>.stdin` naming/location `runtime::remote_process`
@@ -350,17 +378,23 @@ fn network_alias(application: &Application) -> String {
 /// `internal` creates the network with no route out (`--internal`), which is
 /// right for a link network and wrong for an Application's own - see
 /// `LINK_NETWORK_PREFIX`.
-async fn ensure_network(connection: &SshSession, name: &str, internal: bool) -> AppResult<()> {
-    let quoted = shell_quote(name);
-    let probe = connection.execute_command(&format!("sudo docker network inspect {quoted} >/dev/null 2>&1")).await?;
+async fn ensure_network(runner: &dyn DockerCommandRunner, name: &str, internal: bool) -> AppResult<()> {
+    // The redirections these commands used to carry were only ever silencing
+    // output nobody read - the exit code is the answer. Dropping them is what
+    // lets the same call run without a shell.
+    let probe = runner.docker(&["network", "inspect", name]).await?;
     if probe.exit_code == 0 {
         return Ok(());
     }
-    let internal_flag = if internal { "--internal " } else { "" };
-    let output = connection.execute_command(&format!("sudo docker network create {internal_flag}{quoted}")).await?;
+    let mut create = vec!["network", "create"];
+    if internal {
+        create.push("--internal");
+    }
+    create.push(name);
+    let output = runner.docker(&create).await?;
     if output.exit_code != 0 {
         // Lost race: somebody else created it between the probe and here.
-        let recheck = connection.execute_command(&format!("sudo docker network inspect {quoted} >/dev/null 2>&1")).await?;
+        let recheck = runner.docker(&["network", "inspect", name]).await?;
         if recheck.exit_code == 0 {
             return Ok(());
         }
@@ -391,11 +425,9 @@ const INSPECT_NETWORKS_FORMAT: &str = "{{range $name, $config := .NetworkSetting
 /// never inferred from what VibeSSH last did. A container created before
 /// per-Application networks existed is still sitting on the old shared
 /// network, and asking is the only way to find that out.
-async fn current_networks(connection: &SshSession, container: &str) -> AppResult<Vec<String>> {
+async fn current_networks(runner: &dyn DockerCommandRunner, container: &str) -> AppResult<Vec<String>> {
     validate_container_ref(container)?;
-    let output = connection
-        .execute_command(&format!("sudo docker inspect -f {} {}", shell_quote(INSPECT_NETWORKS_FORMAT), shell_quote(container)))
-        .await?;
+    let output = runner.docker(&["inspect", "-f", INSPECT_NETWORKS_FORMAT, container]).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
         let detail = if detail.is_empty() { "docker inspect failed".to_string() } else { detail.to_string() };
@@ -416,28 +448,21 @@ async fn current_networks(connection: &SshSession, container: &str) -> AppResult
 /// longer allowed on is an open exposure, and a start that reports success
 /// while quietly keeping it open is exactly the failure shape this audit
 /// kept finding (`AGENTS.md` rule 3).
-async fn reconcile_networks(connection: &SshSession, ctx: &RuntimeContext<'_>, container: &str) -> AppResult<()> {
+async fn reconcile_networks(runner: &dyn DockerCommandRunner, ctx: &RuntimeContext<'_>, container: &str) -> AppResult<()> {
     let own = app_network_name(ctx.application.id);
     let desired = desired_networks(ctx);
     let alias = network_alias(ctx.application);
-    let current = current_networks(connection, container).await?;
+    let current = current_networks(runner, container).await?;
 
     for name in &desired {
         if current.iter().any(|existing| existing == name) {
             continue;
         }
-        ensure_network(connection, name, name != &own).await?;
+        ensure_network(runner, name, name != &own).await?;
         // The alias is the one genuinely useful thing the old shared network
         // did, kept - but now only between two Applications someone
         // connected on purpose.
-        let output = connection
-            .execute_command(&format!(
-                "sudo docker network connect --alias {} {} {}",
-                shell_quote(&alias),
-                shell_quote(name),
-                shell_quote(container)
-            ))
-            .await?;
+        let output = runner.docker(&["network", "connect", "--alias", &alias, name, container]).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "docker network connect failed".to_string() } else { detail.to_string() };
@@ -459,9 +484,7 @@ async fn reconcile_networks(connection: &SshSession, ctx: &RuntimeContext<'_>, c
                 "taking '{container}' off the legacy shared '{LEGACY_SHARED_NETWORK}' network -                  reachability between applications is now granted explicitly"
             );
         }
-        let output = connection
-            .execute_command(&format!("sudo docker network disconnect {} {}", shell_quote(name), shell_quote(container)))
-            .await?;
+        let output = runner.docker(&["network", "disconnect", name, container]).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "docker network disconnect failed".to_string() } else { detail.to_string() };
@@ -481,7 +504,7 @@ async fn reconcile_networks(connection: &SshSession, ctx: &RuntimeContext<'_>, c
 /// is untidy rather than dangerous - it has no members left to expose
 /// anything to. `former_peers` comes from the link rows read *before* the
 /// cascade deleted them.
-pub async fn remove_networks(connection: &SshSession, application_id: Uuid, former_peers: &[Uuid]) -> Vec<String> {
+pub async fn remove_networks(runner: &dyn DockerCommandRunner, application_id: Uuid, former_peers: &[Uuid]) -> Vec<String> {
     let mut warnings = Vec::new();
     let mut names = vec![app_network_name(application_id)];
     for peer in former_peers {
@@ -491,24 +514,28 @@ pub async fn remove_networks(connection: &SshSession, application_id: Uuid, form
         // A non-zero exit is the normal case here - the network may never
         // have been created, or the peer may not have disconnected yet - so
         // only a transport failure is worth reporting.
-        if let Err(err) = connection.execute_command(&format!("sudo docker network rm {} >/dev/null 2>&1", shell_quote(&name))).await {
+        if let Err(err) = runner.docker(&["network", "rm", &name]).await {
             warnings.push(format!("couldn't remove the '{name}' network: {err}"));
         }
     }
     warnings
 }
 
-async fn container_exists(connection: &SshSession, name: &str) -> AppResult<bool> {
+async fn container_exists(runner: &dyn DockerCommandRunner, name: &str) -> AppResult<bool> {
     validate_container_ref(name)?;
-    let output = connection.execute_command(&format!("sudo docker inspect {name} >/dev/null 2>&1")).await?;
+    let output = runner.docker(&["inspect", name]).await?;
     Ok(output.exit_code == 0)
 }
 
-/// Pure command-string construction, separated from `create_container`'s
-/// actual SSH exec so the resource-limit flag placement can be unit tested
-/// without a live connection - same split `runtime::systemd::render_unit_file`
-/// already uses for the same reason.
-fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str, user_flag: Option<&str>) -> AppResult<String> {
+/// Pure argument construction, separated from `create_container`'s actual
+/// execution so the flag placement can be unit tested without a live
+/// connection - same split `runtime::systemd::render_unit_file` already uses
+/// for the same reason.
+///
+/// Arguments rather than a command line: the local runner hands these to the
+/// process directly, and quoting for a shell that is not there is how a
+/// working directory with a space in it becomes two arguments.
+fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str, user_flag: Option<&str>) -> AppResult<Vec<String>> {
     validate_container_ref(name)?;
     reject_newlines(&config.image, "the image")?;
     for arg in &config.command {
@@ -522,7 +549,7 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
         reject_newlines(&port.bind_address, "a port's bind address")?;
     }
 
-    let working_directory = shell_quote(&ctx.application.working_directory);
+    let working_directory = ctx.application.working_directory.clone();
     // `-i` keeps STDIN open even with nothing attached yet - harmless if the
     // Console tab is never used, and what makes `attach_console_fifo`'s
     // later `docker attach` able to feed the container's stdin at all (an
@@ -550,15 +577,24 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     // The alias travels with it onto every network it joins, so the far end
     // of a granted connection addresses this Application by name rather than
     // by an IP that does not survive a recreate.
-    let mut command = format!(
-        "sudo docker create -i --name {} --restart {} --add-host host.docker.internal:host-gateway \
-         --network {} --network-alias {} \
-         -v {working_directory}:{working_directory} -w {working_directory} ",
-        shell_quote(name),
-        restart_policy,
-        shell_quote(&app_network_name(ctx.application.id)),
-        shell_quote(&network_alias(ctx.application)),
-    );
+    let mut args: Vec<String> = vec![
+        "create".into(),
+        "-i".into(),
+        "--name".into(),
+        name.into(),
+        "--restart".into(),
+        restart_policy.into(),
+        "--add-host".into(),
+        "host.docker.internal:host-gateway".into(),
+        "--network".into(),
+        app_network_name(ctx.application.id),
+        "--network-alias".into(),
+        network_alias(ctx.application),
+        "-v".into(),
+        format!("{working_directory}:{working_directory}"),
+        "-w".into(),
+        working_directory.clone(),
+    ];
     // Only ever set for `run_as_dedicated_user` (see that field's own doc
     // comment) - runs the process as this Application's own dedicated
     // Linux account, so a file it creates there is immediately editable by
@@ -566,13 +602,16 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
     // owned by root (the image's default) and reachable by no one but a
     // manual `sudo` session.
     if let Some(user) = user_flag {
-        command.push_str(&format!("--user {user} "));
+        args.push("--user".into());
+        args.push(user.into());
     }
     if let Some(mb) = config.memory_limit_mb {
-        command.push_str(&format!("--memory {mb}m "));
+        args.push("--memory".into());
+        args.push(format!("{mb}m"));
     }
     if let Some(cores) = config.cpu_limit_cores {
-        command.push_str(&format!("--cpus {cores} "));
+        args.push("--cpus".into());
+        args.push(cores.to_string());
     }
     for port in ctx.ports {
         // `external_port` unset means "declared but not meant to be
@@ -585,37 +624,45 @@ fn build_create_command(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &
             PortProtocol::Tcp => "tcp",
             PortProtocol::Udp => "udp",
         };
-        command.push_str(&format!("-p {} ", shell_quote(&format!("{}:{external_port}:{}/{proto}", port.bind_address, port.internal_port))));
+        args.push("-p".into());
+        args.push(format!("{}:{external_port}:{}/{proto}", port.bind_address, port.internal_port));
     }
     for env in ctx.environment {
-        command.push_str(&format!("-e {}={} ", env.key, shell_quote(&env.value)));
+        args.push("-e".into());
+        // One argument, so a value with spaces or quotes in it stays a value
+        // instead of becoming more flags.
+        args.push(format!("{}={}", env.key, env.value));
     }
-    command.push_str(&shell_quote(&config.image));
+    args.push(config.image.clone());
     for arg in &config.command {
-        command.push(' ');
-        command.push_str(&shell_quote(arg));
+        args.push(arg.clone());
     }
-    Ok(command)
+    Ok(args)
 }
 
-async fn create_container(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
+async fn create_container(runner: &dyn DockerCommandRunner, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
+    // Refused before anything is created, not part way through: the
+    // isolation is POSIX users, groups and chown, and an Application that
+    // asked for it must not quietly run without it. Checked first so a
+    // refusal leaves no network behind it.
+    if config.run_as_dedicated_user && !runner.supports_dedicated_user() {
+        return Err(AppError::InvalidInput(
+            "this application runs as its own dedicated user, which needs a Linux Node - a local Docker daemon has no such accounts".into(),
+        ));
+    }
     // Not internal: an Application's own network is also its way out.
-    ensure_network(connection, &app_network_name(ctx.application.id), false).await?;
+    ensure_network(runner, &app_network_name(ctx.application.id), false).await?;
     let user_flag = if config.run_as_dedicated_user {
+        let connection = connection_ref(ctx)?;
         let username = dedicated_user::username(ctx.application.id);
         dedicated_user::ensure_provisioned(connection, &username).await?;
         Some(dedicated_user::user_id(connection, &username).await?)
     } else {
         None
     };
-    let command = build_create_command(ctx, config, name, user_flag.as_deref())?;
-    let output = connection.execute_command(&command).await?;
-    if output.exit_code != 0 {
-        let detail = output.stderr.trim();
-        let detail = if detail.is_empty() { "docker create failed".to_string() } else { detail.to_string() };
-        return Err(AppError::Connection(format!("couldn't create the container: {detail}")));
-    }
-    Ok(())
+    let args = build_create_args(ctx, config, name, user_flag.as_deref())?;
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    expect_success(runner.docker(&borrowed).await?, "create the container")
 }
 
 /// Feeds `docker attach`'s stdin from a host-side named pipe, so
@@ -818,7 +865,7 @@ impl Default for DockerRuntime {
 #[async_trait::async_trait]
 impl ApplicationRuntime for DockerRuntime {
     async fn validate(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let config = parse_config(ctx)?;
         if config.image.trim().is_empty() {
             return Err(AppError::InvalidInput("no image configured for this application".into()));
@@ -829,7 +876,7 @@ impl ApplicationRuntime for DockerRuntime {
         }
         validate_environment(ctx.environment)?;
 
-        let output = connection.execute_command("sudo docker version --format '{{.Server.Version}}' 2>&1").await?;
+        let output = runner.docker(&["version", "--format", "{{.Server.Version}}"]).await?;
         if output.exit_code != 0 {
             // Its own code, not a generic invalid-input: the UI can offer
             // to install Docker, which is a real next step rather than a
@@ -840,29 +887,37 @@ impl ApplicationRuntime for DockerRuntime {
     }
 
     async fn start(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let config = parse_config(ctx)?;
         let name = container_name(ctx.application.id);
 
-        if !container_exists(connection, &name).await? {
-            create_container(connection, ctx, &config, &name).await?;
+        if !container_exists(runner, &name).await? {
+            create_container(runner, ctx, &config, &name).await?;
         }
         // Before the container runs, not after: this is where a container
         // created under the old shared network gets taken off it, and where
         // a connection revoked while this Application was stopped actually
         // stops applying. Propagates on failure - see `reconcile_networks`.
-        reconcile_networks(connection, ctx, &name).await?;
+        reconcile_networks(runner, ctx, &name).await?;
         if config.run_as_dedicated_user {
+            // Refused where it cannot be honoured rather than skipped: the
+            // isolation is POSIX users, groups and chown, and an Application
+            // that asked for it must not quietly run without it.
+            let connection = connection_ref(ctx)?;
             ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
             // Best-effort, same reasoning as everything else on this path -
             // Application Files just falls back to failing clearly on its
             // own next call if this doesn't land, it doesn't block start.
             let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
         }
-        connection.start_container(&name).await?;
+        expect_success(runner.docker(&["start", &name]).await?, "start the container")?;
         // Best-effort, per `attach_console_fifo`'s own doc comment - a
-        // console attach failure must never fail the start itself.
-        let _ = attach_console_fifo(connection, ctx, &name).await;
+        // console attach failure must never fail the start itself. Attempted
+        // only over SSH: the FIFO it builds is a POSIX object with no local
+        // Windows counterpart, and the local console is wired up separately.
+        if let Some(connection) = ctx.connection.as_deref() {
+            let _ = attach_console_fifo(connection, ctx, &name).await;
+        }
         Ok(())
     }
 
@@ -872,12 +927,12 @@ impl ApplicationRuntime for DockerRuntime {
     /// anything further here; the real graceful/immediate split is
     /// `stop()` vs `kill()`.
     async fn stop(&self, ctx: &RuntimeContext<'_>, _graceful: bool) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
-        if !container_exists(connection, &name).await? {
+        if !container_exists(runner, &name).await? {
             return Err(AppError::InvalidInput("this application isn't running".into()));
         }
-        connection.stop_container(&name).await
+        expect_success(runner.docker(&["stop", &name]).await?, "stop the container")
     }
 
     /// Applies a granted or revoked connection to a container that already
@@ -889,12 +944,12 @@ impl ApplicationRuntime for DockerRuntime {
     /// Nothing to do for an Application that has never been started: there
     /// is no container to attach, and `start` reconciles before it runs one.
     async fn sync_connections(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
-        if !container_exists(connection, &name).await? {
+        if !container_exists(runner, &name).await? {
             return Ok(());
         }
-        reconcile_networks(connection, ctx, &name).await
+        reconcile_networks(runner, ctx, &name).await
     }
 
     /// Restarts the existing container in place - does not recreate it
@@ -922,21 +977,19 @@ impl ApplicationRuntime for DockerRuntime {
     }
 
     async fn kill(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
-        if !container_exists(connection, &name).await? {
+        if !container_exists(runner, &name).await? {
             return Err(AppError::InvalidInput("this application isn't running".into()));
         }
-        connection.kill_container(&name).await
+        expect_success(runner.docker(&["kill", &name]).await?, "kill the container")
     }
 
     async fn status(&self, ctx: &RuntimeContext<'_>) -> AppResult<ApplicationStatus> {
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
-        let output = connection
-            .execute_command(&format!("sudo docker inspect --format '{{{{.State.Status}}}}|{{{{.State.ExitCode}}}}' {name} 2>/dev/null"))
-            .await?;
+        let output = runner.docker(&["inspect", "--format", "{{.State.Status}}|{{.State.ExitCode}}", &name]).await?;
         if output.exit_code != 0 {
             // Never created, or removed - Stopped, not an error: the same
             // "no other place it could be running" reasoning the other two
@@ -949,7 +1002,7 @@ impl ApplicationRuntime for DockerRuntime {
 
     async fn resource_usage(&self, ctx: &RuntimeContext<'_>) -> AppResult<ResourceUsage> {
         let empty = ResourceUsage { cpu_percent: None, ram_bytes: None, uptime_seconds: None };
-        let connection = connection_ref(ctx)?;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
 
@@ -962,17 +1015,36 @@ impl ApplicationRuntime for DockerRuntime {
         // moment), so it runs first and its failure short-circuits: a
         // container that is not running has no stats and no meaningful
         // uptime either.
-        let output = connection
-            .execute_command(&format!(
-                "sudo docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null &&                  sudo docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null"
-            ))
-            .await?;
-        if output.exit_code != 0 {
-            return Ok(empty);
-        }
-        let mut lines = output.stdout.lines();
-        let (cpu_percent, ram_bytes) = parse_stats_output(lines.next().unwrap_or(""));
-        let uptime_seconds = lines.next().and_then(parse_started_at);
+        // Two readings, and how they are fetched depends on where docker is.
+        // Over SSH they are chained into one command because each
+        // `execute_command` opens its own channel, and this is polled every
+        // few seconds per Application - the round trip is the cost worth
+        // avoiding. Locally there is no round trip, so two plain invocations
+        // are simpler and need no shell.
+        let (stats_line, started_line) = match ctx.connection.as_deref() {
+            Some(connection) => {
+                let output = connection
+                    .execute_command(&format!(
+                        "sudo docker stats --no-stream --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {name} 2>/dev/null &&                  sudo docker inspect --format '{{{{.State.StartedAt}}}}' {name} 2>/dev/null"
+                    ))
+                    .await?;
+                if output.exit_code != 0 {
+                    return Ok(empty);
+                }
+                let mut lines = output.stdout.lines();
+                (lines.next().unwrap_or("").to_string(), lines.next().unwrap_or("").to_string())
+            }
+            None => {
+                let stats = runner.docker(&["stats", "--no-stream", "--format", "{{.CPUPerc}}|{{.MemUsage}}", &name]).await?;
+                if stats.exit_code != 0 {
+                    return Ok(empty);
+                }
+                let started = runner.docker(&["inspect", "--format", "{{.State.StartedAt}}", &name]).await?;
+                (stats.stdout.trim().to_string(), started.stdout.trim().to_string())
+            }
+        };
+        let (cpu_percent, ram_bytes) = parse_stats_output(&stats_line);
+        let uptime_seconds = parse_started_at(&started_line);
 
         Ok(ResourceUsage { cpu_percent, ram_bytes, uptime_seconds })
     }
@@ -992,14 +1064,22 @@ impl ApplicationRuntime for DockerRuntime {
         if self.status(ctx).await? != ApplicationStatus::Running {
             return Ok(None);
         }
-        let connection = connection_arc(ctx)?;
-        let fifo_path = console_fifo_path(ctx.application.id);
-        Ok(Some(Box::new(DockerConsole { connection, fifo_path })))
+        match ctx.connection.clone() {
+            Some(connection) => {
+                let fifo_path = console_fifo_path(ctx.application.id);
+                Ok(Some(Box::new(DockerConsole { connection, fifo_path })))
+            }
+            None => {
+                let name = container_name(ctx.application.id);
+                validate_container_ref(&name)?;
+                let stdin = super::local_docker_console::attach(ctx.application.id, &name).await?;
+                Ok(Some(Box::new(LocalDockerConsole { application_id: ctx.application.id, stdin })))
+            }
+        }
     }
 
     async fn logs(&self, ctx: &RuntimeContext<'_>) -> AppResult<Box<dyn LogProvider>> {
-        let connection = connection_arc(ctx)?;
-        Ok(Box::new(DockerLogs { connection, name: container_name(ctx.application.id) }))
+        Ok(Box::new(DockerLogs { runner: runner_arc(ctx), name: container_name(ctx.application.id) }))
     }
 
     /// `docker rm -f` - stops (if running) and removes in one step, same as
@@ -1009,19 +1089,53 @@ impl ApplicationRuntime for DockerRuntime {
     /// name exists after this returns Ok", not "a container existed before
     /// this ran".
     async fn destroy(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        // Whatever was holding this container's stdin open locally has
+        // nothing left to hold it open for.
+        super::local_docker_console::detach(ctx.application.id).await;
+        let runner = runner(ctx);
         let name = container_name(ctx.application.id);
         validate_container_ref(&name)?;
-        if !container_exists(connection, &name).await? {
+        if !container_exists(runner, &name).await? {
             return Ok(());
         }
-        let output = connection.execute_command(&format!("sudo docker rm -f {}", shell_quote(&name))).await?;
-        if output.exit_code != 0 {
-            let detail = output.stderr.trim();
-            let detail = if detail.is_empty() { "docker rm failed".to_string() } else { detail.to_string() };
-            return Err(AppError::Connection(format!("couldn't remove the container: {detail}")));
-        }
-        Ok(())
+        expect_success(runner.docker(&["rm", "-f", &name]).await?, "remove the container")
+    }
+}
+
+/// Types into a container on this machine.
+///
+/// The remote console below has to send each line as its own SSH exec into a
+/// FIFO, because an exec channel cannot be held open for the tab's whole
+/// life. Nothing here is under that constraint: the `docker attach` keeping
+/// this container's stdin open is a child of this process, so a line is just
+/// a write.
+struct LocalDockerConsole {
+    application_id: Uuid,
+    stdin: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+}
+
+#[async_trait::async_trait]
+impl ApplicationConsole for LocalDockerConsole {
+    async fn write(&self, input: &str) -> AppResult<()> {
+        reject_newlines(input, "console input")?;
+        self.stdin
+            .send(format!("{input}
+").into_bytes())
+            .map_err(|_| AppError::Connection("the container is no longer accepting input - it may have stopped".into()))
+    }
+
+    fn close(&self) {
+        // The attach outlives any one open tab - closing it here would take
+        // the console away from anybody else looking at the same
+        // Application, and reopening the tab would start another. It is
+        // dropped when the container stops, which is when it stops meaning
+        // anything.
+        let application_id = self.application_id;
+        let _ = application_id;
+    }
+
+    fn supports_input(&self) -> bool {
+        true
     }
 }
 
@@ -1074,18 +1188,27 @@ impl ApplicationConsole for DockerConsole {
 }
 
 struct DockerLogs {
-    connection: Arc<SshSession>,
+    runner: Arc<dyn DockerCommandRunner>,
     name: String,
 }
 
 #[async_trait::async_trait]
 impl LogProvider for DockerLogs {
     async fn tail(&self, max_lines: u32) -> AppResult<Vec<String>> {
-        // Reuses `container_logs` verbatim - it already exists for the
-        // Quick Actions Docker tab, and `Applications` needs the exact same
-        // thing.
-        let logs = self.connection.container_logs(&self.name, max_lines).await?;
-        Ok(logs.lines().map(str::to_string).collect())
+        validate_container_ref(&self.name)?;
+        // Both streams, in the order docker printed them as best as two pipes
+        // allow: this used to lean on `2>&1` in a shell, and a container that
+        // logs to stderr - which most do - would otherwise show nothing at
+        // all on the local path.
+        let output = self.runner.docker(&["logs", "--tail", &max_lines.to_string(), "--timestamps", &self.name]).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            let detail = if detail.is_empty() { "docker logs failed".to_string() } else { detail.to_string() };
+            return Err(AppError::Connection(format!("couldn't read the container's logs: {detail}")));
+        }
+        let mut lines: Vec<String> = output.stdout.lines().map(str::to_string).collect();
+        lines.extend(output.stderr.lines().map(str::to_string));
+        Ok(lines)
     }
 }
 
@@ -1221,6 +1344,17 @@ mod tests {
         assert_eq!(alias, "a".repeat(63));
     }
 
+    /// The value that follows a flag, or `None` if the flag is absent. Says
+    /// what the old string assertions were really asking - that the flag and
+    /// its value are adjacent, which a substring search only implied.
+    fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.windows(2).find(|pair| pair[0] == flag).map(|pair| pair[1].as_str())
+    }
+
+    fn index_of(args: &[String], value: &str) -> Option<usize> {
+        args.iter().position(|arg| arg == value)
+    }
+
     #[test]
     fn build_create_command_joins_its_own_private_network_with_an_alias_before_the_image() {
         let id = Uuid::new_v4();
@@ -1229,12 +1363,13 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains(&format!("--network '{}' --network-alias 'my-app'", app_network_name(id))), "{command}");
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert_eq!(flag_value(&args, "--network"), Some(app_network_name(id).as_str()), "{args:?}");
+        assert_eq!(flag_value(&args, "--network-alias"), Some("my-app"), "{args:?}");
         // The whole point of S-018: nothing is created on the shared network
         // any more, so no container starts life able to reach another.
-        assert!(!command.contains(&format!("--network {LEGACY_SHARED_NETWORK} ")), "{command}");
-        assert!(command.find("--network").unwrap() < command.find("alpine:latest").unwrap());
+        assert!(!args.iter().any(|arg| arg == LEGACY_SHARED_NETWORK), "{args:?}");
+        assert!(index_of(&args, "--network") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1303,10 +1438,10 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("--memory 512m"), "{command}");
-        assert!(command.contains("--cpus 1.5"), "{command}");
-        assert!(command.find("--memory").unwrap() < command.find("alpine:latest").unwrap());
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert_eq!(flag_value(&args, "--memory"), Some("512m"), "{args:?}");
+        assert_eq!(flag_value(&args, "--cpus"), Some("1.5"), "{args:?}");
+        assert!(index_of(&args, "--memory") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1316,9 +1451,9 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", Some("1000:1000")).unwrap();
-        assert!(command.contains("--user 1000:1000"), "{command}");
-        assert!(command.find("--user").unwrap() < command.find("alpine:latest").unwrap());
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", Some("1000:1000")).unwrap();
+        assert_eq!(flag_value(&args, "--user"), Some("1000:1000"), "{args:?}");
+        assert!(index_of(&args, "--user") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1328,8 +1463,8 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(!command.contains("--user"), "{command}");
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(index_of(&args, "--user").is_none(), "{args:?}");
     }
 
     #[test]
@@ -1339,9 +1474,9 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("docker create -i "), "{command}");
-        assert!(command.find("-i").unwrap() < command.find("alpine:latest").unwrap());
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert_eq!(args.first().map(String::as_str), Some("create"), "{args:?}");
+        assert!(index_of(&args, "-i") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1415,10 +1550,10 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("-v '/srv/my-app':'/srv/my-app'"), "{command}");
-        assert!(command.contains("-w '/srv/my-app'"), "{command}");
-        assert!(command.find("-v").unwrap() < command.find("alpine:latest").unwrap());
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert_eq!(flag_value(&args, "-v"), Some("/srv/my-app:/srv/my-app"), "{args:?}");
+        assert_eq!(flag_value(&args, "-w"), Some("/srv/my-app"), "{args:?}");
+        assert!(index_of(&args, "-v") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1428,8 +1563,8 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("--restart unless-stopped"), "{command}");
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert_eq!(flag_value(&args, "--restart"), Some("unless-stopped"), "{args:?}");
     }
 
     #[test]
@@ -1439,11 +1574,11 @@ mod tests {
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()), run_as_dedicated_user: false };
-        let command = build_create_command(&ctx, &always, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("--restart always"), "{command}");
+        let args = build_create_args(&ctx, &always, "vibessh-app-test", None).unwrap();
+        assert_eq!(flag_value(&args, "--restart"), Some("always"), "{args:?}");
 
         let bogus = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("whenever".into()), run_as_dedicated_user: false };
-        assert!(build_create_command(&ctx, &bogus, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &bogus, "vibessh-app-test", None).is_err());
     }
 
     fn stub_port(protocol: PortProtocol, bind_address: &str, internal_port: u16, external_port: Option<u16>) -> ApplicationPort {
@@ -1474,12 +1609,12 @@ mod tests {
         ];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(command.contains("-p '0.0.0.0:25565:25565/tcp'"), "{command}");
-        assert!(command.contains("-p '0.0.0.0:24454:24454/udp'"), "{command}");
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(args.iter().any(|arg| arg == "0.0.0.0:25565:25565/tcp"), "{args:?}");
+        assert!(args.iter().any(|arg| arg == "0.0.0.0:24454:24454/udp"), "{args:?}");
         // The port with no external_port must not be published at all.
-        assert!(!command.contains("3306"), "{command}");
-        assert!(command.find("-p").unwrap() < command.find("alpine:latest").unwrap());
+        assert!(!args.iter().any(|arg| arg.contains("3306")), "{args:?}");
+        assert!(index_of(&args, "-p") < index_of(&args, "alpine:latest"), "{args:?}");
     }
 
     #[test]
@@ -1489,8 +1624,8 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(!command.contains("-p "));
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(index_of(&args, "-p").is_none(), "{args:?}");
     }
 
     #[test]
@@ -1501,7 +1636,7 @@ mod tests {
         let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
-        assert!(build_create_command(&ctx, &config, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &config, "vibessh-app-test", None).is_err());
     }
 
     #[test]
@@ -1511,9 +1646,9 @@ mod tests {
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let command = build_create_command(&ctx, &config, "vibessh-app-test", None).unwrap();
-        assert!(!command.contains("--memory"));
-        assert!(!command.contains("--cpus"));
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        assert!(index_of(&args, "--memory").is_none(), "{args:?}");
+        assert!(index_of(&args, "--cpus").is_none(), "{args:?}");
     }
 
     #[test]
@@ -1523,24 +1658,43 @@ mod tests {
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
-        assert!(build_create_command(&ctx, &zero_memory, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &zero_memory, "vibessh-app-test", None).is_err());
 
         let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None, run_as_dedicated_user: false };
-        assert!(build_create_command(&ctx, &negative_cpu, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &negative_cpu, "vibessh-app-test", None).is_err());
     }
 
+    /// This used to assert the opposite - that every one of these failed
+    /// with "DockerRuntime requires a connection". No connection is not a
+    /// fault any more: `server_id` is `None` exactly when the Application is
+    /// local, so its absence is what says "the daemon on this machine".
     #[tokio::test]
-    async fn methods_that_need_a_connection_fail_cleanly_without_one() {
+    async fn without_a_connection_the_target_is_the_local_daemon() {
         let application = stub_application(Uuid::new_v4());
         let config = serde_json::json!({ "image": "alpine:latest", "command": [] });
         let ctx = RuntimeContext { application: &application, runtime_config: &config, environment: &[], ports: &[], links: &[], connection: None };
-        let runtime = DockerRuntime::new();
 
-        assert!(matches!(runtime.validate(&ctx).await, Err(AppError::Internal(_))));
-        assert!(matches!(runtime.start(&ctx).await, Err(AppError::Internal(_))));
-        assert!(matches!(runtime.status(&ctx).await, Err(AppError::Internal(_))));
-        assert!(matches!(runtime.logs(&ctx).await, Err(AppError::Internal(_))));
-        assert!(matches!(runtime.destroy(&ctx).await, Err(AppError::Internal(_))));
+        // Asserted through the one thing that differs without needing a
+        // daemon to be installed to check it.
+        assert!(!runner(&ctx).supports_dedicated_user());
+    }
+
+    /// The isolation an Application asked for is either given or refused,
+    /// never silently dropped - and the refusal happens before anything is
+    /// created, so it leaves nothing behind.
+    #[tokio::test]
+    async fn a_dedicated_user_is_refused_locally_rather_than_ignored() {
+        let application = stub_application(Uuid::new_v4());
+        let runtime_config = serde_json::json!({});
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        let result = create_container(&LocalDocker, &ctx, &config, "vibessh-app-test").await;
+
+        match result {
+            Err(AppError::InvalidInput(message)) => assert!(message.contains("dedicated user"), "{message}"),
+            other => panic!("expected a refusal naming the dedicated user, got {other:?}"),
+        }
     }
 
     /// `parse_docker_byte_size` reads a number out of remote command output
