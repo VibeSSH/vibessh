@@ -1250,6 +1250,13 @@
     "connecting": "Łączenie",
     "unknown": "Nieznany"
   },
+  "sessionPassword": {
+    "title": "Potrzebne hasło",
+    "body": "Ten Node łączy się hasłem, a na tej maszynie żadne nie jest zapisane.",
+    "placeholder": "Hasło SSH",
+    "connect": "Połącz",
+    "note": "Trzymane w pamięci do zamknięcia VibeSSH i nigdy nie zapisywane na dysk. Żeby zachować je na stałe, ta maszyna potrzebuje działającego pęku kluczy."
+  },
   "servers": {
     "title": "Serwery",
     "subtitle": "Zarządzaj zdalnymi serwerami, z którymi łączy się VibeSSH.",

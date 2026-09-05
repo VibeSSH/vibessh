@@ -1242,6 +1242,13 @@
     "connecting": "Connecting",
     "unknown": "Unknown"
   },
+  "sessionPassword": {
+    "title": "Password needed",
+    "body": "This Node connects with a password, and none is saved on this machine.",
+    "placeholder": "SSH password",
+    "connect": "Connect",
+    "note": "Kept in memory until VibeSSH closes and never written to disk. To save it permanently, this machine needs a working keyring."
+  },
   "servers": {
     "title": "Servers",
     "subtitle": "Manage the remote servers VibeSSH connects to.",

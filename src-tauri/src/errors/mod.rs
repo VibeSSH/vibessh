@@ -57,6 +57,7 @@ pub enum ErrorCode {
     /// The Node's host key changed. Deliberately its own code: this is the
     /// one error where the right UI is a warning, not a retry button.
     HostKeyMismatch,
+    PasswordRequired,
 
     // ---- Vibe AI ----
     //
@@ -172,6 +173,17 @@ pub enum AppError {
     #[error("the Node's host key doesn't match the one VibeSSH saw before")]
     HostKeyMismatch { host: String },
 
+    /// This Node authenticates with a password and none is available - the
+    /// keyring has none stored, or could not be reached at all.
+    ///
+    /// Its own variant because the UI does something specific with it: ask,
+    /// and try again. Anything else would be a dead end on a machine with no
+    /// working Secret Service, which is most of what "Linux" turns out to
+    /// mean in practice - and the alternative, writing the password
+    /// somewhere else, is the thing `storage::credentials` exists to refuse.
+    #[error("a password is needed to connect to this Node")]
+    PasswordRequired { server_id: uuid::Uuid },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -235,6 +247,7 @@ impl AppError {
             AppError::DatabaseServerUnavailable { .. } => ErrorCode::DatabaseServerUnavailable,
             AppError::Timeout { .. } => ErrorCode::Timeout,
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
+            AppError::PasswordRequired { .. } => ErrorCode::PasswordRequired,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -262,6 +275,7 @@ impl AppError {
             }
             AppError::Timeout { operation, seconds } => serde_json::json!({ "operation": operation, "seconds": seconds }),
             AppError::HostKeyMismatch { host } => serde_json::json!({ "host": host }),
+            AppError::PasswordRequired { server_id } => serde_json::json!({ "serverId": server_id }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -303,6 +317,8 @@ impl Serialize for AppError {
                 "invalid_input"
             }
             ErrorCode::Timeout | ErrorCode::HostKeyMismatch => "connection",
+            // Coarsely an input problem: something the person can supply.
+            ErrorCode::PasswordRequired => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

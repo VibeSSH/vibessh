@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useSessionPasswordStore } from "@/stores/sessionPasswordStore";
 import { recordCommandTiming } from "./commandTiming";
 
 /**
@@ -23,6 +24,7 @@ export type ErrorCode =
   | "database_server_unavailable"
   | "timeout"
   | "host_key_mismatch"
+  | "password_required"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"
@@ -65,7 +67,7 @@ export class CommandError extends Error {
  * Every Rust command returns Result<T, AppError>. Tauri surfaces the Err
  * variant as a rejected promise, so callers only need to catch it once here.
  */
-export async function callCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function callCommand<T>(command: string, args?: Record<string, unknown>, isRetry = false): Promise<T> {
   // Measured here because this is the one place every command passes
   // through - see `commandTiming` for why "the UI feels slow" needs numbers
   // before it needs a fix.
@@ -76,7 +78,28 @@ export async function callCommand<T>(command: string, args?: Record<string, unkn
     return result;
   } catch (error) {
     recordCommandTiming(command, performance.now() - started, true);
-    throw normalizeError(error);
+    const normalized = normalizeError(error);
+
+    // A Node that authenticates with a password, on a machine whose keyring
+    // holds none - or has no keyring at all. Handled here because this is the
+    // one place every command passes through: asking at each call site would
+    // mean touching every screen that can open a connection, and missing one
+    // would leave a dead end.
+    //
+    // Retried once only. If the password was wrong the second failure is a
+    // real authentication error and belongs to the caller.
+    if (!isRetry && normalized instanceof CommandError && normalized.code === "password_required") {
+      const serverId = typeof normalized.params.serverId === "string" ? normalized.params.serverId : null;
+      if (serverId) {
+        const password = await useSessionPasswordStore.getState().request(serverId);
+        if (password) {
+          await callCommand<void>("remember_session_password", { serverId, password }, true);
+          return callCommand<T>(command, args, true);
+        }
+      }
+    }
+
+    throw normalized;
   }
 }
 

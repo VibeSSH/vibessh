@@ -41,6 +41,9 @@ pub fn delete_server(repo: &ServerRepository, id: Uuid) -> AppResult<()> {
     // "nothing to delete" as success, so these can't meaningfully fail in a
     // way the caller should roll back for.
     credentials::forget_secret(id, SecretKind::SshPassword);
+    // The in-memory one too - it never reached the keyring, so nothing
+    // above would have cleared it.
+    crate::state::session_passwords::forget(id);
     credentials::forget_secret(id, SecretKind::SshKeyPassphrase);
     Ok(())
 }

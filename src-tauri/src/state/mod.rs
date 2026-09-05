@@ -9,6 +9,7 @@ mod migration_locks;
 mod pairing_session;
 mod port_forward_sessions;
 mod ssh_sessions;
+pub mod session_passwords;
 mod terminal_sessions;
 
 pub use agent_sessions::AgentSessionManager;

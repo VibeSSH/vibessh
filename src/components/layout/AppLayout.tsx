@@ -13,6 +13,7 @@ import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
 import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
 import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
+import { SessionPasswordPrompt } from "@/components/servers/SessionPasswordPrompt";
 import { Sidebar } from "./Sidebar";
 import { Rail } from "./Rail";
 import { TitleBar } from "./TitleBar";
@@ -98,6 +99,7 @@ export function AppLayout() {
           </div>
         </div>
       </div>
+      <SessionPasswordPrompt />
       <ToastHost />
       <GlobalServerModal />
       <AuthModal />

@@ -563,8 +563,18 @@ fn credentials_from_input(input: &ServerInput) -> AppResult<SshCredentials> {
 fn credentials_from_server(server: &Server) -> AppResult<SshCredentials> {
     let auth = match server.authentication_type {
         AuthenticationType::Password => {
-            let password = credentials::load_secret(server.id, SecretKind::SshPassword)?
-                .ok_or_else(|| AppError::Storage("no password is stored for this server".into()))?;
+            // The keyring first, and it stays the place a password belongs.
+            // `load_optional_secret` rather than the strict read: on a
+            // machine with no working Secret Service the two answers "there
+            // is none" and "the store is unreachable" are indistinguishable,
+            // and both have the same remedy below - ask.
+            let stored = credentials::load_optional_secret(server.id, SecretKind::SshPassword)?;
+            let password = stored
+                .or_else(|| crate::state::session_passwords::get(server.id))
+                // Its own error rather than a message: the UI asks and tries
+                // again, which is the one thing that turns an unusable Node
+                // into a working one without writing the password to a file.
+                .ok_or(AppError::PasswordRequired { server_id: server.id })?;
             SshAuth::Password(password)
         }
         AuthenticationType::PrivateKey => {

@@ -1,7 +1,7 @@
 use tauri::State;
 use uuid::Uuid;
 
-use crate::errors::AppResult;
+use crate::errors::{AppError, AppResult};
 use crate::firewall::FirewallRule;
 use crate::models::{FirewallCustomRule, FirewallCustomRuleInput, NodeCapabilities, Server, ServerInput};
 use crate::services::{self, FirewallSyncResult, NodeFirewallOverview};
@@ -37,6 +37,30 @@ pub async fn delete_server(repo: State<'_, ServerRepository>, forwards: State<'_
     // has a Server row shouldn't be left running until it errors out on its
     // own.
     forwards.stop_all_for_server(id).await;
+    Ok(())
+}
+
+/// Keeps a password for this run only, after the UI has asked for one.
+///
+/// Deliberately has no "save it" counterpart: a password that can be stored
+/// goes to the OS credential store when the Node is created, and this exists
+/// for the machines where that is not possible. Writing it anywhere is what
+/// `storage::credentials` refuses to do, and adding a second path to disk
+/// here would quietly undo that.
+#[tauri::command]
+pub fn remember_session_password(server_id: Uuid, password: String) -> AppResult<()> {
+    if password.is_empty() {
+        return Err(AppError::InvalidInput("the password is empty".into()));
+    }
+    crate::state::session_passwords::remember(server_id, password);
+    Ok(())
+}
+
+/// Drops a remembered password - called when one turned out to be wrong, so
+/// the next attempt asks again instead of failing the same way forever.
+#[tauri::command]
+pub fn forget_session_password(server_id: Uuid) -> AppResult<()> {
+    crate::state::session_passwords::forget(server_id);
     Ok(())
 }
 
