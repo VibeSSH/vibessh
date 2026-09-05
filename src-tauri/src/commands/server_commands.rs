@@ -64,6 +64,20 @@ pub fn forget_session_password(server_id: Uuid) -> AppResult<()> {
     Ok(())
 }
 
+/// Lists game servers already sitting in a directory, ready to be adopted.
+///
+/// Reads and nothing else - these are directories somebody is very likely
+/// still running servers out of.
+#[tauri::command]
+pub async fn scan_for_servers(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Option<Uuid>,
+    directory: String,
+) -> AppResult<Vec<crate::models::DiscoveredServer>> {
+    services::server_discovery_service::scan_for_servers(&repo, &sessions, server_id, &directory).await
+}
+
 #[tauri::command]
 pub fn get_server(repo: State<ServerRepository>, id: Uuid) -> AppResult<Server> {
     services::get_server(&repo, id)

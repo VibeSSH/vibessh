@@ -3,6 +3,7 @@ mod app_info;
 mod application;
 mod application_backup;
 mod application_template;
+mod discovered_server;
 mod backup_destination;
 mod blueprint;
 mod cloud;
@@ -27,6 +28,7 @@ pub use application::{
 };
 pub use application_backup::{ApplicationBackup, BackupKind, BackupSchedule, SetBackupScheduleInput};
 pub use application_template::{ApplicationTemplate, TemplateEnvironmentVariable};
+pub use discovered_server::{DiscoveredServer, DiscoveredServerKind};
 pub use backup_destination::{BackupDestinationConfig, SetBackupDestinationInput};
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType, DefaultPort, KnownFile};
 pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, UpdateDatabaseHostInput, DatabaseEngine, DatabaseHost};
