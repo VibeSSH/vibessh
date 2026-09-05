@@ -1,5 +1,4 @@
-# Builds a signed Windows installer and publishes it where the app can find
-# it.
+# Builds signed installers and publishes them where the app can find them.
 #
 # **Why the artifacts go to a second repository.** This one is private, and
 # GitHub serves release assets from a private repository only with an
@@ -9,11 +8,17 @@
 # installers and their manifest.
 #
 # **The signature is the part that matters.** `latest.json` carries a minisign
-# signature over the installer, checked against a public key compiled into the
-# app. Without it an update mechanism is remote code execution with extra
+# signature over each installer, checked against a public key compiled into
+# the app. Without it an update mechanism is remote code execution with extra
 # steps: anything able to answer the update URL could hand over an installer
 # of its own and the app would run it. The private half lives only in this
 # repository's secrets and never in the tree.
+#
+# **Why building and publishing are separate jobs.** Two platforms produce two
+# installers and `latest.json` names both, so it cannot be written by either
+# build. Splitting them also means a publishing failure costs a retry of the
+# last job rather than of both builds - which is exactly what an empty
+# releases repository cost when the two were one.
 name: Release
 
 on:
@@ -23,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Build the installer but publish nothing
+        description: Build the installers but publish nothing
         type: boolean
         default: true
 
@@ -32,9 +37,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows:
-    name: Windows installer
-    runs-on: windows-latest
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide whether the other one works.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows installer
+            platform: windows-x86_64
+            bundles: nsis
+          # Not `ubuntu-latest`: an AppImage runs on the glibc it was built
+          # against and newer, so the oldest supported runner is what decides
+          # how old a distribution can be and still run this.
+          - os: ubuntu-22.04
+            label: Linux installer
+            platform: linux-x86_64
+            bundles: appimage,deb
     steps:
       - uses: actions/checkout@v4
 
@@ -48,24 +69,35 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Otherwise the two platforms share one cache and evict each other.
+          key: ${{ matrix.platform }}
+
+      # What Tauri 2 links against on Linux. Absent from the runner image, and
+      # without them the build fails as a linker error a long way from its
+      # cause.
+      - name: Install the Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev build-essential file
 
       - name: Install dependencies
         run: npm ci
 
-      # The version the installer carries comes from tauri.conf.json, not from
+      # The version an installer carries comes from tauri.conf.json, not from
       # the tag. Checking they agree here turns a silent mismatch - an update
       # the app can never see as newer - into a failed build.
       - name: Check the tag matches the app version
         if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+        shell: bash
         run: |
-          $conf = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          if ($conf -ne $tag) {
-            Write-Error "tauri.conf.json says $conf, the tag says $tag"
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$conf" != "$tag" ]; then
+            echo "::error::tauri.conf.json says $conf, the tag says $tag"
             exit 1
-          }
-          Write-Host "version $conf"
+          fi
+          echo "version $conf"
 
       - name: Build and sign
         id: build
@@ -78,47 +110,20 @@ jobs:
           # release in it would be unreachable by the updater. The bundler
           # still signs what it builds and leaves the signature beside the
           # installer, which is all the next step needs.
-          args: --verbose
+          args: --verbose --bundles ${{ matrix.bundles }}
 
-      # The manifest is written here rather than taken from the build.
-      # `tauri-action` only ever synthesises `latest.json` while uploading to a
-      # release, so a run that publishes nothing produces none - and even on a
-      # real release the URL it would write points at this repository, which is
-      # private and therefore useless to the updater. The one thing that cannot
-      # be reconstructed is the signature, and the bundler does leave that on
-      # disk.
-      #
       # The installer paths come from the action's own output rather than from
       # a guess: an earlier attempt looked under `src-tauri/target`, which does
       # not exist here, because this is a Cargo workspace and the target
       # directory sits at the repository root.
-      - name: Write the update manifest
-        id: artifacts
-        shell: pwsh
+      - name: Collect what was built
+        shell: bash
         env:
           ARTIFACT_PATHS: ${{ steps.build.outputs.artifactPaths }}
         run: |
-          New-Item -ItemType Directory -Force -Path dist-release | Out-Null
-
-          # The tag is derived from the version rather than from the ref, so a
-          # dry run on a branch still writes the URL a release would have.
-          # They cannot disagree on a real release: an earlier step refuses to
-          # build when the tag and tauri.conf.json do not match.
-          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $tag = "v$version"
-
-          $paths = $env:ARTIFACT_PATHS | ConvertFrom-Json
-          foreach ($p in $paths) {
-            if (Test-Path $p) { Copy-Item $p dist-release/ -Force }
-            if (Test-Path "$p.sig") { Copy-Item "$p.sig" dist-release/ -Force }
-          }
-
-          $installer = Get-ChildItem dist-release -Filter *-setup.exe | Select-Object -First 1
-          if (-not $installer) {
-            Write-Error "no NSIS installer among: $($paths -join ', ')"
-            exit 1
-          }
-
+          mkdir -p dist
+          node .github/workflows/collect_artifacts.cjs
+          ls -l dist
           # An unsigned installer must stop the build. Publishing one would
           # leave the app unable to tell a real update from anything else that
           # manages to answer the update URL.
@@ -127,58 +132,50 @@ jobs:
           # for the second: `createUpdaterArtifacts` in tauri.conf.json is off
           # by default, and with it off the bundler never signs anything, so a
           # perfectly good key looks like a broken one.
-          $sig = "$($installer.FullName).sig"
-          if (-not (Test-Path $sig)) {
-            Write-Error "no signature beside the installer - check bundle.createUpdaterArtifacts in tauri.conf.json, then TAURI_SIGNING_PRIVATE_KEY"
+          if ! ls dist/*.sig >/dev/null 2>&1; then
+            echo "::error::nothing in dist is signed - check bundle.createUpdaterArtifacts in tauri.conf.json, then TAURI_SIGNING_PRIVATE_KEY"
             exit 1
-          }
+          fi
 
-          $manifest = [ordered]@{
-            version   = $version
-            notes     = "VibeSSH $tag"
-            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-            platforms = [ordered]@{
-              # The updater sniffs the bytes it downloads, so it accepts the
-              # NSIS installer directly - no wrapping archive needed.
-              "windows-x86_64" = [ordered]@{
-                signature = (Get-Content $sig -Raw).Trim()
-                url       = "https://github.com/VibeSSH/vibessh-releases/releases/download/$tag/$($installer.Name)"
-              }
-            }
-          }
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content dist-release/latest.json -Encoding utf8
-
-          Get-ChildItem dist-release | ForEach-Object { Write-Host ("{0}  {1:N0} B" -f $_.Name, $_.Length) }
-          Write-Host "--- latest.json ---"
-          Get-Content dist-release/latest.json
-
-      # Kept whatever happens next. Publishing is a handful of API calls that
-      # can fail for reasons having nothing to do with the build - an empty
-      # repository, an expired token - and without this a signed installer that
-      # took twenty minutes to produce would be thrown away each time.
-      - name: Keep the installer regardless of what publishing does
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: vibessh-installer
-          path: dist-release/*
+          name: installer-${{ matrix.platform }}
+          path: dist/*
           retention-days: 30
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+
+      - name: Write the update manifest
+        shell: bash
+        run: |
+          mkdir -p dist-release
+          find incoming -type f -exec cp {} dist-release/ \;
+          ls -l dist-release
+          python3 .github/workflows/write_manifest.py
 
       - name: Publish to the public releases repository
         if: startsWith(github.ref, 'refs/tags/v') && inputs.dry_run != true
-        shell: pwsh
         env:
           # A token with write access to VibeSSH/vibessh-releases only. The
           # workflow's own GITHUB_TOKEN cannot reach another repository.
           GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
         run: |
-          $tag = "${{ github.ref_name }}"
-
           # Deliberately not --prerelease, beta tags included. The app asks
-          # GitHub for `releases/latest/download/latest.json`, and GitHub does
+          # GitHub for releases/latest/download/latest.json, and GitHub does
           # not count a pre-release as the latest one - so the flag would leave
           # every installed copy getting a 404 on every check. The version in
           # the tag is what says this is a beta.
-          gh release create $tag (Get-ChildItem dist-release | ForEach-Object { $_.FullName }) `
-            --repo VibeSSH/vibessh-releases `
-            --title "VibeSSH $tag" `
-            --notes "Installer and update manifest for $tag. Source: private repository."
+          gh release create "$GITHUB_REF_NAME" dist-release/* \
+            --repo VibeSSH/vibessh-releases \
+            --title "VibeSSH $GITHUB_REF_NAME" \
+            --notes "Installers and update manifest for $GITHUB_REF_NAME. Source: private repository."
