@@ -88,6 +88,34 @@ pub fn store_secret(server_id: Uuid, kind: SecretKind, value: &str) -> AppResult
         .map_err(|err| keyring_advice("store", kind, &err))
 }
 
+/// Reads a secret that may legitimately not exist.
+///
+/// The difference from `load_secret` is what an unreachable store means. For
+/// something required - an SSH password - it has to stay fatal, because
+/// answering "there is none" would report a broken keyring as a missing
+/// password and send somebody looking in the wrong place.
+///
+/// For something optional it is the other way round. A key passphrase is
+/// absent for most keys, and the Secret Service cannot tell "no such entry"
+/// apart from "no default collection exists" - both arrive as
+/// `NoStorageAccess`. Refusing to connect then blocks a key that never had a
+/// passphrase, for no gain: nothing is exposed by trying without one, and if
+/// the key really does need it, SSH says so itself.
+///
+/// The trade is real and logged rather than hidden: someone whose keyring is
+/// merely locked gets an authentication failure instead of a message about
+/// their keyring.
+pub fn load_optional_secret(server_id: Uuid, kind: SecretKind) -> AppResult<Option<String>> {
+    match entry_for(server_id, kind)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => {
+            log::warn!("couldn't read the optional {} for {server_id}, continuing without it: {err}", kind.suffix());
+            Ok(None)
+        }
+    }
+}
+
 pub fn load_secret(server_id: Uuid, kind: SecretKind) -> AppResult<Option<String>> {
     match entry_for(server_id, kind)?.get_password() {
         Ok(value) => Ok(Some(value)),

@@ -572,7 +572,9 @@ fn credentials_from_server(server: &Server) -> AppResult<SshCredentials> {
                 .private_key_path
                 .clone()
                 .ok_or_else(|| AppError::Storage("this server has no private key path recorded".into()))?;
-            let passphrase = credentials::load_secret(server.id, SecretKind::SshKeyPassphrase)?;
+            // Optional: most keys have none, and a keyring that cannot be
+            // reached must not block one that never needed a passphrase.
+            let passphrase = credentials::load_optional_secret(server.id, SecretKind::SshKeyPassphrase)?;
             SshAuth::PrivateKey { path, passphrase }
         }
     };
