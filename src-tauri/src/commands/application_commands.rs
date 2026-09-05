@@ -447,13 +447,14 @@ pub async fn restart_application(
 #[tauri::command]
 pub async fn recreate_application(
     repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
     registry_repo: State<'_, RegistryCredentialRepository>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
-    services::recreate_application(&repo, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
+    services::recreate_application(&repo, &registry, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
 }
 
 #[tauri::command]

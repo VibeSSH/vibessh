@@ -765,7 +765,7 @@ mod tests {
         let (app_repo, server_repo, _network_repo, sessions, local_process_manager, _registry, _firewall_rule_repo, registry_credential_repo, ..) = temp_setup();
         let local = create_raw(&app_repo, RuntimeType::LocalProcess, serde_json::json!({ "command": "sh", "args": [] }));
 
-        let err = recreate_application(&app_repo, &server_repo, &sessions, &registry_credential_repo, &local_process_manager, local.application.id).await.unwrap_err();
+        let err = recreate_application(&app_repo, &_registry, &server_repo, &sessions, &registry_credential_repo, &local_process_manager, local.application.id).await.unwrap_err();
         assert!(matches!(err, AppError::InvalidInput(_)));
     }
 

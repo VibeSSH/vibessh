@@ -214,6 +214,49 @@ pub(crate) fn resolve_environment_secrets(application_id: Uuid, environment: Vec
 /// blueprint's own `provision()` has - correctness first, this is the
 /// simple way to get it without teaching `BlueprintHandler` a new "does
 /// this field matter" concept.
+/// Rebuilds an Application's `runtime_config` from today's blueprint logic
+/// and its own stored answers.
+///
+/// **Why this is not part of `update_application_config`.** That one
+/// re-provisions - it downloads the jar again, because a changed Minecraft
+/// version needs a different one. Nothing here has changed for the
+/// Application; what has changed is how a blueprint renders the same
+/// answers. So the discovered values are read back from where creation left
+/// them (`metadata.blueprintInputs` holds the merged set, jar filename
+/// included) and nothing is fetched.
+///
+/// This is the only way an improvement to a blueprint reaches an Application
+/// that already exists. Recreating a container rebuilt it from the stored
+/// command, so a fix to how that command is built could never arrive - the
+/// button promised that a changed command would take effect, and for
+/// anything but a hand-edited field it did not.
+///
+/// `Ok(None)` when there is nothing to re-render or it would not be safe to:
+/// an Application not made from a blueprint, one whose blueprint is gone, or
+/// one whose runtime type the blueprint no longer supports - the last for the
+/// same reason `update_application_config` refuses it, since today's renderer
+/// would produce a shape that runtime was never designed for.
+pub fn rerender_runtime_config(
+    registry: &BlueprintRegistry,
+    detail: &ApplicationDetail,
+) -> AppResult<Option<serde_json::Value>> {
+    let Some(handler) = registry.get(&detail.application.blueprint_id) else { return Ok(None) };
+    if !handler.blueprint().supported_runtime_types.contains(&detail.application.runtime_type) {
+        return Ok(None);
+    }
+
+    let inputs: HashMap<String, serde_json::Value> = match detail.metadata.get("blueprintInputs") {
+        Some(serde_json::Value::Object(map)) => map.clone().into_iter().collect(),
+        // Nothing recorded, so there is nothing to render from - an
+        // Application created before this was stored, or not from a
+        // blueprint at all.
+        _ => return Ok(None),
+    };
+
+    let rendered = handler.render_runtime_config(&inputs)?;
+    Ok((rendered != detail.runtime_config).then_some(rendered))
+}
+
 pub async fn update_application_config(
     repo: &ApplicationRepository,
     registry: &BlueprintRegistry,
@@ -337,5 +380,106 @@ pub(crate) async fn ensure_working_directory_exists(
             Err(AppError::InvalidInput(format!("couldn't create working directory '{working_directory}' on the remote host: {detail}")))
         })
         .await,
+    }
+}
+
+#[cfg(test)]
+mod rerender_tests {
+    use super::*;
+    use crate::models::{Application, ApplicationStatus, HealthCheckType, RuntimeType};
+
+    fn detail(blueprint_id: &str, runtime_config: serde_json::Value, inputs: serde_json::Value) -> ApplicationDetail {
+        ApplicationDetail {
+            application: Application {
+                id: Uuid::new_v4(),
+                server_id: Some(Uuid::new_v4()),
+                name: "lobby".to_string(),
+                description: None,
+                blueprint_id: blueprint_id.to_string(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::Docker,
+                working_directory: "/srv/lobby".to_string(),
+                status: ApplicationStatus::Stopped,
+                last_status_check_at: None,
+                health_check_type: HealthCheckType::Process,
+                health_check_port_id: None,
+                health_check_http_path: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+            environment: vec![],
+            ports: vec![],
+            runtime_config,
+            metadata: serde_json::json!({ "blueprintInputs": inputs }),
+            links: vec![],
+        }
+    }
+
+    /// The case this exists for. An Application created before a blueprint
+    /// changed carries the command it was given then, and recreating its
+    /// container rebuilt it from exactly that - so an improvement to how the
+    /// command is built could never reach it.
+    #[test]
+    fn a_stale_command_is_rebuilt_from_todays_blueprint() {
+        let registry = BlueprintRegistry::with_builtins();
+        let stale = serde_json::json!({
+            "image": "eclipse-temurin:21-jre",
+            "command": ["java", "-jar", "paper-1.21.11-132.jar", "nogui"],
+            "runAsDedicatedUser": true
+        });
+        let inputs = serde_json::json!({
+            "minecraftVersion": "1.21.11",
+            "javaVersion": "21",
+            "eulaAccepted": true,
+            "jvmArgs": [],
+            "programArgs": ["nogui"],
+            "__jarFilename": "paper-1.21.11-132.jar"
+        });
+
+        let rebuilt = rerender_runtime_config(&registry, &detail("paper", stale, inputs)).unwrap();
+
+        let rebuilt = rebuilt.expect("the command should have been rebuilt");
+        let command = rebuilt["command"].as_array().unwrap();
+        assert!(command.iter().any(|arg| arg == "-Dterminal.ansi=true"), "{rebuilt}");
+    }
+
+    /// Nothing to say when the stored command already matches - the caller
+    /// writes nothing and recreates with what it has.
+    #[test]
+    fn an_up_to_date_command_is_left_alone() {
+        let registry = BlueprintRegistry::with_builtins();
+        let inputs = serde_json::json!({
+            "minecraftVersion": "1.21.11",
+            "javaVersion": "21",
+            "eulaAccepted": true,
+            "jvmArgs": [],
+            "programArgs": ["nogui"],
+            "__jarFilename": "paper-1.21.11-132.jar"
+        });
+        let current = rerender_runtime_config(&registry, &detail("paper", serde_json::json!({}), inputs.clone()))
+            .unwrap()
+            .expect("a first render");
+
+        let again = rerender_runtime_config(&registry, &detail("paper", current, inputs)).unwrap();
+
+        assert!(again.is_none());
+    }
+
+    #[test]
+    fn an_application_with_no_recorded_answers_is_left_alone() {
+        let registry = BlueprintRegistry::with_builtins();
+        let mut without = detail("paper", serde_json::json!({}), serde_json::json!({}));
+        without.metadata = serde_json::json!({});
+
+        assert!(rerender_runtime_config(&registry, &without).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_unknown_blueprint_is_left_alone() {
+        let registry = BlueprintRegistry::with_builtins();
+
+        let detail = detail("something-that-was-removed", serde_json::json!({}), serde_json::json!({}));
+
+        assert!(rerender_runtime_config(&registry, &detail).unwrap().is_none());
     }
 }

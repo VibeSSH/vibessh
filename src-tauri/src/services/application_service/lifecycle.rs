@@ -24,6 +24,9 @@ use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
+use crate::blueprints::BlueprintRegistry;
+use crate::models::UpdateApplicationInput;
+
 use super::*;
 use super::registry::ensure_registry_login;
 
@@ -99,6 +102,7 @@ pub async fn restart_application(
 /// nothing was ever created, and removes (stopping first) if it was.
 pub async fn recreate_application(
     repo: &ApplicationRepository,
+    registry: &BlueprintRegistry,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
     registry_repo: &RegistryCredentialRepository,
@@ -109,6 +113,36 @@ pub async fn recreate_application(
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("recreating is only meaningful for Docker applications".into()));
     }
+
+    // Rebuilt from today's blueprint logic before anything is destroyed.
+    //
+    // This button says a changed command takes effect, and until now that was
+    // only true for a command somebody had edited by hand: the container was
+    // rebuilt from the stored config, so an improvement to how a blueprint
+    // builds that command could never reach an Application that already
+    // existed. Nothing is downloaded - the answers, including what
+    // provisioning discovered, were kept at creation.
+    //
+    // A failure here is logged rather than raised. Recreating the container
+    // is what was asked for, and refusing to do it because the config could
+    // not be rebuilt would turn a working button into a broken one.
+    match rerender_runtime_config(registry, &detail) {
+        Ok(Some(rendered)) => {
+            let update = UpdateApplicationInput {
+                name: detail.application.name.clone(),
+                description: detail.application.description.clone(),
+                working_directory: detail.application.working_directory.clone(),
+                runtime_config: rendered,
+                metadata: detail.metadata.clone(),
+            };
+            if let Err(err) = repo.update(id, &update) {
+                log::warn!("couldn't store the rebuilt configuration for {id}, recreating with the stored one: {err}");
+            }
+        }
+        Ok(None) => {}
+        Err(err) => log::warn!("couldn't rebuild the configuration for {id}, recreating with the stored one: {err}"),
+    }
+
     let server_id = detail.application.server_id;
     retry_on_connection_failure(sessions, server_id, || async {
         let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
