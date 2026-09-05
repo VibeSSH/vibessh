@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
@@ -123,6 +123,15 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   // Only ever the name being typed into the save box - null while it is shut.
   const [templateName, setTemplateName] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
+  /**
+   * Whether a create is already in flight.
+   *
+   * `busy` disables the button, but only once React has re-rendered, and a
+   * held-down Enter repeats faster than that - which is how somebody ended
+   * up with a dozen identical Nodes from one save. A ref is not state, so
+   * the guard sees what the line above it set.
+   */
+  const creating = useRef(false);
   const backdrop = useModalDialog(onClose, { labelledBy: "createapplicationwizard-dialog-title-1" });
 
   useEffect(() => {
@@ -311,6 +320,12 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
 
   async function handleCreate() {
     if (!selectedBlueprint || !runtimeType) return;
+    // Read in the same tick it is written, unlike `busy` - see the ref's own
+    // comment. A repeat here is worse than a duplicate Node: each one
+    // provisions, which for a Minecraft blueprint means downloading a server
+    // jar again.
+    if (creating.current) return;
+    creating.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -327,6 +342,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {
+      creating.current = false;
       setBusy(false);
     }
   }

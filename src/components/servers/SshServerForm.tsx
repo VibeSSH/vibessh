@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import {
@@ -38,6 +38,17 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
   const [privateKeyPath, setPrivateKeyPath] = useState(editingServer?.privateKeyPath ?? "");
   const [keyPassphrase, setKeyPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
+  /**
+   * The same "in flight" fact as `busy`, kept where it can be read in the
+   * same tick it is written.
+   *
+   * `busy` disables the button, but only after React has re-rendered, and a
+   * held-down Enter key repeats faster than that. Every repeat got through
+   * the check and created another Node - somebody reported a dozen identical
+   * ones from a single save. A ref closes the window because it is not state:
+   * the guard below sees the value the line above it set.
+   */
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
@@ -70,6 +81,8 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -84,6 +97,7 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
