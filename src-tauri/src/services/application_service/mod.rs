@@ -317,7 +317,7 @@ mod tests {
         let (app_repo, server_repo, network_repo, sessions, local_process_manager, registry, firewall_rule_repo, registry_credential_repo, log_capture, db_repo, dns_repo) =
             temp_setup();
 
-        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), sleep_command_input()).await.unwrap();
         assert_eq!(detail.application.status, ApplicationStatus::Unknown);
         assert_eq!(detail.runtime_config["command"], serde_json::json!(if cfg!(windows) { "cmd" } else { "sh" }));
 
@@ -368,7 +368,7 @@ mod tests {
         let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.blueprint_id = "does-not-exist".to_string();
-        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.is_err());
     }
 
     #[tokio::test]
@@ -376,7 +376,7 @@ mod tests {
         let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.runtime_type = RuntimeType::Docker;
-        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.is_err());
     }
 
     #[tokio::test]
@@ -384,7 +384,7 @@ mod tests {
         let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let mut input = sleep_command_input();
         input.name = "   ".to_string();
-        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_err());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.is_err());
     }
 
     /// An Application on a Node has `sudo chown -R <its own account>` run
@@ -415,7 +415,7 @@ mod tests {
             input.server_id = Some(server.id);
             input.runtime_type = RuntimeType::RemoteProcess;
             input.working_directory = hostile.to_string();
-            let result = create_application(&app_repo, &registry, &server_repo, &sessions, input).await;
+            let result = create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await;
             assert!(result.is_err(), "should have refused {hostile:?}");
         }
     }
@@ -506,7 +506,7 @@ mod tests {
         let (app_repo, server_repo, _network_repo, sessions, _local_process_manager, registry, ..) = temp_setup();
         let input = sleep_command_input();
         assert!(input.server_id.is_none());
-        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, input).await.is_ok());
+        assert!(create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.is_ok());
     }
 
     #[tokio::test]
@@ -517,7 +517,7 @@ mod tests {
         assert!(!fresh_dir.exists());
         input.working_directory = fresh_dir.to_string_lossy().into_owned();
 
-        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, input).await.unwrap();
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.unwrap();
 
         assert!(fresh_dir.is_dir());
         assert_eq!(detail.application.working_directory, fresh_dir.to_string_lossy());
@@ -527,7 +527,7 @@ mod tests {
     #[tokio::test]
     async fn port_crud_add_update_remove_round_trips_through_the_service_layer() {
         let (app_repo, server_repo, network_repo, sessions, _local_process_manager, registry, firewall_rule_repo, ..) = temp_setup();
-        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, sleep_command_input()).await.unwrap();
+        let detail = create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), sleep_command_input()).await.unwrap();
         let application_id = detail.application.id;
 
         assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
@@ -686,7 +686,7 @@ mod tests {
             })
             .unwrap();
 
-        let err = update_application_config(&app_repo, &registry, &server_repo, &sessions, legacy_velocity.application.id, serde_json::json!({ "javaVersion": "25" }))
+        let err = update_application_config(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), legacy_velocity.application.id, serde_json::json!({ "javaVersion": "25" }))
             .await
             .unwrap_err();
 
@@ -720,7 +720,7 @@ mod tests {
             blueprint_inputs: serde_json::json!({ "velocityVersion": "3.1.1" }),
         };
 
-        let created = match create_application(&app_repo, &registry, &server_repo, &sessions, input).await {
+        let created = match create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await {
             Ok(created) => created,
             Err(err) => {
                 eprintln!("skipping: papermc.io unreachable from this environment ({err:?})");
@@ -735,6 +735,7 @@ mod tests {
             &registry,
             &server_repo,
             &sessions,
+            std::path::Path::new(""),
             created.application.id,
             serde_json::json!({ "velocityVersion": "3.4.0" }),
         )
@@ -868,7 +869,7 @@ mod tests {
             EnvironmentVariable { key: "PLAIN".into(), value: "visible".into(), is_secret: false },
             EnvironmentVariable { key: "DB_PASSWORD".into(), value: "hunter2".into(), is_secret: true },
         ];
-        let created = create_application(&app_repo, &registry, &server_repo, &sessions, input).await.unwrap();
+        let created = create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await.unwrap();
         let id = created.application.id;
         struct Cleanup(Uuid);
         impl Drop for Cleanup {

@@ -137,6 +137,7 @@ pub fn run() {
             // app is running - can't be built alongside the other .manage()
             // calls above.
             let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
+            app.manage(state::JavaRoot(app.path().app_data_dir()?.join("java")));
             app.manage(ServerRepository::open(&db_path)?);
             // Same physical file as ServerRepository above (Applications'
             // server_id is a real foreign key into servers, which only

@@ -10,6 +10,12 @@ mod pairing_session;
 mod port_forward_sessions;
 mod ssh_sessions;
 pub mod session_passwords;
+
+/// Where downloaded Java runtimes live - resolved once at startup from
+/// Tauri's own data directory, so nothing further down has to re-derive it.
+/// One directory for the whole app: a runtime is tens of megabytes and every
+/// Application on the same major version can share it.
+pub struct JavaRoot(pub std::path::PathBuf);
 mod terminal_sessions;
 
 pub use agent_sessions::AgentSessionManager;

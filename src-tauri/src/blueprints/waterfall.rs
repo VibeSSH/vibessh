@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, DefaultPort, KnownFile, PortProtocol, RuntimeType};
 use crate::services::latest_waterfall_build;
 
-use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+use super::{JAVA_PATH_KEY, ensure_java_for, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
 use crate::ssh::command::quote as shell_quote;
@@ -32,7 +32,10 @@ impl WaterfallBlueprint {
                 blueprint_version: 1,
                 // Docker-only since Etap M1 - see `PaperBlueprint`'s own doc
                 // comment for the full reasoning (identical here).
-                supported_runtime_types: vec![RuntimeType::Docker],
+                // Local as well as Docker. Locally there is no image to bring a JVM,
+                // so the provision step finds or downloads one - which is what lets a
+                // Minecraft server run on a machine with nothing installed on it.
+                supported_runtime_types: vec![RuntimeType::Docker, RuntimeType::LocalProcess],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
@@ -105,7 +108,11 @@ impl BlueprintHandler for WaterfallBlueprint {
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        render_java_docker_config(&java_version, jvm_args, jar_filename.to_string(), program_args)
+        // Recorded by `provision` when this Application runs as a local
+        // process: the path to a JVM on this machine. Absent for Docker,
+        // where the image brings its own.
+        let java_path = inputs.get(JAVA_PATH_KEY).and_then(serde_json::Value::as_str);
+        render_java_config(&java_version, jvm_args, jar_filename.to_string(), program_args, java_path, Some("end"))
     }
 
     async fn provision(
@@ -124,6 +131,7 @@ impl BlueprintHandler for WaterfallBlueprint {
 
         let mut discovered = HashMap::new();
         discovered.insert(JAR_FILENAME_KEY.to_string(), serde_json::Value::String(build.filename));
+        ensure_java_for(context, &text_input(inputs, &self.definition, "javaVersion")?, &mut discovered).await?;
         Ok(discovered)
     }
 }
@@ -203,7 +211,7 @@ mod tests {
         let inputs = inputs_with_jar(None);
         let working_directory = std::env::temp_dir().join(format!("vibessh-waterfall-provision-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&working_directory).await.unwrap();
-        let context = ProvisionContext { working_directory: working_directory.to_str().unwrap(), connection: None };
+        let context = ProvisionContext { working_directory: working_directory.to_str().unwrap(), connection: None, runtime_type: RuntimeType::Docker, java_root: std::path::Path::new("") };
 
         let result = blueprint.provision(&inputs, &context).await;
         let Ok(discovered) = result else {

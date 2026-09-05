@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::errors::AppResult;
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, RuntimeType};
 
-use super::{render_java_docker_config, text_input, text_list_input, validate_inputs, BlueprintHandler};
+use super::{JAVA_PATH_KEY, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler};
 
 /// Runs a `.jar` file with a JVM - the base every Java-based server
 /// (Minecraft and friends) builds on; Paper/Velocity (Phase 8/9) will be
@@ -24,7 +24,10 @@ impl GenericJavaBlueprint {
                 blueprint_version: 1,
                 // Docker-only since Etap M1 - see `PaperBlueprint`'s own doc
                 // comment for the full reasoning (identical here).
-                supported_runtime_types: vec![RuntimeType::Docker],
+                // Local as well as Docker. Locally there is no image to bring a JVM,
+                // so the provision step finds or downloads one - which is what lets a
+                // Minecraft server run on a machine with nothing installed on it.
+                supported_runtime_types: vec![RuntimeType::Docker, RuntimeType::LocalProcess],
                 features: vec![BlueprintFeature::Console, BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Databases, BlueprintFeature::Files],
                 fields: vec![
                     BlueprintField {
@@ -87,7 +90,11 @@ impl BlueprintHandler for GenericJavaBlueprint {
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        render_java_docker_config(&java_version, jvm_args, jar_path, program_args)
+        // Recorded by `provision` when this Application runs as a local
+        // process: the path to a JVM on this machine. Absent for Docker,
+        // where the image brings its own.
+        let java_path = inputs.get(JAVA_PATH_KEY).and_then(serde_json::Value::as_str);
+        render_java_config(&java_version, jvm_args, jar_path, program_args, java_path, None)
     }
 }
 

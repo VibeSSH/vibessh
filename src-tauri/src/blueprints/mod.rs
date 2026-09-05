@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::errors::{AppError, AppResult};
-use crate::models::{Blueprint, BlueprintField, BlueprintFieldType};
+use crate::models::{Blueprint, BlueprintField, BlueprintFieldType, RuntimeType};
 use crate::ssh::SshSession;
 
 mod generic;
@@ -67,6 +67,40 @@ pub use waterfall::WaterfallBlueprint;
 pub struct ProvisionContext<'a> {
     pub working_directory: &'a str,
     pub connection: Option<Arc<SshSession>>,
+    /// Which runtime this Application was created for.
+    ///
+    /// A blueprint's provisioning differs by it: a Java server run as a local
+    /// process needs a JVM on this machine, where the Docker one gets its own
+    /// from the image.
+    pub runtime_type: RuntimeType,
+    /// Where a downloaded Java runtime is kept - the app's own data
+    /// directory, shared by every Application rather than one copy each.
+    pub java_root: &'a std::path::Path,
+}
+
+/// Where `provision` records the JVM it found or downloaded, for
+/// `render_java_config` to read back. An input rather than a parameter
+/// because that is how a blueprint already hands its own discoveries forward
+/// - Paper's jar filename travels the same way.
+pub(crate) const JAVA_PATH_KEY: &str = "javaPath";
+
+/// Records a JVM for an Application that will run as a local process.
+///
+/// Nothing to do for Docker: the image carries its own. For a local process
+/// this is the difference between "install a JDK first" and clicking create -
+/// an already-installed Java is used when there is one, and otherwise a
+/// runtime is downloaded into the app's own directory.
+pub(crate) async fn ensure_java_for(
+    context: &ProvisionContext<'_>,
+    java_version: &str,
+    discovered: &mut HashMap<String, serde_json::Value>,
+) -> AppResult<()> {
+    if context.runtime_type != RuntimeType::LocalProcess {
+        return Ok(());
+    }
+    let java = crate::services::java_runtime_service::ensure_java(context.java_root, java_version).await?;
+    discovered.insert(JAVA_PATH_KEY.to_string(), serde_json::Value::String(java.to_string_lossy().into_owned()));
+    Ok(())
 }
 
 /// Turns a filled-in set of wizard inputs into the concrete `runtime_config`
@@ -200,11 +234,22 @@ pub(crate) fn temurin_image(java_version: &str) -> String {
 /// the first argument and Java reports it with the slashes turned into dots.
 /// Refused here rather than left to a crash loop, where the error names a
 /// class nobody wrote.
-pub(crate) fn render_java_docker_config(
+///
+/// `java_path` is what decides the shape. Absent means Docker, where the
+/// image brings its own JVM. Present means this machine's own - a local
+/// process, given the path to a runtime that `provision` either found
+/// already installed or downloaded.
+///
+/// `stop_command` is what the application is told to shut itself down with,
+/// and only reaches the local shape: a container is stopped by Docker. Paper
+/// takes `stop`, the proxies take `end`, and a bare jar takes neither.
+pub(crate) fn render_java_config(
     java_version: &str,
     jvm_args: Vec<String>,
     jar: String,
     program_args: Vec<String>,
+    java_path: Option<&str>,
+    stop_command: Option<&str>,
 ) -> AppResult<serde_json::Value> {
     for arg in &jvm_args {
         if arg.starts_with('#') {
@@ -219,7 +264,22 @@ pub(crate) fn render_java_docker_config(
     command.push("-jar".to_string());
     command.push(jar);
     command.extend(program_args);
-    Ok(serde_json::json!({ "image": temurin_image(java_version), "command": command, "runAsDedicatedUser": true }))
+
+    let Some(java_path) = java_path else {
+        return Ok(serde_json::json!({ "image": temurin_image(java_version), "command": command, "runAsDedicatedUser": true }));
+    };
+
+    // The local shape splits the invocation the way `LocalProcessConfig`
+    // wants it: the binary, then its arguments. `command[0]` is the literal
+    // "java" the Docker shape needs and the local one replaces with a real
+    // path.
+    let mut args = command;
+    args.remove(0);
+    let mut config = serde_json::json!({ "command": java_path, "args": args });
+    if let Some(stop_command) = stop_command {
+        config["stopCommand"] = serde_json::Value::String(stop_command.to_string());
+    }
+    Ok(config)
 }
 
 pub(crate) fn text_list_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<Vec<String>> {
@@ -295,6 +355,34 @@ impl Default for BlueprintRegistry {
 
 #[cfg(test)]
 mod tests {
+
+    /// The Docker shape, unchanged - an image brings its own JVM, so no path
+    /// to one is passed and none appears.
+    #[test]
+    fn without_a_java_path_the_config_names_an_image() {
+        let config = render_java_config("21", vec!["-Xmx2G".into()], "server.jar".into(), vec!["nogui".into()], None, Some("stop")).unwrap();
+
+        assert!(config["image"].as_str().unwrap().contains("temurin"), "{config}");
+        assert_eq!(config["command"][0], "java");
+        // A container is stopped by Docker, so the application's own quit
+        // command has nothing to do here.
+        assert!(config.get("stopCommand").is_none(), "{config}");
+    }
+
+    /// The local shape: a real binary and its arguments, which is what
+    /// `LocalProcessConfig` deserializes - and the quit command, because
+    /// nothing else will stop a Minecraft server cleanly.
+    #[test]
+    fn a_java_path_produces_a_local_process_config() {
+        let config = render_java_config("21", vec!["-Xmx2G".into()], "server.jar".into(), vec!["nogui".into()], Some("/opt/java/bin/java"), Some("stop")).unwrap();
+
+        assert_eq!(config["command"], "/opt/java/bin/java");
+        assert_eq!(config["args"], serde_json::json!(["-Xmx2G", "-jar", "server.jar", "nogui"]));
+        assert_eq!(config["stopCommand"], "stop");
+        // No image: there is no container.
+        assert!(config.get("image").is_none(), "{config}");
+    }
+
     use super::*;
     use crate::models::BlueprintFieldType;
 

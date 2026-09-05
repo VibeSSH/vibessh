@@ -399,6 +399,7 @@ pub async fn import_server(
     firewall_rule_repo: &FirewallRuleRepository,
     db_repo: &DatabaseRepository,
     sessions: &SshSessionManager,
+    java_root: &std::path::Path,
     planned: &PlannedServer,
     target_server_id: Uuid,
     target_database_host_id: Option<Uuid>,
@@ -448,7 +449,7 @@ pub async fn import_server(
         blueprint_inputs: serde_json::Value::Object(planned.fields.iter().map(|(key, value)| (key.clone(), value.clone())).collect()),
     };
 
-    let created = match application_service::create_application(app_repo, registry, server_repo, sessions, create_input).await {
+    let created = match application_service::create_application(app_repo, registry, server_repo, sessions, java_root, create_input).await {
         Ok(created) => created,
         Err(err) => {
             outcome.failed = Some(PlanNote::with("createFailed", &[("error", &err.to_string())]));

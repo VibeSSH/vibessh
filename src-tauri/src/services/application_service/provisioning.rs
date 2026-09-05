@@ -45,6 +45,9 @@ pub async fn create_application(
     registry: &BlueprintRegistry,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
+    // Shared by every Application rather than one copy each - see
+    // `services::java_runtime_service`.
+    java_root: &std::path::Path,
     input: CreateApplicationFromBlueprintInput,
 ) -> AppResult<ApplicationDetail> {
     let name = input.name.trim();
@@ -79,7 +82,7 @@ pub async fn create_application(
     // jar over this same connection rather than through the SSH user's
     // desktop).
     let connection = resolve_connection(server_repo, sessions, input.server_id).await?;
-    let provision_context = ProvisionContext { working_directory, connection };
+    let provision_context = ProvisionContext { working_directory, connection, runtime_type: input.runtime_type, java_root };
     let discovered = handler.provision(&blueprint_inputs, &provision_context).await?;
     blueprint_inputs.extend(discovered);
 
@@ -216,6 +219,7 @@ pub async fn update_application_config(
     registry: &BlueprintRegistry,
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
+    java_root: &std::path::Path,
     id: Uuid,
     field_values: serde_json::Value,
 ) -> AppResult<ApplicationDetail> {
@@ -255,7 +259,7 @@ pub async fn update_application_config(
     merged.extend(edited);
 
     let connection = resolve_connection(server_repo, sessions, detail.application.server_id).await?;
-    let provision_context = ProvisionContext { working_directory: &detail.application.working_directory, connection };
+    let provision_context = ProvisionContext { working_directory: &detail.application.working_directory, connection, runtime_type: detail.application.runtime_type, java_root };
     let discovered = handler.provision(&merged, &provision_context).await?;
     merged.extend(discovered);
 

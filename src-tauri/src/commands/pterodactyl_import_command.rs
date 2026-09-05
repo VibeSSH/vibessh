@@ -87,6 +87,7 @@ pub async fn pterodactyl_import(
     firewall_rules: State<'_, FirewallRuleRepository>,
     databases: State<'_, DatabaseRepository>,
     sessions: State<'_, SshSessionManager>,
+    java_root: State<'_, crate::state::JavaRoot>,
 ) -> AppResult<Vec<PterodactylImportOutcome>> {
     if source_ids.is_empty() {
         return Err(AppError::InvalidInput("no servers were selected to import".to_string()));
@@ -139,6 +140,7 @@ pub async fn pterodactyl_import(
                 &firewall_rules,
                 &databases,
                 &sessions,
+                &java_root.0,
                 planned,
                 target,
                 target_database_host_id,

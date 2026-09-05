@@ -165,9 +165,10 @@ pub async fn create_application(
     registry: State<'_, BlueprintRegistry>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
+    java_root: State<'_, crate::state::JavaRoot>,
     input: CreateApplicationFromBlueprintInput,
 ) -> AppResult<ApplicationDetail> {
-    services::create_application(&repo, &registry, &server_repo, &sessions, input).await
+    services::create_application(&repo, &registry, &server_repo, &sessions, &java_root.0, input).await
 }
 
 #[tauri::command]
@@ -176,10 +177,11 @@ pub async fn update_application_config(
     registry: State<'_, BlueprintRegistry>,
     server_repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
+    java_root: State<'_, crate::state::JavaRoot>,
     id: Uuid,
     field_values: serde_json::Value,
 ) -> AppResult<ApplicationDetail> {
-    services::update_application_config(&repo, &registry, &server_repo, &sessions, id, field_values).await
+    services::update_application_config(&repo, &registry, &server_repo, &sessions, &java_root.0, id, field_values).await
 }
 
 /// Deleting an Application is a real teardown, not just a row delete - it
