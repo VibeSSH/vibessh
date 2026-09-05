@@ -302,6 +302,7 @@
     "createdFileToast": "Created \"{{name}}\".",
     "deleteTitle": "Remove",
     "deleteBody": "Remove \"{{name}}\"? This permanently deletes it (and everything inside it, if it's a folder). This can't be undone.",
+    "deleteManyBody": "Delete {{count}} items? This removes them permanently (and everything inside any folders). This cannot be undone.",
     "deleteError": "Couldn't remove it.",
     "renameTitle": "Rename",
     "renameError": "Couldn't rename it.",

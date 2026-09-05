@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { GuideLink } from "@/guide/GuideLink";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Card } from "@/components/ui/Card";
 import { useContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -55,6 +56,8 @@ const MAX_ROWS_SHOWN = 200;
 
 interface FileRowProps {
   entry: RemoteFileEntry;
+  selected: boolean;
+  onToggleSelect: (path: string) => void;
   /** Passed in rather than read from i18n here, so a language change still reaches a memoised row. */
   language: string;
   onOpen: (entry: RemoteFileEntry) => void;
@@ -76,12 +79,15 @@ interface FileRowProps {
  *
  * The memo only holds because the props above are stable: TanStack Query's
  * structural sharing keeps each `entry` identical across a refetch that did
- * not change it, and the four callbacks are pinned in the parent.
+ * not change it, and the callbacks are pinned in the parent. `selected` is a
+ * boolean that changes only for the row being toggled, so it does not undo
+ * that.
  */
-const FileRow = memo(function FileRow({ entry, language, onOpen, onDownload, onContextMenu, buildMenuItems }: FileRowProps) {
+const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, language, onOpen, onDownload, onContextMenu, buildMenuItems }: FileRowProps) {
   const { t } = useTranslation();
   return (
-    <li className="server-list-item" onContextMenu={(event) => onContextMenu(event, entry)}>
+    <li className={`server-list-item ${selected ? "files-entry-selected" : ""}`.trim()} onContextMenu={(event) => onContextMenu(event, entry)}>
+      <Checkbox checked={selected} onChange={() => onToggleSelect(entry.path)} label={null} />
       <div className="server-list-icon">
         <Icon name={entry.isDir ? "folder" : "file"} size={16} />
       </div>
@@ -146,12 +152,13 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ entry: RemoteFileEntry; mode: "rename" | "move" | "copy" } | null>(null);
   const [chmodTarget, setChmodTarget] = useState<RemoteFileEntry | null>(null);
-  const [deletingEntry, setDeletingEntry] = useState<RemoteFileEntry | null>(null);
+  const [deletingEntries, setDeletingEntries] = useState<RemoteFileEntry[] | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [extractingPath, setExtractingPath] = useState<string | null>(null);
   const [jarWarning, setJarWarning] = useState<{ fileName: string; localSrc: string; targetPath: string } | null>(null);
-  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntry(null), { labelledBy: "applicationfilestab-dialog-title-1" });
+  const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingEntries(null), { labelledBy: "applicationfilestab-dialog-title-1" });
   const contextMenu = useContextMenu();
 
   const addTransfer = useFileTransferStore((s) => s.addTransfer);
@@ -203,6 +210,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         void queryClient.invalidateQueries({ queryKey: queryKeys.applicationFiles(applicationId, targetPath) });
         return;
       }
+      // Cleared on the way out of a directory: a selection is a set of paths,
+      // and carrying it into a listing where none of them appear would leave
+      // "3 selected" over rows that are not the selected ones.
+      setSelectedPaths(new Set());
       setPath(targetPath);
     },
     [applicationId, path, queryClient],
@@ -227,6 +238,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
     return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
   }, [entries, deferredFilter]);
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
+  const allSelected = matchingEntries.length > 0 && matchingEntries.every((entry) => selectedPaths.has(entry.path));
   const truncated = matchingEntries.length > visibleEntries.length;
 
   // Back to the top when the application changes - the previous one's tree
@@ -362,15 +374,22 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   }
 
   async function handleConfirmDelete() {
-    if (!deletingEntry) return;
+    if (!deletingEntries) return;
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await deleteApplicationFile(applicationId, deletingEntry.path);
-      setDeletingEntry(null);
+      // One at a time and in order, so a failure half way through leaves a
+      // knowable state: everything before it is gone, everything after it is
+      // not, and the message names what stopped it.
+      for (const entry of deletingEntries) {
+        await deleteApplicationFile(applicationId, entry.path);
+      }
+      setDeletingEntries(null);
+      setSelectedPaths(new Set());
       load(path);
     } catch (err) {
       setDeleteError(errorMessage(err, t));
+      load(path);
     } finally {
       setDeleteBusy(false);
     }
@@ -418,6 +437,16 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   }, []);
   const handleDownloadEntry = useCallback((entry: RemoteFileEntry) => void latest.current.runDownload(entry), []);
   const buildRowMenuItems = useCallback((entry: RemoteFileEntry) => latest.current.buildMenuItems(entry), []);
+
+  /** Pinned, like the other row callbacks - a new identity every render would
+      re-reconcile all two hundred rows on every poll. */
+  const toggleSelected = useCallback((entryPath: string) => {
+    setSelectedPaths((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(entryPath)) next.add(entryPath);
+      return next;
+    });
+  }, []);
   const handleRowContextMenu = useCallback(
     (event: ReactMouseEvent, entry: RemoteFileEntry) => latest.current.openContextMenu(event, latest.current.buildMenuItems(entry)),
     [],
@@ -444,7 +473,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         danger: true,
         onClick: () => {
           setDeleteError(null);
-          setDeletingEntry(entry);
+          setDeletingEntries([entry]);
         },
       },
     ];
@@ -513,6 +542,14 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         ) : (
           <>
           <div className="files-selection-bar">
+            {/* Selects what the filter matches, not only the rows drawn: the
+                cap below is a limit on rendering, not on what "all" means,
+                and the count says how many that is. */}
+            <Checkbox
+              checked={allSelected}
+              onChange={(checked) => setSelectedPaths(checked ? new Set(matchingEntries.map((entry) => entry.path)) : new Set())}
+              label={t("filesPage.selectAll")}
+            />
             <input
               className="files-filter-input"
               type="search"
@@ -521,6 +558,18 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               placeholder={t("filesPage.filterPlaceholder")}
               aria-label={t("filesPage.filterPlaceholder")}
             />
+            {selectedPaths.size > 0 && (
+              <>
+                <span className="files-selection-count">{t("filesPage.selectedCount", { count: selectedPaths.size })}</span>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => setDeletingEntries(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}
+                >
+                  {t("filesPage.deleteSelectedAria", { count: selectedPaths.size })}
+                </Button>
+              </>
+            )}
           </div>
           {visibleEntries.length === 0 ? (
             <EmptyState icon="search" title={t("filesPage.noMatchesTitle")} description={t("filesPage.noMatchesDescription")} />
@@ -530,6 +579,8 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               <FileRow
                 key={entry.path}
                 entry={entry}
+                selected={selectedPaths.has(entry.path)}
+                onToggleSelect={toggleSelected}
                 language={i18n.language}
                 onOpen={handleOpenEntry}
                 onDownload={handleDownloadEntry}
@@ -597,18 +648,22 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         />
       )}
 
-      {deletingEntry && (
+      {deletingEntries && (
         <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>
           <div className="modal-panel modal-panel-sm" {...deleteBackdrop.panelProps}>
             <div className="modal-header">
               <h2 className="modal-title" id="applicationfilestab-dialog-title-1">{t("applicationFilesTab.deleteTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setDeletingEntry(null)} title={t("common.close")} />
+              <IconButton icon="x" size="sm" onClick={() => setDeletingEntries(null)} title={t("common.close")} />
             </div>
             <div className="modal-body">
-              <p className="dialog-body-text">{t("applicationFilesTab.deleteBody", { name: deletingEntry.name })}</p>
+              <p className="dialog-body-text">
+                {deletingEntries.length === 1
+                  ? t("applicationFilesTab.deleteBody", { name: deletingEntries[0].name })
+                  : t("applicationFilesTab.deleteManyBody", { count: deletingEntries.length })}
+              </p>
               {deleteError && <p className="form-note form-note-danger form-note-spaced">{deleteError}</p>}
               <div className="form-actions">
-                <Button variant="secondary" onClick={() => setDeletingEntry(null)} disabled={deleteBusy}>
+                <Button variant="secondary" onClick={() => setDeletingEntries(null)} disabled={deleteBusy}>
                   {t("common.cancel")}
                 </Button>
                 <Button variant="danger" onClick={handleConfirmDelete} disabled={deleteBusy}>

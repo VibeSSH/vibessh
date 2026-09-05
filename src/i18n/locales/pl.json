@@ -302,6 +302,7 @@
     "createdFileToast": "Utworzono „{{name}}”.",
     "deleteTitle": "Usuń",
     "deleteBody": "Usunąć „{{name}}”? To trwale usuwa go (a jeśli to folder - wszystko w środku). Tej operacji nie można cofnąć.",
+    "deleteManyBody": "Usunąć {{count}} elementów? To trwale je usuwa (a w przypadku folderów - wszystko w środku). Tej operacji nie można cofnąć.",
     "deleteError": "Nie udało się usunąć.",
     "renameTitle": "Zmień nazwę",
     "renameError": "Nie udało się zmienić nazwy.",
