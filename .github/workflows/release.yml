@@ -164,13 +164,18 @@ jobs:
         with:
           key: agent
 
-      # The agent has no C dependencies, so cross-compiling for arm64 needs a
-      # linker and nothing else - no sysroot, no `cross`, no arm runner (which
-      # a private repository does not get for free anyway).
-      - name: Install the arm64 linker
+      # Cross-compiling for arm64 without an arm runner - which a private
+      # repository does not get for free.
+      #
+      # `libc6-dev-arm64-cross` is not optional, though the first version of
+      # this assumed it was: the agent's own dependencies are pure Rust, but
+      # `ring` arrives underneath them through rustls and rcgen, and it builds
+      # C. Without the target's libc headers the cross compiler reaches for
+      # the host's and fails on a missing `bits/libc-header-start.h`.
+      - name: Install the arm64 cross toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y gcc-aarch64-linux-gnu
+          sudo apt-get install --no-install-recommends -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
 
       - name: Build
         env:
