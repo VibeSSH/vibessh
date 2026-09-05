@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
+import { deleteApplicationTemplate, listApplicationTemplates, saveApplicationTemplate } from "@/services/applicationTemplateService";
+import type { ApplicationTemplate } from "@/types/applicationTemplate";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { HelpHint } from "@/components/ui/HelpHint";
 import { Icon } from "@/components/ui/Icon";
@@ -117,6 +119,10 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [runtimeType, setRuntimeType] = useState<RuntimeType | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [environment, setEnvironment] = useState<EnvironmentVariable[]>([]);
+  const [templates, setTemplates] = useState<ApplicationTemplate[]>([]);
+  // Only ever the name being typed into the save box - null while it is shut.
+  const [templateName, setTemplateName] = useState<string | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const backdrop = useModalDialog(onClose, { labelledBy: "createapplicationwizard-dialog-title-1" });
 
   useEffect(() => {
@@ -131,10 +137,71 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
           // development - Local-only is still a fully valid path.
         });
     }
+    // Absent outside a Tauri webview, and an empty list is the correct
+    // state for anyone who has never saved one.
+    listApplicationTemplates()
+      .then(setTemplates)
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isLocal = serverId === null;
+
+  /**
+   * Fills the wizard in from a saved template.
+   *
+   * Everything except where it runs. That is the one answer that genuinely
+   * differs each time, and prefilling it would put the previous server in
+   * front of somebody who opened the template precisely to use a different
+   * one - so the location stays whatever this session already chose.
+   *
+   * A secret variable arrives with its name and no value, because none was
+   * ever saved. It lands in the list as an empty secret row, which is what
+   * step 4 already renders as "still needs filling in".
+   */
+  function applyTemplate(template: ApplicationTemplate) {
+    setBlueprintId(template.blueprintId);
+    setRuntimeType(template.runtimeType);
+    setFieldValues({ ...template.fieldValues });
+    setEnvironment(template.environment.map((variable) => ({ key: variable.key, value: variable.value, isSecret: variable.isSecret })));
+    setError(null);
+  }
+
+  async function handleSaveTemplate() {
+    if (!blueprintId || !runtimeType) return;
+    setTemplateError(null);
+    try {
+      const saved = await saveApplicationTemplate({
+        id: crypto.randomUUID(),
+        name: templateName ?? "",
+        blueprintId,
+        runtimeType,
+        fieldValues,
+        // Secret values are dropped again on the Rust side before anything is
+        // written - this is convenience, not the guarantee.
+        environment: environment.map((variable) => ({
+          key: variable.key,
+          value: variable.isSecret ? "" : variable.value,
+          isSecret: variable.isSecret,
+        })),
+        createdAt: new Date().toISOString(),
+      });
+      setTemplates((previous) => [...previous, saved]);
+      setTemplateName(null);
+      toastSuccess(t("createApplicationWizard.templateSaved", { name: saved.name }));
+    } catch (err) {
+      setTemplateError(errorMessage(err, t));
+    }
+  }
+
+  async function handleDeleteTemplate(templateId: string) {
+    try {
+      await deleteApplicationTemplate(templateId);
+      setTemplates((previous) => previous.filter((template) => template.id !== templateId));
+    } catch (err) {
+      setTemplateError(errorMessage(err, t));
+    }
+  }
 
   // A Pterodactyl-style suggested path, not a requirement - a remote
   // application always runs inside its own bind-mounted Docker directory
@@ -288,6 +355,31 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
           <div className="wizard-step-body">
             {step === 1 && (
               <>
+                {/* Absent entirely until something has been saved: an empty
+                    list here would be a permanent explanation of a feature
+                    nobody had used yet. */}
+                {templates.length > 0 && (
+                  <div className="form-field">
+                    <span className="form-label">{t("createApplicationWizard.templates")}</span>
+                    <div className="wizard-template-list">
+                      {templates.map((template) => (
+                        <div key={template.id} className="wizard-template">
+                          <button type="button" className="wizard-template-use" onClick={() => applyTemplate(template)}>
+                            <Icon name="copy" size={14} />
+                            <span>{template.name}</span>
+                          </button>
+                          <IconButton
+                            icon="trash"
+                            size="sm"
+                            onClick={() => void handleDeleteTemplate(template.id)}
+                            title={t("createApplicationWizard.templateDelete", { name: template.name })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <span className="form-hint">{t("createApplicationWizard.templatesHint")}</span>
+                  </div>
+                )}
                 <label className="form-field">
                   <span className="form-label">{t("createApplicationWizard.location")}</span>
                   <div className="wizard-location-options">
@@ -505,6 +597,37 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 <span className="wizard-review-value">
                   {environment.filter((row) => row.key.trim()).length || t("createApplicationWizard.environmentReviewNone")}
                 </span>
+
+                <div className="wizard-template-save">
+                  {templateName === null ? (
+                    <Button variant="secondary" size="sm" onClick={() => setTemplateName("")}>
+                      <Icon name="copy" size={14} />
+                      {t("createApplicationWizard.saveAsTemplate")}
+                    </Button>
+                  ) : (
+                    <>
+                      <input
+                        className="form-input"
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                        placeholder={t("createApplicationWizard.templateNamePlaceholder")}
+                        aria-label={t("createApplicationWizard.templateNamePlaceholder")}
+                        autoFocus
+                      />
+                      <Button size="sm" onClick={() => void handleSaveTemplate()} disabled={templateName.trim().length === 0}>
+                        {t("common.save")}
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => { setTemplateName(null); setTemplateError(null); }}>
+                        {t("common.cancel")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {/* Said next to the button rather than in a help page: it is
+                    the one thing about a template that will surprise somebody
+                    who saved one with a password in it. */}
+                <p className="form-hint wizard-template-note">{t("createApplicationWizard.templateSecretNote")}</p>
+                {templateError && <p className="form-note form-note-danger">{templateError}</p>}
               </div>
             )}
           </div>

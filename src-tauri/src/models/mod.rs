@@ -2,6 +2,7 @@ mod ai;
 mod app_info;
 mod application;
 mod application_backup;
+mod application_template;
 mod backup_destination;
 mod blueprint;
 mod cloud;
@@ -25,6 +26,7 @@ pub use application::{
     protocol_name, SetHealthCheckInput, SetResourceLimitsInput, UpdateApplicationInput,
 };
 pub use application_backup::{ApplicationBackup, BackupKind, BackupSchedule, SetBackupScheduleInput};
+pub use application_template::{ApplicationTemplate, TemplateEnvironmentVariable};
 pub use backup_destination::{BackupDestinationConfig, SetBackupDestinationInput};
 pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType, DefaultPort, KnownFile};
 pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, UpdateDatabaseHostInput, DatabaseEngine, DatabaseHost};

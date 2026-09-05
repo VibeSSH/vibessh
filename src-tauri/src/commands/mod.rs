@@ -8,6 +8,7 @@ pub mod app_commands;
 pub mod application_backup_commands;
 pub mod application_commands;
 pub mod application_file_commands;
+pub mod application_template_commands;
 pub mod cloud_commands;
 pub mod database_commands;
 pub mod file_commands;

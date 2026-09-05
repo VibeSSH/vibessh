@@ -458,6 +458,13 @@
     "couldntRead": "Couldn't read logs for this container."
   },
   "createApplicationWizard": {
+    "templates": "Start from a template",
+    "templatesHint": "Fills in everything except where it runs - that stays whatever you chose above.",
+    "templateDelete": "Delete the '{{name}}' template",
+    "saveAsTemplate": "Save as a template",
+    "templateNamePlaceholder": "Template name, e.g. Paper with plugins",
+    "templateSaved": "Saved '{{name}}' as a template",
+    "templateSecretNote": "Secret variables are saved by name only - their values are never written to the template, so you will be asked for them again.",
     "title": "Create application",
     "step1Title": "Location & basics",
     "step2Title": "Image & runtime",

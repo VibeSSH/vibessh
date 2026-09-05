@@ -462,6 +462,13 @@
     "couldntRead": "Nie udało się odczytać logów tego kontenera."
   },
   "createApplicationWizard": {
+    "templates": "Zacznij od szablonu",
+    "templatesHint": "Wypełnia wszystko poza miejscem uruchomienia - to zostaje takie, jakie wybrałeś powyżej.",
+    "templateDelete": "Usuń szablon „{{name}}”",
+    "saveAsTemplate": "Zapisz jako szablon",
+    "templateNamePlaceholder": "Nazwa szablonu, np. Paper z pluginami",
+    "templateSaved": "Zapisano „{{name}}” jako szablon",
+    "templateSecretNote": "Zmienne oznaczone jako sekret zapisują się tylko z nazwy - ich wartości nigdy nie trafiają do szablonu, więc zostaniesz o nie zapytany ponownie.",
     "title": "Utwórz aplikację",
     "step1Title": "Lokalizacja i podstawy",
     "step2Title": "Obraz i runtime",
