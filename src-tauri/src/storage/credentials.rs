@@ -61,24 +61,45 @@ pub fn forget_secret(server_id: Uuid, kind: SecretKind) {
     }
 }
 
+/// What a keyring failure means, in words the person seeing it can act on.
+///
+/// The crate's own message is accurate and useless on its own - "Secret
+/// Service: no result found" describes a D-Bus result, not a thing to do.
+/// The underlying situation on Linux is almost always the same one: nothing
+/// is providing the Secret Service, or there is no unlocked default keyring
+/// for it to write into. That is worth saying at the point it happens rather
+/// than leaving somebody to search for it.
+///
+/// The secret is not written anywhere else as a consolation. A keyring that
+/// cannot be reached is a reason to stop, not a reason to fall back to a
+/// file - which is the whole premise of this module.
+fn keyring_advice(action: &str, kind: SecretKind, err: &keyring::Error) -> AppError {
+    let base = format!("failed to {action} {}: {err}", kind.suffix());
+    #[cfg(target_os = "linux")]
+    let base = format!(
+        "{base}. VibeSSH keeps passwords in the OS credential store and will not write them to a file. On Linux that needs a running Secret Service - install and start gnome-keyring (or KWallet, or KeePassXC with Secret Service integration), and make sure a default keyring exists and is unlocked."
+    );
+    AppError::Storage(base)
+}
+
 pub fn store_secret(server_id: Uuid, kind: SecretKind, value: &str) -> AppResult<()> {
     entry_for(server_id, kind)?
         .set_password(value)
-        .map_err(|err| AppError::Storage(format!("failed to store {}: {err}", kind.suffix())))
+        .map_err(|err| keyring_advice("store", kind, &err))
 }
 
 pub fn load_secret(server_id: Uuid, kind: SecretKind) -> AppResult<Option<String>> {
     match entry_for(server_id, kind)?.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(err) => Err(AppError::Storage(format!("failed to read {}: {err}", kind.suffix()))),
+        Err(err) => Err(keyring_advice("read", kind, &err)),
     }
 }
 
 pub fn delete_secret(server_id: Uuid, kind: SecretKind) -> AppResult<()> {
     match entry_for(server_id, kind)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(err) => Err(AppError::Storage(format!("failed to delete {}: {err}", kind.suffix()))),
+        Err(err) => Err(keyring_advice("delete", kind, &err)),
     }
 }
 
