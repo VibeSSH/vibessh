@@ -641,18 +641,31 @@ fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str
 }
 
 async fn create_container(runner: &dyn DockerCommandRunner, ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str) -> AppResult<()> {
-    // Refused before anything is created, not part way through: the
-    // isolation is POSIX users, groups and chown, and an Application that
-    // asked for it must not quietly run without it. Checked first so a
-    // refusal leaves no network behind it.
-    if config.run_as_dedicated_user && !runner.supports_dedicated_user() {
-        return Err(AppError::InvalidInput(
-            "this application runs as its own dedicated user, which needs a Linux Node - a local Docker daemon has no such accounts".into(),
-        ));
-    }
     // Not internal: an Application's own network is also its way out.
     ensure_network(runner, &app_network_name(ctx.application.id), false).await?;
-    let user_flag = if config.run_as_dedicated_user {
+
+    // `run_as_dedicated_user` does not survive the trip to a local daemon,
+    // and that is not a downgrade being waved through.
+    //
+    // An earlier version of this refused outright, on the reasoning that an
+    // Application which asked for that isolation must not quietly run
+    // without it. The premise was wrong: nothing asks for it.
+    // `render_java_docker_config` sets the flag unconditionally for every
+    // Java blueprint, as the mechanism by which a *remote* Node keeps an
+    // Application's files out of root's ownership - `files::sudo_user` reads
+    // them back through that same account.
+    //
+    // Locally there is no such account and no need for one: the files are
+    // the user's own, and `files::provider_for` picks the local provider
+    // from the Application's location rather than from this flag. So the
+    // isolation is not lost here; it is a remote-Node mechanism that has
+    // nothing to do on this machine. Refusing only made every Minecraft
+    // blueprint impossible to run locally.
+    let dedicated_user_applies = config.run_as_dedicated_user && runner.supports_dedicated_user();
+    if config.run_as_dedicated_user && !dedicated_user_applies {
+        log::info!("{}: running without a dedicated user - the local daemon has no such accounts", ctx.application.name);
+    }
+    let user_flag = if dedicated_user_applies {
         let connection = connection_ref(ctx)?;
         let username = dedicated_user::username(ctx.application.id);
         dedicated_user::ensure_provisioned(connection, &username).await?;
@@ -1679,22 +1692,28 @@ mod tests {
         assert!(!runner(&ctx).supports_dedicated_user());
     }
 
-    /// The isolation an Application asked for is either given or refused,
-    /// never silently dropped - and the refusal happens before anything is
-    /// created, so it leaves nothing behind.
-    #[tokio::test]
-    async fn a_dedicated_user_is_refused_locally_rather_than_ignored() {
+    /// Every Java blueprint sets `run_as_dedicated_user` unconditionally, as
+    /// the mechanism by which a remote Node keeps an Application's files out
+    /// of root's ownership. Locally there is no such account and no need for
+    /// one, so the flag must not be the thing that makes Paper impossible to
+    /// run on this machine - which is what refusing it did.
+    #[test]
+    fn a_local_daemon_does_not_claim_to_offer_a_dedicated_user() {
+        assert!(!LocalDocker.supports_dedicated_user());
+    }
+
+    /// The `--user` flag is what the dedicated account actually does to the
+    /// container, and it is absent when there is no account to name.
+    #[test]
+    fn no_user_flag_is_rendered_without_a_dedicated_account() {
         let application = stub_application(Uuid::new_v4());
         let runtime_config = serde_json::json!({});
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let result = create_container(&LocalDocker, &ctx, &config, "vibessh-app-test").await;
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
 
-        match result {
-            Err(AppError::InvalidInput(message)) => assert!(message.contains("dedicated user"), "{message}"),
-            other => panic!("expected a refusal naming the dedicated user, got {other:?}"),
-        }
+        assert!(index_of(&args, "--user").is_none(), "{args:?}");
     }
 
     /// `parse_docker_byte_size` reads a number out of remote command output
