@@ -1,6 +1,11 @@
 export interface AppInfo {
   name: string;
   version: string;
+  /**
+   * Running as root on Linux, which quietly breaks every stored secret -
+   * root cannot see the user's keyring. Always false on other platforms.
+   */
+  runningAsRoot: boolean;
 }
 
 export interface NavModule {

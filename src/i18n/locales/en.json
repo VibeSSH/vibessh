@@ -423,6 +423,7 @@
     "minecraft": "Minecraft"
   },
   "common": {
+    "runningAsRoot": "VibeSSH is running as root. Nothing here needs it, and it breaks saved passwords and keys - root cannot reach your keyring. Close it and start it as your normal user.",
     "copied": "Copied to the clipboard",
     "copyFailed": "The clipboard could not be written to",
     "cancel": "Cancel",

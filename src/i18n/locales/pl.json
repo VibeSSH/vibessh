@@ -427,6 +427,7 @@
     "minecraft": "Minecraft"
   },
   "common": {
+    "runningAsRoot": "VibeSSH działa jako root. Nic tutaj tego nie wymaga, a psuje to zapisane hasła i klucze — root nie ma dostępu do Twojego pęku kluczy. Zamknij i uruchom jako zwykły użytkownik.",
     "copied": "Skopiowano do schowka",
     "copyFailed": "Nie udało się zapisać do schowka",
     "cancel": "Anuluj",

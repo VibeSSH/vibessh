@@ -1,4 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { getAppInfo } from "@/services/appService";
+import { Icon } from "@/components/ui/Icon";
 import { Outlet } from "react-router-dom";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
@@ -24,6 +27,19 @@ export function AppLayout() {
 
   // One periodic check for the whole app, started where the shell is.
   useEffect(startUpdateChecks, []);
+
+  const { t } = useTranslation();
+  // Nothing in VibeSSH needs local root, but `sudo` is a natural thing to
+  // reach for when something does not work - and it breaks the one thing
+  // that fails least obviously: root has its own session and cannot see the
+  // user's keyring, so every stored secret stops working with an error that
+  // says nothing about root. Two people hit that before this warning existed.
+  const [runningAsRoot, setRunningAsRoot] = useState(false);
+  useEffect(() => {
+    getAppInfo()
+      .then((info) => setRunningAsRoot(info.runningAsRoot))
+      .catch(() => undefined);
+  }, []);
   // An account holding a password somebody else set can do nothing until
   // it replaces it - the backend refuses every other request - so the
   // whole interface is covered rather than letting them wander into it.
@@ -67,6 +83,15 @@ export function AppLayout() {
                 sometimes a fragment. This wrapper is that element. */}
             <main className="app-layout-content" ref={scrollWrapperRef}>
               <div className="app-layout-scroll-content" ref={scrollContentRef}>
+                {/* Not dismissable: it stays wrong for as long as the app is
+                    running as root, and the failures it explains happen later,
+                    when somebody tries to save a password. */}
+                {runningAsRoot && (
+                  <p className="app-layout-root-warning">
+                    <Icon name="alert-triangle" size={16} />
+                    <span>{t("common.runningAsRoot")}</span>
+                  </p>
+                )}
                 <Outlet />
               </div>
             </main>

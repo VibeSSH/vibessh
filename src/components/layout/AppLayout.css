@@ -101,3 +101,31 @@
   height: 100%;
   overflow: visible;
 }
+
+/*
+ * Said at the top of every page, not dismissable: the situation stays wrong
+ * for as long as the app is running as root, and the failures it explains
+ * arrive later - when somebody tries to save a password and is told the
+ * Secret Service has no result.
+ *
+ * `background-color`, not the `background` shorthand: a `color-mix()` in the
+ * shorthand is dropped silently.
+ */
+.app-layout-root-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background-color: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app-layout-root-warning svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
