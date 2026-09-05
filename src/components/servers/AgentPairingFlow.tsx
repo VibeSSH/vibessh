@@ -20,7 +20,15 @@ import { MetricsPreview } from "./MetricsPreview";
 import "./forms.css";
 import { errorMessage } from "@/services/tauri";
 
-const INSTALL_URL = "https://raw.githubusercontent.com/VibeSSH/vibessh/main/agent-install/install.sh";
+/**
+ * Published as a release asset rather than served from the source tree.
+ *
+ * It used to be a raw.githubusercontent.com link into `VibeSSH/vibessh`,
+ * which is private - so the command this screen tells people to run
+ * answered 404 for every one of them. A release asset is also versioned
+ * with the agent it installs, rather than being whatever is on `main`.
+ */
+const INSTALL_URL = "https://github.com/VibeSSH/vibessh-releases/releases/latest/download/install.sh";
 
 interface AgentPairingFlowProps {
   onPaired: () => void;

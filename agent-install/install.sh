@@ -17,7 +17,11 @@
 # what "Linux first" means for a VPS-hosted game/app server.
 set -eu
 
-REPO="${VIBESSH_INSTALL_REPO:-VibeSSH/vibessh}"
+# The public releases repository, not the source one. GitHub serves release
+# assets from a private repository only with an Authorization header, so
+# pointing this at the source meant every download - the script itself
+# included - answered 404.
+REPO="${VIBESSH_INSTALL_REPO:-VibeSSH/vibessh-releases}"
 VERSION="${VIBESSH_INSTALL_VERSION:-latest}"
 BASE_URL="${VIBESSH_INSTALL_BASE_URL:-https://github.com/${REPO}/releases}"
 BIN_DIR="${VIBESSH_INSTALL_BIN_DIR:-/usr/local/bin}"

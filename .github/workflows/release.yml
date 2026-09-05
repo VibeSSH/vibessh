@@ -144,9 +144,64 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  agent:
+    name: Linux agent
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: agent
+
+      # The agent has no C dependencies, so cross-compiling for arm64 needs a
+      # linker and nothing else - no sysroot, no `cross`, no arm runner (which
+      # a private repository does not get for free anyway).
+      - name: Install the arm64 linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release -p vibe-agent --target x86_64-unknown-linux-gnu
+          cargo build --release -p vibe-agent --target aarch64-unknown-linux-gnu
+
+      # The names and the checksum format are what `agent-install/install.sh`
+      # asks for: `vibe-agent-linux-<arch>` beside a `.sha256` in sha256sum's
+      # own "<digest>  <filename>" layout.
+      - name: Name them what the installer looks for
+        run: |
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-gnu/release/vibe-agent dist/vibe-agent-linux-amd64
+          cp target/aarch64-unknown-linux-gnu/release/vibe-agent dist/vibe-agent-linux-arm64
+          # Published alongside the binaries so the one-line install command
+          # can point at a public URL. It used to point into this repository,
+          # which is private, so every user got a 404 from the very first
+          # step.
+          cp agent-install/install.sh dist/install.sh
+          cd dist
+          for file in vibe-agent-linux-amd64 vibe-agent-linux-arm64; do
+            sha256sum "$file" > "$file.sha256"
+          done
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-linux
+          path: dist/*
+          retention-days: 30
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: build
+    needs: [build, agent]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
