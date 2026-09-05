@@ -350,7 +350,24 @@
     "stopped": "Stopped",
     "failed": "Failed"
   },
+  "adoptServers": {
+    "title": "Find existing servers",
+    "intro": "Looks in a directory for game servers that are already there, and creates an application for each one you pick. Nothing in the directory is changed.",
+    "location": "Where to look",
+    "locationLocal": "This computer",
+    "directory": "Directory",
+    "directoryPlaceholderLocal": "C:\\servers",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "nothingFound": "No servers here. A directory counts as one when it holds a jar and something a server leaves behind - server.properties, plugins, logs. A folder with only a freshly downloaded jar is not found.",
+    "noPort": "no port",
+    "adopt": "Adopt {{count}}",
+    "adoptNote": "Each becomes a plain Docker application pointed at its directory as it is - the jar that is already there is the jar that runs. Nothing is downloaded and no file is replaced.",
+    "createdToast": "Adopted {{count}} servers",
+    "partialError": "Adopted {{created}} before this stopped it: {{error}}"
+  },
   "applications": {
+    "adopt": "Find existing",
     "title": "Applications",
     "subtitle": "Processes, systemd units, and containers VibeSSH manages for you.",
     "create": "Create application",

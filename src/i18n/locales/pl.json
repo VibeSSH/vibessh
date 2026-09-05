@@ -350,7 +350,24 @@
     "stopped": "Zatrzymana",
     "failed": "Błąd"
   },
+  "adoptServers": {
+    "title": "Znajdź istniejące serwery",
+    "intro": "Przegląda katalog w poszukiwaniu serwerów, które już tam są, i tworzy aplikację dla każdego zaznaczonego. Nic w katalogu nie jest zmieniane.",
+    "location": "Gdzie szukać",
+    "locationLocal": "Ten komputer",
+    "directory": "Katalog",
+    "directoryPlaceholderLocal": "C:\\serwery",
+    "scan": "Skanuj",
+    "scanning": "Skanowanie…",
+    "nothingFound": "Nie ma tu serwerów. Katalog liczy się jako serwer, gdy ma jara i coś, co serwer po sobie zostawia — server.properties, plugins, logs. Folder z samym pobranym jarem nie zostanie znaleziony.",
+    "noPort": "brak portu",
+    "adopt": "Przygarnij: {{count}}",
+    "adoptNote": "Każdy staje się zwykłą aplikacją Dockera wskazującą na swój katalog bez zmian — uruchamia się ten jar, który tam leży. Nic nie jest pobierane i żaden plik nie jest podmieniany.",
+    "createdToast": "Przygarnięto serwery: {{count}}",
+    "partialError": "Przygarnięto {{created}}, zanim to przerwało: {{error}}"
+  },
   "applications": {
+    "adopt": "Znajdź istniejące",
     "title": "Aplikacje",
     "subtitle": "Procesy, usługi systemd i kontenery, którymi zarządza VibeSSH.",
     "create": "Utwórz aplikację",

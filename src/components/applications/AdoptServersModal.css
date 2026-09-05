@@ -1,0 +1,90 @@
+/* Where to look: the Node, the path, and the button that goes. One row,
+   because they are one question. */
+.adopt-servers-where {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.adopt-servers-where .form-field {
+  margin: 0;
+}
+
+.adopt-servers-directory {
+  flex: 1;
+  min-width: 0;
+}
+
+.adopt-servers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Six servers fit; a migrated host with thirty scrolls rather than pushing
+     the buttons below the fold. */
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.adopt-servers-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  font-size: 13px;
+}
+
+.adopt-servers-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.adopt-servers-name > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the jar says this is - a label, not a promise about what gets
+   created. Every adoption is a plain Docker application. */
+.adopt-servers-kind {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--accent) 16%, var(--surface-1));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.adopt-servers-jar {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.adopt-servers-port {
+  flex-shrink: 0;
+  min-width: 64px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}

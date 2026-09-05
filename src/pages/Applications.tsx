@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { ApplicationCard } from "@/components/applications/ApplicationCard";
 import { ApplicationTabs } from "@/components/applications/ApplicationTabs";
 import { CreateApplicationWizard } from "@/components/applications/CreateApplicationWizard";
+import { AdoptServersModal } from "@/components/applications/AdoptServersModal";
 import { DeleteApplicationDialog } from "@/components/applications/DeleteApplicationDialog";
 import {
   deleteApplication,
@@ -175,6 +176,7 @@ export function Applications() {
   const setServers = useServersStore((s) => s.setServers);
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletingApplication, setDeletingApplication] = useState<Application | null>(null);
@@ -354,6 +356,14 @@ export function Applications() {
               />
             </label>
           )}
+          {/* Beside "create" rather than inside the wizard: adopting a
+              server that exists and setting one up from nothing are different
+              intentions, and somebody with a migrated host arrives holding
+              the first one. */}
+          <Button variant="secondary" onClick={() => setAdoptOpen(true)}>
+            <Icon name="search" size={16} />
+            {t("applications.adopt")}
+          </Button>
           <Button onClick={() => setWizardOpen(true)}>
             <Icon name="plus" size={16} />
             {t("applications.create")}
@@ -402,6 +412,14 @@ export function Applications() {
             </DndContext>
           </section>
         ))
+      )}
+
+      {adoptOpen && (
+        <AdoptServersModal
+          servers={servers}
+          onClose={() => setAdoptOpen(false)}
+          onAdopted={reload}
+        />
       )}
 
       {wizardOpen && (
