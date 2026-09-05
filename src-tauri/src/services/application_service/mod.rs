@@ -727,7 +727,17 @@ mod tests {
                 return;
             }
         };
-        let first_jar = created.runtime_config["command"][2].as_str().unwrap().to_string();
+        let jar_from = |config: &serde_json::Value| {
+            config["command"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .find(|arg| arg.ends_with(".jar"))
+                .unwrap()
+                .to_string()
+        };
+        let first_jar = jar_from(&created.runtime_config);
         assert!(first_jar.contains("3.1.1"), "expected the 3.1.1 jar, got {first_jar}");
 
         let updated = update_application_config(
@@ -742,7 +752,7 @@ mod tests {
         .await
         .unwrap();
 
-        let second_jar = updated.runtime_config["command"][2].as_str().unwrap().to_string();
+        let second_jar = jar_from(&updated.runtime_config).to_string();
         assert!(second_jar.contains("3.4.0"), "expected the 3.4.0 jar after changing the version, got {second_jar}");
         assert_ne!(first_jar, second_jar, "changing the version must actually change the downloaded jar");
         assert!(working_directory.join(&second_jar).is_file(), "the newly downloaded jar should exist in the working directory");

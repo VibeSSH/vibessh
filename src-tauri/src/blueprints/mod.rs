@@ -82,6 +82,21 @@ pub struct ProvisionContext<'a> {
 /// `render_java_config` to read back. An input rather than a parameter
 /// because that is how a blueprint already hands its own discoveries forward
 /// - Paper's jar filename travels the same way.
+/// Makes a Minecraft server colour its own output.
+///
+/// Paper's logger asks whether it is writing to a terminal and, finding a
+/// pipe, drops the escape sequences. Both of this app's paths are pipes: a
+/// container is created without `-t`, and a local process has its stdout
+/// captured. So the console rendered plain text no matter how well it could
+/// parse colour - there was none to parse.
+///
+/// Prepended rather than appended, so anyone who sets the property
+/// themselves overrides this rather than fighting it: later `-D` flags win.
+pub(crate) fn with_forced_ansi(mut jvm_args: Vec<String>) -> Vec<String> {
+    jvm_args.insert(0, "-Dterminal.ansi=true".to_string());
+    jvm_args
+}
+
 pub(crate) const JAVA_PATH_KEY: &str = "javaPath";
 
 /// Records a JVM for an Application that will run as a local process.
@@ -355,6 +370,20 @@ impl Default for BlueprintRegistry {
 
 #[cfg(test)]
 mod tests {
+
+    /// Without this the console is grey whatever it can parse: Paper's logger
+    /// checks whether it is writing to a terminal, finds a pipe - a container
+    /// created without `-t`, or a captured stdout - and drops the colour.
+    #[test]
+    fn a_minecraft_server_is_told_to_colour_its_own_output() {
+        let args = with_forced_ansi(vec!["-Xmx4G".to_string()]);
+
+        assert_eq!(args[0], "-Dterminal.ansi=true");
+        // First, so somebody who sets the property themselves wins: later
+        // -D flags override earlier ones.
+        assert_eq!(args[1], "-Xmx4G");
+    }
+
 
     /// The Docker shape, unchanged - an image brings its own JVM, so no path
     /// to one is passed and none appears.

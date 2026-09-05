@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, DefaultPort, KnownFile, PortProtocol, RuntimeType};
 use crate::services::latest_purpur_build;
 
-use super::{JAVA_PATH_KEY, ensure_java_for, bool_input, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+use super::{JAVA_PATH_KEY, with_forced_ansi, ensure_java_for, bool_input, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
 use crate::ssh::command::quote as shell_quote;
@@ -130,7 +130,7 @@ impl BlueprintHandler for PurpurBlueprint {
             .ok_or_else(|| AppError::Internal("Purpur's jar filename wasn't set by provision() before rendering".into()))?;
 
         let java_version = text_input(inputs, &self.definition, "javaVersion")?;
-        let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
+        let jvm_args = with_forced_ansi(text_list_input(inputs, &self.definition, "jvmArgs")?);
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
         // Recorded by `provision` when this Application runs as a local
@@ -262,7 +262,7 @@ mod tests {
 
         assert_eq!(
             config,
-            serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-jar", "purpur-1.21.4-2416.jar", "nogui"], "runAsDedicatedUser": true })
+            serde_json::json!({ "image": "eclipse-temurin:21-jre", "command": ["java", "-Dterminal.ansi=true", "-jar", "purpur-1.21.4-2416.jar", "nogui"], "runAsDedicatedUser": true })
         );
     }
 
