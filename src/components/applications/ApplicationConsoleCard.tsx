@@ -5,6 +5,8 @@ import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { useContextMenu } from "@/components/ui/ContextMenu";
+import { copyToClipboard } from "@/utils/copyToClipboard";
 import {
   followApplicationLogs,
   getApplicationLogs,
@@ -140,6 +142,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
    * somebody is reading.
    */
   const renderedRef = useRef<string[]>([]);
+  const contextMenu = useContextMenu();
 
   /**
    * Which source is filling the output, and the reason this is three states
@@ -425,7 +428,40 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
       {/* xterm draws into this; React never renders the lines themselves.
           The empty state stays React's, because a terminal showing one line
           of explanatory prose reads as output the server produced. */}
-      <div className="application-console-output" ref={containerRef} />
+      {/* The app suppresses the native menu so components can offer their
+          own - see main.tsx. This one never did, so right-clicking a
+          selection in a console full of stack traces did nothing at all. */}
+      <div
+        className="application-console-output"
+        ref={containerRef}
+        onContextMenu={(event) => {
+          const selection = termRef.current?.getSelection() ?? "";
+          contextMenu.open(event, [
+            {
+              label: t("applicationConsole.copySelection"),
+              icon: "copy",
+              disabled: selection.length === 0,
+              onClick: () => void copyToClipboard(selection, { copied: t("common.copied"), failed: t("common.copyFailed") }),
+            },
+            {
+              label: t("applicationConsole.selectAll"),
+              icon: "square",
+              onClick: () => termRef.current?.selectAll(),
+            },
+            {
+              label: t("applicationConsole.clear"),
+              icon: "trash",
+              onClick: () => {
+                termRef.current?.clear();
+                // Cleared on screen only - the backend still has these lines,
+                // so the next poll must not redraw them all and undo it.
+                renderedRef.current = lines;
+              },
+            },
+          ]);
+        }}
+      />
+      {contextMenu.element}
       {lines.length === 0 && <p className="application-console-empty">{readFailure ?? t("applicationConsole.empty")}</p>}
       {unsupported ? (
         <p className="form-note form-note-danger form-note-spaced">{unsupported}</p>

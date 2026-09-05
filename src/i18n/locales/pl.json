@@ -154,6 +154,9 @@
     "saveError": "Nie udało się zapisać konfiguracji."
   },
   "applicationConsole": {
+    "copySelection": "Kopiuj zaznaczenie",
+    "selectAll": "Zaznacz wszystko",
+    "clear": "Wyczyść widok",
     "title": "Konsola",
     "empty": "Brak jeszcze żadnych logów.",
     "placeholder": "Wpisz komendę i wciśnij Enter…",

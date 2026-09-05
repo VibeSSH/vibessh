@@ -154,6 +154,9 @@
     "saveError": "Couldn't save the configuration."
   },
   "applicationConsole": {
+    "copySelection": "Copy selection",
+    "selectAll": "Select all",
+    "clear": "Clear the view",
     "title": "Console",
     "empty": "No output yet.",
     "placeholder": "Type a command and press Enter…",
