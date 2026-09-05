@@ -351,6 +351,8 @@
     "failed": "Failed"
   },
   "adoptServers": {
+    "javaVersion": "Java version",
+    "javaVersionHint": "The image these run on. A plugin built for a newer Java refuses to load on an older one - if a server does not start and the log mentions a class file version, this is the setting.",
     "portName": "Server",
     "title": "Find existing servers",
     "intro": "Looks in a directory for game servers that are already there, and creates an application for each one you pick. Nothing in the directory is changed.",

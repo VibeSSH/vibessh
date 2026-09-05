@@ -88,3 +88,11 @@
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* Asked after the scan rather than before it: the list is what makes the
+   question concrete, and nobody knows which Java they need until they can
+   see which servers they are adopting. */
+.adopt-servers-java {
+  max-width: 220px;
+  margin-bottom: var(--space-2);
+}

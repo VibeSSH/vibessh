@@ -351,6 +351,8 @@
     "failed": "Błąd"
   },
   "adoptServers": {
+    "javaVersion": "Wersja Javy",
+    "javaVersionHint": "Obraz, na którym to pojedzie. Wtyczka zbudowana pod nowszą Javę nie wczyta się na starszej — jeśli serwer nie startuje, a w logu jest mowa o „class file version”, to jest to ustawienie.",
     "portName": "Serwer",
     "title": "Znajdź istniejące serwery",
     "intro": "Przegląda katalog w poszukiwaniu serwerów, które już tam są, i tworzy aplikację dla każdego zaznaczonego. Nic w katalogu nie jest zmieniane.",

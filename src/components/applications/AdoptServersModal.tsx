@@ -23,6 +23,20 @@ interface AdoptServersModalProps {
 const DEFAULT_REMOTE_DIRECTORY = "/home/container";
 
 /**
+ * Which Java the adopted servers run on.
+ *
+ * Asked rather than assumed. The first version of this hardcoded 21 and the
+ * first real server adopted with it would not start: a plugin compiled for
+ * 25 refuses to load on an older runtime, and the error names a class file
+ * version rather than a Java version, which is not a sentence anybody should
+ * have to decode. There is nothing in the directory that reliably says which
+ * one a server needs - the jar's own requirement is a floor, and its plugins
+ * can raise it - so this is a question, with the common answer preselected.
+ */
+const JAVA_VERSIONS = ["25", "21", "17", "11", "8"];
+const DEFAULT_JAVA_VERSION = "21";
+
+/**
  * Adopts game servers that already exist on a machine.
  *
  * **Why this exists.** The files arrive long before VibeSSH hears about them:
@@ -43,6 +57,7 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
   const { t } = useTranslation();
   const [serverId, setServerId] = useState<string>("");
   const [directory, setDirectory] = useState(DEFAULT_REMOTE_DIRECTORY);
+  const [javaVersion, setJavaVersion] = useState(DEFAULT_JAVA_VERSION);
   const [found, setFound] = useState<DiscoveredServer[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -89,7 +104,7 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
           workingDirectory: server.path,
           environment: [],
           blueprintInputs: {
-            image: "eclipse-temurin:21-jre",
+            image: `eclipse-temurin:${javaVersion}-jre`,
             // The jar that is already there, run the way a server is run.
             // Memory is left to the image's default rather than guessed at:
             // a wrong -Xmx is worse than none.
@@ -203,7 +218,20 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
           </ul>
         )}
 
-        {found !== null && found.length > 0 && <p className="form-hint">{t("adoptServers.adoptNote")}</p>}
+        {found !== null && found.length > 0 && (
+          <>
+            <label className="form-field adopt-servers-java">
+              <span className="form-label">{t("adoptServers.javaVersion")}</span>
+              <Select
+                value={javaVersion}
+                onChange={setJavaVersion}
+                items={JAVA_VERSIONS.map((version) => ({ value: version, label: `Java ${version}` }))}
+              />
+              <span className="form-hint">{t("adoptServers.javaVersionHint")}</span>
+            </label>
+            <p className="form-hint">{t("adoptServers.adoptNote")}</p>
+          </>
+        )}
         {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
 
         <div className="form-actions">
