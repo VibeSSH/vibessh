@@ -121,9 +121,9 @@ jobs:
         env:
           ARTIFACT_PATHS: ${{ steps.build.outputs.artifactPaths }}
         run: |
-          mkdir -p dist
+          mkdir -p release-artifacts
           node .github/workflows/collect_artifacts.cjs
-          ls -l dist
+          ls -l release-artifacts
           # An unsigned installer must stop the build. Publishing one would
           # leave the app unable to tell a real update from anything else that
           # manages to answer the update URL.
@@ -132,15 +132,15 @@ jobs:
           # for the second: `createUpdaterArtifacts` in tauri.conf.json is off
           # by default, and with it off the bundler never signs anything, so a
           # perfectly good key looks like a broken one.
-          if ! ls dist/*.sig >/dev/null 2>&1; then
-            echo "::error::nothing in dist is signed - check bundle.createUpdaterArtifacts in tauri.conf.json, then TAURI_SIGNING_PRIVATE_KEY"
+          if ! ls release-artifacts/*.sig >/dev/null 2>&1; then
+            echo "::error::nothing in release-artifacts is signed - check bundle.createUpdaterArtifacts in tauri.conf.json, then TAURI_SIGNING_PRIVATE_KEY"
             exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.platform }}
-          path: dist/*
+          path: release-artifacts/*
           retention-days: 30
           if-no-files-found: error
 
@@ -192,15 +192,15 @@ jobs:
 
       - name: Name them what the installer looks for
         run: |
-          mkdir -p dist
-          cp target/x86_64-unknown-linux-gnu/release/vibe-agent dist/vibe-agent-linux-amd64
-          cp target/aarch64-unknown-linux-gnu/release/vibe-agent dist/vibe-agent-linux-arm64
+          mkdir -p release-artifacts
+          cp target/x86_64-unknown-linux-gnu/release/vibe-agent release-artifacts/vibe-agent-linux-amd64
+          cp target/aarch64-unknown-linux-gnu/release/vibe-agent release-artifacts/vibe-agent-linux-arm64
           # Published alongside the binaries so the one-line install command
           # can point at a public URL. It used to point into this repository,
           # which is private, so every user got a 404 from the very first
           # step.
-          cp agent-install/install.sh dist/install.sh
-          cd dist
+          cp agent-install/install.sh release-artifacts/install.sh
+          cd release-artifacts
           for file in vibe-agent-linux-amd64 vibe-agent-linux-arm64; do
             sha256sum "$file" > "$file.sha256"
           done
@@ -215,7 +215,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          for file in dist/vibe-agent-linux-amd64 dist/vibe-agent-linux-arm64; do
+          for file in release-artifacts/vibe-agent-linux-amd64 release-artifacts/vibe-agent-linux-arm64; do
             npx tauri signer sign "$file"
             # Never published unsigned: the installer refuses an unsigned
             # binary, so shipping one would only produce a confusing failure
@@ -225,12 +225,12 @@ jobs:
               exit 1
             fi
           done
-          ls -l dist
+          ls -l release-artifacts
 
       - uses: actions/upload-artifact@v4
         with:
           name: agent-linux
-          path: dist/*
+          path: release-artifacts/*
           retention-days: 30
           if-no-files-found: error
 

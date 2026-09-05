@@ -1,4 +1,4 @@
-// Copies what the build produced, plus each signature, into `dist`.
+// Copies what the build produced, plus each signature, into `release-artifacts`.
 //
 // The .cjs extension is load-bearing: this project's package.json sets
 // "type": "module", so a plain .js file here would be an ES module and
@@ -16,20 +16,24 @@
 const fs = require("fs");
 const path = require("path");
 
+// Not "dist": that is where Vite writes the frontend, so collecting into it
+// swept the whole web bundle into the public release.
+const OUT = "release-artifacts";
+
 const paths = JSON.parse(process.env.ARTIFACT_PATHS || "[]");
 if (paths.length === 0) {
   console.error("::error::the build reported no artifacts");
   process.exit(1);
 }
 
-fs.mkdirSync("dist", { recursive: true });
+fs.mkdirSync(OUT, { recursive: true });
 
 for (const artifact of paths) {
   // The signature sits beside the installer rather than being listed as an
   // artifact of its own, so it is looked for by name.
   for (const file of [artifact, artifact + ".sig"]) {
     if (fs.existsSync(file)) {
-      fs.copyFileSync(file, path.join("dist", path.basename(file)));
+      fs.copyFileSync(file, path.join(OUT, path.basename(file)));
       console.log("collected " + path.basename(file));
     }
   }
