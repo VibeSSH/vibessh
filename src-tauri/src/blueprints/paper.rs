@@ -142,7 +142,7 @@ impl BlueprintHandler for PaperBlueprint {
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        Ok(render_java_docker_config(&java_version, jvm_args, jar_filename.to_string(), program_args))
+        render_java_docker_config(&java_version, jvm_args, jar_filename.to_string(), program_args)
     }
 
     async fn provision(

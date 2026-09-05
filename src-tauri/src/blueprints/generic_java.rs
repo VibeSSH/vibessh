@@ -87,12 +87,35 @@ impl BlueprintHandler for GenericJavaBlueprint {
         let jvm_args = text_list_input(inputs, &self.definition, "jvmArgs")?;
         let program_args = text_list_input(inputs, &self.definition, "programArgs")?;
 
-        Ok(render_java_docker_config(&java_version, jvm_args, jar_path, program_args))
+        render_java_docker_config(&java_version, jvm_args, jar_path, program_args)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    /// The failure this guards against, seen in the wild: a start script
+    /// pasted into the JVM arguments field. It splits on whitespace, so the
+    /// shebang becomes the first argument, and because JVM arguments sit
+    /// before `-jar` Java reads it as a main class - then the container
+    /// restarts forever on `Could not find or load main class #!.bin.bash`,
+    /// an error naming a class nobody ever wrote.
+    #[test]
+    fn a_pasted_shell_script_is_refused_rather_than_run() {
+        let mut inputs = std::collections::HashMap::new();
+        inputs.insert("jarPath".to_string(), serde_json::json!("server.jar"));
+        inputs.insert("jvmArgs".to_string(), serde_json::json!(["#!/bin/bash", "java", "-Xmx4G"]));
+
+        let result = GenericJavaBlueprint::new().render_runtime_config(&inputs);
+
+        match result {
+            Err(crate::errors::AppError::InvalidInput(message)) => {
+                assert!(message.contains("shell script"), "{message}");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+
     use super::*;
 
     #[test]

@@ -191,13 +191,35 @@ pub(crate) fn temurin_image(java_version: &str) -> String {
 /// process's `command`+`args` pair (`DockerConfig.command` overrides the
 /// image's `ENTRYPOINT`/`CMD` entirely, so this must be the *whole*
 /// invocation, not just program arguments).
-pub(crate) fn render_java_docker_config(java_version: &str, jvm_args: Vec<String>, jar: String, program_args: Vec<String>) -> serde_json::Value {
+///
+/// Fallible because of the JVM arguments. They sit *before* `-jar`, and Java
+/// stops parsing options at the first argument that is not one - so a stray
+/// token there is read as a main class, and the container restarts forever
+/// on `Could not find or load main class`. That is what a pasted start
+/// script produces: the field splits on whitespace, so `#!/bin/bash` becomes
+/// the first argument and Java reports it with the slashes turned into dots.
+/// Refused here rather than left to a crash loop, where the error names a
+/// class nobody wrote.
+pub(crate) fn render_java_docker_config(
+    java_version: &str,
+    jvm_args: Vec<String>,
+    jar: String,
+    program_args: Vec<String>,
+) -> AppResult<serde_json::Value> {
+    for arg in &jvm_args {
+        if arg.starts_with('#') {
+            return Err(AppError::InvalidInput(format!(
+                "'{arg}' is not a JVM argument - this looks like a shell script pasted into the JVM arguments. Put flags like -Xmx4G there, and the jar under 'Jar file'."
+            )));
+        }
+    }
+
     let mut command = vec!["java".to_string()];
     command.extend(jvm_args);
     command.push("-jar".to_string());
     command.push(jar);
     command.extend(program_args);
-    serde_json::json!({ "image": temurin_image(java_version), "command": command, "runAsDedicatedUser": true })
+    Ok(serde_json::json!({ "image": temurin_image(java_version), "command": command, "runAsDedicatedUser": true }))
 }
 
 pub(crate) fn text_list_input(inputs: &HashMap<String, serde_json::Value>, blueprint: &Blueprint, key: &str) -> AppResult<Vec<String>> {
