@@ -14,6 +14,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{
     RegistryCredential, RuntimeType, SetRegistryCredentialInput,
 };
+use crate::runtime::docker_command::{DockerCommandRunner, LocalDocker};
 use crate::services::ssh_service::retry_on_connection_failure;
 // The one shared implementation - this module used to carry its own
 // byte-identical copy, one of six across the codebase.
@@ -168,11 +169,20 @@ pub async fn pull_application_image(
     let server_id = detail.application.server_id;
 
     retry_on_connection_failure(sessions, server_id, || async {
-        let connection = resolve_connection(server_repo, sessions, server_id)
-            .await?
-            .ok_or_else(|| AppError::Internal("a Docker application must have a Node".into()))?;
-        ensure_registry_login(&connection, registry_repo, &image).await?;
-        let output = connection.execute_command(&format!("sudo docker pull {}", shell_quote(&image))).await?;
+        // No Node is not a fault: `server_id` is `None` exactly when the
+        // Application is local, and the daemon on this machine is then the
+        // one to pull into.
+        let runner: std::sync::Arc<dyn DockerCommandRunner> = match resolve_connection(server_repo, sessions, server_id).await? {
+            Some(connection) => {
+                ensure_registry_login(&connection, registry_repo, &image).await?;
+                connection
+            }
+            None => {
+                local_registry_login(registry_repo, &image).await?;
+                std::sync::Arc::new(LocalDocker)
+            }
+        };
+        let output = runner.docker(&["pull", &image]).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "docker pull failed".to_string() } else { detail.to_string() };
@@ -181,4 +191,60 @@ pub async fn pull_application_image(
         Ok(output.stdout)
     })
     .await
+}
+
+/// `docker login` against the daemon on this machine.
+///
+/// The password goes down the process's own stdin and never touches disk.
+/// The remote path above cannot do that - an SSH exec channel here has no
+/// stdin to write into - so it stages the password in a private file and
+/// removes it afterwards. Where that constraint does not apply, not writing
+/// the secret out at all is the better of the two.
+async fn local_registry_login(registry_repo: &RegistryCredentialRepository, image: &str) -> AppResult<()> {
+    use tokio::io::AsyncWriteExt;
+
+    let host = registry_host(image);
+    let Some(credential) = registry_repo.find_by_registry(host)? else { return Ok(()) };
+    let Some(password) = credentials::load_registry_credential_password(credential.id)? else { return Ok(()) };
+
+    // A bare `docker login` targets Docker Hub; passing `docker.io` as a host
+    // argument is not guaranteed to mean the same thing - same reasoning as
+    // `ensure_registry_login`.
+    let mut args: Vec<&str> = vec!["login"];
+    if host != "docker.io" {
+        args.push(host);
+    }
+    args.extend(["-u", credential.username.as_str(), "--password-stdin"]);
+
+    let mut command = tokio::process::Command::new("docker");
+    command.args(&args).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command.spawn().map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            AppError::InvalidInput("docker isn't installed on this machine, or isn't on PATH".into())
+        } else {
+            AppError::Internal(format!("couldn't run docker login: {err}"))
+        }
+    })?;
+
+    {
+        let mut stdin = child.stdin.take().ok_or_else(|| AppError::Internal("docker login gave no stdin".into()))?;
+        stdin.write_all(password.as_bytes()).await.map_err(|err| AppError::Internal(format!("couldn't send the password to docker: {err}")))?;
+        // Dropped here on purpose: `--password-stdin` reads until end of
+        // input, so it would wait forever with the pipe still open.
+    }
+
+    let output = child.wait_with_output().await.map_err(|err| AppError::Internal(format!("docker login didn't finish: {err}")))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if detail.is_empty() { "docker login failed".to_string() } else { detail };
+        return Err(AppError::Connection(format!("couldn't log in to {host}: {detail}")));
+    }
+    Ok(())
 }

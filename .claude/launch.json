@@ -4,14 +4,23 @@
     {
       "name": "vibessh-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 1420
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 1420,
+      "autoPort": false
     },
     {
       "name": "vibessh-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev"],
-      "port": 1420
+      "runtimeArgs": [
+        "run",
+        "tauri",
+        "dev"
+      ],
+      "port": 1420,
+      "autoPort": false
     }
   ]
 }
