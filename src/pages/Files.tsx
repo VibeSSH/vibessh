@@ -17,6 +17,7 @@ import { FileEditorPanel } from "@/components/servers/FileEditorPanel";
 import { RenameOrMoveModal } from "@/components/applications/files/RenameOrMoveModal";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
+import { fileIcon } from "@/utils/fileIcons";
 import {
   compressRemotePaths,
   createRemoteDirectory,
@@ -398,8 +399,8 @@ export function FilesPage() {
                   onContextMenu={(e) => handleRowContextMenu(e, entry)}
                 >
                   <Checkbox checked={selectedPaths.has(entry.path)} onChange={() => toggleSelected(entry.path)} label={null} />
-                  <div className="server-list-icon">
-                    <Icon name={entry.isDir ? "folder" : "file"} size={16} />
+                  <div className={`server-list-icon file-icon-${fileIcon(entry.name, entry.isDir).tone}`}>
+                    <Icon name={fileIcon(entry.name, entry.isDir).name} size={16} />
                   </div>
                   <button
                     className="files-entry-name"

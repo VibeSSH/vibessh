@@ -133,3 +133,49 @@
   justify-content: center;
   padding-top: var(--space-3);
 }
+
+/*
+ * The mark at the left of a file row, tinted by what the file is.
+ *
+ * Colour is what separates rows at a glance; an outline has to be looked at.
+ * A directory called `landmc-auth` next to `landmc-auth.jar` used to differ by
+ * the shape of a small grey glyph and nothing else, which in a plugins folder
+ * of two dozen such pairs is no difference at all.
+ *
+ * Every tone is mixed well down towards the surface. These are dozens of tiny
+ * marks in one column, and a stripe of saturated colour is harder to read than
+ * the grey it replaced - the accent stays a signal, not a decoration.
+ */
+.server-list-icon.file-icon-folder svg {
+  color: var(--accent);
+}
+
+.server-list-icon.file-icon-archive svg {
+  color: color-mix(in srgb, var(--warning) 70%, var(--text-secondary));
+}
+
+.server-list-icon.file-icon-config svg {
+  color: color-mix(in srgb, var(--success) 55%, var(--text-secondary));
+}
+
+.server-list-icon.file-icon-data svg {
+  color: color-mix(in srgb, var(--accent) 45%, var(--text-secondary));
+}
+
+.server-list-icon.file-icon-script svg {
+  color: color-mix(in srgb, var(--success) 40%, var(--text-secondary));
+}
+
+.server-list-icon.file-icon-secret svg {
+  color: color-mix(in srgb, var(--danger) 50%, var(--text-secondary));
+}
+
+.server-list-icon.file-icon-log svg {
+  color: var(--text-secondary);
+}
+
+/* A directory is the thing people are usually looking for in a long list, so
+   its name carries a little more weight than the files around it. */
+.server-list-item .file-icon-folder ~ .files-entry-name {
+  font-weight: 500;
+}

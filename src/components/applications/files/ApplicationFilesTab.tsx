@@ -9,6 +9,7 @@ import { GuideLink } from "@/guide/GuideLink";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
+import { fileIcon } from "@/utils/fileIcons";
 import { Card } from "@/components/ui/Card";
 import { useContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -85,11 +86,12 @@ interface FileRowProps {
  */
 const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, language, onOpen, onDownload, onContextMenu, buildMenuItems }: FileRowProps) {
   const { t } = useTranslation();
+  const icon = fileIcon(entry.name, entry.isDir);
   return (
     <li className={`server-list-item ${selected ? "files-entry-selected" : ""}`.trim()} onContextMenu={(event) => onContextMenu(event, entry)}>
       <Checkbox checked={selected} onChange={() => onToggleSelect(entry.path)} label={null} />
-      <div className="server-list-icon">
-        <Icon name={entry.isDir ? "folder" : "file"} size={16} />
+      <div className={`server-list-icon file-icon-${icon.tone}`}>
+        <Icon name={icon.name} size={16} />
       </div>
       <button className="files-entry-name" title={entry.name} onClick={() => onOpen(entry)}>
         {entry.name}
