@@ -26,16 +26,25 @@ impl GenericDockerBlueprint {
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::Docker],
-                // No Console: `runtime::docker::DockerRuntime::console()`
-                // always returns `None` for a container created here (it's
-                // never started with `-i`, see that module's own doc
-                // comment) - unlike Systemd/RemoteProcess, where the same
-                // blueprint's Console feature is at least sometimes usable
-                // depending on runtime type, this is *never* usable for a
-                // Docker application, so it isn't declared at all rather
-                // than declaring a tab that can only ever show its
-                // read-only fallback state.
-                features: vec![BlueprintFeature::Logs, BlueprintFeature::Environment, BlueprintFeature::Ports, BlueprintFeature::HealthCheck, BlueprintFeature::Files],
+                // Console included. It used to be left out because a
+                // container created here was "never started with `-i`", and
+                // a tab that could only ever show its read-only fallback is
+                // worse than no tab. That stopped being true when
+                // `build_create_args` began passing `-i` unconditionally -
+                // every container this runtime creates keeps stdin open, and
+                // `attach_console_fifo` wires it up on start.
+                //
+                // It matters most for a server somebody adopted rather than
+                // created: a Minecraft server with no console is one nobody
+                // can type `stop` into.
+                features: vec![
+                    BlueprintFeature::Console,
+                    BlueprintFeature::Logs,
+                    BlueprintFeature::Environment,
+                    BlueprintFeature::Ports,
+                    BlueprintFeature::HealthCheck,
+                    BlueprintFeature::Files,
+                ],
                 fields: vec![
                     BlueprintField {
                         key: "image".to_string(),

@@ -351,6 +351,7 @@
     "failed": "Błąd"
   },
   "adoptServers": {
+    "portName": "Serwer",
     "title": "Znajdź istniejące serwery",
     "intro": "Przegląda katalog w poszukiwaniu serwerów, które już tam są, i tworzy aplikację dla każdego zaznaczonego. Nic w katalogu nie jest zmieniane.",
     "location": "Gdzie szukać",

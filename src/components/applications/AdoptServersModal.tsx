@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Dialog } from "@/components/ui/Dialog";
 import { Icon } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
-import { createApplication } from "@/services/applicationService";
+import { addApplicationPort, createApplication } from "@/services/applicationService";
 import { scanForServers, type DiscoveredServer } from "@/services/serverDiscoveryService";
 import { errorMessage } from "@/services/tauri";
 import { toastSuccess } from "@/stores/toastStore";
@@ -81,7 +81,7 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
       // knowable state: everything before it exists, everything after it does
       // not, and the message names what stopped it.
       for (const server of chosen) {
-        await createApplication({
+        const created_app = await createApplication({
           serverId: isLocal ? undefined : serverId,
           name: server.name,
           blueprintId: "generic-docker",
@@ -96,6 +96,27 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
             command: ["java", "-jar", server.jar, "nogui"],
           },
         });
+
+        // The port the server is already configured for, published as it
+        // stands. Skipped when `server.properties` had none: a proxy keeps
+        // its port elsewhere, and inventing 25565 for it would publish the
+        // wrong one and look deliberate.
+        if (server.port !== null) {
+          try {
+            await addApplicationPort(created_app.id, {
+              name: t("adoptServers.portName"),
+              protocol: "tcp",
+              bindAddress: "",
+              internalPort: server.port,
+              externalPort: server.port,
+              visibility: "public",
+            });
+          } catch {
+            // The application exists and is the point; a port can be added
+            // by hand on its Ports tab, and failing the whole adoption over
+            // one would leave the rest uncreated.
+          }
+        }
         created += 1;
       }
       toastSuccess(t("adoptServers.createdToast", { count: created }));

@@ -351,6 +351,7 @@
     "failed": "Failed"
   },
   "adoptServers": {
+    "portName": "Server",
     "title": "Find existing servers",
     "intro": "Looks in a directory for game servers that are already there, and creates an application for each one you pick. Nothing in the directory is changed.",
     "location": "Where to look",
