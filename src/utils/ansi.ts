@@ -98,7 +98,7 @@ function rgb(r: number, g: number, b: number): string {
 // in a log line an ampersand is overwhelmingly just an ampersand, and
 // treating "R&D" as red text would corrupt ordinary output to catch a code
 // the server does not emit.
-const TOKEN = /\x1b\[([0-9;]*)m|§([0-9a-fk-or])/gi;
+const TOKEN = /\x1b\[([0-9;?]*)([a-zA-Z])|\x1b[\]P^_].*?(?:\x07|\x1b\\)|§([0-9a-fk-or])/gi;
 
 interface Style {
   color?: string;
@@ -121,7 +121,18 @@ export function parseAnsi(line: string): AnsiSegment[] {
   for (const match of line.matchAll(TOKEN)) {
     push(line.slice(cursor, match.index));
     cursor = match.index + match[0].length;
-    style = match[1] !== undefined ? applySgr(style, match[1]) : applyMinecraft(style, match[2].toLowerCase());
+
+    const [, csiParams, csiFinal, minecraft] = match;
+    if (minecraft !== undefined) {
+      style = applyMinecraft(style, minecraft.toLowerCase());
+    } else if (csiFinal === "m") {
+      style = applySgr(style, csiParams);
+    }
+    // Every other sequence is swallowed and does nothing. A server clearing
+    // the line or moving the cursor means nothing in a log that only ever
+    // appends - and leaving it in the text was worse than ignoring it: it
+    // printed as `[m` in the middle of a line, which is what this list of
+    // sequences was widened to catch.
   }
   push(line.slice(cursor));
 

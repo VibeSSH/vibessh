@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseAnsi } from "./ansi";
 
 const ESC = "";
+const BEL = "";
 
 describe("colouring a line of server output", () => {
   it("leaves a plain line as one plain piece", () => {
@@ -69,6 +70,31 @@ describe("colouring a line of server output", () => {
 
     expect(segment.background).toBe("#0000ff");
     expect(segment.color).toBeUndefined();
+  });
+
+  /**
+   * Seen in a real Paper log: a line arriving with a bare reset in front of
+   * it, which printed as the literal text `[m` because only colour
+   * sequences were being consumed.
+   */
+  it("swallows a sequence it does not render rather than printing it", () => {
+    const segments = parseAnsi(`${ESC}[K${ESC}[2J[21:58:52 INFO]: Enabling`);
+
+    expect(segments.map((segment) => segment.text).join("")).toBe("[21:58:52 INFO]: Enabling");
+  });
+
+  it("still colours when a swallowed sequence sits beside a colour", () => {
+    const segments = parseAnsi(`${ESC}[m${ESC}[32mgreen`);
+
+    expect(segments.map((segment) => segment.text).join("")).toBe("green");
+    expect(segments[segments.length - 1].color).toBeDefined();
+  });
+
+  it("swallows an operating system command with its terminator", () => {
+    // A server setting the window title, which has no meaning in a log.
+    const segments = parseAnsi(`${ESC}]0;a title${BEL}after`);
+
+    expect(segments.map((segment) => segment.text).join("")).toBe("after");
   });
 
   describe("Minecraft's own codes, as they arrive from chat", () => {
