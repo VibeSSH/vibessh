@@ -243,6 +243,59 @@ pub async fn application_resource_usage(
     .await
 }
 
+/// Asks the server inside an Application one command and returns its answer.
+///
+/// **Only for a blueprint that declares one.** `Blueprint::command_console`
+/// carries the snippet that knows how to talk to that particular server -
+/// which client to run, and how it authenticates - so a blueprint without
+/// one has no such notion and this refuses rather than guessing at a client
+/// name.
+///
+/// **Only while it is running.** `docker exec` needs a running container,
+/// and the error it produces otherwise names the container rather than the
+/// situation. Saying so here is the difference between "this application is
+/// stopped" and a wall of Docker output.
+pub async fn run_application_command(
+    repo: &ApplicationRepository,
+    registry: &crate::blueprints::BlueprintRegistry,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    local_process_manager: &Arc<LocalProcessManager>,
+    id: Uuid,
+    command: &str,
+) -> AppResult<String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err(AppError::InvalidInput("a command is required".into()));
+    }
+    // Long enough for a real one-liner, short enough that nothing pastes a
+    // file in here and waits for a container to choke on it.
+    if command.len() > 4096 {
+        return Err(AppError::InvalidInput("that command is too long - paste a script into a file instead".into()));
+    }
+
+    let detail = get_application(repo, id)?;
+    let handler = registry
+        .get(&detail.application.blueprint_id)
+        .ok_or_else(|| AppError::InvalidInput(format!("unknown blueprint '{}'", detail.application.blueprint_id)))?;
+    let console = handler
+        .blueprint()
+        .command_console
+        .clone()
+        .ok_or_else(|| AppError::InvalidInput(format!("'{}' has no command console", handler.blueprint().name)))?;
+
+    let server_id = detail.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
+        if runtime.status(&ctx).await? != ApplicationStatus::Running {
+            return Err(AppError::InvalidInput(format!("'{}' isn't running - start it before sending commands", detail.application.name)));
+        }
+        crate::runtime::docker::run_command_in_container(&ctx, &console.shell, command).await
+    })
+    .await
+}
+
 /// Turns an Application's stored `health_check_*` columns into the
 /// `HealthCheckSpec` its runtime actually probes with - `Ok(None)` (not an
 /// error) whenever the configuration can't be resolved right now (the

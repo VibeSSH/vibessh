@@ -25,6 +25,8 @@ fn config_path(config_dir: &Path) -> PathBuf {
 
 /// A missing file means none have been saved, which is the normal state on a
 /// fresh install rather than an error.
+///
+/// The user's own only - `all_templates` is what the UI asks for.
 pub fn load_templates(config_dir: &Path) -> AppResult<Vec<ApplicationTemplate>> {
     let path = config_path(config_dir);
     if !path.exists() {
@@ -32,6 +34,18 @@ pub fn load_templates(config_dir: &Path) -> AppResult<Vec<ApplicationTemplate>> 
     }
     let bytes = std::fs::read(&path).map_err(|err| AppError::Storage(format!("failed to read {CONFIG_FILE_NAME}: {err}")))?;
     serde_json::from_slice(&bytes).map_err(|err| AppError::Storage(format!("{CONFIG_FILE_NAME} is not readable: {err}")))
+}
+
+/// What the wizard lists: the ones that ship with VibeSSH, then the user's
+/// own.
+///
+/// Built-ins first because they are the answer to "I have never done this
+/// before", which is who is reading the list at all - somebody with their own
+/// saved templates knows where to find them.
+pub fn all_templates(config_dir: &Path) -> AppResult<Vec<ApplicationTemplate>> {
+    let mut templates = super::builtin_templates::builtin_templates();
+    templates.extend(load_templates(config_dir)?);
+    Ok(templates)
 }
 
 fn write_templates(config_dir: &Path, templates: &[ApplicationTemplate]) -> AppResult<()> {
@@ -51,6 +65,16 @@ pub fn save_template(config_dir: &Path, mut template: ApplicationTemplate) -> Ap
         return Err(AppError::InvalidInput("a template needs a name".into()));
     }
     template.name = name;
+    // A built-in is what `storage::builtin_templates` says it is. Letting one
+    // be saved over would put a copy in this file that the list then has to
+    // choose between, and the copy would keep whatever it was edited into
+    // long after the shipped one changed.
+    if super::builtin_templates::is_builtin_id(template.id) {
+        return Err(AppError::InvalidInput("that template ships with VibeSSH - save it under a new name instead".into()));
+    }
+    // Never stored as one either: `is_builtin` is a fact about where a
+    // template came from, and this one came from the user.
+    template.is_builtin = false;
 
     for variable in &mut template.environment {
         if variable.is_secret {
@@ -76,6 +100,9 @@ pub fn save_template(config_dir: &Path, mut template: ApplicationTemplate) -> Ap
 /// Removing one that is already gone is not an error - the caller wanted it
 /// absent, and it is.
 pub fn delete_template(config_dir: &Path, id: Uuid) -> AppResult<()> {
+    if super::builtin_templates::is_builtin_id(id) {
+        return Err(AppError::InvalidInput("that template ships with VibeSSH and can't be deleted".into()));
+    }
     let mut templates = load_templates(config_dir)?;
     templates.retain(|template| template.id != id);
     write_templates(config_dir, &templates)
@@ -102,6 +129,7 @@ mod tests {
             field_values: serde_json::json!({ "minecraftVersion": "1.21.1" }),
             environment: vec![],
             created_at: chrono::Utc::now(),
+            is_builtin: false,
         }
     }
 
@@ -138,7 +166,7 @@ mod tests {
 
         save_template(&dir, with_secret).unwrap();
 
-        let raw = std::fs::read_to_string(&dir.join(CONFIG_FILE_NAME)).unwrap();
+        let raw = std::fs::read_to_string(dir.join(CONFIG_FILE_NAME)).unwrap();
         assert!(!raw.contains("hunter2"), "the secret was written to disk: {raw}");
         // The name survives, so the wizard can ask for the value again.
         assert!(raw.contains("RCON_PASSWORD"), "{raw}");

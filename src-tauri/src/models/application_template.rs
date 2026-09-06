@@ -25,6 +25,15 @@ pub struct ApplicationTemplate {
     pub field_values: serde_json::Value,
     pub environment: Vec<TemplateEnvironmentVariable>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Shipped with the app rather than saved by the user - see
+    /// `storage::builtin_templates`. Read-only: it cannot be edited or
+    /// deleted, and the frontend leaves the delete button off it.
+    ///
+    /// Defaulted rather than required so a templates file written before
+    /// built-ins existed still parses, with every template in it correctly
+    /// reading as the user's own.
+    #[serde(default)]
+    pub is_builtin: bool,
 }
 
 /// One environment row in a template.

@@ -112,6 +112,14 @@ pub async fn create_application(
         })
         .collect();
 
+    // The chosen target's own env rows, resolved before anything is written
+    // so a bad target fails the create rather than leaving an Application
+    // that half-points at something.
+    let environment = match (handler.blueprint().connects_to.as_ref(), input.connect_to_application_id) {
+        (Some(connection), Some(peer_id)) => connection_environment(repo, connection, peer_id, input.environment)?,
+        _ => input.environment,
+    };
+
     let create_input = CreateApplicationInput {
         server_id: input.server_id,
         name: name.to_string(),
@@ -120,7 +128,7 @@ pub async fn create_application(
         blueprint_version: handler.blueprint().blueprint_version,
         runtime_type: input.runtime_type,
         working_directory: working_directory.to_string(),
-        environment: input.environment,
+        environment,
         ports,
         runtime_config,
         // Stored so a later edit (`update_application_config`) can re-render
@@ -131,7 +139,75 @@ pub async fn create_application(
     };
     let detail = repo.create(&create_input)?;
     store_secret_environment_values(detail.application.id, &create_input.environment)?;
+
+    // Granted last, and only after the Application exists to grant it to.
+    //
+    // The row alone is enough here: nothing is running yet, and
+    // `runtime::docker::reconcile_networks` builds the shared network from
+    // the stored allow-list on every start. So there is no Docker call to
+    // make and none to fail - unlike `links::connect_applications`, which
+    // has live containers to attach and therefore has to apply as well.
+    if let Some(peer_id) = input.connect_to_application_id {
+        if handler.blueprint().connects_to.is_some() {
+            grant_connection(repo, detail.application.id, peer_id)?;
+        }
+    }
     Ok(detail)
+}
+
+/// Turns "point this at that Application" into the environment rows the
+/// image itself reads.
+///
+/// The host is the target's **network alias**, not its Application name as
+/// typed: `MariaDB (EU)` is reachable as `mariadb-eu`, and somebody typing
+/// the name they can see into PMA_HOST gets a host that does not resolve.
+/// That single mismatch is most of why this setup is reported broken, and it
+/// is exactly the kind of thing the machine should fill in.
+///
+/// A row the user typed themselves wins. Somebody who has already put a
+/// PMA_HOST in the wizard meant it, and silently overwriting it would be
+/// worse than ignoring the picker.
+fn connection_environment(
+    repo: &ApplicationRepository,
+    connection: &crate::models::BlueprintConnection,
+    peer_id: Uuid,
+    mut environment: Vec<EnvironmentVariable>,
+) -> AppResult<Vec<EnvironmentVariable>> {
+    let peer = repo.get(peer_id)?.ok_or_else(|| AppError::NotFound(format!("application {peer_id}")))?;
+    if !connection.blueprint_ids.is_empty() && !connection.blueprint_ids.contains(&peer.application.blueprint_id) {
+        return Err(AppError::InvalidInput(format!("'{}' isn't a kind of application this one can connect to", peer.application.name)));
+    }
+
+    let already_set = |key: &str, rows: &[EnvironmentVariable]| rows.iter().any(|row| row.key == key);
+    if !already_set(&connection.host_env, &environment) {
+        environment.push(EnvironmentVariable {
+            key: connection.host_env.clone(),
+            value: crate::runtime::docker::network_alias(&peer.application),
+            is_secret: false,
+        });
+    }
+    if !already_set(&connection.port_env, &environment) {
+        environment.push(EnvironmentVariable {
+            key: connection.port_env.clone(),
+            value: connection.default_port.to_string(),
+            is_secret: false,
+        });
+    }
+    Ok(environment)
+}
+
+/// Records that these two are allowed to reach each other.
+///
+/// A failure here is logged rather than returned: the Application has been
+/// created and its environment already names the target, so failing the
+/// whole create would destroy something that exists for the sake of a grant
+/// the user can add in one click on the Connections card. The log is what
+/// makes the difference visible if it ever happens.
+fn grant_connection(repo: &ApplicationRepository, id: Uuid, peer_id: Uuid) -> AppResult<()> {
+    if let Err(err) = repo.add_link(id, peer_id) {
+        log::error!("created application {id} but couldn't grant its connection to {peer_id}: {err}");
+    }
+    Ok(())
 }
 
 /// Writes every secret row's real value into the OS keyring, keyed by this
@@ -255,6 +331,89 @@ pub fn rerender_runtime_config(
 
     let rendered = handler.render_runtime_config(&inputs)?;
     Ok((rendered != detail.runtime_config).then_some(rendered))
+}
+
+/// Moves an Application to a different blueprint, in either direction.
+///
+/// **Both directions matter, and they are not symmetrical.** Going to a
+/// managed blueprint - Paper, Velocity - hands version management over, and
+/// its provisioning is what does that: it downloads that server's own jar
+/// into a directory somebody may already be running a server out of. Going
+/// the other way, to a plain Docker Application, gives management up and
+/// touches nothing: the files stay exactly as they are and the jar that is
+/// there keeps running.
+///
+/// So the download is the thing to be warned about, and it belongs to the
+/// direction that causes it rather than to this function, which cannot know
+/// what the caller was told.
+///
+/// The runtime type does not change. A blueprint that cannot run the way this
+/// Application already runs is refused rather than quietly rewritten into a
+/// shape its runtime was never designed for - the same reasoning
+/// `update_application_config` uses to refuse editing one whose blueprint
+/// narrowed underneath it.
+pub async fn change_application_blueprint(
+    repo: &ApplicationRepository,
+    registry: &BlueprintRegistry,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    java_root: &std::path::Path,
+    id: Uuid,
+    blueprint_id: &str,
+    field_values: serde_json::Value,
+) -> AppResult<ApplicationDetail> {
+    let detail = repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))?;
+    if detail.application.blueprint_id == blueprint_id {
+        return Ok(detail);
+    }
+
+    let handler = registry
+        .get(blueprint_id)
+        .ok_or_else(|| AppError::InvalidInput(format!("unknown blueprint '{blueprint_id}'")))?;
+    if !handler.blueprint().supported_runtime_types.contains(&detail.application.runtime_type) {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' can't run the way this application already runs",
+            handler.blueprint().name
+        )));
+    }
+
+    // The new blueprint's own answers only. Carrying the old ones over would
+    // mean a Paper Application holding a `generic-docker` image field, which
+    // nothing reads and everything has to then ignore.
+    let mut inputs: HashMap<String, serde_json::Value> = match field_values {
+        serde_json::Value::Object(map) => map.into_iter().collect(),
+        serde_json::Value::Null => HashMap::new(),
+        _ => return Err(AppError::InvalidInput("blueprint inputs must be an object".into())),
+    };
+
+    let connection = resolve_connection(server_repo, sessions, detail.application.server_id).await?;
+    let provision_context = ProvisionContext {
+        working_directory: &detail.application.working_directory,
+        connection,
+        runtime_type: detail.application.runtime_type,
+        java_root,
+    };
+    let discovered = handler.provision(&inputs, &provision_context).await?;
+    inputs.extend(discovered);
+
+    let runtime_config = handler.render_runtime_config(&inputs)?;
+
+    // The blueprint is set last. Everything before it can fail - a download,
+    // a rejected input - and an Application left claiming to be a Paper
+    // server while still holding a generic config would be worse than one
+    // that never changed.
+    repo.update(
+        id,
+        &UpdateApplicationInput {
+            name: detail.application.name.clone(),
+            description: detail.application.description.clone(),
+            working_directory: detail.application.working_directory.clone(),
+            runtime_config,
+            metadata: serde_json::json!({ "blueprintInputs": inputs }),
+        },
+    )?;
+    repo.set_blueprint(id, blueprint_id, handler.blueprint().blueprint_version)?;
+    repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))
 }
 
 pub async fn update_application_config(
@@ -481,5 +640,123 @@ mod rerender_tests {
         let detail = detail("something-that-was-removed", serde_json::json!({}), serde_json::json!({}));
 
         assert!(rerender_runtime_config(&registry, &detail).unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{BlueprintConnection, CreateApplicationInput, RuntimeType};
+
+    fn temp_repo() -> ApplicationRepository {
+        let path = std::env::temp_dir().join(format!("vibessh-connect-test-{}.sqlite3", Uuid::new_v4()));
+        ApplicationRepository::open(&path).unwrap()
+    }
+
+    fn create(repo: &ApplicationRepository, name: &str, blueprint_id: &str) -> Uuid {
+        repo.create(&CreateApplicationInput {
+            server_id: None,
+            name: name.to_string(),
+            description: None,
+            blueprint_id: blueprint_id.to_string(),
+            blueprint_version: 1,
+            runtime_type: RuntimeType::Docker,
+            working_directory: "/tmp/db".to_string(),
+            environment: vec![],
+            ports: vec![],
+            runtime_config: serde_json::json!({}),
+            metadata: serde_json::json!({}),
+        })
+        .unwrap()
+        .application
+        .id
+    }
+
+    fn phpmyadmin_connection() -> BlueprintConnection {
+        BlueprintConnection {
+            blueprint_ids: vec!["mariadb".to_string()],
+            host_env: "PMA_HOST".to_string(),
+            port_env: "PMA_PORT".to_string(),
+            default_port: 3306,
+        }
+    }
+
+    fn value_of<'a>(rows: &'a [EnvironmentVariable], key: &str) -> Option<&'a str> {
+        rows.iter().find(|row| row.key == key).map(|row| row.value.as_str())
+    }
+
+    /// The whole point. A name with a space in it is reachable by its
+    /// slugified alias and by nothing else, so typing the name you can see
+    /// into PMA_HOST is the mistake this exists to stop somebody making.
+    #[test]
+    fn the_host_is_the_targets_network_alias_not_its_name() {
+        let repo = temp_repo();
+        let peer = create(&repo, "MariaDB (EU)", "mariadb");
+
+        let rows = connection_environment(&repo, &phpmyadmin_connection(), peer, vec![]).unwrap();
+
+        assert_eq!(value_of(&rows, "PMA_HOST"), Some("mariadb-eu"));
+        assert_eq!(value_of(&rows, "PMA_PORT"), Some("3306"));
+    }
+
+    /// The port a database publishes to the host is a different question
+    /// from the port it listens on inside its own container, and this is
+    /// the second one - a database deliberately left unpublished is still
+    /// on 3306 to something that has been granted a route to it.
+    #[test]
+    fn the_port_is_the_containers_own_regardless_of_what_it_publishes() {
+        let repo = temp_repo();
+        let peer = create(&repo, "db", "mariadb");
+
+        let rows = connection_environment(&repo, &phpmyadmin_connection(), peer, vec![]).unwrap();
+
+        assert_eq!(value_of(&rows, "PMA_PORT"), Some("3306"));
+    }
+
+    #[test]
+    fn a_value_the_user_typed_themselves_is_left_alone() {
+        let repo = temp_repo();
+        let peer = create(&repo, "db", "mariadb");
+        let typed = vec![EnvironmentVariable { key: "PMA_HOST".into(), value: "db.example.com".into(), is_secret: false }];
+
+        let rows = connection_environment(&repo, &phpmyadmin_connection(), peer, typed).unwrap();
+
+        assert_eq!(value_of(&rows, "PMA_HOST"), Some("db.example.com"));
+        // The half they did not answer is still filled in.
+        assert_eq!(value_of(&rows, "PMA_PORT"), Some("3306"));
+        assert_eq!(rows.iter().filter(|row| row.key == "PMA_HOST").count(), 1, "the row was duplicated rather than kept");
+    }
+
+    #[test]
+    fn pointing_it_at_something_that_is_not_a_database_is_refused() {
+        let repo = temp_repo();
+        let peer = create(&repo, "Paper Survival", "paper");
+
+        let err = connection_environment(&repo, &phpmyadmin_connection(), peer, vec![]).unwrap_err();
+
+        assert!(matches!(err, AppError::InvalidInput(_)), "expected InvalidInput, got {err:?}");
+    }
+
+    #[test]
+    fn pointing_it_at_an_application_that_is_gone_is_refused() {
+        let repo = temp_repo();
+
+        let err = connection_environment(&repo, &phpmyadmin_connection(), Uuid::new_v4(), vec![]).unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound(_)), "expected NotFound, got {err:?}");
+    }
+
+    /// A blueprint that names no targets accepts any - the escape hatch for
+    /// something genuinely able to talk to anything, and worth a test so
+    /// the empty list is not read as "nothing is allowed".
+    #[test]
+    fn an_empty_target_list_accepts_anything() {
+        let repo = temp_repo();
+        let peer = create(&repo, "whatever", "generic-docker");
+        let connection = BlueprintConnection { blueprint_ids: vec![], ..phpmyadmin_connection() };
+
+        let rows = connection_environment(&repo, &connection, peer, vec![]).unwrap();
+
+        assert_eq!(value_of(&rows, "PMA_HOST"), Some("whatever"));
     }
 }

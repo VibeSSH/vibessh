@@ -30,7 +30,7 @@ pub use application_backup::{ApplicationBackup, BackupKind, BackupSchedule, SetB
 pub use application_template::{ApplicationTemplate, TemplateEnvironmentVariable};
 pub use discovered_server::{DiscoveredServer, DiscoveredServerKind};
 pub use backup_destination::{BackupDestinationConfig, SetBackupDestinationInput};
-pub use blueprint::{Blueprint, BlueprintField, BlueprintFeature, BlueprintFieldType, DefaultPort, KnownFile};
+pub use blueprint::{Blueprint, BlueprintCommandConsole, BlueprintConnection, BlueprintField, BlueprintFeature, BlueprintFieldType, DefaultPort, KnownFile};
 pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDatabaseHostInput, UpdateDatabaseHostInput, DatabaseEngine, DatabaseHost};
 pub use cloud::{
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,

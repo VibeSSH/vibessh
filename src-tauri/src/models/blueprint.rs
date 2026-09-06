@@ -58,7 +58,93 @@ pub struct Blueprint {
     /// only ever the *starting* value.
     #[serde(default)]
     pub default_ports: Vec<DefaultPort>,
+    /// Another Application this one is meant to talk to, and how it is told
+    /// where to find it - see `BlueprintConnection`. `None` for anything
+    /// that stands alone, which is most of them.
+    #[serde(default)]
+    pub connects_to: Option<BlueprintConnection>,
+    /// How this kind of application answers an ad-hoc command - see
+    /// `BlueprintCommandConsole`. `None` for anything with no such notion,
+    /// which is most of them.
+    #[serde(default)]
+    pub command_console: Option<BlueprintCommandConsole>,
     pub is_builtin: bool,
+}
+
+/// A console for asking a *server* something, as opposed to typing into a
+/// process's stdin.
+///
+/// **Why this is a second mechanism and not the existing console.** The
+/// console on the Overview tab writes to the container's stdin, which works
+/// because a Minecraft server reads its commands from there. A database does
+/// not: `redis-server` and `mongod` ignore stdin entirely, so wiring them to
+/// that console would produce an input box that silently swallows everything
+/// typed into it. Asking a database something means running its client -
+/// `redis-cli`, `mongosh` - and that is a different shape: one command in,
+/// one answer out.
+///
+/// **Each command is its own run.** No session is kept, so nothing carries
+/// over between commands - `use some-database` in mongosh applies to the
+/// command it was typed with and nothing after it. The alternative, a
+/// long-lived interactive session, needs a bidirectional stream built twice
+/// over (once for local Docker, once through the FIFO an SSH channel
+/// forces), and this shape reuses the ordinary command runner that already
+/// works both ways.
+///
+/// **Credentials never appear in what VibeSSH runs.** `shell` is executed
+/// *inside the container* with `sh -c`, so a password can be read from the
+/// container's own environment there and expanded there. Nothing sensitive
+/// reaches the argument list of the `docker` command this host runs, which
+/// is what a local `ps` - or any account on the Node - would be able to read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueprintCommandConsole {
+    /// Run inside the container as `sh -c <shell> vibessh <command>`, so the
+    /// user's command arrives as `"$1"` - a positional parameter, never
+    /// spliced into the script. It cannot end the script and start another,
+    /// whatever it contains.
+    pub shell: String,
+    /// An example command, shown in the empty input box. The fastest way to
+    /// tell somebody what this console speaks.
+    pub placeholder: String,
+}
+
+/// How a blueprint that exists to point at *another* Application gets told
+/// which one.
+///
+/// **Why this is declared rather than hardcoded in the wizard.** phpMyAdmin
+/// with no `PMA_HOST` is the single most reported broken setup in this app,
+/// and it breaks in three places at once: the variable is unset, the port is
+/// unset, and - the part nobody guesses - the two containers are on separate
+/// private networks, so even a correct host name resolves to nothing until a
+/// connection is granted (`services::application_service::links`). All three
+/// are mechanical once the target is known, so the wizard asks for the target
+/// and `create_application` does the rest.
+///
+/// Declaring it on the blueprint keeps that out of the wizard's own logic:
+/// anything else pointed at a sibling service later (a Grafana at a
+/// Prometheus, a bot at a Redis) fills this in and gets the same treatment
+/// with no new UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlueprintConnection {
+    /// Blueprint ids whose Applications are valid targets. Empty means any
+    /// Docker Application on the same Node, which is the honest answer for
+    /// something like phpMyAdmin only if it really can talk to anything -
+    /// prefer naming the ones that work.
+    pub blueprint_ids: Vec<String>,
+    /// Given the target's own network alias - the name it is resolvable by
+    /// on the network the granted connection creates.
+    pub host_env: String,
+    /// Given `default_port`. Separate from `host_env` because the port is
+    /// the half somebody may legitimately want to change afterwards on the
+    /// Environment tab.
+    pub port_env: String,
+    /// The port the target listens on *inside* its container, which is not
+    /// affected by what it publishes to the host - a database deliberately
+    /// left unpublished is still on 3306 to a container that has been
+    /// granted a route to it.
+    pub default_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

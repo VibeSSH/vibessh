@@ -78,6 +78,8 @@ impl WaterfallBlueprint {
                     internal_port: 25577,
                     external_port: 25577,
                 }],
+                connects_to: None,
+                command_console: None,
                 is_builtin: true,
             },
         }

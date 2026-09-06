@@ -433,7 +433,7 @@ pub async fn import_server(
     let create_input = CreateApplicationFromBlueprintInput {
         server_id: Some(target_server_id),
         name: planned.name.clone(),
-        description: planned.egg.is_empty().then(|| None).unwrap_or(Some(format!("Imported from Pterodactyl ({})", planned.egg))),
+        description: if planned.egg.is_empty() { None } else { Some(format!("Imported from Pterodactyl ({})", planned.egg)) },
         blueprint_id: planned.blueprint_id.clone(),
         runtime_type: RuntimeType::Docker,
         working_directory: working_directory.clone(),
@@ -447,6 +447,10 @@ pub async fn import_server(
             .map(|variable| EnvironmentVariable { key: variable.key.clone(), value: variable.value.clone(), is_secret: false })
             .collect(),
         blueprint_inputs: serde_json::Value::Object(planned.fields.iter().map(|(key, value)| (key.clone(), value.clone())).collect()),
+        // A migrated server arrives with whatever the panel had it pointed
+        // at already in its own environment - there is nothing here to pick
+        // a target from, and inventing one would rewrite a working setup.
+        connect_to_application_id: None,
     };
 
     let created = match application_service::create_application(app_repo, registry, server_repo, sessions, java_root, create_input).await {

@@ -82,6 +82,8 @@ impl VelocityBlueprint {
                     internal_port: 25565,
                     external_port: 25565,
                 }],
+                connects_to: None,
+                command_console: None,
                 is_builtin: true,
             },
         }

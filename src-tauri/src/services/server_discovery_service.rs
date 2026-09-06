@@ -122,7 +122,7 @@ pub async fn scan_local(directory: &str) -> AppResult<Vec<DiscoveredServer>> {
 
     // Sorted so two scans of the same directory read the same way - a
     // filesystem hands them back in whatever order it likes.
-    found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    found.sort_by_key(|server| server.name.to_lowercase());
     Ok(found)
 }
 
@@ -186,7 +186,7 @@ pub fn parse_scan(stdout: &str, directory: &str) -> Vec<DiscoveredServer> {
             })
         })
         .collect();
-    found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    found.sort_by_key(|server| server.name.to_lowercase());
     found
 }
 

@@ -20,7 +20,7 @@ fn config_dir(app: &AppHandle) -> AppResult<std::path::PathBuf> {
 
 #[tauri::command]
 pub fn list_application_templates(app: AppHandle) -> AppResult<Vec<ApplicationTemplate>> {
-    application_template_config::load_templates(&config_dir(&app)?)
+    application_template_config::all_templates(&config_dir(&app)?)
 }
 
 #[tauri::command]

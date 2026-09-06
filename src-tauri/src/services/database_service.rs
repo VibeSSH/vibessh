@@ -206,6 +206,18 @@ pub async fn create_application_database(
     sql.push_str("FLUSH PRIVILEGES;");
     run_mysql_with_retry(server_repo, sessions, &host, &admin_password, &sql, &[&password]).await?;
 
+    // The moment somebody actually needs a container to reach this database,
+    // which is the moment worth re-checking that it can - see
+    // `ensure_mysql_reachable_from_containers` for why once-at-install is not
+    // enough. Only for a database server on a Node VibeSSH manages: there is
+    // nothing to configure on somebody else's host, and nothing that should
+    // be.
+    if is_loopback_host(&host.host) && host.server_id.is_some() {
+        if let Ok(connection) = connect_to_host(server_repo, sessions, &host).await {
+            ensure_mysql_reachable_from_containers(&connection, host.port).await;
+        }
+    }
+
     let record = match db_repo.create_database(&CreateApplicationDatabaseInput {
         application_id,
         database_host_id,
@@ -590,6 +602,38 @@ pub async fn install_database_server(
     Ok(())
 }
 
+/// Re-applies both halves of container reachability to a database server
+/// that is already installed.
+///
+/// **Why this is its own action.** The reachability step used to run once,
+/// at install, and only wrote the bind - so every Node where Docker arrived
+/// after MariaDB, and every Node with an active ufw, ended up with a
+/// database that authenticates correctly and then never answers. Creating a
+/// new database now re-applies it, but nobody creates a database to fix an
+/// existing one, and the install button only appears when there is no server
+/// at all. Without this there is no path from a broken setup to a working
+/// one that does not involve an SSH session and knowing what to type.
+///
+/// Idempotent, and says so by doing nothing when both halves are already
+/// right - no restart, no duplicate firewall rule.
+pub async fn repair_database_reachability(
+    repo: &DatabaseRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    host_id: Uuid,
+) -> AppResult<()> {
+    let host = repo.get_host(host_id)?.ok_or_else(|| AppError::NotFound(format!("database host {host_id}")))?;
+    if !is_loopback_host(&host.host) {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' points at {}, not at this node itself - VibeSSH can only configure a database server running on a node it manages",
+            host.name, host.host
+        )));
+    }
+    let connection = connect_to_host(server_repo, sessions, &host).await?;
+    ensure_mysql_reachable_from_containers(&connection, host.port).await;
+    Ok(())
+}
+
 /// Creates (or re-points) the Database Host's configured admin user on a
 /// freshly installed server, so the credentials the operator typed when they
 /// linked the host actually work against it.
@@ -628,66 +672,135 @@ async fn grant_admin_user(connection: &SshSession, host: &DatabaseHost, admin_pa
 /// Makes a self-hosted MariaDB reachable from an Application's container
 /// without making it reachable from the internet.
 ///
-/// **Why anything is needed at all.** Debian/Ubuntu's `mariadb-server`
-/// package ships `bind-address = 127.0.0.1`. A container's connection
-/// arrives over a Docker bridge interface, never `lo`, and a socket bound
-/// specifically to `127.0.0.1` never accepts a connection arriving on any
-/// other interface - no firewall rule changes that.
+/// **Two halves, and both are needed.** A container's connection to the Node
+/// has to get past the socket *and* past the Node's own firewall, and each
+/// one silently blocks it in a different way. Doing only the first is what
+/// produced the reports this now exists to answer: correct credentials, a
+/// correct host name, and a login that hangs until it times out.
 ///
-/// **Why this no longer writes `0.0.0.0`.** It used to, unconditionally and
+/// ### The socket
+///
+/// Debian/Ubuntu's `mariadb-server` package ships `bind-address = 127.0.0.1`.
+/// A container's connection arrives over a Docker bridge interface, never
+/// `lo`, and a socket bound specifically to `127.0.0.1` never accepts a
+/// connection arriving on any other interface - no firewall rule changes
+/// that.
+///
+/// **Why this does not write `0.0.0.0`.** It used to, unconditionally and
 /// with its errors discarded, which silently converted a correctly
-/// loopback-only database into one listening on the Node's public
-/// interface. Paired with the `'user'@'%'` grants this module also used to
-/// create, that put the database on the internet behind nothing but a
-/// generated password. Only `ufw` stood in the way, and only when `ufw`
-/// happened to already be active.
+/// loopback-only database into one listening on the Node's public interface.
+/// Paired with the `'user'@'%'` grants this module also used to create, that
+/// put the database on the internet behind nothing but a generated password.
 ///
 /// Instead it binds loopback **plus the Docker bridge address specifically**
 /// (`bind-address = 127.0.0.1,172.17.0.1`, multi-address support present in
-/// MariaDB 10.11+ and MySQL 8.0.13+). The public interface is never bound,
-/// so exposure does not depend on a firewall being installed, enabled, or
+/// MariaDB 10.11+ and MySQL 8.0.13+). The public interface is never bound, so
+/// exposure does not depend on a firewall being installed, enabled, or
 /// correctly configured.
 ///
-/// **If the server cannot start with that config** - an older MariaDB
-/// without multi-address support - the drop-in is removed again and the
-/// server restarted, leaving the package default in place. That means
-/// container access does not work on those versions, which is a visible,
-/// fixable limitation; silently falling back to `0.0.0.0` would trade a
-/// broken feature for an exposed database, which is the wrong trade.
+/// **If the server cannot start with that config** - an older MariaDB without
+/// multi-address support - the drop-in is removed again and the server
+/// restarted, leaving the package default in place. That means container
+/// access does not work on those versions, which is a visible, fixable
+/// limitation; silently falling back to `0.0.0.0` would trade a broken
+/// feature for an exposed database, which is the wrong trade.
 ///
-/// Only restarts when the drop-in's content actually needs to change.
+/// ### The firewall
+///
+/// A packet from a container to the Node's own bridge address is *inbound
+/// traffic to the Node*, so it lands in `INPUT` where `ufw` sits - not in
+/// the `FORWARD` path Docker manages itself. With ufw's default deny, it is
+/// dropped rather than rejected, which is exactly why the symptom is a
+/// timeout instead of "connection refused". Nothing else in VibeSSH opens
+/// it: `firewall_service` derives its rules from published Application
+/// ports, and a database host's port is not one.
+///
+/// The rule is scoped **to the bridge address as its destination**, not to
+/// the port on every interface:
+///
+/// ```text
+/// ufw allow in proto tcp from 172.16.0.0/12 to <bridge> port <port>
+/// ```
+///
+/// So it cannot open the database to the internet even in principle - the
+/// destination is a private address that only exists on the Node's own
+/// bridge - and it is a second lock behind the bind, not a replacement for
+/// it. The source is Docker's own address pool, the same reasoning and the
+/// same width as the `CONNECTIONS_FROM` grant pattern this module already
+/// uses; a container outside that range is refused by MySQL's own grant,
+/// which is the tighter of the two checks.
+///
+/// Added only when ufw is actually active. Adding rules to a firewall
+/// somebody has deliberately left off would be changing a decision that is
+/// not this function's to make, and would do nothing anyway.
+///
+/// ### When it runs
+///
+/// At install, and again whenever a database is created for an Application.
+/// The second one matters: `docker0` does not exist until Docker is
+/// installed, and a Node where MariaDB came first would otherwise keep the
+/// package's loopback-only bind forever, with no step that ever revisits it.
+/// Both halves are no-ops when they are already right, so the repeat costs
+/// one command and no restart.
 async fn ensure_mysql_reachable_from_containers(connection: &SshSession, port: u16) {
-    let _ = port;
-    let script = r#"set -e
+    let script = reachability_script(port);
+    match connection.execute_command(&script).await {
+        Ok(output) if output.exit_code == 0 => {
+            let warning = output.stderr.trim();
+            if !warning.is_empty() {
+                log::warn!("{warning}");
+            }
+        }
+        Ok(output) => log::warn!("couldn't make MariaDB reachable from containers: {}", output.stderr.trim()),
+        Err(err) => log::warn!("couldn't make MariaDB reachable from containers: {err}"),
+    }
+}
+
+/// Split out so the script can be read and checked without a Node to run it
+/// on - it is a shell program built by string interpolation, which is
+/// exactly the kind of thing that is wrong in a way nothing notices until
+/// somebody's database is unreachable.
+fn reachability_script(port: u16) -> String {
+    format!(
+        r#"set -e
 path=/etc/mysql/mariadb.conf.d/99-vibessh-bind.cnf
-bridge=$(ip -4 -o addr show docker0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+bridge=$(ip -4 -o addr show docker0 2>/dev/null | awk '{{print $4}}' | cut -d/ -f1)
 if [ -z "$bridge" ]; then
     # No Docker bridge on this Node yet - nothing to widen the bind for,
     # and widening it "just in case" is exactly the mistake this replaced.
     exit 0
 fi
-desired=$(printf '[mysqld]\nbind-address = 127.0.0.1,%s\n' "$bridge")
+
+desired=$(printf '[mysqld]
+bind-address = 127.0.0.1,%s
+' "$bridge")
 current=$(sudo cat "$path" 2>/dev/null || true)
-if [ "$current" = "$desired" ]; then
-    exit 0
+if [ "$current" != "$desired" ]; then
+    printf '%s' "$desired" | sudo tee "$path" >/dev/null
+    if ! sudo systemctl restart mariadb; then
+        # This MariaDB cannot parse a multi-address bind. Roll back rather
+        # than fall back to 0.0.0.0 - a database that is unreachable from
+        # containers is a fixable inconvenience; one that is reachable from
+        # the internet is not.
+        sudo rm -f "$path"
+        sudo systemctl restart mariadb || true
+        echo "vibessh: this MariaDB does not support a multi-address bind-address; containers cannot reach it" >&2
+        exit 1
+    fi
 fi
-printf '%s' "$desired" | sudo tee "$path" >/dev/null
-if ! sudo systemctl restart mariadb; then
-    # This MariaDB cannot parse a multi-address bind. Roll back rather than
-    # fall back to 0.0.0.0 - a database that is unreachable from containers
-    # is a fixable inconvenience; one that is reachable from the internet is
-    # not.
-    sudo rm -f "$path"
-    sudo systemctl restart mariadb || true
-    echo "vibessh: this MariaDB does not support a multi-address bind-address; containers cannot reach it" >&2
-    exit 1
+
+# The second half. Only when ufw is both installed and enforcing: on a Node
+# with no firewall there is nothing in the way and nothing to add, and
+# switching one on here is not this step's decision to make.
+if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | head -n1 | grep -qi active; then
+    # `ufw allow` is idempotent - a rule that is already there is skipped
+    # rather than duplicated. Never fatal: the bind above is the half that
+    # cannot be worked around by hand, and a node whose ufw refuses this
+    # (an old build with no `comment` support, say) should still finish.
+    sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port}         comment 'vibessh: containers reach the database' >/dev/null 2>&1         || sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port} >/dev/null 2>&1         || echo "vibessh: couldn't add a ufw rule for the database port; containers may time out reaching it" >&2
 fi
-"#;
-    match connection.execute_command(script).await {
-        Ok(output) if output.exit_code == 0 => {}
-        Ok(output) => log::warn!("couldn't make MariaDB reachable from containers: {}", output.stderr.trim()),
-        Err(err) => log::warn!("couldn't make MariaDB reachable from containers: {err}"),
-    }
+"#
+    )
 }
 
 async fn connect_to_host(server_repo: &ServerRepository, sessions: &SshSessionManager, host: &DatabaseHost) -> AppResult<Arc<SshSession>> {
@@ -991,6 +1104,78 @@ fn generate_password() -> String {
 mod tests {
     use super::*;
     use crate::models::DatabaseEngine;
+
+    /// The script is written to a file and checked with a real shell, so a
+    /// quoting or interpolation mistake fails here rather than on somebody's
+    /// Node. Skipped where no POSIX shell is on PATH (a plain Windows box),
+    /// because absence of a shell is not a defect in the script.
+    #[test]
+    fn the_reachability_script_is_valid_shell() {
+        let script = reachability_script(3306);
+        let path = std::env::temp_dir().join(format!("vibessh-reachability-{}.sh", Uuid::new_v4()));
+        std::fs::write(&path, &script).unwrap();
+
+        let checked = std::process::Command::new("sh").arg("-n").arg(&path).output();
+        let _ = std::fs::remove_file(&path);
+
+        match checked {
+            Ok(output) => assert!(
+                output.status.success(),
+                "the script is not valid shell: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            Err(_) => eprintln!("no POSIX shell on PATH - skipped"),
+        }
+    }
+
+    /// The rule's destination is what keeps it from being an open port.
+    /// Scoped to the bridge address, a private one that only exists on the
+    /// Node itself; scoped to the port alone it would apply to every
+    /// interface, public ones included.
+    #[test]
+    fn the_firewall_rule_is_scoped_to_the_bridge_address() {
+        let script = reachability_script(3306);
+
+        assert!(script.contains(r#"to "$bridge" port 3306"#), "the ufw rule is not destination-scoped:
+{script}");
+        assert!(script.contains("from 172.16.0.0/12"), "the ufw rule does not scope its source:
+{script}");
+        // The one thing that must never appear in anything the shell runs:
+        // it would put the database on every interface the Node has. Read
+        // past the comments, one of which says `0.0.0.0` precisely to
+        // explain why it is not used.
+        let commands: String = script.lines().filter(|line| !line.trim_start().starts_with('#')).collect::<Vec<_>>().join("
+");
+        assert!(!commands.contains("0.0.0.0"), "the script binds or opens a wildcard address:
+{commands}");
+    }
+
+    /// A firewall somebody has deliberately left off stays off - the rule is
+    /// pointless there, and enabling one is not this step's decision.
+    #[test]
+    fn nothing_is_added_when_ufw_is_not_enforcing() {
+        let script = reachability_script(3306);
+
+        assert!(script.contains("ufw status"), "the script does not check whether ufw is active:
+{script}");
+        assert!(!script.contains("ufw enable"), "the script enables a firewall on somebody's node:
+{script}");
+    }
+
+    #[test]
+    fn the_bind_keeps_loopback_alongside_the_bridge() {
+        let script = reachability_script(3306);
+
+        // Dropping 127.0.0.1 would break every client on the Node itself,
+        // including the `mysql` calls this module makes over SSH.
+        assert!(script.contains("bind-address = 127.0.0.1,%s"), "the bind no longer keeps loopback:
+{script}");
+    }
+
+    #[test]
+    fn the_port_is_the_hosts_own_rather_than_a_hardcoded_one() {
+        assert!(reachability_script(3307).contains("port 3307"));
+    }
 
     fn stub_host() -> DatabaseHost {
         DatabaseHost {

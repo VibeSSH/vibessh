@@ -227,7 +227,7 @@ async fn local_registry_login(registry_repo: &RegistryCredentialRepository, imag
 
     let mut child = command.spawn().map_err(|err| {
         if err.kind() == std::io::ErrorKind::NotFound {
-            AppError::InvalidInput("docker isn't installed on this machine, or isn't on PATH".into())
+            crate::runtime::docker_command::docker_missing()
         } else {
             AppError::Internal(format!("couldn't run docker login: {err}"))
         }

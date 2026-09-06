@@ -116,6 +116,11 @@ fn validate_connectable(repo: &ApplicationRepository, a: Uuid, b: Uuid) -> AppRe
     }
     match (first.server_id, second.server_id) {
         (Some(left), Some(right)) if left == right => Ok(()),
+        // Both local is the same host as surely as both on one Node is, and
+        // the same local Docker daemon holds both containers - refusing it
+        // meant a phpMyAdmin and a MariaDB on somebody's own desktop could
+        // never be connected at all, which is not what the rule below says.
+        (None, None) => Ok(()),
         _ => Err(AppError::InvalidInput(format!(
             "'{}' and '{}' aren't on the same node - a Docker network doesn't span hosts",
             first.name, second.name
@@ -148,4 +153,62 @@ async fn apply_connections(
         runtime.sync_connections(&ctx).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::CreateApplicationInput;
+
+    fn temp_repo() -> ApplicationRepository {
+        let path = std::env::temp_dir().join(format!("vibessh-links-test-{}.sqlite3", uuid::Uuid::new_v4()));
+        ApplicationRepository::open(&path).unwrap()
+    }
+
+    /// Local only: an Application on a Node needs a real `servers` row to
+    /// satisfy the foreign key, and the Node half of this rule is not what
+    /// changed.
+    fn create(repo: &ApplicationRepository, name: &str, runtime_type: RuntimeType) -> Uuid {
+        repo.create(&CreateApplicationInput {
+            server_id: None,
+            name: name.to_string(),
+            description: None,
+            blueprint_id: "generic-docker".to_string(),
+            blueprint_version: 1,
+            runtime_type,
+            working_directory: "/tmp/app".to_string(),
+            environment: vec![],
+            ports: vec![],
+            runtime_config: serde_json::json!({}),
+            metadata: serde_json::json!({}),
+        })
+        .unwrap()
+        .application
+        .id
+    }
+
+    /// Two containers on the same local Docker daemon are as much on one
+    /// host as two on a Node are. Refusing this meant a phpMyAdmin and a
+    /// MariaDB on somebody's own desktop could never be connected at all.
+    #[test]
+    fn two_local_docker_applications_are_on_the_same_host() {
+        let repo = temp_repo();
+        let a = create(&repo, "phpMyAdmin", RuntimeType::Docker);
+        let b = create(&repo, "MariaDB", RuntimeType::Docker);
+
+        validate_connectable(&repo, a, b).unwrap();
+    }
+
+    /// There is no private network to put a bare process on, and the error
+    /// has to say which of the two is the problem.
+    #[test]
+    fn something_that_is_not_a_container_has_no_network_to_join() {
+        let repo = temp_repo();
+        let container = create(&repo, "phpMyAdmin", RuntimeType::Docker);
+        let process = create(&repo, "A script", RuntimeType::LocalProcess);
+
+        let err = validate_connectable(&repo, container, process).unwrap_err();
+
+        assert!(format!("{err}").contains("A script"), "the error should name the one that isn't a container: {err}");
+    }
 }

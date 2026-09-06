@@ -158,6 +158,26 @@ impl ApplicationRepository {
         self.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))
     }
 
+    /// Changes which blueprint an Application is, and nothing else.
+    ///
+    /// Narrow for the same reason `rename` is: the caller has already
+    /// rendered a new runtime config and written it, and routing this through
+    /// `update` would let a stale copy of the working directory or the
+    /// metadata ride along with a one-field change.
+    pub fn set_blueprint(&self, id: Uuid, blueprint_id: &str, blueprint_version: i32) -> AppResult<()> {
+        let conn = self.lock();
+        let affected = conn
+            .execute(
+                "UPDATE applications SET blueprint_id = ?2, blueprint_version = ?3, updated_at = ?4 WHERE id = ?1",
+                params![id.to_string(), blueprint_id, blueprint_version, Utc::now().to_rfc3339()],
+            )
+            .map_err(|err| AppError::Storage(format!("failed to change the application's blueprint: {err}")))?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("application {id}")));
+        }
+        Ok(())
+    }
+
     pub fn update_runtime_config(&self, id: Uuid, runtime_config: &serde_json::Value) -> AppResult<ApplicationDetail> {
         let conn = self.lock();
         let affected = conn
@@ -861,6 +881,37 @@ mod tests {
             runtime_config: serde_json::json!({ "jar": "server.jar" }),
             metadata: serde_json::json!({}),
         }
+    }
+
+    /// Switching an Application's blueprint has to leave everything else
+    /// alone - its ports and environment are the reason somebody adopted it
+    /// rather than recreating it, and losing them to a type change would be
+    /// exactly the data loss the switch is meant to avoid.
+    #[test]
+    fn set_blueprint_changes_the_blueprint_and_nothing_else() {
+        let (repo, _path) = temp_repo();
+        let detail = repo.create(&local_input("Adopted")).unwrap();
+
+        repo.set_blueprint(detail.application.id, "paper", 3).unwrap();
+
+        let after = repo.get(detail.application.id).unwrap().unwrap();
+        assert_eq!(after.application.blueprint_id, "paper");
+        assert_eq!(after.application.blueprint_version, 3);
+        assert_eq!(after.application.name, "Adopted");
+        assert_eq!(after.application.working_directory, "/tmp/app");
+        assert_eq!(after.application.runtime_type, RuntimeType::LocalProcess);
+        assert_eq!(after.ports.len(), 1);
+        assert_eq!(after.environment.len(), 1);
+        assert_eq!(after.runtime_config, serde_json::json!({ "jar": "server.jar" }));
+    }
+
+    #[test]
+    fn set_blueprint_on_an_application_that_is_not_there_says_so() {
+        let (repo, _path) = temp_repo();
+
+        let err = repo.set_blueprint(Uuid::new_v4(), "paper", 1).unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound(_)), "expected NotFound, got {err:?}");
     }
 
     #[test]

@@ -11,3 +11,10 @@ use crate::state::AppState;
 pub fn get_app_info(state: State<AppState>) -> AppResult<AppInfo> {
     services::get_app_info(&state)
 }
+
+/// Whether containers can run on this machine - what the wizard asks before
+/// offering the Docker runtime for a Local application.
+#[tauri::command]
+pub async fn local_docker_available() -> bool {
+    services::local_docker_available().await
+}

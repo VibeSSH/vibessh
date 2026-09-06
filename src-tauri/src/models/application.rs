@@ -143,6 +143,13 @@ pub struct CreateApplicationFromBlueprintInput {
     /// A `{ fieldKey: value }` object - keys matching the chosen
     /// blueprint's own `BlueprintField::key`s.
     pub blueprint_inputs: serde_json::Value,
+    /// The Application this one should be pointed at, for a blueprint that
+    /// declares a `Blueprint::connects_to` (phpMyAdmin at a MariaDB). Both
+    /// the environment rows naming it and the connection making it
+    /// reachable are derived from this - see
+    /// `services::application_service::provisioning::connection_environment`.
+    #[serde(default)]
+    pub connect_to_application_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

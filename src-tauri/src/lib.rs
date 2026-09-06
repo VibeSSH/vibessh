@@ -195,6 +195,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_info,
+            commands::app_commands::local_docker_available,
             commands::pterodactyl_commands::pterodactyl_connection,
             commands::pterodactyl_commands::pterodactyl_connect,
             commands::pterodactyl_commands::pterodactyl_plan,
@@ -227,6 +228,8 @@ pub fn run() {
             commands::application_commands::get_application,
             commands::application_commands::list_blueprints,
             commands::application_commands::create_application,
+            commands::application_commands::change_application_blueprint,
+            commands::application_commands::run_application_command,
             commands::application_commands::update_application_config,
             commands::application_commands::follow_application_logs,
             commands::application_commands::stop_following_application_logs,
@@ -268,6 +271,7 @@ pub fn run() {
             commands::database_commands::delete_database_host,
             commands::database_commands::set_database_host_phpmyadmin,
             commands::database_commands::install_database_server,
+            commands::database_commands::repair_database_reachability,
             commands::database_commands::list_application_databases,
             commands::database_commands::create_application_database,
             commands::database_commands::delete_application_database,

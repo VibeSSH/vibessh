@@ -100,6 +100,8 @@ impl NatsBlueprint {
                 ],
                 known_files: vec![],
                 default_ports: vec![],
+                connects_to: None,
+                command_console: None,
                 is_builtin: true,
             },
         }

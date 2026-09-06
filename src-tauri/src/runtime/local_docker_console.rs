@@ -69,7 +69,7 @@ pub async fn attach(application_id: Uuid, container: &str) -> AppResult<mpsc::Un
 
     let mut child = command.spawn().map_err(|err| {
         if err.kind() == std::io::ErrorKind::NotFound {
-            AppError::InvalidInput("docker isn't installed on this machine, or isn't on PATH".into())
+            super::docker_command::docker_missing()
         } else {
             AppError::Internal(format!("couldn't attach to the container: {err}"))
         }

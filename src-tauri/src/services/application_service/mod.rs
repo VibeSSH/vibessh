@@ -309,6 +309,7 @@ mod tests {
             working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
             environment: vec![],
             blueprint_inputs: serde_json::json!({ "command": command, "args": args }),
+            connect_to_application_id: None,
         }
     }
 
@@ -718,6 +719,7 @@ mod tests {
             working_directory: working_directory.to_string_lossy().into_owned(),
             environment: vec![],
             blueprint_inputs: serde_json::json!({ "velocityVersion": "3.1.1" }),
+            connect_to_application_id: None,
         };
 
         let created = match create_application(&app_repo, &registry, &server_repo, &sessions, std::path::Path::new(""), input).await {

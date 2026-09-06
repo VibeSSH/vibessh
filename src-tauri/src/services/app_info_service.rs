@@ -10,6 +10,34 @@ pub fn get_app_info(state: &AppState) -> AppResult<AppInfo> {
     })
 }
 
+/// Whether this machine can run containers at all.
+///
+/// **Asked before anything is created, not after.** Picking the Docker
+/// runtime for a Local application used to succeed all the way through the
+/// wizard and fail on the first start, with an error about PATH - by which
+/// point there is an Application sitting there that cannot run. This is what
+/// lets the wizard say so while the answer still costs nothing.
+///
+/// `docker version` rather than `--version`: the second one only proves the
+/// client binary exists, and a Docker Desktop that is installed but not
+/// started answers it happily while every real command fails. This talks to
+/// the daemon, which is the thing that has to be there.
+pub async fn local_docker_available() -> bool {
+    let mut command = tokio::process::Command::new("docker");
+    command.arg("version");
+
+    #[cfg(windows)]
+    {
+        // The same reason every other docker invocation carries it: a
+        // packaged build is a GUI process, and without this each probe
+        // flashes a console window.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    matches!(command.output().await, Ok(output) if output.status.success())
+}
+
 /// Whether this process is root.
 ///
 /// **Why it is worth telling somebody.** Nothing in VibeSSH needs local root:

@@ -171,6 +171,22 @@ pub async fn create_application(
     services::create_application(&repo, &registry, &server_repo, &sessions, &java_root.0, input).await
 }
 
+/// Moves an Application to a different blueprint - taking over version
+/// management, or giving it up.
+#[tauri::command]
+pub async fn change_application_blueprint(
+    repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    java_root: State<'_, crate::state::JavaRoot>,
+    id: Uuid,
+    blueprint_id: String,
+    field_values: serde_json::Value,
+) -> AppResult<ApplicationDetail> {
+    services::change_application_blueprint(&repo, &registry, &server_repo, &sessions, &java_root.0, id, &blueprint_id, field_values).await
+}
+
 #[tauri::command]
 pub async fn update_application_config(
     repo: State<'_, ApplicationRepository>,
@@ -526,6 +542,23 @@ pub async fn write_application_console(
     input: String,
 ) -> AppResult<()> {
     services::application_console_write(&repo, &server_repo, &sessions, &local_process_manager, id, &input).await
+}
+
+/// One command to the server inside the application, and its answer - the
+/// Redis/MongoDB console. Nothing like `write_application_console`, which
+/// types into a process's stdin; see `BlueprintCommandConsole` for why a
+/// database needs the other shape.
+#[tauri::command]
+pub async fn run_application_command(
+    repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    id: Uuid,
+    command: String,
+) -> AppResult<String> {
+    services::run_application_command(&repo, &registry, &server_repo, &sessions, &local_process_manager, id, &command).await
 }
 
 #[tauri::command]

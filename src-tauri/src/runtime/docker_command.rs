@@ -58,6 +58,42 @@ impl DockerCommandRunner for SshSession {
     }
 }
 
+/// What to say when `docker` is not there.
+///
+/// **Named rather than repeated.** Three places spawn `docker` on this
+/// machine - the command runner, the console attach and the registry login -
+/// and each carried its own copy of a message that said only that it was
+/// missing. Somebody reading it still had to go and find out what to
+/// install, which on Windows is two things and not one.
+///
+/// The Windows wording names both because Docker Desktop will not run
+/// without WSL2 on Windows 10 Home, where Hyper-V is not available - so
+/// "install Docker Desktop" alone sends people to an installer that stops
+/// and asks for something else.
+pub(crate) fn docker_missing() -> AppError {
+    #[cfg(windows)]
+    let detail = concat!(
+        "docker isn't installed on this machine, or isn't on PATH. ",
+        "Local containers need Docker Desktop, and Docker Desktop needs WSL2: ",
+        "run `wsl --install` in an administrator PowerShell, restart the computer, ",
+        "then install Docker Desktop from docker.com and restart VibeSSH so it picks up the new PATH.",
+    );
+    #[cfg(target_os = "macos")]
+    let detail = concat!(
+        "docker isn't installed on this machine, or isn't on PATH. ",
+        "Local containers need Docker Desktop - install it from docker.com, start it, ",
+        "then restart VibeSSH so it picks up the new PATH.",
+    );
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let detail = concat!(
+        "docker isn't installed on this machine, or isn't on PATH. ",
+        "Install it with your package manager (`sudo apt install docker.io`, or Docker's own ",
+        "repository), add yourself to the `docker` group, then restart VibeSSH so it picks up ",
+        "the new group membership.",
+    );
+    AppError::InvalidInput(detail.into())
+}
+
 /// The Docker daemon on this machine.
 pub struct LocalDocker;
 
@@ -78,7 +114,7 @@ impl DockerCommandRunner for LocalDocker {
 
         let output = command.output().await.map_err(|err| {
             if err.kind() == std::io::ErrorKind::NotFound {
-                AppError::InvalidInput("docker isn't installed on this machine, or isn't on PATH".into())
+                docker_missing()
             } else {
                 AppError::Internal(format!("couldn't run docker: {err}"))
             }
@@ -105,6 +141,38 @@ impl DockerCommandRunner for LocalDocker {
 /// arguments on the far side of an SSH channel, silently.
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The message is written across several source lines with backslash
+    /// continuations, which strip the newline *and* the following
+    /// indentation - get one wrong and the text reaches the user with a gap
+    /// in the middle of a sentence, or two words run together.
+    #[test]
+    fn the_missing_docker_message_reads_as_one_sentence() {
+        let AppError::InvalidInput(message) = docker_missing() else {
+            panic!("a missing docker is bad input, not an internal failure");
+        };
+
+        assert!(!message.contains('\n'), "the message wrapped onto a second line: {message}");
+        assert!(!message.contains("  "), "a line continuation left a double space: {message}");
+        assert!(message.starts_with("docker isn't installed"), "{message}");
+        // Whatever the platform, it has to say what to do next rather than
+        // only what is wrong.
+        assert!(message.contains("restart VibeSSH"), "the message never says to restart: {message}");
+    }
+
+    /// Windows needs both, and naming only Docker Desktop sends somebody to
+    /// an installer that stops and asks for the other one.
+    #[cfg(windows)]
+    #[test]
+    fn on_windows_it_names_wsl_as_well_as_docker_desktop() {
+        let AppError::InvalidInput(message) = docker_missing() else { unreachable!() };
+
+        assert!(message.contains("Docker Desktop"), "{message}");
+        assert!(message.contains("WSL2"), "{message}");
+        assert!(message.contains("wsl --install"), "{message}");
+    }
+
     use crate::ssh::command::quote as shell_quote;
 
     /// The same rendering `SshSession::docker` does, without needing a

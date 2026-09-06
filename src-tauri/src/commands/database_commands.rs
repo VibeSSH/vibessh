@@ -48,6 +48,21 @@ pub async fn install_database_server(
     services::install_database_server(&repo, &server_repo, &sessions, id).await
 }
 
+/// Re-applies container reachability to a database server that is already
+/// installed - the bind address and, where ufw is enforcing, the rule that
+/// lets a container's packet reach it. The repair path for a database that
+/// authenticates but times out; see the service function for why that state
+/// is reachable at all.
+#[tauri::command]
+pub async fn repair_database_reachability(
+    repo: State<'_, DatabaseRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+) -> AppResult<()> {
+    services::repair_database_reachability(&repo, &server_repo, &sessions, id).await
+}
+
 #[tauri::command]
 pub fn set_database_host_phpmyadmin(repo: State<DatabaseRepository>, id: Uuid, application_id: Option<Uuid>) -> AppResult<DatabaseHost> {
     services::set_database_host_phpmyadmin(&repo, id, application_id)

@@ -361,11 +361,68 @@ fn desired_networks(ctx: &RuntimeContext<'_>) -> Vec<String> {
 /// embedded DNS itself would reject, same fix `services::dns_service::slugify`
 /// needed for the identical reason. Every char actually pushed here is
 /// single-byte ASCII, so `result.len()` is a safe stand-in for a char count.
-fn network_alias(application: &Application) -> String {
+pub(crate) fn network_alias(application: &Application) -> String {
     // Falls back to the container name rather than a literal, so two
     // Applications whose names both slugify to nothing still get distinct,
     // resolvable aliases instead of colliding on the same one.
     crate::naming::dns_label(&application.name).unwrap_or_else(|| container_name(application.id))
+}
+
+/// Runs one ad-hoc command against the server inside a container and hands
+/// back what it said.
+///
+/// **The user's command is a parameter, never part of the script.** It goes
+/// in as `sh -c <script> vibessh <command>`, so the blueprint's own snippet
+/// reads it as `"$1"`. There is no arrangement of quotes, semicolons or
+/// backticks in it that can end that script and start another one - the
+/// shell never parses it as code, it only ever assigns it.
+///
+/// That is also why the blueprint declares a snippet rather than a template
+/// with a hole in it: a hole is something a caller can escape from, and a
+/// positional parameter is not.
+///
+/// **Both streams come back.** A client that failed says so on stderr, and
+/// dropping it would leave the console showing nothing at all for the most
+/// interesting case. The exit code is not an error here either: `redis-cli`
+/// reporting a wrong command is an answer to show, not a failure of the
+/// call.
+pub(crate) async fn run_command_in_container(ctx: &RuntimeContext<'_>, shell: &str, command: &str) -> AppResult<String> {
+    let runner = runner(ctx);
+    let name = container_name(ctx.application.id);
+    validate_container_ref(&name)?;
+
+    let args = exec_command_args(&name, shell, command);
+    let output = runner.docker(&args.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+
+    let mut answer = String::new();
+    answer.push_str(output.stdout.trim_end());
+    let stderr = output.stderr.trim_end();
+    if !stderr.is_empty() {
+        if !answer.is_empty() {
+            answer.push('\n');
+        }
+        answer.push_str(stderr);
+    }
+    Ok(answer)
+}
+
+/// The argument list for one console command, built where it can be read.
+///
+/// `sh -c <script> vibessh <command>` - the `vibessh` is `$0`, a name for the
+/// shell rather than anything the script uses, which leaves the user's
+/// command as `"$1"`. Pure and separate so a test can assert the one property
+/// that matters: the command is its own argument and is never part of the
+/// script text.
+fn exec_command_args(container: &str, shell: &str, command: &str) -> Vec<String> {
+    vec![
+        "exec".to_string(),
+        container.to_string(),
+        "sh".to_string(),
+        "-c".to_string(),
+        shell.to_string(),
+        "vibessh".to_string(),
+        command.to_string(),
+    ]
 }
 
 /// Idempotent - a plain `docker network create` errors on a network that
@@ -1326,6 +1383,35 @@ mod tests {
         let id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
         assert_eq!(container_name(id), "vibessh-app-11111111-2222-3333-4444-555555555555");
         assert!(validate_container_ref(&container_name(id)).is_ok());
+    }
+
+    /// The property the whole shape exists for. A command containing quotes,
+    /// a semicolon and a backtick would end the script and start another one
+    /// if it were spliced into the text - as its own argument it is data the
+    /// script reads, and cannot be anything else.
+    #[test]
+    fn a_console_command_is_its_own_argument_never_part_of_the_script() {
+        let shell = "exec mongosh --quiet --eval \"$1\"";
+        let nasty = r#""; rm -rf / #"#;
+
+        let args = exec_command_args("vibessh-app", shell, nasty);
+
+        assert_eq!(args.last().map(String::as_str), Some(nasty), "the command should arrive whole: {args:?}");
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == shell).count(), 1, "the script should appear once, unmodified");
+        // Everything before the command is fixed, so there is nowhere for it
+        // to have been interpolated.
+        assert_eq!(args[..6], ["exec", "vibessh-app", "sh", "-c", shell, "vibessh"].map(String::from));
+    }
+
+    /// `$0` is the shell's own name, so the command has to be `$1` - the
+    /// blueprints' snippets are written against that and would read an empty
+    /// string if this ever changed.
+    #[test]
+    fn the_command_is_the_first_positional_parameter() {
+        let args = exec_command_args("vibessh-app", "echo \"$1\"", "KEYS *");
+
+        assert_eq!(args[5], "vibessh", "$0 should be a placeholder name, not the command");
+        assert_eq!(args[6], "KEYS *");
     }
 
     #[test]

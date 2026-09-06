@@ -35,6 +35,7 @@ mod generic;
 mod generic_docker;
 mod generic_java;
 mod mariadb;
+mod mongodb;
 mod nodejs_bot;
 mod paper;
 mod phpmyadmin;
@@ -49,6 +50,7 @@ pub use generic::GenericBlueprint;
 pub use generic_docker::GenericDockerBlueprint;
 pub use generic_java::GenericJavaBlueprint;
 pub use mariadb::MariaDbBlueprint;
+pub use mongodb::MongoDbBlueprint;
 pub use nodejs_bot::NodejsBotBlueprint;
 pub use paper::PaperBlueprint;
 pub use phpmyadmin::PhpMyAdminBlueprint;
@@ -338,6 +340,8 @@ impl BlueprintRegistry {
         handlers.insert(waterfall.blueprint().id.clone(), Box::new(waterfall));
         let mariadb = MariaDbBlueprint::new();
         handlers.insert(mariadb.blueprint().id.clone(), Box::new(mariadb));
+        let mongodb = MongoDbBlueprint::new();
+        handlers.insert(mongodb.blueprint().id.clone(), Box::new(mongodb));
         let redis = RedisBlueprint::new();
         handlers.insert(redis.blueprint().id.clone(), Box::new(redis));
         let nats = NatsBlueprint::new();
@@ -451,6 +455,8 @@ mod tests {
             fields,
             known_files: vec![],
             default_ports: vec![],
+            connects_to: None,
+            command_console: None,
             is_builtin: true,
         }
     }
@@ -494,6 +500,7 @@ mod tests {
         assert!(registry.get("velocity").is_some());
         assert!(registry.get("waterfall").is_some());
         assert!(registry.get("mariadb").is_some());
+        assert!(registry.get("mongodb").is_some());
         assert!(registry.get("redis").is_some());
         assert!(registry.get("nats").is_some());
         assert!(registry.get("phpmyadmin").is_some());
@@ -509,6 +516,7 @@ mod tests {
                 "generic-docker",
                 "generic-java",
                 "mariadb",
+                "mongodb",
                 "nats",
                 "nodejs-bot",
                 "paper",
