@@ -18,6 +18,25 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # No debug symbols in CI, and this is not a shortcut.
+  #
+  # The Test step had never actually run before: every previous run failed at
+  # Clippy first, and the moment it stopped doing so, linking the integration
+  # test binary killed the linker outright - `collect2: fatal error: ld
+  # terminated with signal 7 [Bus error]`, twice on the same target. A bus
+  # error from lld is what a runner out of room looks like: the output file
+  # is written through a mapping, and a mapping that cannot be backed raises
+  # a signal rather than returning an error. This dependency graph - webkit,
+  # aws-lc, ring, sqlite, the whole SSH stack - carries DWARF for every crate
+  # into every one of several test binaries.
+  #
+  # Dropping the symbols costs line numbers in a panic backtrace and nothing
+  # else: an assertion still names what it expected and what it got, which is
+  # what a CI failure is read from. The alternative - deleting preinstalled
+  # tooling from the runner to make space - trades a permanent fix for a
+  # scavenger hunt that breaks whenever the image changes.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
   rust:
@@ -60,6 +79,11 @@ jobs:
       # at the install step above. `--components=secrets` is the only part of
       # gnome-keyring needed here; the password is arbitrary, since the
       # keyring lives and dies with this one process.
+      # Printed before the step that ran out of it, so the next failure of this
+      # kind is read rather than guessed at - which is what this one cost.
+      - name: Disk space
+        run: df -h /
+
       - name: Test
         run: |
           dbus-run-session -- sh -c '
