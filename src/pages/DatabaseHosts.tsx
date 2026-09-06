@@ -11,9 +11,16 @@ import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { listApplications } from "@/services/applicationService";
-import { createDatabaseHost, deleteDatabaseHost, listDatabaseHosts, setDatabaseHostPhpmyadmin, updateDatabaseHost } from "@/services/databaseService";
+import {
+  createDatabaseHost,
+  deleteDatabaseHost,
+  listDatabaseHosts,
+  repairDatabaseReachability,
+  setDatabaseHostPhpmyadmin,
+  updateDatabaseHost,
+} from "@/services/databaseService";
 import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application } from "@/types/application";
 import type { CreateDatabaseHostInput, DatabaseEngine, DatabaseHost } from "@/types/database";
 import "@/components/servers/AddServerModal.css";
@@ -46,6 +53,8 @@ export function DatabaseHosts() {
   const deleteBackdrop = useModalDialog(() => !deleteBusy && setDeletingHost(null), { labelledBy: "databasehosts-dialog-title-1" });
 
   const [linkingHost, setLinkingHost] = useState<DatabaseHost | null>(null);
+  /** The host whose reachability is being re-applied, so only its own button spins. */
+  const [repairingHostId, setRepairingHostId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -57,6 +66,27 @@ export function DatabaseHosts() {
   }, [t]);
 
   useEffect(reload, [reload]);
+
+  /**
+   * Re-applies the two things a container needs to reach this database: the
+   * server bound to the Docker bridge as well as loopback, and - only where
+   * ufw is enforcing - a rule letting a container's packet in, scoped to the
+   * bridge address so it opens nothing to the internet.
+   *
+   * Both are no-ops when they are already right, which is why this is safe
+   * to press on a host that is working.
+   */
+  async function handleRepair(host: DatabaseHost) {
+    setRepairingHostId(host.id);
+    try {
+      await repairDatabaseReachability(host.id);
+      toastSuccess(t("databaseHosts.repairedToast", { name: host.name }));
+    } catch (err) {
+      toastError(errorMessage(err, t));
+    } finally {
+      setRepairingHostId(null);
+    }
+  }
 
   async function handleConfirmDelete() {
     if (!deletingHost) return;
@@ -117,6 +147,18 @@ export function DatabaseHosts() {
                   </div>
                   <Badge tone="neutral">{host.engine === "mariadb" ? "MariaDB" : "MySQL"}</Badge>
                   {host.phpmyadminApplicationId && <Badge tone="success">{t("databaseHosts.phpmyadminLinked")}</Badge>}
+                  {/* Only for a server on a node VibeSSH manages - there is
+                      nothing to configure on somebody else's host, and the
+                      backend refuses it anyway. */}
+                  {host.serverId && (
+                    <IconButton
+                      icon="refresh-cw"
+                      size="sm"
+                      disabled={repairingHostId === host.id}
+                      title={t("databaseHosts.repairAria", { name: host.name })}
+                      onClick={() => void handleRepair(host)}
+                    />
+                  )}
                   <IconButton icon="edit" size="sm" title={t("databaseHosts.editAria", { name: host.name })} onClick={() => setEditingHost(host)} />
                   {/* Its own icon now. Linking a web interface and fixing a
                       username are different jobs, and one pencil for both

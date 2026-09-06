@@ -19,6 +19,9 @@ import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
+import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
+import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
+import { GuideLink } from "@/guide/GuideLink";
 import { ApplicationConsoleCard } from "@/components/applications/ApplicationConsoleCard";
 import { DatabasesTab } from "@/components/applications/DatabasesTab";
 import { DockerImageCard } from "@/components/applications/DockerImageCard";
@@ -381,7 +384,16 @@ export function ApplicationDetail() {
               />
             )}
           </div>
-          <p className="page-subtitle">{blueprint ? blueprint.name : application?.blueprintId}</p>
+          {/* The blueprint's name, and next to it the step-by-step page for
+              setting up this kind of application. Here rather than on a tab
+              because "what is this and how do I configure it" is the
+              question somebody has while looking at the whole page, and
+              `GuideLink` shows nothing for a blueprint that has no topic
+              written yet - so this appears per kind, as each is written. */}
+          <p className="page-subtitle application-detail-kind">
+            {blueprint ? blueprint.name : application?.blueprintId}
+            {application && <GuideLink topic={`app-${application.blueprintId}`} />}
+          </p>
         </div>
         <Button variant="secondary" onClick={() => navigate("/applications")}>
           <Icon name="chevron-left" size={16} />
@@ -545,6 +557,12 @@ export function ApplicationDetail() {
               <div className="application-detail-overview">
                 {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
 
+                {/* Where the stdin console would be, for the kinds that have
+                    no stdin console. A database ignores stdin, so it gets a
+                    client instead - see `CommandConsoleCard`. Renders nothing
+                    for a blueprint that declares none, which is most. */}
+                <CommandConsoleCard applicationId={id} blueprint={blueprint} />
+
                 {/* Under the console rather than beside it: these are worth
                     a glance, and the console is worth the width. Only while
                     there is something to plot - two empty boxes under a
@@ -651,6 +669,11 @@ export function ApplicationDetail() {
             <div className="application-detail-overview">
 
               <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onSaved={reload} />
+
+              {/* Directly under the fields it changes the meaning of: this is
+                  what decides whether the card above asks for a Paper version
+                  or a container image. */}
+              <BlueprintSwitchCard applicationId={id} application={application} current={blueprint} onChanged={reload} />
 
               {/* Folded in from its own tab. Environment variables and the
                   blueprint's own fields answer one question between them -

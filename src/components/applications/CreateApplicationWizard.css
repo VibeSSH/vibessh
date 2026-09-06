@@ -263,3 +263,21 @@
 .wizard-template-note {
   grid-column: 1 / -1;
 }
+
+/*
+ * The template the wizard was filled in from.
+ *
+ * A tinted border and a tick rather than a filled background: this list sits
+ * above the rest of the form and a solid accent block there would pull the
+ * eye away from the fields somebody still has to fill in.
+ */
+.wizard-template-use-applied {
+  border-color: var(--accent);
+  background-color: var(--surface-3);
+}
+
+.wizard-template-check {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}

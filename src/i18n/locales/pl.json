@@ -153,6 +153,24 @@
     "savedToast": "Zapisano konfigurację.",
     "saveError": "Nie udało się zapisać konfiguracji."
   },
+  "blueprintSwitch": {
+    "title": "Typ aplikacji",
+    "intro": "Ta aplikacja jest ustawiona jako „{{current}}”. Zmiana typu przekazuje VibeSSH zarządzanie wersją serwera - albo je oddaje.",
+    "target": "Zmień na",
+    "pick": "Wybierz typ",
+    "warnDownload": "Zmiana na {{name}} pobierze własny jar tego serwera do {{directory}} i od tej pory VibeSSH zarządza wersją. Światy, pluginy i konfiguracje zostają nietknięte, ale serwer będzie startował z pobranego jara. Najpierw zatrzymaj aplikację.",
+    "warnPlain": "Zmiana na {{name}} zmienia tylko sposób uruchamiania aplikacji przez VibeSSH. Nic w katalogu nie zostanie pobrane, podmienione ani usunięte - serwer dalej działa z jara, który już tam jest.",
+    "change": "Zmień typ",
+    "changing": "Zmieniam…",
+    "changedToast": "Ustawiono jako {{name}}"
+  },
+  "commandConsole": {
+    "title": "Konsola komend",
+    "intro": "Wysyła jedną komendę do serwera i pokazuje, co odpowiedział. Każda komenda wykonuje się osobno, więc nic nie przenosi się między nimi - zmiana bazy działa dla komendy, z którą ją wpisałeś, i dla niczego później.",
+    "run": "Wykonaj",
+    "running": "Wykonuję…",
+    "noOutput": "(brak wyjścia)"
+  },
   "applicationConsole": {
     "copySelection": "Kopiuj zaznaczenie",
     "selectAll": "Zaznacz wszystko",
@@ -266,7 +284,7 @@
     "discardTitle": "Odrzucić niezapisane zmiany?",
     "historyAria": "Historia wersji",
     "loading": "Wczytywanie…",
-        "changedOnDisk": "Plik zmienił się na dysku, a tutaj masz niezapisane zmiany.",
+    "changedOnDisk": "Plik zmienił się na dysku, a tutaj masz niezapisane zmiany.",
     "reloadFromDisk": "Wczytaj wersję z dysku",
     "reloadAria": "Wczytaj ponownie z dysku",
     "save": "Zapisz",
@@ -545,7 +563,16 @@
     "installingDocker": "Instalowanie Dockera... to może potrwać kilka minut.",
     "dockerInstalled": "Zainstalowano Dockera na {{name}}.",
     "dockerInstallError": "Nie udało się zainstalować Dockera. Spróbuj ręcznie na tym serwerze.",
-    "jvmArgsGeneratorNote": "Gotowy zestaw flag JVM dla serwera Minecraft możesz wygenerować na"
+    "jvmArgsGeneratorNote": "Gotowy zestaw flag JVM dla serwera Minecraft możesz wygenerować na",
+    "connectTo": "Baza danych",
+    "connectToNothing": "Brak - adres ustawię sam",
+    "connectToNone": "W tej lokalizacji nie ma jeszcze na co tego skierować - ani aplikacji MariaDB, ani hosta baz danych. Utwórz coś najpierw, a pojawi się tutaj - albo zostaw puste i ustaw PMA_HOST samodzielnie w zakładce Środowisko.",
+    "connectToHint": "{{host}} i {{port}} zostaną uzupełnione z wybranej aplikacji, a obie dostaną zgodę na wzajemną łączność - bez niej nic na tym node'ie nie widzi nic innego, i to jest zwykle powód, dla którego phpMyAdmin nie może się połączyć.",
+    "connectToHintNone": "Nic nie jest podłączone, więc {{host}} zostanie pusty - uzupełnij go w zakładce Środowisko albo użyj szablonu „phpMyAdmin do dowolnego serwera”, żeby podać adres dopiero przy logowaniu.",
+    "connectToHintHost": "{{host}} zostanie ustawiony na {{address}}, port {{port}} - to adres, pod którym ta baza jest osiągalna z wnętrza kontenera, a nie ten, na który jest skonfigurowana.",
+    "localDockerMissing": "Docker nie działa na tym komputerze, więc lokalny kontener się nie uruchomi.",
+    "localDockerGet": "Lokalne kontenery wymagają Docker Desktop, a on na Windowsie wymaga WSL2: uruchom `wsl --install` w PowerShellu jako administrator, zrestartuj komputer, potem zainstaluj Docker Desktop ze strony",
+    "localDockerAlternative": "Albo pomiń Dockera zupełnie: wybierz runtime Proces lokalny. VibeSSH sam pobierze odpowiednią Javę i uruchomi serwer bezpośrednio - nie ma czego instalować. Po instalacji Dockera zrestartuj VibeSSH, żeby zobaczył nową zmienną PATH."
   },
   "dashboard": {
     "title": "Panel",
@@ -622,7 +649,9 @@
     "editTitle": "Edytuj host baz danych",
     "editAria": "Edytuj {{name}}",
     "savedToast": "Zapisano {{name}}",
-    "adminPasswordKeep": "Zostaw puste, żeby zachować obecne hasło"
+    "adminPasswordKeep": "Zostaw puste, żeby zachować obecne hasło",
+    "repairAria": "Napraw dostęp z kontenerów do „{{name}}”",
+    "repairedToast": "Dostęp z kontenerów do „{{name}}” zastosowany ponownie"
   },
   "databasesTab": {
     "loadError": "Nie udało się wczytać baz danych.",
@@ -871,7 +900,8 @@
       "network": "Vibe Network",
       "files": "Pliki",
       "ai": "Vibe AI",
-      "getting-started": "Pierwsze kroki"
+      "getting-started": "Pierwsze kroki",
+      "blueprints": "Rodzaje aplikacji"
     },
     "subtitle": "Co robi każda funkcja, jak działa i jak ją skonfigurować.",
     "title": "Poradnik"

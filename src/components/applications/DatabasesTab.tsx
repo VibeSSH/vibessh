@@ -4,6 +4,7 @@ import { queryKeys } from "@/services/queryKeys";
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/utils/copyToClipboard";
+import { formatReachableDatabaseAddress, isLoopback } from "@/utils/databaseAddress";
 import { open } from "@tauri-apps/plugin-shell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -209,7 +210,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
                     {database.databaseName}
                   </span>
                   <span className="server-list-host">
-                    {database.username}@{host ? reachableAddress(host) : t("databasesTab.unknownHost")}
+                    {database.username}@{host ? formatReachableDatabaseAddress(host) : t("databasesTab.unknownHost")}
                     {host && isLoopback(host.host) && (
                       // Said once, where the address is read: this is not the
                       // address of the database server, it is the address of
@@ -343,31 +344,9 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   );
 }
 
-/**
- * Whether an address means "this machine" - and so means the container
- * itself once an application reads it from inside one.
- */
-function isLoopback(address: string): boolean {
-  const value = address.trim().toLowerCase();
-  return value === "localhost" || value === "::1" || value.startsWith("127.");
-}
-
-/**
- * The address an application must use to reach its database.
- *
- * Not the same as the database host's own address. Applications run in
- * containers, where `127.0.0.1` is the container and not the Node - so a
- * database server on the Node is reached at `host.docker.internal`, which
- * every container VibeSSH creates is given a mapping for. A database server
- * anywhere else keeps its own address, which works from both sides.
- */
-function reachableAddress(host: DatabaseHost): string {
-  return isLoopback(host.host) ? `host.docker.internal:${host.port}` : `${host.host}:${host.port}`;
-}
-
 function hostAddressFor(database: ApplicationDatabase, hosts: DatabaseHost[], t: (key: string) => string): string {
   const host = hosts.find((h) => h.id === database.databaseHostId);
-  return host ? reachableAddress(host) : t("databasesTab.unknownHost");
+  return host ? formatReachableDatabaseAddress(host) : t("databasesTab.unknownHost");
 }
 
 interface CredentialRowProps {

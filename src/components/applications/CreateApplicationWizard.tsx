@@ -10,12 +10,16 @@ import { Icon } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
 import { IconButton } from "@/components/ui/IconButton";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { createApplication, detectJavaInstallations, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
+import { createApplication, detectJavaInstallations, listApplications, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
 import { installDocker, listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
+import { listDatabaseHosts } from "@/services/databaseService";
+import { localDockerAvailable } from "@/services/appService";
+import type { DatabaseHost } from "@/types/database";
+import { reachableDatabaseAddress } from "@/utils/databaseAddress";
 import { useServersStore } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
-import { translateBlueprint } from "@/i18n/blueprintTranslations";
-import type { Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
+import { translateBlueprint, translateTemplateName } from "@/i18n/blueprintTranslations";
+import type { Application, Blueprint, BlueprintField, EnvironmentVariable, JavaInstallation, RuntimeType } from "@/types/application";
 import { listBlueprints } from "@/services/applicationService";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -41,6 +45,48 @@ function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): Runtim
   // `localProcess` stays the other way round: it runs a program here, so it
   // has nothing to say about a remote Node.
   return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" || rt === "docker" : rt !== "localProcess"));
+}
+
+/**
+ * Something a `connectsTo` blueprint can be pointed at.
+ *
+ * Two shapes, because the two are answered differently. An Application is
+ * named by id and the backend resolves its network alias and grants the
+ * connection that makes it reachable. A Database Host has no container to
+ * connect to and no alias - it is reached at a plain address, which is
+ * filled straight into the environment where the user can see it before
+ * anything is created.
+ */
+interface ConnectionTarget {
+  value: string;
+  label: string;
+  applicationId?: string;
+  address?: { host: string; port: number };
+}
+
+/**
+ * The environment rows a chosen Database Host target adds.
+ *
+ * Only for a host: an Application target is resolved on the Rust side, where
+ * its network alias is known. A row the user typed themselves always wins -
+ * somebody who has already put a PMA_HOST in meant it.
+ *
+ * Exported for the test that pins the behaviour this exists for: the address
+ * a container needs is not the address the database host is configured with.
+ */
+export function withConnectionEnvironment(
+  environment: EnvironmentVariable[],
+  blueprint: Blueprint,
+  target: { address?: { host: string; port: number } } | null,
+): EnvironmentVariable[] {
+  const connection = blueprint.connectsTo;
+  if (!connection || !target?.address) return environment;
+
+  const rows = [...environment];
+  const missing = (key: string) => !rows.some((row) => row.key === key);
+  if (missing(connection.hostEnv)) rows.push({ key: connection.hostEnv, value: target.address.host, isSecret: false });
+  if (missing(connection.portEnv)) rows.push({ key: connection.portEnv, value: String(target.address.port), isSecret: false });
+  return rows;
 }
 
 export function fieldValueOrDefault(field: BlueprintField, values: Record<string, unknown>): unknown {
@@ -120,8 +166,44 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [environment, setEnvironment] = useState<EnvironmentVariable[]>([]);
   const [templates, setTemplates] = useState<ApplicationTemplate[]>([]);
+  /**
+   * Every Application, for a blueprint that points at one of them.
+   *
+   * Loaded once alongside the blueprints rather than when the picker
+   * appears: by then somebody is three steps in and waiting, and this is a
+   * local database read.
+   */
+  const [existingApplications, setExistingApplications] = useState<Application[]>([]);
+  /**
+   * The other kind of target.
+   *
+   * A database made on an application's Databases tab lives on a Database
+   * Host, not in a MariaDB Application - which is where the reported
+   * failures come from. Offering only Applications would leave exactly the
+   * people VibeSSH created a database for with nothing to pick.
+   */
+  const [databaseHosts, setDatabaseHosts] = useState<DatabaseHost[]>([]);
+  /**
+   * Whether this machine can run containers.
+   *
+   * `null` while the answer is still being fetched, and `null` outside a
+   * Tauri window - neither is a reason to warn, the same distinction the
+   * Node-side check below draws between "no" and "not known yet".
+   */
+  const [localDocker, setLocalDocker] = useState<boolean | null>(null);
+  /** Prefixed, because the two kinds of target are answered differently: `app:<id>` or `host:<id>`. */
+  const [connectToId, setConnectToId] = useState("");
   // Only ever the name being typed into the save box - null while it is shut.
   const [templateName, setTemplateName] = useState<string | null>(null);
+  /**
+   * Which template the wizard was filled in from, if any.
+   *
+   * Cleared the moment the answers stop being that template's - picking a
+   * different application type by hand means the form no longer holds what
+   * the template said, and a row still marked as chosen would be claiming
+   * otherwise.
+   */
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
   /**
    * Whether a create is already in flight.
@@ -151,6 +233,15 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     listApplicationTemplates()
       .then(setTemplates)
       .catch(() => undefined);
+    listApplications()
+      .then(setExistingApplications)
+      .catch(() => undefined);
+    listDatabaseHosts()
+      .then(setDatabaseHosts)
+      .catch(() => undefined);
+    localDockerAvailable()
+      .then(setLocalDocker)
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -169,6 +260,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
    * step 4 already renders as "still needs filling in".
    */
   function applyTemplate(template: ApplicationTemplate) {
+    setAppliedTemplateId(template.id);
     setBlueprintId(template.blueprintId);
     setRuntimeType(template.runtimeType);
     setFieldValues({ ...template.fieldValues });
@@ -194,6 +286,9 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
           isSecret: variable.isSecret,
         })),
         createdAt: new Date().toISOString(),
+        // Whatever the wizard was filled in from, what is being saved here is
+        // the user's own - the backend enforces the same thing.
+        isBuiltin: false,
       });
       setTemplates((previous) => [...previous, saved]);
       setTemplateName(null);
@@ -207,6 +302,9 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     try {
       await deleteApplicationTemplate(templateId);
       setTemplates((previous) => previous.filter((template) => template.id !== templateId));
+      // The answers stay - somebody deleting a template mid-wizard is
+      // tidying up, not starting over - but nothing is left to point at.
+      setAppliedTemplateId((current) => (current === templateId ? null : current));
     } catch (err) {
       setTemplateError(errorMessage(err, t));
     }
@@ -224,6 +322,43 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   }, [name, isLocal, workingDirectoryTouched]);
 
   const selectedBlueprint = useMemo(() => blueprints.find((b) => b.id === blueprintId) ?? null, [blueprints, blueprintId]);
+
+  /**
+   * Applications this one could be pointed at.
+   *
+   * Same Node and Docker, because that is what a granted connection can
+   * actually be implemented as - a Docker network does not span hosts, and a
+   * bare process is not on one. Offering an unreachable target would produce
+   * an application that looks configured and connects to nothing, which is
+   * the failure this whole picker exists to remove.
+   */
+  const connectionTargets = useMemo<ConnectionTarget[]>(() => {
+    const connection = selectedBlueprint?.connectsTo;
+    if (!connection) return [];
+
+    const applications = existingApplications
+      .filter(
+        (candidate) =>
+          candidate.runtimeType === "docker" &&
+          (candidate.serverId ?? null) === serverId &&
+          (connection.blueprintIds.length === 0 || connection.blueprintIds.includes(candidate.blueprintId)),
+      )
+      .map((candidate) => ({ value: `app:${candidate.id}`, label: candidate.name, applicationId: candidate.id }));
+
+    // Same location, for the same reason the applications are: a container
+    // on one Node cannot reach a database server sitting on another one's
+    // loopback address.
+    const hosts = databaseHosts
+      .filter((host) => (host.serverId ?? null) === serverId)
+      .map((host) => {
+        const address = reachableDatabaseAddress(host);
+        return { value: `host:${host.id}`, label: `${host.name} (${address.host}:${address.port})`, address };
+      });
+
+    return [...applications, ...hosts];
+  }, [selectedBlueprint, existingApplications, databaseHosts, serverId]);
+
+  const chosenTarget = connectionTargets.find((target) => target.value === connectToId) ?? null;
   const availableRuntimeTypes = useMemo(
     () => (selectedBlueprint ? runtimeTypesForLocation(selectedBlueprint, isLocal) : []),
     [selectedBlueprint, isLocal],
@@ -267,6 +402,13 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   // one just keeps the plain warning telling the user to install it
   // themselves.
   const canInstallDocker = Boolean(dockerCapabilityWarning) && selectedServer?.connectionMode === "ssh";
+
+  // The same warning for this machine, which had none: choosing Docker
+  // locally used to succeed through the whole wizard and fail on the first
+  // start with an error about PATH. There is no one-click install to offer
+  // here - Docker Desktop is a download and, on Windows, a reboot - so the
+  // message says what to get instead of offering a button that cannot exist.
+  const localDockerWarning = isLocal && runtimeType === "docker" && localDocker === false;
 
   // Auto-pick the runtime type once it's the only option (always true for
   // Local today, since every built-in blueprint offers exactly one Local
@@ -335,8 +477,13 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
         workingDirectory: workingDirectory.trim(),
         blueprintId: selectedBlueprint.id,
         runtimeType,
-        environment: environment.filter((row) => row.key.trim().length > 0),
+        environment: withConnectionEnvironment(environment, selectedBlueprint, chosenTarget).filter((row) => row.key.trim().length > 0),
         blueprintInputs: Object.fromEntries(selectedBlueprint.fields.map((field) => [field.key, fieldValueOrDefault(field, fieldValues)])),
+        // Only an Application target goes to the backend: it is the one whose
+        // address the frontend cannot know (a network alias) and the one that
+        // needs a connection granted. Nothing chosen is a real answer too - a
+        // phpMyAdmin pointed at a database VibeSSH does not manage.
+        connectToApplicationId: chosenTarget?.applicationId,
       });
       onCreated();
     } catch (err) {
@@ -378,20 +525,38 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                   <div className="form-field">
                     <span className="form-label">{t("createApplicationWizard.templates")}</span>
                     <div className="wizard-template-list">
-                      {templates.map((template) => (
-                        <div key={template.id} className="wizard-template">
-                          <button type="button" className="wizard-template-use" onClick={() => applyTemplate(template)}>
-                            <Icon name="copy" size={14} />
-                            <span>{template.name}</span>
-                          </button>
-                          <IconButton
-                            icon="trash"
-                            size="sm"
-                            onClick={() => void handleDeleteTemplate(template.id)}
-                            title={t("createApplicationWizard.templateDelete", { name: template.name })}
-                          />
-                        </div>
-                      ))}
+                      {templates.map((template) => {
+                        const label = translateTemplateName(template, i18n.language);
+                        const applied = template.id === appliedTemplateId;
+                        return (
+                          <div key={template.id} className="wizard-template">
+                            <button
+                              type="button"
+                              className={`wizard-template-use ${applied ? "wizard-template-use-applied" : ""}`}
+                              // Says which one is in use to a screen reader as
+                              // well as to the eye - the tick alone is a
+                              // picture.
+                              aria-pressed={applied}
+                              onClick={() => applyTemplate(template)}
+                            >
+                              <Icon name={template.isBuiltin ? "box" : "copy"} size={14} />
+                              <span>{label}</span>
+                              {applied && <Icon name="check" size={14} className="wizard-template-check" />}
+                            </button>
+                            {/* No delete on a built-in: it ships with the app,
+                                the backend refuses to remove it, and a button
+                                that always errors is worse than none. */}
+                            {!template.isBuiltin && (
+                              <IconButton
+                                icon="trash"
+                                size="sm"
+                                onClick={() => void handleDeleteTemplate(template.id)}
+                                title={t("createApplicationWizard.templateDelete", { name: label })}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     <span className="form-hint">{t("createApplicationWizard.templatesHint")}</span>
                   </div>
@@ -462,7 +627,12 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                         title={blueprint.description}
                         aria-pressed={blueprintId === blueprint.id}
                         className={`wizard-blueprint-tile ${blueprintId === blueprint.id ? "wizard-blueprint-tile-active" : ""}`}
-                        onClick={() => setBlueprintId(blueprint.id)}
+                        onClick={() => {
+                          setBlueprintId(blueprint.id);
+                          // Picking a type by hand is the point where the
+                          // form stops being whatever template filled it in.
+                          setAppliedTemplateId(null);
+                        }}
                       >
                         <span className="wizard-blueprint-tile-icon">
                           <BlueprintIcon blueprintId={blueprint.id} size={20} />
@@ -491,6 +661,21 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                 {selectedBlueprint && availableRuntimeTypes.length === 0 && (
                   <p className="form-note form-note-danger">{t("createApplicationWizard.noRuntimeForLocation")}</p>
                 )}
+                {localDockerWarning && (
+                  <div className="wizard-docker-warning">
+                    <p className="form-note form-note-danger">{t("createApplicationWizard.localDockerMissing")}</p>
+                    <p className="form-note">
+                      {t("createApplicationWizard.localDockerGet")}{" "}
+                      <button type="button" className="form-note-link" onClick={() => open("https://www.docker.com/products/docker-desktop/")}>
+                        docker.com
+                      </button>
+                    </p>
+                    {/* The way out that needs nothing installed. Worth saying
+                        here rather than leaving somebody to reboot twice
+                        before discovering it. */}
+                    <p className="form-note">{t("createApplicationWizard.localDockerAlternative")}</p>
+                  </div>
+                )}
                 {dockerCapabilityWarning && (
                   <div className="wizard-docker-warning">
                     <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>
@@ -508,6 +693,49 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
 
             {step === 3 && selectedBlueprint && (
               <div className="wizard-field-list">
+                {/* Before the blueprint's own fields, because it is the
+                    question this kind of application exists to answer. What
+                    it sets - the host, the port, and the granted connection
+                    that makes the host resolvable at all - is spelled out
+                    rather than left to happen quietly: all three are things
+                    people currently go looking for by hand. */}
+                {selectedBlueprint.connectsTo && (
+                  <label className="form-field">
+                    <span className="form-label">{t("createApplicationWizard.connectTo")}</span>
+                    {connectionTargets.length === 0 ? (
+                      <p className="form-note">{t("createApplicationWizard.connectToNone")}</p>
+                    ) : (
+                      <>
+                        <Select
+                          value={connectToId}
+                          onChange={setConnectToId}
+                          placeholder={t("createApplicationWizard.connectToNothing")}
+                          items={connectionTargets.map((candidate) => ({ value: candidate.value, label: candidate.label }))}
+                        />
+                        {/* Three different sentences, because three different
+                            things happen. A container target needs a granted
+                            connection; a database host needs an address that
+                            is not the one it is configured with; picking
+                            nothing leaves the variable unset, which is the
+                            state people arrive here already stuck in. */}
+                        <span className="form-hint">
+                          {!chosenTarget
+                            ? t("createApplicationWizard.connectToHintNone", { host: selectedBlueprint.connectsTo.hostEnv })
+                            : chosenTarget.address
+                              ? t("createApplicationWizard.connectToHintHost", {
+                                  host: selectedBlueprint.connectsTo.hostEnv,
+                                  address: chosenTarget.address.host,
+                                  port: chosenTarget.address.port,
+                                })
+                              : t("createApplicationWizard.connectToHint", {
+                                  host: selectedBlueprint.connectsTo.hostEnv,
+                                  port: selectedBlueprint.connectsTo.portEnv,
+                                })}
+                        </span>
+                      </>
+                    )}
+                  </label>
+                )}
                 {selectedBlueprint.fields.map((field) => (
                   <BlueprintFieldInput
                     key={field.key}

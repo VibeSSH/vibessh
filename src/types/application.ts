@@ -207,5 +207,38 @@ export interface Blueprint {
   features: BlueprintFeature[];
   fields: BlueprintField[];
   knownFiles: KnownFile[];
+  /**
+   * Another Application this one exists to point at - phpMyAdmin at a
+   * MariaDB. Present only for a blueprint that declares one; see the Rust
+   * `BlueprintConnection` for why it is declared rather than special-cased
+   * in the wizard.
+   */
+  connectsTo?: BlueprintConnection;
+  /**
+   * Present for a kind of application that answers ad-hoc commands - Redis,
+   * MongoDB. Distinct from the stdin console on the Overview tab; see the
+   * Rust `BlueprintCommandConsole` for why a database needs the other shape.
+   */
+  commandConsole?: BlueprintCommandConsole;
   isBuiltin: boolean;
+}
+
+/** Mirrors the Rust `BlueprintCommandConsole`. */
+export interface BlueprintCommandConsole {
+  /** The snippet run inside the container. Not the frontend's business, but it
+   * arrives with the rest of the blueprint. */
+  shell: string;
+  /** An example command for the empty input box. */
+  placeholder: string;
+}
+
+/** Mirrors the Rust `BlueprintConnection`. */
+export interface BlueprintConnection {
+  /** Blueprint ids that are valid targets; empty means any of them. */
+  blueprintIds: string[];
+  /** Gets the target's network alias - the name it resolves by. */
+  hostEnv: string;
+  portEnv: string;
+  /** The port the target listens on inside its own container. */
+  defaultPort: number;
 }

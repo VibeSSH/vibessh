@@ -119,3 +119,15 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * The blueprint's name and its "how do I set this up" button on one line.
+ * The button is a sibling of the text rather than something after the
+ * paragraph, so it sits with the name it belongs to instead of drifting to
+ * the far side of the header.
+ */
+.application-detail-kind {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}

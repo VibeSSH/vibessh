@@ -32,6 +32,19 @@ export function installDatabaseServer(id: string): Promise<void> {
   return callCommand<void>("install_database_server", { id });
 }
 
+/**
+ * Re-applies container reachability to an already-installed database server.
+ *
+ * The repair for the setup that authenticates and then times out: the server
+ * is bound to loopback only, or the node's firewall drops the container's
+ * packet before it arrives. Both are silent, and neither is something the
+ * credentials can tell you about. Idempotent - nothing changes when both are
+ * already right.
+ */
+export function repairDatabaseReachability(id: string): Promise<void> {
+  return callCommand<void>("repair_database_reachability", { id });
+}
+
 export function setDatabaseHostPhpmyadmin(id: string, applicationId?: string): Promise<DatabaseHost> {
   return callCommand<DatabaseHost>("set_database_host_phpmyadmin", { id, applicationId });
 }

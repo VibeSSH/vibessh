@@ -1,0 +1,66 @@
+/*
+ * A question-and-answer log rather than one output box: each answer stays
+ * under the command that produced it, which is the whole difference between
+ * reading a session back and staring at a wall of text.
+ */
+.command-console-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  /* Its own scroller, so the page's smooth scrolling leaves it alone - see
+     `OWN_SCROLLERS` in useSmoothScroll. */
+  overflow-y: auto;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background-color: var(--surface-2);
+}
+
+.command-console-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.command-console-command {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.command-console-prompt {
+  color: var(--accent);
+  user-select: none;
+}
+
+.command-console-answer {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  /* Wraps rather than scrolling sideways: a document from MongoDB is one very
+     long line, and a horizontal scrollbar per answer is unreadable. */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.command-console-answer-failed {
+  color: var(--danger-hover);
+}
+
+.command-console-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.command-console-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+}

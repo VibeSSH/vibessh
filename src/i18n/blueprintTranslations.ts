@@ -1,4 +1,5 @@
 import type { Blueprint } from "@/types/application";
+import type { ApplicationTemplate } from "@/types/applicationTemplate";
 
 interface BlueprintFieldTranslation {
   label?: string;
@@ -107,6 +108,14 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       mariadbVersion: { label: "Wersja MariaDB", helpText: "Tag z Docker Huba, np. 11, 10.11, 10.6 albo lts." },
     },
   },
+  mongodb: {
+    name: "MongoDB",
+    description:
+      "Samodzielna baza dokumentowa MongoDB - dane leżą we własnym katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw MONGO_INITDB_ROOT_USERNAME i MONGO_INITDB_ROOT_PASSWORD w zakładce Środowisko: razem tworzą konto administratora i włączają uwierzytelnianie.",
+    fields: {
+      mongodbVersion: { label: "Wersja MongoDB", helpText: "Tag z Docker Huba, np. 8, 7 albo 6." },
+    },
+  },
   redis: {
     name: "Redis",
     description: "Samodzielna instancja Redisa z trwałością append-only - dane leżą we własnym katalogu roboczym tej aplikacji.",
@@ -122,7 +131,7 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
   phpmyadmin: {
     name: "phpMyAdmin",
     description:
-      "Webowy interfejs do zarządzania serwerem MySQL/MariaDB - wskaż mu dowolny osiągalny serwer (host bazy albo aplikację MariaDB w Vibe Network), ustawiając PMA_HOST (i PMA_PORT, jeśli inny niż 3306) w zakładce Środowisko.",
+      "Webowy interfejs do zarządzania serwerem MySQL/MariaDB. Wskaż bazę, którą ma obsługiwać, a VibeSSH ustawi PMA_HOST/PMA_PORT i przyzna połączenie między nimi; żeby sięgnąć do serwera spoza VibeSSH, zostaw to pole puste i ustaw PMA_HOST samodzielnie w zakładce Środowisko.",
     fields: {
       phpMyAdminVersion: { label: "Wersja phpMyAdmin", helpText: "Tag z Docker Huba, np. latest albo konkretna wersja." },
     },
@@ -193,4 +202,28 @@ export function translateBlueprint(blueprint: Blueprint, language: string): Blue
       };
     }),
   };
+}
+
+/**
+ * Polish names for the templates that ship with VibeSSH.
+ *
+ * Keyed by id rather than by name, because the name is the thing being
+ * replaced. The ids are fixed in `src-tauri/src/storage/builtin_templates.rs`
+ * and pinned there by a test that asserts these exact strings - a built-in
+ * whose id changed would quietly fall back to its English name rather than
+ * breaking, which is why that test exists.
+ *
+ * A template the user saved themselves is never touched: they named it.
+ */
+const PL_BUILTIN_TEMPLATE_NAMES: Record<string, string> = {
+  "7b1d0001-0000-4000-8000-564249424553": "MariaDB z hasłem roota",
+  "7b1d0002-0000-4000-8000-564249424553": "phpMyAdmin do aplikacji MariaDB",
+  "7b1d0003-0000-4000-8000-564249424553": "phpMyAdmin do dowolnego serwera",
+  "7b1d0004-0000-4000-8000-564249424553": "MongoDB z kontem administratora",
+};
+
+/** The name to show for a template - translated only for a built-in. */
+export function translateTemplateName(template: ApplicationTemplate, language: string): string {
+  if (!template.isBuiltin || !language.startsWith("pl")) return template.name;
+  return PL_BUILTIN_TEMPLATE_NAMES[template.id] ?? template.name;
 }

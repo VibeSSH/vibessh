@@ -153,6 +153,24 @@
     "savedToast": "Configuration saved.",
     "saveError": "Couldn't save the configuration."
   },
+  "blueprintSwitch": {
+    "title": "Application type",
+    "intro": "This application is set up as “{{current}}”. Changing that is how VibeSSH takes over managing the server version - or hands it back.",
+    "target": "Change to",
+    "pick": "Pick a type",
+    "warnDownload": "Switching to {{name}} downloads that server's own jar into {{directory}} and VibeSSH manages the version from then on. Your worlds, plugins and configs stay untouched, but the jar the server starts from will be the downloaded one. Stop the application first.",
+    "warnPlain": "Switching to {{name}} only changes how VibeSSH starts this application. Nothing in its directory is downloaded, replaced or removed - it keeps running from the jar that is already there.",
+    "change": "Change type",
+    "changing": "Changing…",
+    "changedToast": "Now set up as {{name}}"
+  },
+  "commandConsole": {
+    "title": "Command console",
+    "intro": "Sends one command to the server and shows what it answered. Each command runs on its own, so nothing carries over between them - switching database applies to the command you typed it with and to nothing after it.",
+    "run": "Run",
+    "running": "Running…",
+    "noOutput": "(no output)"
+  },
   "applicationConsole": {
     "copySelection": "Copy selection",
     "selectAll": "Select all",
@@ -266,7 +284,7 @@
     "discardTitle": "Discard unsaved changes?",
     "historyAria": "Version history",
     "loading": "Loading…",
-        "changedOnDisk": "This file changed on disk and you have unsaved changes here.",
+    "changedOnDisk": "This file changed on disk and you have unsaved changes here.",
     "reloadFromDisk": "Load the disk version",
     "reloadAria": "Reload from disk",
     "save": "Save",
@@ -541,7 +559,16 @@
     "installingDocker": "Installing Docker... this can take a few minutes.",
     "dockerInstalled": "Docker installed on {{name}}.",
     "dockerInstallError": "Couldn't install Docker. Try installing it manually on this server.",
-    "jvmArgsGeneratorNote": "Generate a ready-made set of JVM flags for a Minecraft server at"
+    "jvmArgsGeneratorNote": "Generate a ready-made set of JVM flags for a Minecraft server at",
+    "connectTo": "Database",
+    "connectToNothing": "None - I'll set the address myself",
+    "connectToNone": "Nothing to point this at on this location yet - no MariaDB application and no database host. Create one first and it will be listed here, or leave this and set PMA_HOST yourself on the Environment tab afterwards.",
+    "connectToHint": "{{host}} and {{port}} are filled in from the application you pick, and the two are allowed to reach each other - without that permission nothing on this node can reach anything else, which is the usual reason phpMyAdmin says it cannot connect.",
+    "connectToHintNone": "Nothing is connected, so {{host}} stays unset - fill it in on the Environment tab, or use the “phpMyAdmin for any server” template to type the address at sign-in instead.",
+    "connectToHintHost": "{{host}} is set to {{address}} on port {{port}} - the address this database is reachable at from inside a container, which is not the same as the address it is configured with.",
+    "localDockerMissing": "Docker isn't running on this computer, so a local container cannot start.",
+    "localDockerGet": "Local containers need Docker Desktop, and on Windows it needs WSL2: run `wsl --install` in an administrator PowerShell, restart the computer, then install Docker Desktop from",
+    "localDockerAlternative": "Or skip Docker entirely: pick the Local process runtime instead. VibeSSH downloads the right Java itself and runs the server directly - nothing to install. After installing Docker, restart VibeSSH so it picks up the new PATH."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -618,7 +645,9 @@
     "editTitle": "Edit database host",
     "editAria": "Edit {{name}}",
     "savedToast": "Saved {{name}}",
-    "adminPasswordKeep": "Leave blank to keep the current password"
+    "adminPasswordKeep": "Leave blank to keep the current password",
+    "repairAria": "Fix container access to “{{name}}”",
+    "repairedToast": "Container access to “{{name}}” re-applied"
   },
   "databasesTab": {
     "loadError": "Couldn't load databases.",
@@ -864,7 +893,8 @@
       "network": "Vibe Network",
       "files": "Files",
       "ai": "Vibe AI",
-      "getting-started": "Getting started"
+      "getting-started": "Getting started",
+      "blueprints": "Application types"
     },
     "subtitle": "What each feature does, how it works, and how to set it up.",
     "title": "Guide"

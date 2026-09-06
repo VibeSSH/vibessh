@@ -23,4 +23,9 @@ export interface ApplicationTemplate {
   fieldValues: Record<string, unknown>;
   environment: TemplateEnvironmentVariable[];
   createdAt: string;
+  /**
+   * Ships with VibeSSH rather than saved here - read-only, so no delete
+   * button, and its name is translated by id rather than shown as stored.
+   */
+  isBuiltin: boolean;
 }

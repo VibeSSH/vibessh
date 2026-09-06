@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -46,6 +47,24 @@ export function Guide() {
     }
     return [...grouped.entries()];
   }, [results]);
+
+  /**
+   * Follows a link in a topic without leaving the app.
+   *
+   * A webview that navigates to an outside URL has no back button, so the
+   * app would simply be gone - which is why `Markdown` refuses to follow
+   * links itself and hands them here instead. An outside address opens in
+   * the system browser; anything else is another topic, and stays inside
+   * the guide.
+   */
+  function openLink(href: string) {
+    if (/^https?:\/\//i.test(href)) {
+      void open(href);
+      return;
+    }
+    const topic = href.replace(/^.*[?&]topic=/, "").replace(/[&#].*$/, "");
+    if (topic && topic !== href) select(topic);
+  }
 
   function select(id: string) {
     // `replace`, so reading through the guide does not fill the history with
@@ -115,7 +134,7 @@ export function Guide() {
                   </Button>
                 )}
               </div>
-              <Markdown source={selected.body} resolveImage={guideImage} />
+              <Markdown source={selected.body} resolveImage={guideImage} onLinkClick={openLink} />
             </>
           ) : (
             <EmptyState icon="file" title={t("guide.emptyTitle")} description={t("guide.emptyDescription")} />

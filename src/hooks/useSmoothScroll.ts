@@ -21,6 +21,7 @@ export const OWN_SCROLLERS = [
   ".application-console-output",
   ".container-logs-output",
   ".vibe-ai-transcript",
+  ".command-console-transcript",
   ".vibe-ai-preview-body",
   ".xterm-viewport",
   ".xterm-screen",
@@ -118,9 +119,37 @@ export function useSmoothScroll(wrapperRef: RefObject<HTMLElement | null>, conte
     });
     growth.observe(content, { childList: true, subtree: true });
 
+    /*
+     * The other way a page gets longer: an image arrives.
+     *
+     * The observer above fires when the markup changes, which is before any
+     * `<img>` in it has loaded - and an image with no dimensions is a 2px
+     * box until it does. Measured on the Guide's Panel page: 2px before the
+     * screenshot loaded, 440px after, and nothing in between that the
+     * observer can see, because finishing a download is not a DOM mutation
+     * and the content element's own height never changes (see above).
+     *
+     * So the scroll range was measured against a page 438px shorter than the
+     * one on screen, and the reader could not reach the end of it. On a page
+     * that is mostly one screenshot, the range left over is small enough
+     * that it reads as not scrolling at all.
+     *
+     * `load` does not bubble, so this listens in the capture phase - the only
+     * way one listener on the container hears about every image inside it.
+     * `error` counts too: a broken image collapses to its alt text, which
+     * changes the length just as much.
+     */
+    const mediaSettled = () => {
+      if (!frame) frame = requestAnimationFrame(remeasure);
+    };
+    content.addEventListener("load", mediaSettled, true);
+    content.addEventListener("error", mediaSettled, true);
+
     return () => {
       if (frame) cancelAnimationFrame(frame);
       growth.disconnect();
+      content.removeEventListener("load", mediaSettled, true);
+      content.removeEventListener("error", mediaSettled, true);
       lenis.destroy();
     };
   }, [wrapperRef, contentRef]);

@@ -29,6 +29,13 @@ export interface CreateApplicationInput {
   environment: EnvironmentVariable[];
   /** `{ fieldKey: value }` - keys matching the chosen blueprint's own field keys. */
   blueprintInputs: Record<string, unknown>;
+  /**
+   * The Application this one should be pointed at, for a blueprint that
+   * declares a `connectsTo` (phpMyAdmin at a MariaDB). The backend derives
+   * both the environment rows naming it and the connection that makes it
+   * reachable - the frontend only says which one.
+   */
+  connectToApplicationId?: string;
 }
 
 export function listApplications(): Promise<Application[]> {
@@ -89,6 +96,24 @@ export function updateApplicationConfig(id: string, fieldValues: Record<string, 
   return callCommand<ApplicationDetail>("update_application_config", { id, fieldValues });
 }
 
+/**
+ * Moves an Application to a different blueprint - taking version management
+ * over, or giving it up.
+ *
+ * `fieldValues` are the new blueprint's own answers; the old blueprint's are
+ * discarded rather than carried across, since nothing reads a `generic-docker`
+ * image off a Paper application. Going to a managed blueprint provisions,
+ * which downloads that server's jar into the working directory - see
+ * `BlueprintSwitchCard` for the warning that belongs to that direction.
+ */
+export function changeApplicationBlueprint(
+  id: string,
+  blueprintId: string,
+  fieldValues: Record<string, unknown>,
+): Promise<ApplicationDetail> {
+  return callCommand<ApplicationDetail>("change_application_blueprint", { id, blueprintId, fieldValues });
+}
+
 export function startApplication(id: string): Promise<ApplicationStatus> {
   return callCommand<ApplicationStatus>("start_application", { id });
 }
@@ -125,6 +150,18 @@ export function getApplicationLogs(id: string, maxLines: number): Promise<string
 }
 
 /** Sends one line to the application's stdin/console - rejects with a clear message when the runtime has no console at all, or reports it as read-only (see `runtime::ApplicationConsole`'s own doc comment for both cases). */
+/**
+ * Sends one command to the server inside an application and returns what it
+ * said - the Redis/MongoDB console.
+ *
+ * Not `writeApplicationConsole`, which types into a process's stdin: a
+ * database ignores stdin entirely. Each call is its own run, so nothing
+ * carries over between commands.
+ */
+export function runApplicationCommand(id: string, command: string): Promise<string> {
+  return callCommand<string>("run_application_command", { id, command });
+}
+
 export function writeApplicationConsole(id: string, input: string): Promise<void> {
   return callCommand<void>("write_application_console", { id, input });
 }
