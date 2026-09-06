@@ -36,6 +36,17 @@ Nazwa bazy, login i hasło są generowane automatycznie.
 2. Zobaczysz **Host**, **Baza danych**, **Użytkownik** i **Hasło**.
 3. Skopiuj wartości do konfiguracji wtyczki lub aplikacji.
 
+Pole **Host** to adres widziany **z wnętrza kontenera**, a nie ten, na który host bazy jest skonfigurowany. Baza stojąca na samym Node ma zwykle adres `127.0.0.1`, ale dla kontenera `127.0.0.1` oznacza jego samego — dlatego VibeSSH pokazuje tam `host.docker.internal`. Wpisz dokładnie to, co widzisz w tym polu.
+
+## Kiedy aplikacja nie może dojść do bazy
+
+Jeśli dane logowania są poprawne, a połączenie kończy się **timeoutem**, to znaczy, że pakiet nie dochodzi. Serwer bazy na Node domyślnie nasłuchuje tylko na `127.0.0.1`, a firewall Node'a odrzuca ruch z kontenerów po cichu — stąd timeout zamiast czytelnego błędu.
+
+1. Otwórz **Bazy danych** w menu bocznym.
+2. Przy hoście kliknij ikonę odświeżenia — **Napraw dostęp z kontenerów**.
+
+VibeSSH ustawia wtedy serwer bazy tak, żeby słuchał również na mostku Dockera, i — jeśli ufw jest włączony — dokłada regułę zawężoną do adresu tego mostka. Baza nie staje się przez to widoczna z internetu: publiczny interfejs nie jest w ogóle nasłuchiwany. Operacja jest bezpieczna do powtórzenia; na działającym hoście nic nie zmienia i niczego nie restartuje.
+
 ## Jak usunąć bazę
 
 1. Przy bazie kliknij ikonę kosza.

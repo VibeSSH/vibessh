@@ -48,6 +48,17 @@ Deleting drops the database with its data. It cannot be undone.
 - The database is in the list with its name and user.
 - The plugin or application connects without an error.
 
+## When an application cannot reach the database
+
+If the credentials are right but the connection ends in a **timeout**, the packet is not arriving. A database server on a Node listens on `127.0.0.1` only by default, and the Node's firewall drops traffic from containers silently - hence a timeout rather than a readable error.
+
+1. Open **Databases** in the sidebar.
+2. Press the refresh icon next to the host - **Fix container access**.
+
+VibeSSH then binds the database server to the Docker bridge as well, and - if ufw is enabled - adds a rule scoped to that bridge's address. This does not expose the database to the internet: the public interface is never listened on. It is safe to repeat; on a working host it changes nothing and restarts nothing.
+
+The **Host** field in a database's connection details is the address as seen **from inside a container**, not the one the database host is configured with. A database on the Node itself is usually configured as `127.0.0.1`, but to a container `127.0.0.1` means the container - so VibeSSH shows `host.docker.internal` there instead. Use exactly what that field shows.
+
 ## Common problems
 
 - **No database host registered** - add a host from the **Databases** entry in the sidebar first.
