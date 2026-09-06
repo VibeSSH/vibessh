@@ -137,6 +137,64 @@ jobs:
             exit 1
           fi
 
+      # A plain tarball, for Linux only.
+      #
+      # **Why this is built by hand.** Tauri 2 bundles a `.deb` and an
+      # AppImage and nothing else; the `.AppImage.tar.gz` that Tauri 1
+      # produced no longer exists, because v2 signs the AppImage directly.
+      # So there is no tar.gz for the bundler to have skipped - there is
+      # simply no such target, and this step is what makes one.
+      #
+      # It exists for the people neither bundle serves: a distribution
+      # without dpkg, or a machine where an AppImage cannot mount its own
+      # filesystem (no FUSE, which is the usual case in a container).
+      #
+      # **Not an update target.** `latest.json` keeps pointing at the
+      # AppImage - the updater downloads and replaces a file, and it has no
+      # way to know where somebody untarred this or what they renamed it to.
+      # The tarball is a download, not an upgrade path, and `write_manifest.py`
+      # only ever looks for the suffixes it names.
+      - name: Pack a tarball
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          # The binary is at the workspace root's target directory, not under
+          # src-tauri - the same thing that misled the artifact collector.
+          binary=target/release/vibessh
+          if [ ! -x "$binary" ]; then
+            echo "::error::$binary is missing, so there is nothing to pack"
+            exit 1
+          fi
+
+          staging=$(mktemp -d)/vibessh
+          mkdir -p "$staging"
+          cp "$binary" "$staging/vibessh"
+          cp src-tauri/icons/128x128@2x.png "$staging/vibessh.png"
+          # The one thing somebody extracting this needs to know: the binary
+          # links against the system webkit, and without it the failure is a
+          # loader error that names a library rather than a missing package.
+          cat > "$staging/README" <<'NOTE'
+          VibeSSH, unpacked.
+
+          Run ./vibessh. It needs the system WebKit at runtime:
+
+            Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0
+            Fedora:        sudo dnf install webkit2gtk4.1 gtk3
+            Arch:          sudo pacman -S webkit2gtk-4.1 gtk3
+
+          This build does not update itself. The .AppImage and .deb on the
+          same release page do.
+          NOTE
+          # The heredoc above is indented for readability; strip that back off
+          # so the file does not ship with leading spaces on every line.
+          sed -i 's/^          //' "$staging/README"
+
+          tarball="release-artifacts/VibeSSH_${version}_amd64.tar.gz"
+          tar -czf "$tarball" -C "$(dirname "$staging")" vibessh
+          ls -l "$tarball"
+
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.platform }}
