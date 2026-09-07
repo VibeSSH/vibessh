@@ -7,6 +7,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { startUpdateChecks } from "@/stores/updateStore";
+import { UpdateBanner } from "./UpdateBanner";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
 import { cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
@@ -93,6 +94,12 @@ export function AppLayout() {
                     <span>{t("common.runningAsRoot")}</span>
                   </p>
                 )}
+
+                {/* Above the page's own content and below the root warning:
+                    a waiting update is worth seeing on every page, and it is
+                    still less urgent than being told the app is running as
+                    root. */}
+                <UpdateBanner />
                 <Outlet />
               </div>
             </main>

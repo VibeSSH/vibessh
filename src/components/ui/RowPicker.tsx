@@ -37,9 +37,25 @@ export function serverRowPickerOption(
 ): RowPickerOption {
   const tone: "success" | "danger" | "warning" | "neutral" =
     server.status === "online" ? "success" : server.status === "offline" ? "danger" : server.status === "connecting" ? "warning" : "neutral";
-  const label = t(`rail.status${server.status.charAt(0).toUpperCase()}${server.status.slice(1)}`);
+  // Looked up in a table rather than built out of the status string.
+  //
+  // The line that was here composed `rail.status${Online}` and pointed at a
+  // namespace that never had those keys, so every picker in the app showed
+  // the literal text "rail.statusOnline" beside a server. A key assembled at
+  // runtime is a key no tooling can check and no reader can grep for; these
+  // are the same four `serverStatus.*` keys `StatusDot` has always used, so
+  // there is now one place that names them.
+  const label = t(STATUS_LABEL_KEY[server.status]);
   return { id: server.id, name: server.name, meta: server.host, status: { tone, label } };
 }
+
+/** The four labels, spelled out so they can be found by searching for them. */
+const STATUS_LABEL_KEY: Record<"online" | "offline" | "connecting" | "unknown", string> = {
+  online: "serverStatus.online",
+  offline: "serverStatus.offline",
+  connecting: "serverStatus.connecting",
+  unknown: "serverStatus.unknown",
+};
 
 const VIEWPORT_MARGIN = 8;
 const PANEL_GAP = 4;

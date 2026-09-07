@@ -1819,6 +1819,10 @@
     "install": "Pobierz i zainstaluj",
     "downloading": "Pobieram…",
     "downloadingPercent": "Pobieram… {{percent}}%",
-    "ready": "Gotowe. Aplikacja uruchomi się ponownie."
+    "ready": "Gotowe. Aplikacja uruchomi się ponownie.",
+    "availableBanner": "Dostępna jest wersja VibeSSH {{version}}.",
+    "downloadingBanner": "Pobieranie aktualizacji - {{progress}}",
+    "readyBanner": "Aktualizacja gotowa. VibeSSH uruchomi się ponownie, żeby dokończyć instalację.",
+    "dismissAria": "Ukryj powiadomienie o wersji {{version}}"
   }
 }

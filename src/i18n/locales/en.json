@@ -1803,6 +1803,10 @@
     "install": "Download and install",
     "downloading": "Downloading…",
     "downloadingPercent": "Downloading… {{percent}}%",
-    "ready": "Done. The app will restart."
+    "ready": "Done. The app will restart.",
+    "availableBanner": "VibeSSH {{version}} is available.",
+    "downloadingBanner": "Downloading the update - {{progress}}",
+    "readyBanner": "The update is ready. VibeSSH will restart to finish installing it.",
+    "dismissAria": "Hide the notice about version {{version}}"
   }
 }

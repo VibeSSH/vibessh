@@ -1,0 +1,36 @@
+/*
+ * The same shape as the root warning above it, in the accent colour rather
+ * than the warning one: a waiting update is news, not a problem. Deliberately
+ * muted - a solid accent bar across the top of every page would shout at
+ * somebody who has already decided to install it later.
+ */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.update-banner svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.update-banner-text {
+  font-weight: 600;
+}
+
+/* Pushes the buttons to the right and takes the slack, so the row keeps its
+   shape whatever the version string's length. */
+.update-banner-note {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
