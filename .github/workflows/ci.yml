@@ -1,7 +1,7 @@
 # The repository had no CI at all until this file. Every check here is one
 # that was already meant to hold and had silently stopped holding: the
 # workspace test suite did not compile, 77 backend tests failed on any
-# machine without Postgres, and `npm audit` reported a high-severity
+# machine without Postgres, and the dependency audit reported a high-severity
 # advisory - none of which anything would have caught before a release.
 name: CI
 
@@ -96,36 +96,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
+          bun-version: latest
+      # `--frozen-lockfile` is the point of committing bun.lock: a build that
+      # quietly resolved a different version than the one that was reviewed
+      # is not the build anybody approved.
+      - run: bun install --frozen-lockfile
 
       # tsconfig already has `strict`, `noUnusedLocals` and
       # `noUnusedParameters` on and the codebase already passes - this is
       # what keeps it that way.
       - name: Typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
       # ~18k lines of TypeScript had no tests at all before this workflow -
       # see FIX_PLAN Phase C.
       - name: Test
-        run: npm test
+        run: bun run test
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
+          bun-version: latest
+      # `--frozen-lockfile` is the point of committing bun.lock: a build that
+      # quietly resolved a different version than the one that was reviewed
+      # is not the build anybody approved.
+      - run: bun install --frozen-lockfile
 
       # `--audit-level=moderate`, which is where this should have been all
       # along. It was loosened to `critical` when this file was written,
@@ -133,13 +137,13 @@ jobs:
       # to clear (F-004), and a gate nobody can make green gets disabled
       # rather than fixed.
       #
-      # That upgrade has landed - vite 8 and react-router 7 - and `npm audit`
+      # That upgrade has landed - vite 8 and react-router 7 - and the audit
       # now reports zero advisories at every level. So this goes to the
       # strictest setting the tree can actually hold, rather than back to the
       # `high` the old comment promised: there is no reason to leave room for
       # a moderate when there are none.
-      - name: npm audit
-        run: npm audit --audit-level=moderate
+      - name: Dependency audit
+        run: bun audit --audit-level=moderate
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -156,7 +160,7 @@ jobs:
       # is nothing to upgrade to and nothing to pin.
       #
       # The alternatives were leaving this job red forever - which is how a
-      # gate gets deleted rather than fixed, the same reasoning the npm audit
+      # gate gets deleted rather than fixed, the same reasoning the dependency audit
       # level above records - or dropping MySQL support and SSH RSA keys,
       # which is not proportionate to a medium-severity timing sidechannel
       # against a code path neither library uses for private-key decryption.

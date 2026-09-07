@@ -108,7 +108,7 @@ Open the call sites.
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-npm run typecheck && npm test && npm run build
+bun run typecheck && bun run test && bun run build
 ```
 
 CI runs all of these. Warnings are denied, so a new one fails the build —

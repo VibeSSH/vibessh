@@ -530,7 +530,7 @@ and can be tested, not a partial slice of a bigger unfinished feature.
 What you need to build/run VibeSSH itself from source - see "Node
 requirements" above for what your *managed servers* need.
 
-- [Node.js](https://nodejs.org) 18+
+- [Bun](https://bun.com) 1.2+ (`winget install Oven-sh.Bun`) - installs dependencies and runs every script here
 - [Rust](https://rustup.rs) (stable toolchain)
 - On Windows: [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) runtime (preinstalled on modern Windows 10/11)
 - On Windows: MSVC build tools (`winget install Microsoft.VisualStudio.2022.BuildTools` with the C++ workload) — required by Rust, not specific to this project
@@ -538,7 +538,7 @@ requirements" above for what your *managed servers* need.
 ## Getting started
 
 ```bash
-./scripts/setup.ps1        # check prerequisites, npm install
+./scripts/setup.ps1        # check prerequisites, bun install
 ./scripts/setup.ps1 -Dev   # run the desktop app in dev mode
 ./scripts/setup.ps1 -Build # build the Windows installer
 ```
@@ -546,8 +546,8 @@ requirements" above for what your *managed servers* need.
 Or manually:
 
 ```bash
-npm install
-npm run tauri dev
+bun install
+bun run tauri dev
 ```
 
 Try the agent on its own (no desktop app needed):
@@ -682,7 +682,7 @@ LICENSE.txt                  Shown on the installer's license page
 
 ## Installer wizard
 
-`npm run tauri build` (or `./scripts/setup.ps1 -Build`) produces a real
+`bun run tauri build` (or `./scripts/setup.ps1 -Build`) produces a real
 Windows installer wizard via NSIS — not a custom-built one, Tauri generates
 it from `src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
 
@@ -724,7 +724,7 @@ a Linux VM to prove.
 PNG (ideally 1024x1024) and regenerate the full set with the Tauri CLI:
 
 ```bash
-npm run tauri icon path/to/vibessh-icon.png
+bun run tauri icon path/to/vibessh-icon.png
 ```
 
 This overwrites `src-tauri/icons/*` with correctly sized PNG/ICO/ICNS files.

@@ -59,10 +59,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
+          bun-version: latest
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -82,7 +81,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev build-essential file
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       # The version an installer carries comes from tauri.conf.json, not from
       # the tag. Checking they agree here turns a silent mismatch - an update
@@ -209,10 +208,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # Only for `tauri signer` below - the agent itself is plain Cargo.
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
+          bun-version: latest
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -246,7 +244,7 @@ jobs:
       # asks for: `vibe-agent-linux-<arch>` beside a `.sha256` in sha256sum's
       # own "<digest>  <filename>" layout.
       - name: Install the signing tool
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Name them what the installer looks for
         run: |
