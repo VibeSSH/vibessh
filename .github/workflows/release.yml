@@ -321,7 +321,20 @@ jobs:
           # not count a pre-release as the latest one - so the flag would leave
           # every installed copy getting a 404 on every check. The version in
           # the tag is what says this is a beta.
+          # The release notes are this version's own section of CHANGELOG.md,
+          # so what somebody reads on the release page is what was written for
+          # them rather than a sentence about artifacts. Awk takes the lines
+          # between this version's heading and the next one.
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="## $version" '$0 == v {found=1; next} found && /^## / {exit} found' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            # Not fatal. A release with a generic note beats no release, and
+            # the omission belongs in the log rather than on the page.
+            echo "::warning::CHANGELOG.md has no section for $version"
+            echo "Installers and update manifest for $GITHUB_REF_NAME. Source: private repository." > release-notes.md
+          fi
+
           gh release create "$GITHUB_REF_NAME" dist-release/* \
             --repo VibeSSH/vibessh-releases \
             --title "VibeSSH $GITHUB_REF_NAME" \
-            --notes "Installers and update manifest for $GITHUB_REF_NAME. Source: private repository."
+            --notes-file release-notes.md
