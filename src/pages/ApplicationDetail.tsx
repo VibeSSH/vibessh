@@ -1,3 +1,4 @@
+import { TabUnderline } from "@/components/ui/TabUnderline";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
@@ -517,7 +518,8 @@ export function ApplicationDetail() {
           <div className="page-tabs">
             <button className={`modal-tab ${tab === "overview" ? "modal-tab-active" : ""}`} onClick={() => setTab("overview")}>
               {t("applicationDetail.tabOverview")}
-            </button>
+            {tab === "overview" && <TabUnderline group="application" />}
+              </button>
             {/* Files sits second, right after the console.
                 It is the tab an operator reaches for most once something is
                 running - a config to edit, a plugin to drop in, a world to
@@ -527,29 +529,35 @@ export function ApplicationDetail() {
             {features.includes("files") && (
               <button className={`modal-tab ${tab === "files" ? "modal-tab-active" : ""}`} onClick={() => setTab("files")}>
                 {t("applicationDetail.tabFiles")}
+              {tab === "files" && <TabUnderline group="application" />}
               </button>
             )}
             {features.includes("logs") && (
               <button className={`modal-tab ${tab === "logs" ? "modal-tab-active" : ""}`} onClick={() => setTab("logs")}>
                 {t("applicationDetail.tabLogs")}
+              {tab === "logs" && <TabUnderline group="application" />}
               </button>
             )}
             {features.includes("ports") && (
               <button className={`modal-tab ${tab === "ports" ? "modal-tab-active" : ""}`} onClick={() => setTab("ports")}>
                 {t("applicationDetail.tabPorts")}
+              {tab === "ports" && <TabUnderline group="application" />}
               </button>
             )}
             {features.includes("databases") && (
               <button className={`modal-tab ${tab === "databases" ? "modal-tab-active" : ""}`} onClick={() => setTab("databases")}>
                 {t("applicationDetail.tabDatabases")}
+              {tab === "databases" && <TabUnderline group="application" />}
               </button>
             )}
             <button className={`modal-tab ${tab === "backups" ? "modal-tab-active" : ""}`} onClick={() => setTab("backups")}>
               {t("applicationDetail.tabBackups")}
-            </button>
+            {tab === "backups" && <TabUnderline group="application" />}
+              </button>
             <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
               {t("applicationDetail.tabSettings")}
-            </button>
+            {tab === "settings" && <TabUnderline group="application" />}
+              </button>
           </div>
 
           {tab === "overview" && (

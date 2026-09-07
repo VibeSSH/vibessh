@@ -5,6 +5,7 @@ import type { EditorView } from "@codemirror/view";
 import { searchExtensions, searchPhrases } from "@/components/servers/editorSearch";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import CodeMirror from "@uiw/react-codemirror";
+import { useEditorContextMenu } from "@/components/servers/useEditorContextMenu";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Icon } from "@/components/ui/Icon";
@@ -62,6 +63,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   // appears late is harder to find than one that is briefly inert.
   const editorViewRef = useRef<EditorView | null>(null);
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
+  const editorMenu = useEditorContextMenu(editorViewRef, { editable: !tooLarge });
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [loading, setLoading] = useState(!tooLarge);
@@ -292,7 +294,10 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         </p>
       )}
 
-      <div className="file-editor-tab-body">
+      {/* On the body rather than on CodeMirror itself: the editor is
+          swapped between an editable and a read-only instance, and a
+          right-click should behave the same over either. */}
+      <div className="file-editor-tab-body" onContextMenu={editorMenu.onContextMenu}>
         {tooLarge ? (
           <>
             {/* Read-only, and said out loud rather than just disabled: a
@@ -363,6 +368,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
       {confirmDiscard && (
         <DiscardChangesDialog fileName={entry.name} onCancel={() => setConfirmDiscard(false)} onDiscard={onClose} />
       )}
+      {editorMenu.element}
     </div>
   );
 }

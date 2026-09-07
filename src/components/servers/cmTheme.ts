@@ -54,6 +54,9 @@ export function vibesshEditorTheme(): Extension[] {
       ".cm-activeLineGutter": { backgroundColor: "var(--surface-2)", color: "var(--text-secondary)" },
       ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--surface-2) 55%, transparent)" },
       ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 5px" },
+      // The fold arrows toggle a block, so they are clickable and say so.
+      // The line numbers are not, and deliberately keep the plain cursor.
+      ".cm-foldGutter .cm-gutterElement": { cursor: "pointer" },
       ".cm-foldPlaceholder": {
         backgroundColor: "var(--surface-2)",
         border: "none",

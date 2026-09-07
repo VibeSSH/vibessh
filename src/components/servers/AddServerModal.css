@@ -85,7 +85,17 @@
 .modal-tab-active,
 .modal-tab-active:hover {
   color: var(--accent);
+}
+
+/* The line is drawn by `TabUnderline` so it can slide between tabs, which a
+   border cannot do - see that component. A strip that has not adopted it
+   keeps the border below. */
+.modal-tab:not(:has(.tab-underline)).modal-tab-active {
   border-bottom-color: var(--accent);
+}
+
+.modal-tab {
+  position: relative;
 }
 
 /* A real flex column with a gap, not just a padded box - `.server-form`'s

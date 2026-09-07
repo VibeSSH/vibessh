@@ -315,6 +315,32 @@ button {
   font-family: inherit;
 }
 
+/*
+ * A pointer over anything clickable.
+ *
+ * A `<button>` gets the ordinary arrow by default, and this app had no rule
+ * saying otherwise - so every control whose own stylesheet had not thought to
+ * set it looked, under the cursor, exactly like the text beside it. Setting it
+ * once here is the fix; the per-component `cursor: pointer` rules that already
+ * exist become redundant rather than wrong.
+ *
+ * `:disabled` is excluded rather than left to inherit: a pointer over a
+ * control that will not respond is a promise the control does not keep.
+ * `[role="button"]` and the summary marker are here for the same reason - what
+ * matters is whether it is clickable, not which tag it happens to be.
+ */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label:has(> input[type="checkbox"]:not(:disabled)),
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,

@@ -171,6 +171,13 @@
     "running": "Wykonuję…",
     "noOutput": "(brak wyjścia)"
   },
+  "editorMenu": {
+    "copy": "Kopiuj",
+    "cut": "Wytnij",
+    "paste": "Wklej",
+    "selectAll": "Zaznacz wszystko",
+    "pasteFailed": "Nie udało się odczytać schowka."
+  },
   "applicationConsole": {
     "copySelection": "Kopiuj zaznaczenie",
     "selectAll": "Zaznacz wszystko",

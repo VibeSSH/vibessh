@@ -1,3 +1,4 @@
+import { TabUnderline } from "@/components/ui/TabUnderline";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
@@ -119,17 +120,21 @@ export function TeamDetail() {
       <div className="page-tabs">
         <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
           {t("teams.membersTitle")}
-        </button>
+        {tab === "members" && <TabUnderline group="team" />}
+              </button>
         <button className={`modal-tab ${tab === "roles" ? "modal-tab-active" : ""}`} onClick={() => setTab("roles")}>
           {t("roles.title")}
-        </button>
+        {tab === "roles" && <TabUnderline group="team" />}
+              </button>
         <button className={`modal-tab ${tab === "servers" ? "modal-tab-active" : ""}`} onClick={() => setTab("servers")}>
           {t("teamServers.title")}
-        </button>
+        {tab === "servers" && <TabUnderline group="team" />}
+              </button>
         {canViewAudit && (
           <button className={`modal-tab ${tab === "audit" ? "modal-tab-active" : ""}`} onClick={() => setTab("audit")}>
             {t("auditLog.title")}
-          </button>
+          {tab === "audit" && <TabUnderline group="team" />}
+              </button>
         )}
       </div>
 

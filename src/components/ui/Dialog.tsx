@@ -1,4 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { IconButton } from "./IconButton";
 import { useTranslation } from "react-i18next";
@@ -27,6 +28,16 @@ interface DialogProps {
 const SIZE_CLASS = { sm: "modal-panel-sm", md: "", lg: "modal-panel-lg" } as const;
 
 /**
+ * How long a dialog takes to arrive.
+ *
+ * Short on purpose. Long enough to read as movement rather than a jump,
+ * short enough that somebody opening a dialog to type into it is not made to
+ * wait for the animation - which is the failure mode of every modal that
+ * animates for a third of a second.
+ */
+const ENTER_SECONDS = 0.16;
+
+/**
  * The app's modal.
  *
  * **What this replaces.** `useModalDialog` already did the hard part -
@@ -51,17 +62,50 @@ const SIZE_CLASS = { sm: "modal-panel-sm", md: "", lg: "modal-panel-lg" } as con
  */
 export function Dialog({ open, onClose, title, size = "md", headerActions, belowHeader, dismissable = true, children }: DialogProps) {
   const { t } = useTranslation();
+  /**
+   * Nothing moves for somebody who asked the operating system for that.
+   *
+   * A modal that scales into place is a nicety; a modal that scales into
+   * place for a person who set "reduce motion" because movement makes them
+   * ill is a defect. `0` keeps the same code path and simply arrives at the
+   * end of it immediately.
+   */
+  const still = useReducedMotion();
+  const duration = still ? 0 : ENTER_SECONDS;
 
   return (
     <RadixDialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="modal-backdrop dialog-overlay" />
+        {/* `asChild` hands Radix's behaviour to a motion element rather than
+            wrapping one around it: an extra div here would sit between the
+            backdrop and the panel and take the clicks meant for either.
+
+            Entry only, no exit. An exit animation needs the dialog to stay
+            mounted after it closes (`forceMount` plus `AnimatePresence`),
+            which changes when every caller's state unmounts - a lot of new
+            behaviour for the half of the movement nobody watches. */}
+        <RadixDialog.Overlay asChild>
+          <motion.div
+            className="modal-backdrop dialog-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration }}
+          />
+        </RadixDialog.Overlay>
         <RadixDialog.Content
-          className={`modal-panel dialog-panel ${SIZE_CLASS[size]}`.trim()}
+          asChild
           onEscapeKeyDown={(event) => !dismissable && event.preventDefault()}
           onPointerDownOutside={(event) => !dismissable && event.preventDefault()}
           onInteractOutside={(event) => !dismissable && event.preventDefault()}
         >
+          <motion.div
+            className={`modal-panel dialog-panel ${SIZE_CLASS[size]}`.trim()}
+            // Barely a scale. A dialog that grows from 0.9 reads as a
+            // notification popping up; this reads as the same panel settling.
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration, ease: "easeOut" }}
+          >
           <div className="modal-header">
             <RadixDialog.Title className="modal-title">{title}</RadixDialog.Title>
             <div className="modal-header-actions">
@@ -73,6 +117,7 @@ export function Dialog({ open, onClose, title, size = "md", headerActions, below
           </div>
           {belowHeader}
           {children}
+          </motion.div>
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

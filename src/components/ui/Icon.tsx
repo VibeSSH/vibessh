@@ -51,6 +51,8 @@ const NAME_TO_LUCIDE: Record<string, string> = {
   plug: "plug",
   x: "x",
   copy: "copy",
+  scissors: "scissors",
+  clipboard: "clipboard",
   check: "check",
   key: "key",
   edit: "square-pen",

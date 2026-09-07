@@ -1,3 +1,4 @@
+import { TabUnderline } from "@/components/ui/TabUnderline";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -269,12 +270,15 @@ export function Dashboard() {
               <div className="page-tabs">
                 <button type="button" className={`modal-tab ${activeTab === "applications" ? "modal-tab-active" : ""}`} onClick={() => setActiveTab("applications")}>
                   {t("dashboard.tabApplications")}
+                {activeTab === "applications" && <TabUnderline group="dashboard" />}
                 </button>
                 <button type="button" className={`modal-tab ${activeTab === "terminal" ? "modal-tab-active" : ""}`} onClick={() => setActiveTab("terminal")}>
                   {t("dashboard.tabTerminal")}
+                {activeTab === "terminal" && <TabUnderline group="dashboard" />}
                 </button>
                 <button type="button" className={`modal-tab ${activeTab === "activity" ? "modal-tab-active" : ""}`} onClick={() => setActiveTab("activity")}>
                   {t("dashboard.tabActivity")}
+                {activeTab === "activity" && <TabUnderline group="dashboard" />}
                 </button>
               </div>
               {selectedServer && (

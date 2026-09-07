@@ -5,6 +5,7 @@ import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 import { searchExtensions, searchPhrases } from "@/components/servers/editorSearch";
 import CodeMirror from "@uiw/react-codemirror";
+import { useEditorContextMenu } from "@/components/servers/useEditorContextMenu";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { vibesshEditorTheme } from "./cmTheme";
@@ -50,6 +51,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
   // appears late is harder to find than one that is briefly inert.
   const editorViewRef = useRef<EditorView | null>(null);
   const tooLarge = entry.size > MAX_EDITABLE_SIZE;
+  const editorMenu = useEditorContextMenu(editorViewRef, { editable: !tooLarge });
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(!tooLarge);
   // Bumped to ask the reading effect to run again - the effect owns the
@@ -225,7 +227,9 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
         </p>
       )}
 
-      <div className="file-editor-tab-body">
+      {/* See the Application Files editor: the menu sits on the body so it
+          covers the read-only view as well as the editable one. */}
+      <div className="file-editor-tab-body" onContextMenu={editorMenu.onContextMenu}>
         {tooLarge ? (
           <>
             {/* Read-only, and said rather than merely disabled: writing back a
@@ -275,6 +279,7 @@ export function FileEditorPanel({ serverId, entry, onClose }: FileEditorPanelPro
           />
         )}
       </div>
+      {editorMenu.element}
     </div>
   );
 }

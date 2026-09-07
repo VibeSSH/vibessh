@@ -171,6 +171,13 @@
     "running": "Running…",
     "noOutput": "(no output)"
   },
+  "editorMenu": {
+    "copy": "Copy",
+    "cut": "Cut",
+    "paste": "Paste",
+    "selectAll": "Select all",
+    "pasteFailed": "The clipboard could not be read."
+  },
   "applicationConsole": {
     "copySelection": "Copy selection",
     "selectAll": "Select all",

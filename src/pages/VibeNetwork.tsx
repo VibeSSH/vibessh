@@ -1,3 +1,4 @@
+import { TabUnderline } from "@/components/ui/TabUnderline";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
@@ -182,13 +183,16 @@ export function VibeNetwork() {
       <div className="page-tabs">
         <button className={`modal-tab ${tab === "nodes" ? "modal-tab-active" : ""}`} onClick={() => setTab("nodes")}>
           {t("vibeNetwork.tabNodes")}
-        </button>
+        {tab === "nodes" && <TabUnderline group="network" />}
+              </button>
         <button className={`modal-tab ${tab === "endpoints" ? "modal-tab-active" : ""}`} onClick={() => setTab("endpoints")}>
           {t("vibeNetwork.tabEndpoints")}
-        </button>
+        {tab === "endpoints" && <TabUnderline group="network" />}
+              </button>
         <button className={`modal-tab ${tab === "dns" ? "modal-tab-active" : ""}`} onClick={() => setTab("dns")}>
           {t("vibeNetwork.tabDns")}
-        </button>
+        {tab === "dns" && <TabUnderline group="network" />}
+              </button>
       </div>
 
       {loading ? (
