@@ -83,6 +83,51 @@ pub fn open_connection(db_path: &Path, what: &str) -> AppResult<Connection> {
     Ok(conn)
 }
 
+/// Folds the write-ahead log back into the database file.
+///
+/// **Why this is needed at all.** WAL keeps recent writes in a separate
+/// `-wal` file and only folds them into the main database when SQLite decides
+/// to, or when it is asked. Measured on a real install of this app:
+/// `servers.sqlite3` was **4 KB** while its `-wal` beside it was **1.6 MB** -
+/// which is to say the database file held almost nothing and the log held
+/// everything. Anything that copies the database file alone - a backup
+/// script, a folder sync, somebody moving their profile to a new machine -
+/// would have taken a database with no servers, no applications and no
+/// history in it, and nothing would have said so.
+///
+/// So this runs on a clean exit, when there is nothing left to write.
+/// `TRUNCATE` rather than `PASSIVE`: passive folds what it can and leaves the
+/// log file at whatever size it had grown to, which fixes the correctness
+/// half and not the "1.6 MB of the data is somewhere else" half.
+///
+/// **Failure is not an error.** A checkpoint that cannot get its lock leaves
+/// the database exactly as valid as it was - the log is still authoritative
+/// and SQLite will fold it in on the next open. The only thing lost is the
+/// tidiness, so this logs and returns rather than delaying an exit somebody
+/// asked for.
+pub fn checkpoint_wal(db_path: &Path) {
+    if !db_path.exists() {
+        return;
+    }
+    // Its own connection rather than one of the nine repositories': a
+    // checkpoint is a property of the file, not of any connection to it, and
+    // reaching into a repository for its `Mutex<Connection>` would mean nine
+    // places to keep in step for something that has to happen once.
+    let conn = match Connection::open(db_path) {
+        Ok(conn) => conn,
+        Err(err) => {
+            log::warn!("couldn't open the database to checkpoint it on exit: {err}");
+            return;
+        }
+    };
+    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get::<_, i64>(0)) {
+        // The first column is 1 when SQLite could not get the lock it needed.
+        Ok(1) => log::warn!("the database was busy, so its write-ahead log was left for the next start to fold in"),
+        Ok(_) => {}
+        Err(err) => log::warn!("couldn't checkpoint the database on exit: {err}"),
+    }
+}
+
 /// Long enough to absorb the startup migration race and any realistic
 /// cross-repository write overlap, short enough that a genuine deadlock
 /// still surfaces as an error rather than hanging the UI forever.
@@ -91,6 +136,52 @@ const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The measurement this exists for, reproduced small.
+    ///
+    /// Writes enough that SQLite leaves it in the log rather than folding it
+    /// in, checks that the main file really is the smaller of the two - which
+    /// is the state a backup would have copied - and then checks the
+    /// checkpoint moves it across.
+    #[test]
+    fn a_checkpoint_moves_the_data_out_of_the_log_and_into_the_database() {
+        let path = std::env::temp_dir().join(format!("vibessh-wal-test-{}.sqlite3", uuid::Uuid::new_v4()));
+        let wal = path.with_extension("sqlite3-wal");
+        let conn = open_connection(&path, "test").unwrap();
+        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, blob TEXT)", []).unwrap();
+        for i in 0..2000 {
+            conn.execute("INSERT INTO t (blob) VALUES (?1)", [format!("{i}{}", "x".repeat(200))]).unwrap();
+        }
+
+        let db_before = std::fs::metadata(&path).unwrap().len();
+        let wal_before = std::fs::metadata(&wal).unwrap().len();
+        assert!(wal_before > db_before, "the log should hold more than the database here: db={db_before} wal={wal_before}");
+
+        // The connection stays open, exactly as the app's nine do at exit.
+        checkpoint_wal(&path);
+
+        let db_after = std::fs::metadata(&path).unwrap().len();
+        let wal_after = std::fs::metadata(&wal).map(|m| m.len()).unwrap_or(0);
+        assert!(db_after > db_before, "the database file should have grown: {db_before} -> {db_after}");
+        assert_eq!(wal_after, 0, "TRUNCATE should leave an empty log, not merely a folded-in one");
+
+        // And the data is readable from the database file alone - which is
+        // what a copy of it would now contain.
+        drop(conn);
+        std::fs::remove_file(&wal).ok();
+        let reopened = Connection::open(&path).unwrap();
+        let rows: i64 = reopened.query_row("SELECT count(*) FROM t", [], |row| row.get(0)).unwrap();
+        assert_eq!(rows, 2000);
+        drop(reopened);
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// A database that was never created is not a failure to check-point -
+    /// it is a first run, and the exit handler runs on those too.
+    #[test]
+    fn checkpointing_a_database_that_does_not_exist_is_harmless() {
+        checkpoint_wal(&std::env::temp_dir().join(format!("vibessh-absent-{}.sqlite3", uuid::Uuid::new_v4())));
+    }
 
     /// The regression test for the startup race: opening the same database
     /// from several connections at once, the way `lib.rs` does, must not

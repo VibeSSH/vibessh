@@ -405,6 +405,19 @@ pub fn run() {
             commands::cloud_commands::cloud_change_password,
             commands::cloud_commands::cloud_list_audit_events,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running VibeSSH");
+        // `build` then `run` rather than `run` alone: the exit event is the
+        // only place a clean shutdown can be noticed, and `run(context)`
+        // never hands it over.
+        .build(tauri::generate_context!())
+        .expect("error while running VibeSSH")
+        .run(|app_handle, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                // Every repository shares one file, so one checkpoint covers
+                // all nine - see `storage::checkpoint_wal` for what it is
+                // for and why a failure here is not worth stopping an exit.
+                if let Ok(dir) = app_handle.path().app_data_dir() {
+                    storage::checkpoint_wal(&dir.join("servers.sqlite3"));
+                }
+            }
+        });
 }
