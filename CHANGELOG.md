@@ -6,6 +6,29 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.6
+
+### Fixed
+
+- **Accounts and teams could not work at all.** The address of the backend
+  they talk to is a per-install setting, and it defaulted to a server on your
+  own computer - but nothing in the interface let you change it, so every
+  attempt to register or sign in failed against `http://localhost:8787`.
+  There is now an **Account backend** card in Settings, and the error says
+  which situation you are in rather than naming a URL you never chose.
+- **"Docker isn't running" now says so.** Starting an application with Docker
+  Desktop stopped reported a missing named pipe, which is an accurate
+  description of the wrong thing - people went looking for a path. The
+  message now says to start Docker Desktop, and keeps the original text after
+  it.
+
+### New
+
+- **A guide page on running your own backend**, reachable from the question
+  mark on that Settings card: when you need one at all (most people do not -
+  nodes, applications, files and the terminal need no account), how to start
+  it, and how to back it up.
+
 ## 0.1.0-beta.5
 
 ### New

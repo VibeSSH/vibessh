@@ -11,7 +11,7 @@ members = ["src-tauri", "agent", "protocol", "backend"]
 # network rather than only the one that happens to be built alongside it.
 # This table only pins shared dependency versions so they don't drift.
 [workspace.package]
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
