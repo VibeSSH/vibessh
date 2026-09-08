@@ -26,6 +26,7 @@ import "./Settings.css";
 import "@/components/servers/forms.css";
 import "@/components/servers/AddServerModal.css";
 import { cloudGetBackendUrl, cloudSetBackendUrl } from "@/services/cloudService";
+import { GuideLink } from "@/guide/GuideLink";
 import { CommandError, errorMessage } from "@/services/tauri";
 
 const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
@@ -519,6 +520,12 @@ function CloudBackendCard() {
 
   return (
     <Card title={t("settings.cloudBackendTitle")} subtitle={t("settings.cloudBackendSubtitle")}>
+      {/* Straight to the page that explains running one, because "point this
+          at your own backend" is not advice somebody can act on without it. */}
+      <p className="form-note settings-guide-link">
+        <GuideLink topic="cloud-backend" />
+        <span>{t("settings.cloudBackendGuide")}</span>
+      </p>
       {loading ? (
         <SkeletonRows />
       ) : (

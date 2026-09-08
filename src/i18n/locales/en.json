@@ -1404,7 +1404,8 @@
     "cloudBackendLabel": "Backend address",
     "cloudBackendNote": "VibeSSH does not host this for you - you run it yourself from the `backend/` directory of the source, and point this at it. Signing in, registering and teams all go here.",
     "cloudBackendDefaultWarning": "This is still the development default, a server on this computer. Registering or signing in will fail until it points at a real backend.",
-    "cloudBackendSavedToast": "Backend address saved"
+    "cloudBackendSavedToast": "Backend address saved",
+    "cloudBackendGuide": "How to run your own backend, step by step."
   },
   "sshForm": {
     "name": "Name",

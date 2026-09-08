@@ -193,6 +193,8 @@ impl KeywordKnowledgeService {
             ("Poradnik - Tunele SSH", include_str!("../../../docs/guide/port-forwarding.pl.md")),
             ("Guide - Databases", include_str!("../../../docs/guide/databases.en.md")),
             ("Poradnik - Bazy danych", include_str!("../../../docs/guide/databases.pl.md")),
+            ("Guide - Account backend", include_str!("../../../docs/guide/cloud-backend.en.md")),
+            ("Poradnik - Backend kont", include_str!("../../../docs/guide/cloud-backend.pl.md")),
             ("Guide - Teams", include_str!("../../../docs/guide/teams.en.md")),
             ("Poradnik - Zespoly", include_str!("../../../docs/guide/teams.pl.md")),
             ("Guide - Vibe AI", include_str!("../../../docs/guide/vibe-ai.en.md")),

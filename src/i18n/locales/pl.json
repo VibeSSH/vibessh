@@ -1412,7 +1412,8 @@
     "cloudBackendLabel": "Adres backendu",
     "cloudBackendNote": "VibeSSH nie hostuje tego za Ciebie - uruchamiasz go sam z katalogu `backend/` w źródłach i wskazujesz tutaj jego adres. Logowanie, rejestracja i zespoły idą właśnie tam.",
     "cloudBackendDefaultWarning": "To wciąż domyślny adres deweloperski, czyli serwer na tym komputerze. Rejestracja i logowanie będą się wywalać, dopóki nie wskażesz prawdziwego backendu.",
-    "cloudBackendSavedToast": "Adres backendu zapisany"
+    "cloudBackendSavedToast": "Adres backendu zapisany",
+    "cloudBackendGuide": "Jak postawić własny backend, krok po kroku."
   },
   "sshForm": {
     "name": "Nazwa",

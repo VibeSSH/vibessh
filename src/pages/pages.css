@@ -184,3 +184,11 @@
   align-items: center;
   gap: 8px;
 }
+
+/* The guide link and its sentence on one line, so the "?" reads as belonging
+   to the text rather than floating above it. */
+.settings-guide-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
