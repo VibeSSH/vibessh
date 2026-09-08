@@ -45,8 +45,26 @@ impl CloudClient {
             request = request.json(body);
         }
 
-        let response = request.send().await.map_err(|err| AppError::Connection(format!("couldn't reach the VibeSSH cloud backend: {err}")))?;
+        let response = request.send().await.map_err(|err| self.unreachable(err))?;
         Self::parse(response).await
+    }
+
+    /// A backend that did not answer, said so that somebody can act on it.
+    ///
+    /// The bare transport error names the URL and nothing else, which for the
+    /// default address reads as "error sending request for url
+    /// (http://localhost:8787/auth/register)" - accurate, and no help at all
+    /// to somebody who never chose that address and has no idea it is a
+    /// setting. VibeSSH does not host a backend; each install points at one
+    /// it runs itself, so the fix is always the same and belongs in the
+    /// message.
+    fn unreachable(&self, err: reqwest::Error) -> AppError {
+        let advice = if self.base_url.starts_with("http://localhost") || self.base_url.starts_with("http://127.0.0.1") {
+            " - this is the development default, a server on this computer. Set your own backend's address in Settings."
+        } else {
+            " - check the address in Settings, and that the backend is running."
+        };
+        AppError::Connection(format!("couldn't reach the VibeSSH cloud backend at {}{advice} ({err})", self.base_url))
     }
 
     async fn send_no_content<B: Serialize + ?Sized>(&self, method: Method, path: &str, bearer: Option<&str>, body: Option<&B>) -> AppResult<()> {
@@ -57,7 +75,7 @@ impl CloudClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let response = request.send().await.map_err(|err| AppError::Connection(format!("couldn't reach the VibeSSH cloud backend: {err}")))?;
+        let response = request.send().await.map_err(|err| self.unreachable(err))?;
         if response.status().is_success() {
             return Ok(());
         }

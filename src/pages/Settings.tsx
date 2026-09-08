@@ -25,6 +25,7 @@ import "./pages.css";
 import "./Settings.css";
 import "@/components/servers/forms.css";
 import "@/components/servers/AddServerModal.css";
+import { cloudGetBackendUrl, cloudSetBackendUrl } from "@/services/cloudService";
 import { CommandError, errorMessage } from "@/services/tauri";
 
 const LANGUAGE_LABEL_KEY: Record<SupportedLanguage, string> = {
@@ -83,6 +84,8 @@ export function Settings() {
       <BackupDestinationCard />
 
       <RegistryCredentialsCard />
+
+      <CloudBackendCard />
 
       <DnsSuffixCard />
 
@@ -447,6 +450,89 @@ function BackupDestinationCard() {
               {testError && <span className="form-note form-note-danger"> {testError}</span>}
             </div>
             <Button type="submit" size="sm" disabled={saving}>
+              {saving ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Which backend the account and team features talk to.
+ *
+ * **Why this had to exist.** The address has always been a per-install
+ * setting - VibeSSH ships a backend you run yourself, under `backend/` - and
+ * it defaults to `http://localhost:8787`, this machine's own dev instance.
+ * The command to change it existed, and the service wrapper existed, and
+ * nothing in the interface ever called either. So every install kept the
+ * default, every attempt to register or sign in reached for a port on the
+ * user's own computer, and the error read "couldn't reach the VibeSSH cloud
+ * backend" with a localhost URL in it that nobody could do anything about.
+ *
+ * Everything else in VibeSSH - nodes, applications, files, terminals - works
+ * without this. Accounts, teams and shared servers are what need it.
+ */
+function CloudBackendCard() {
+  const { t } = useTranslation();
+  const [current, setCurrent] = useState<string | null>(null);
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    cloudGetBackendUrl()
+      .then((loaded) => {
+        setCurrent(loaded);
+        setUrl(loaded);
+      })
+      .catch((err) => setLoadError(errorMessage(err, t)))
+      .finally(() => setLoading(false));
+  }, [t]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    // A trailing slash here becomes a double slash in every request path,
+    // which some servers answer and some reject - so it is taken off once,
+    // here, rather than guarded against at each call site.
+    const trimmed = url.trim().replace(/\/+$/, "");
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await cloudSetBackendUrl(trimmed);
+      setCurrent(trimmed);
+      setUrl(trimmed);
+      toastSuccess(t("settings.cloudBackendSavedToast"));
+    } catch (err) {
+      setSaveError(errorMessage(err, t));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Worth saying out loud rather than leaving somebody to work out why
+  // signing in fails: the default points at a server on this computer.
+  const isDefault = current === "http://localhost:8787";
+
+  return (
+    <Card title={t("settings.cloudBackendTitle")} subtitle={t("settings.cloudBackendSubtitle")}>
+      {loading ? (
+        <SkeletonRows />
+      ) : (
+        <form className="server-form" onSubmit={handleSubmit}>
+          {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
+          {saveError && <p className="form-note form-note-danger form-note-spaced">{saveError}</p>}
+          {isDefault && <p className="form-note form-note-danger form-note-spaced">{t("settings.cloudBackendDefaultWarning")}</p>}
+          <label className="form-field">
+            <span className="form-label">{t("settings.cloudBackendLabel")}</span>
+            <input className="form-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://vibessh.example.com" />
+          </label>
+          <p className="form-note">{t("settings.cloudBackendNote")}</p>
+          <div className="form-actions">
+            <Button type="submit" size="sm" disabled={saving || url.trim() === "" || url.trim() === current}>
               {saving ? t("common.saving") : t("common.save")}
             </Button>
           </div>

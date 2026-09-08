@@ -183,6 +183,12 @@ fn expect_success(output: crate::transport::CommandOutput, what: &str) -> AppRes
     let detail = output.stderr.trim();
     let detail = if detail.is_empty() { output.stdout.trim().to_string() } else { detail.to_string() };
     let detail = if detail.is_empty() { format!("docker exited with {}", output.exit_code) } else { detail };
+    // A daemon that is not running is the single most common way this fails,
+    // and the CLI's own words for it are about a named pipe - see
+    // `daemon_unreachable`.
+    if let Some(message) = super::docker_command::daemon_unreachable(&detail) {
+        return Err(AppError::Connection(message));
+    }
     Err(AppError::Connection(format!("couldn't {what}: {detail}")))
 }
 

@@ -70,6 +70,44 @@ impl DockerCommandRunner for SshSession {
 /// without WSL2 on Windows 10 Home, where Hyper-V is not available - so
 /// "install Docker Desktop" alone sends people to an installer that stops
 /// and asks for something else.
+/// Whether this failure is "the daemon is not running", and what to say if so.
+///
+/// **Why the CLI's own words are not enough.** Docker is installed, on PATH
+/// and runs - so `docker_missing` never fires - and then it fails with
+/// `failed to connect to the docker API at npipe:////./pipe/dockerDesktop
+/// LinuxEngine ... The system cannot find the file specified`. That is an
+/// accurate description of a missing named pipe and a useless description of
+/// the situation, which is that Docker Desktop is not started. Somebody
+/// reading it goes looking for a path.
+///
+/// Matched on the daemon-connection wording rather than on an exit code,
+/// because the CLI uses the same code for everything, and on both the Windows
+/// pipe and the Unix socket, because the same app manages Nodes over SSH
+/// where the message is about `/var/run/docker.sock`.
+pub(crate) fn daemon_unreachable(stderr: &str) -> Option<String> {
+    let lowered = stderr.to_lowercase();
+    let looks_like_it = lowered.contains("cannot connect to the docker daemon")
+        || lowered.contains("failed to connect to the docker api")
+        || lowered.contains("dockerdesktoplinuxengine")
+        || lowered.contains("docker_engine")
+        || (lowered.contains("docker.sock") && lowered.contains("connect"));
+    if !looks_like_it {
+        return None;
+    }
+
+    #[cfg(windows)]
+    let advice = "Docker isn't running. Start Docker Desktop, wait for the whale in the tray to stop animating, then try again.";
+    #[cfg(target_os = "macos")]
+    let advice = "Docker isn't running. Start Docker Desktop and wait for it to finish starting, then try again.";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let advice = "Docker isn't running. Start it with `sudo systemctl start docker`, then try again.";
+
+    // The original is kept on the end: the sentence above is what somebody
+    // needs, and the CLI's own text is what they would paste into a search if
+    // it turns out to be something else.
+    Some(format!("{advice} (docker said: {})", stderr.trim()))
+}
+
 pub(crate) fn docker_missing() -> AppError {
     #[cfg(windows)]
     let detail = concat!(
@@ -142,6 +180,36 @@ impl DockerCommandRunner for LocalDocker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exact text a user reported, from Docker Desktop on Windows with
+    /// the engine stopped. It has to be recognised, and the answer has to
+    /// come before the CLI's own words about a named pipe.
+    #[test]
+    fn a_stopped_docker_desktop_is_recognised_from_its_own_wording() {
+        let reported = "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine;                         check if the path is correct and if the daemon is running:                         open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.";
+
+        let message = daemon_unreachable(reported).expect("this is the daemon being down");
+
+        assert!(message.starts_with("Docker isn't running."), "{message}");
+        assert!(message.contains(reported.trim()), "the original should still be there to search for: {message}");
+    }
+
+    /// The wording the CLI uses against a Node over SSH, where the daemon is
+    /// behind a Unix socket rather than a Windows pipe.
+    #[test]
+    fn the_unix_socket_wording_is_recognised_too() {
+        assert!(daemon_unreachable("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?").is_some());
+    }
+
+    /// Anything else has to fall through, or a real failure would be
+    /// reported as the daemon being down and somebody would restart Docker
+    /// for no reason.
+    #[test]
+    fn an_unrelated_failure_is_left_alone() {
+        assert!(daemon_unreachable("Error response from daemon: No such container: vibessh-abc").is_none());
+        assert!(daemon_unreachable("docker: invalid reference format").is_none());
+        assert!(daemon_unreachable("").is_none());
+    }
 
     /// The message is written across several source lines with backslash
     /// continuations, which strip the newline *and* the following
