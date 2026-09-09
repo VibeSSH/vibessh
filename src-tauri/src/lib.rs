@@ -384,6 +384,7 @@ pub fn run() {
             commands::cloud_commands::cloud_session_info,
             commands::cloud_commands::cloud_get_backend_url,
             commands::cloud_commands::cloud_set_backend_url,
+            commands::cloud_commands::cloud_backend_is_configured,
             commands::cloud_commands::cloud_list_teams,
             commands::cloud_commands::cloud_create_team,
             commands::cloud_commands::cloud_list_members,

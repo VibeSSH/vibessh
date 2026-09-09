@@ -465,7 +465,8 @@
     "genericError": "Coś poszło nie tak. Spróbuj ponownie.",
     "loggedInToast": "Zalogowano jako {{name}}",
     "registeredToast": "Witaj, {{name}}",
-    "loggedOutToast": "Wylogowano"
+    "loggedOutToast": "Wylogowano",
+    "noBackend": "Nie ustawiono backendu kont, więc logowanie nie ma jeszcze jak zadziałać. Wpisz jego adres w Ustawieniach; znak zapytania na tej karcie tłumaczy, jak go postawić."
   },
   "capabilities": {
     "terminal": "Terminal",
@@ -1419,9 +1420,9 @@
     "cloudBackendSubtitle": "Tu żyją konta, zespoły i współdzielone serwery. Cała reszta VibeSSH działa bez tego.",
     "cloudBackendLabel": "Adres backendu",
     "cloudBackendNote": "VibeSSH nie hostuje tego za Ciebie - uruchamiasz go sam z katalogu `backend/` w źródłach i wskazujesz tutaj jego adres. Logowanie, rejestracja i zespoły idą właśnie tam.",
-    "cloudBackendDefaultWarning": "To wciąż domyślny adres deweloperski, czyli serwer na tym komputerze. Rejestracja i logowanie będą się wywalać, dopóki nie wskażesz prawdziwego backendu.",
     "cloudBackendSavedToast": "Adres backendu zapisany",
-    "cloudBackendGuide": "Jak postawić własny backend, krok po kroku."
+    "cloudBackendGuide": "Jak postawić własny backend, krok po kroku.",
+    "cloudBackendUnset": "Nie ustawiono backendu, więc konta i zespoły są wyłączone. Cała reszta - Node'y, aplikacje, pliki, terminal - działa bez niego."
   },
   "sshForm": {
     "name": "Nazwa",

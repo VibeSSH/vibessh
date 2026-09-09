@@ -40,6 +40,18 @@ export function cloudGetBackendUrl(): Promise<string> {
   return callCommand<string>("cloud_get_backend_url");
 }
 
+/**
+ * Whether an account backend has been chosen at all.
+ *
+ * Asked rather than compared against a literal here: the default lives in
+ * `storage/cloud_config.rs`, and a copy of it in TypeScript would go quietly
+ * wrong the day it becomes a real hosted address. This way changing it is one
+ * line in one file.
+ */
+export function cloudBackendIsConfigured(): Promise<boolean> {
+  return callCommand<boolean>("cloud_backend_is_configured");
+}
+
 export function cloudSetBackendUrl(backendUrl: string): Promise<void> {
   return callCommand<void>("cloud_set_backend_url", { backendUrl });
 }

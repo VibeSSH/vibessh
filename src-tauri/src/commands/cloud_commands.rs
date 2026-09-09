@@ -41,6 +41,12 @@ pub async fn cloud_get_backend_url(state: State<'_, CloudState>) -> AppResult<St
     Ok(state.backend_url().await)
 }
 
+/// Whether accounts can work at all yet - see `cloud_config::is_configured`.
+#[tauri::command]
+pub async fn cloud_backend_is_configured(state: State<'_, CloudState>) -> AppResult<bool> {
+    Ok(cloud_config::is_configured(&state.backend_url().await))
+}
+
 #[tauri::command]
 pub async fn cloud_set_backend_url(app: tauri::AppHandle, state: State<'_, CloudState>, backend_url: String) -> AppResult<()> {
     let config_dir = app.path().app_config_dir().map_err(|err| crate::errors::AppError::Storage(err.to_string()))?;

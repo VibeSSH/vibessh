@@ -461,7 +461,8 @@
     "genericError": "Something went wrong. Please try again.",
     "loggedInToast": "Signed in as {{name}}",
     "registeredToast": "Welcome, {{name}}",
-    "loggedOutToast": "Signed out"
+    "loggedOutToast": "Signed out",
+    "noBackend": "No account backend is set, so signing in cannot work yet. Set its address in Settings; the question mark on that card explains how to run one."
   },
   "capabilities": {
     "terminal": "Terminal",
@@ -1411,9 +1412,9 @@
     "cloudBackendSubtitle": "Where accounts, teams and shared servers live. Everything else in VibeSSH works without it.",
     "cloudBackendLabel": "Backend address",
     "cloudBackendNote": "VibeSSH does not host this for you - you run it yourself from the `backend/` directory of the source, and point this at it. Signing in, registering and teams all go here.",
-    "cloudBackendDefaultWarning": "This is still the development default, a server on this computer. Registering or signing in will fail until it points at a real backend.",
     "cloudBackendSavedToast": "Backend address saved",
-    "cloudBackendGuide": "How to run your own backend, step by step."
+    "cloudBackendGuide": "How to run your own backend, step by step.",
+    "cloudBackendUnset": "No backend is set, so accounts and teams are off. Everything else - nodes, applications, files, the terminal - works without one."
   },
   "sshForm": {
     "name": "Name",

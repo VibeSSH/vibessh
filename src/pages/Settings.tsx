@@ -25,7 +25,7 @@ import "./pages.css";
 import "./Settings.css";
 import "@/components/servers/forms.css";
 import "@/components/servers/AddServerModal.css";
-import { cloudGetBackendUrl, cloudSetBackendUrl } from "@/services/cloudService";
+import { cloudBackendIsConfigured, cloudGetBackendUrl, cloudSetBackendUrl } from "@/services/cloudService";
 import { GuideLink } from "@/guide/GuideLink";
 import { CommandError, errorMessage } from "@/services/tauri";
 
@@ -514,9 +514,19 @@ function CloudBackendCard() {
     }
   }
 
-  // Worth saying out loud rather than leaving somebody to work out why
-  // signing in fails: the default points at a server on this computer.
-  const isDefault = current === "http://localhost:8787";
+  // Said plainly, and not in red.
+  //
+  // Somebody using VibeSSH on their own has nothing wrong with their
+  // install: nodes, applications, files and the terminal all work with no
+  // account at all. Painting this card as an error told them something was
+  // broken when the honest word is "off". The warning belongs where somebody
+  // actually tries to sign in - see `AuthModal`.
+  const [unconfigured, setUnconfigured] = useState(false);
+  useEffect(() => {
+    cloudBackendIsConfigured()
+      .then((yes) => setUnconfigured(!yes))
+      .catch(() => undefined);
+  }, [current]);
 
   return (
     <Card title={t("settings.cloudBackendTitle")} subtitle={t("settings.cloudBackendSubtitle")}>
@@ -532,7 +542,7 @@ function CloudBackendCard() {
         <form className="server-form" onSubmit={handleSubmit}>
           {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
           {saveError && <p className="form-note form-note-danger form-note-spaced">{saveError}</p>}
-          {isDefault && <p className="form-note form-note-danger form-note-spaced">{t("settings.cloudBackendDefaultWarning")}</p>}
+          {unconfigured && <p className="form-note form-note-spaced">{t("settings.cloudBackendUnset")}</p>}
           <label className="form-field">
             <span className="form-label">{t("settings.cloudBackendLabel")}</span>
             <input className="form-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://vibessh.example.com" />

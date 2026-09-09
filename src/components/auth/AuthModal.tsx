@@ -1,11 +1,11 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { cloudLogin, cloudRegister } from "@/services/cloudService";
+import { cloudBackendIsConfigured, cloudLogin, cloudRegister } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -25,6 +25,21 @@ export function AuthModal() {
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether an account backend has been chosen at all.
+   *
+   * `null` while it is being read - neither state is worth flashing a
+   * warning for. This is the one place the warning belongs: somebody
+   * opening this dialog is about to type an email and a password into a
+   * form that cannot possibly work, and telling them afterwards, as a
+   * failed request, is telling them too late.
+   */
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  useEffect(() => {
+    cloudBackendIsConfigured()
+      .then(setConfigured)
+      .catch(() => undefined);
+  }, []);
 
   function reset() {
     setEmail("");
@@ -77,6 +92,12 @@ export function AuthModal() {
         </div>
 
         <div className="modal-body">
+          {/* Before the fields, not after a failed request: the form cannot
+              work without a backend, and the remedy is somewhere else
+              entirely. */}
+          {configured === false && (
+            <p className="form-note form-note-danger form-note-spaced">{t("auth.noBackend")}</p>
+          )}
           <form className="server-form" onSubmit={handleSubmit}>
             {tab === "register" && (
               <label className="form-field">
