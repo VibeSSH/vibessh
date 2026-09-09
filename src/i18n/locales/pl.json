@@ -757,7 +757,14 @@
     "ai_hosted_failed": "Nie udało się teraz skorzystać z modelu wliczonego w VibeSSH. To problem po stronie backendu VibeSSH, a nie Twoich ustawień — spróbuj później albo dodaj własny klucz API w Ustawieniach, żeby pracować dalej.",
     "pterodactyl_key_rejected": "Panel odrzucił klucz. Musi to być klucz aplikacji z Admin → Application API (zaczyna się od ptla_), a nie klucz z Twojego konta (ptlc_). Sprawdź też, czy klucz nie został usunięty.",
     "pterodactyl_key_forbidden": "Panel przyjął klucz, ale nie ma on uprawnienia do „{{resource}}”. Przy tworzeniu klucza aplikacji zaznacza się uprawnienia do każdego zasobu osobno — wejdź w Admin → Application API i włącz odczyt dla Servers, Nodes i Databases.",
-    "database_socket_auth_only": "Konto {{user}} w MySQL loguje się przez lokalny socket i nie przyjmuje żadnego hasła — to domyślne ustawienie roota na Debianie i Ubuntu. Żadne hasło tu nie zadziała. Załóż osobne konto administracyjne z hasłem i wskaż je w tym hoście baz."
+    "database_socket_auth_only": "Konto {{user}} w MySQL loguje się przez lokalny socket i nie przyjmuje żadnego hasła — to domyślne ustawienie roota na Debianie i Ubuntu. Żadne hasło tu nie zadziała. Załóż osobne konto administracyjne z hasłem i wskaż je w tym hoście baz.",
+    "not_signed_in": "Nie jesteś zalogowany do backendu kont. Zaloguj się albo ustaw jego adres w Ustawieniach.",
+    "unauthorized": "Brak uprawnień: {{message}}",
+    "not_found": "Nie znaleziono: {{message}}",
+    "invalid_input": "{{message}}",
+    "connection": "Problem z połączeniem: {{message}}",
+    "storage": "Problem z zapisem danych: {{message}}",
+    "internal": "Coś poszło nie tak wewnątrz VibeSSH: {{message}}"
   },
   "fileEditor": {
     "backAria": "Wróć do listy plików",

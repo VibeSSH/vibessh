@@ -18,6 +18,7 @@ export type ErrorCode =
   | "connection"
   | "internal"
   | "unauthorized"
+  | "not_signed_in"
   | "permission_denied"
   | "port_in_use"
   | "docker_unavailable"

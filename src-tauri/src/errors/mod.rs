@@ -32,6 +32,10 @@ pub enum ErrorCode {
     Connection,
     Internal,
     Unauthorized,
+    /// Nobody is signed in to the account backend. Its own code because
+    /// the fix is a specific action - sign in, or point the app at a
+    /// backend - and because it is the one an ordinary user meets most.
+    NotSignedIn,
 
     // Specific enough that the UI can do something other than print text.
     /// The operation is understood and valid, but this account may not do
@@ -240,6 +244,7 @@ impl AppError {
             AppError::Storage(_) => ErrorCode::Storage,
             AppError::Connection(_) => ErrorCode::Connection,
             AppError::Internal(_) => ErrorCode::Internal,
+            AppError::Unauthorized(message) if message.starts_with("not signed in") => ErrorCode::NotSignedIn,
             AppError::Unauthorized(_) => ErrorCode::Unauthorized,
             AppError::PermissionDenied { .. } => ErrorCode::PermissionDenied,
             AppError::PortInUse { .. } => ErrorCode::PortInUse,
@@ -279,6 +284,20 @@ impl AppError {
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
+            // The coarse variants carry their own English detail.
+            //
+            // Without this the frontend had nothing to put in a translated
+            // sentence, so `errorMessage` fell through to `Display` and the
+            // user saw the whole thing in English - which is what somebody
+            // reported. A translated frame around the detail is not a full
+            // translation of the detail, but it is the difference between an
+            // interface that speaks their language and one that does not.
+            AppError::NotFound(message)
+            | AppError::InvalidInput(message)
+            | AppError::Storage(message)
+            | AppError::Connection(message)
+            | AppError::Internal(message)
+            | AppError::Unauthorized(message) => serde_json::json!({ "message": message }),
             _ => serde_json::Value::Null,
         }
     }
@@ -309,7 +328,7 @@ impl Serialize for AppError {
             ErrorCode::Storage => "storage",
             ErrorCode::Connection => "connection",
             ErrorCode::Internal => "internal",
-            ErrorCode::Unauthorized => "unauthorized",
+            ErrorCode::Unauthorized | ErrorCode::NotSignedIn => "unauthorized",
             // The specific codes did not exist when `kind` was the only
             // discriminator, so each maps onto the coarse bucket a reader
             // of `kind` would previously have seen.
@@ -408,9 +427,45 @@ mod tests {
         assert_eq!(json(&AppError::Unauthorized("x".into()))["kind"], "unauthorized");
     }
 
+    /// A variant whose message says everything - there is nothing to fill a
+    /// slot with, and the translated sentence stands on its own.
     #[test]
     fn errors_with_nothing_to_interpolate_carry_null_params() {
-        assert!(json(&AppError::InvalidInput("x".into()))["params"].is_null());
         assert!(json(&AppError::DockerUnavailable)["params"].is_null());
+        assert!(json(&AppError::AiRateLimited)["params"].is_null());
+    }
+
+    /// The coarse variants carry theirs, and this is why.
+    ///
+    /// Their message is written at the call site in English and there are
+    /// hundreds of them, so the interface cannot translate the detail - but
+    /// it can translate the sentence around it, and that needs the detail as
+    /// a parameter. Before this, `errorMessage` had nothing to interpolate,
+    /// fell through to the English `Display`, and a Polish interface showed
+    /// "unauthorized: not signed in to the VibeSSH cloud backend".
+    #[test]
+    fn a_coarse_error_carries_its_own_detail_for_the_translated_frame() {
+        for error in [
+            AppError::InvalidInput("a name is required".into()),
+            AppError::NotFound("application 1".into()),
+            AppError::Storage("failed to write".into()),
+            AppError::Connection("host is down".into()),
+            AppError::Internal("unreachable".into()),
+            AppError::Unauthorized("refresh token revoked".into()),
+        ] {
+            let params = json(&error)["params"].clone();
+            assert!(params["message"].is_string(), "{error:?} should carry its message: {params}");
+        }
+    }
+
+    /// Somebody who is simply not signed in gets a sentence of their own
+    /// rather than a frame around English - it is the error an ordinary user
+    /// meets most, and its detail adds nothing they can act on.
+    #[test]
+    fn not_being_signed_in_has_its_own_code() {
+        assert_eq!(json(&AppError::Unauthorized("not signed in".into()))["code"], "not_signed_in");
+        assert_eq!(json(&AppError::Unauthorized("not signed in to the VibeSSH cloud backend".into()))["code"], "not_signed_in");
+        // Anything else authorisation-related keeps the coarse code.
+        assert_eq!(json(&AppError::Unauthorized("refresh token revoked".into()))["code"], "unauthorized");
     }
 }

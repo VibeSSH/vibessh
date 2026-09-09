@@ -751,7 +751,14 @@
     "ai_hosted_failed": "The model included with VibeSSH could not be used right now. This is a problem on the VibeSSH backend's side, not in your settings - try again later, or add your own API key in Settings to carry on now.",
     "pterodactyl_key_rejected": "The panel rejected the key. It has to be an Application API key from Admin -> API Credentials (it starts with ptla_), not a key from your own account page (ptlc_). Check too that the key has not been deleted.",
     "pterodactyl_key_forbidden": "The panel accepted the key but it has no permission for “{{resource}}”. An Application API key needs each resource ticked separately - go to Admin -> API Credentials and grant read access to Servers, Nodes and Databases.",
-    "database_socket_auth_only": "The MySQL account {{user}} authenticates through the local socket and accepts no password at all - the default for root on Debian and Ubuntu. No password will work here. Create a separate admin account with a password and point this database host at it."
+    "database_socket_auth_only": "The MySQL account {{user}} authenticates through the local socket and accepts no password at all - the default for root on Debian and Ubuntu. No password will work here. Create a separate admin account with a password and point this database host at it.",
+    "not_signed_in": "You are not signed in to the account backend. Sign in, or set its address in Settings.",
+    "unauthorized": "Not authorised: {{message}}",
+    "not_found": "Not found: {{message}}",
+    "invalid_input": "{{message}}",
+    "connection": "Connection problem: {{message}}",
+    "storage": "Storage problem: {{message}}",
+    "internal": "Something went wrong inside VibeSSH: {{message}}"
   },
   "fileEditor": {
     "backAria": "Back to file list",
