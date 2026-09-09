@@ -579,7 +579,8 @@
     "connectToHintHost": "{{host}} zostanie ustawiony na {{address}}, port {{port}} - to adres, pod którym ta baza jest osiągalna z wnętrza kontenera, a nie ten, na który jest skonfigurowana.",
     "localDockerMissing": "Docker nie działa na tym komputerze, więc lokalny kontener się nie uruchomi.",
     "localDockerGet": "Lokalne kontenery wymagają Docker Desktop, a on na Windowsie wymaga WSL2: uruchom `wsl --install` w PowerShellu jako administrator, zrestartuj komputer, potem zainstaluj Docker Desktop ze strony",
-    "localDockerAlternative": "Albo pomiń Dockera zupełnie: wybierz runtime Proces lokalny. VibeSSH sam pobierze odpowiednią Javę i uruchomi serwer bezpośrednio - nie ma czego instalować. Po instalacji Dockera zrestartuj VibeSSH, żeby zobaczył nową zmienną PATH."
+    "localDockerAlternative": "Albo pomiń Dockera zupełnie: wybierz runtime Proces lokalny. VibeSSH sam pobierze odpowiednią Javę i uruchomi serwer bezpośrednio - nie ma czego instalować. Po instalacji Dockera zrestartuj VibeSSH, żeby zobaczył nową zmienną PATH.",
+    "localRuntimeHint": "Proces lokalny uruchamia serwer bezpośrednio - VibeSSH sam pobiera potrzebną Javę i nie trzeba niczego instalować. Kontener Docker wymaga Docker Desktop, a ten na Windowsie wymaga WSL2 i restartu; wybierz go, jeśli chcesz aplikację odizolowaną w kontenerze."
   },
   "dashboard": {
     "title": "Panel",

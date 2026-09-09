@@ -17,3 +17,14 @@ export function getAppInfo(): Promise<AppInfo> {
 export function localDockerAvailable(): Promise<boolean> {
   return callCommand<boolean>("local_docker_available");
 }
+
+/**
+ * Where a local application's files should go by default.
+ *
+ * Resolved by the app rather than assembled here: only the Rust side knows
+ * the platform's data directory, and it comes back with the right separator
+ * already in it.
+ */
+export function localApplicationsRoot(): Promise<string> {
+  return callCommand<string>("local_applications_root");
+}

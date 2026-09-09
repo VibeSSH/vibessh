@@ -13,7 +13,7 @@ import { useModalDialog } from "@/hooks/useModalDialog";
 import { createApplication, detectJavaInstallations, listApplications, listPaperVersions, listPurpurVersions, listVelocityVersions, listWaterfallVersions } from "@/services/applicationService";
 import { installDocker, listServers, probeServerCapabilities, serverSummaryToManagedServer } from "@/services/serverService";
 import { listDatabaseHosts } from "@/services/databaseService";
-import { localDockerAvailable } from "@/services/appService";
+import { localApplicationsRoot, localDockerAvailable } from "@/services/appService";
 import type { DatabaseHost } from "@/types/database";
 import { reachableDatabaseAddress } from "@/utils/databaseAddress";
 import { useServersStore } from "@/stores/serversStore";
@@ -35,7 +35,7 @@ interface CreateApplicationWizardProps {
 const TOTAL_STEPS = 5;
 
 /** Runtime types a Local application can use vs a Remote one - `localProcess` needs no `RuntimeContext.connection`, the other three need one. Intersected with the chosen blueprint's own `supportedRuntimeTypes` to get the real, capability-driven options for a given step (never a hardcoded "always offer Docker" list - only `generic-docker` declares Docker support, so it's the only blueprint that offers it). */
-function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): RuntimeType[] {
+export function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): RuntimeType[] {
   // Docker is offered locally as well as remotely. It used to be remote-only,
   // not by design but because the Docker runtime spoke POSIX shell over SSH -
   // every invocation a `sudo docker ...` string. It now builds arguments and
@@ -44,7 +44,18 @@ function runtimeTypesForLocation(blueprint: Blueprint, isLocal: boolean): Runtim
   //
   // `localProcess` stays the other way round: it runs a program here, so it
   // has nothing to say about a remote Node.
-  return blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" || rt === "docker" : rt !== "localProcess"));
+  const usable = blueprint.supportedRuntimeTypes.filter((rt) => (isLocal ? rt === "localProcess" || rt === "docker" : rt !== "localProcess"));
+  if (!isLocal) return usable;
+  // Locally, the plain process comes first.
+  //
+  // Blueprints list Docker first because that is the runtime they were
+  // written for, and the list was shown in that order - so on Windows the
+  // option somebody reached for was the one that needs Docker Desktop, WSL2
+  // and a reboot, when the other one needs nothing at all and downloads its
+  // own Java. Ordering is the whole intervention: Docker stays available and
+  // stays chooseable, it just stops being the first thing offered on a
+  // machine where it is the harder of the two.
+  return [...usable].sort((a, b) => (a === "localProcess" ? -1 : b === "localProcess" ? 1 : 0));
 }
 
 /**
@@ -191,6 +202,8 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
    * Node-side check below draws between "no" and "not known yet".
    */
   const [localDocker, setLocalDocker] = useState<boolean | null>(null);
+  /** Where local applications go by default - see `localApplicationsRoot`. */
+  const [localRoot, setLocalRoot] = useState<string | null>(null);
   /** Prefixed, because the two kinds of target are answered differently: `app:<id>` or `host:<id>`. */
   const [connectToId, setConnectToId] = useState("");
   // Only ever the name being typed into the save box - null while it is shut.
@@ -241,6 +254,9 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
       .catch(() => undefined);
     localDockerAvailable()
       .then(setLocalDocker)
+      .catch(() => undefined);
+    localApplicationsRoot()
+      .then(setLocalRoot)
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -318,8 +334,18 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   // convention to suggest, so it's left for the placeholder text alone.
   useEffect(() => {
     if (workingDirectoryTouched) return;
-    setWorkingDirectory(isLocal ? "" : `/home/container/${slugify(name)}`);
-  }, [name, isLocal, workingDirectoryTouched]);
+    if (!isLocal) {
+      setWorkingDirectory(`/home/container/${slugify(name)}`);
+      return;
+    }
+    // Local used to be left empty, so the first thing anybody did on Windows
+    // was invent a path - and what people invent is the Desktop, which is
+    // where a server then writes its worlds and logs. The separator comes
+    // from the root itself rather than from a guess about the platform.
+    if (!localRoot) return;
+    const separator = localRoot.includes("\\") ? "\\" : "/";
+    setWorkingDirectory(`${localRoot}${separator}${slugify(name)}`);
+  }, [name, isLocal, workingDirectoryTouched, localRoot]);
 
   const selectedBlueprint = useMemo(() => blueprints.find((b) => b.id === blueprintId) ?? null, [blueprints, blueprintId]);
 
@@ -657,6 +683,11 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                       }))}
                     />
                   </label>
+                )}
+                {/* Only when both are on offer, which is only ever locally:
+                    on a Node there is nothing to weigh up. */}
+                {isLocal && availableRuntimeTypes.length > 1 && (
+                  <p className="form-note">{t("createApplicationWizard.localRuntimeHint")}</p>
                 )}
                 {selectedBlueprint && availableRuntimeTypes.length === 0 && (
                   <p className="form-note form-note-danger">{t("createApplicationWizard.noRuntimeForLocation")}</p>

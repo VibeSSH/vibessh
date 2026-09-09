@@ -575,7 +575,8 @@
     "connectToHintHost": "{{host}} is set to {{address}} on port {{port}} - the address this database is reachable at from inside a container, which is not the same as the address it is configured with.",
     "localDockerMissing": "Docker isn't running on this computer, so a local container cannot start.",
     "localDockerGet": "Local containers need Docker Desktop, and on Windows it needs WSL2: run `wsl --install` in an administrator PowerShell, restart the computer, then install Docker Desktop from",
-    "localDockerAlternative": "Or skip Docker entirely: pick the Local process runtime instead. VibeSSH downloads the right Java itself and runs the server directly - nothing to install. After installing Docker, restart VibeSSH so it picks up the new PATH."
+    "localDockerAlternative": "Or skip Docker entirely: pick the Local process runtime instead. VibeSSH downloads the right Java itself and runs the server directly - nothing to install. After installing Docker, restart VibeSSH so it picks up the new PATH.",
+    "localRuntimeHint": "Local process runs the server directly - VibeSSH downloads the Java it needs and nothing else has to be installed. Docker container needs Docker Desktop, which on Windows needs WSL2 and a restart; take it if you want the application isolated in a container."
   },
   "dashboard": {
     "title": "Dashboard",
