@@ -242,13 +242,24 @@
 }
 
 /* Glass card surface - the "premium" card treatment used for server rows.
-   Ported from Voltius's BaseCard/GLASS_BG (voltius/src/components/shared/BaseCard.tsx). */
+   Ported from Voltius's BaseCard/GLASS_BG (voltius/src/components/shared/BaseCard.tsx).
+
+   No `backdrop-filter` here, though the treatment it was ported from had one.
+   What sits behind these cards is `body`, and `body` is a single flat colour
+   with no image and no gradient - blurring it returns the same colour it was.
+   The only part of `blur(12px) saturate(1.5)` that changed a pixel was the
+   saturate, and only through the 32% of backdrop this surface lets through:
+   #162038 with the filter against #172036 without, a difference of two units
+   in one channel.
+
+   That nothing was worth a great deal. WebKitGTK composites `backdrop-filter`
+   far more expensively than Chromium does, and the cost is per card - a node
+   list of any length multiplied it. A person on Fedora reported an interface
+   at roughly five frames per second; this was half of why. */
 .surface-glass {
   background:
     linear-gradient(140deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 100%),
     color-mix(in srgb, var(--t-bg-card) 68%, transparent);
-  backdrop-filter: blur(12px) saturate(1.5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
   box-shadow: var(--t-ring), var(--t-elev-1), var(--t-highlight);
   transition: background 150ms ease, box-shadow 150ms ease;
 }
