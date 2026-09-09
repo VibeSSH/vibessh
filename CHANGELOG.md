@@ -6,6 +6,45 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.7
+
+### Fixed
+
+- **On Linux the interface was drawing every frame on the CPU.** Someone on
+  Fedora with a Ryzen 5600G and a Radeon RX 570 reported an interface running
+  at something like five frames per second, while the task manager showed the
+  process using nothing - because nothing on the CPU was the bottleneck. Two
+  causes, both ours. VibeSSH turned WebKitGTK's accelerated renderer off on
+  *every* Linux machine, to avoid a crash that belongs to NVIDIA's driver; it
+  now looks for NVIDIA's kernel module and does that only there. And every
+  server card carried a blur of the background behind it - a background which
+  is one flat colour, so the blur returned the colour it started with and cost
+  a great deal per card to do it.
+- **Error messages arrive in your language.** The six error codes almost
+  everything is reported through had no translation, so a Polish interface
+  showed sentences like "unauthorized: not signed in to the VibeSSH cloud
+  backend". They are translated now, and not being signed in has a sentence of
+  its own that says what to do about it.
+- **Accounts being off no longer reads as accounts being broken.** Settings
+  painted the untouched default backend address in red and said signing in
+  would fail. For somebody using VibeSSH alone that is a warning about
+  nothing - nodes, applications, files and the terminal need no account at
+  all. The warning now appears in the sign-in dialog, above the fields, rather
+  than in Settings and after a failed attempt.
+
+### Changed
+
+- **Creating an application on this computer offers the runtime that needs
+  nothing first.** The wizard listed Docker first, because that is what
+  blueprints are written for - so the option people reached for on their own
+  Windows machine was the one needing Docker Desktop, WSL2 and a restart,
+  rather than the one beside it that installs nothing and downloads its own
+  Java. Docker is still there and still selectable.
+- **A local application suggests where to put its files.** The field was empty
+  and required, so the first thing anybody did was invent a path, and what
+  they invented was the Desktop - which then held a server's worlds and logs.
+  It now suggests a directory inside the app's own data folder.
+
 ## 0.1.0-beta.6
 
 ### Fixed
