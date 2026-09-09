@@ -4,7 +4,7 @@ import { queryKeys } from "@/services/queryKeys";
 import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/utils/copyToClipboard";
-import { formatReachableDatabaseAddress, isLoopback } from "@/utils/databaseAddress";
+import { formatReachableDatabaseAddress, isLoopback, reachableDatabaseAddress } from "@/utils/databaseAddress";
 import { open } from "@tauri-apps/plugin-shell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -330,7 +330,16 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
                 <SkeletonRows />
               ) : (
                 <>
-                  <CredentialRow label={t("databasesTab.credHost")} value={hostAddressFor(revealingDatabase, hosts, t)} />
+                  {(() => {
+                    const address = connectionAddressFor(revealingDatabase, hosts, t);
+                    return (
+                      <>
+                        <CredentialRow label={t("databasesTab.credHost")} value={address.host} />
+                        <CredentialRow label={t("databasesTab.credPort")} value={address.port} />
+                        <CredentialRow label={t("databasesTab.credAddress")} value={address.combined} />
+                      </>
+                    );
+                  })()}
                   <CredentialRow label={t("databasesTab.credDatabase")} value={revealingDatabase.databaseName} />
                   <CredentialRow label={t("databasesTab.credUser")} value={revealingDatabase.username} />
                   {revealedPassword !== null && <CredentialRow label={t("databasesTab.credPassword")} value={revealedPassword} />}
@@ -344,9 +353,30 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   );
 }
 
-function hostAddressFor(database: ApplicationDatabase, hosts: DatabaseHost[], t: (key: string) => string): string {
+/**
+ * The three shapes a connection detail is asked for, rather than the one.
+ *
+ * This used to offer a single field labelled "Host" holding
+ * `host.docker.internal:3307` - the two facts glued together, because that
+ * is what reads well in a list. People copy from here into configuration,
+ * and configuration disagrees about which shape it wants: a plugin's
+ * `address` takes them joined, a `MYSQL_HOST` variable beside a
+ * `MYSQL_PORT` takes them apart. Handing over the joined value under the
+ * label "Host" chose the wrong one for half of them, silently, and the
+ * failure lands much later as a socket that will not open.
+ */
+export function connectionAddressFor(
+  database: ApplicationDatabase,
+  hosts: DatabaseHost[],
+  t: (key: string) => string,
+): { host: string; port: string; combined: string } {
   const host = hosts.find((h) => h.id === database.databaseHostId);
-  return host ? formatReachableDatabaseAddress(host) : t("databasesTab.unknownHost");
+  if (!host) {
+    const unknown = t("databasesTab.unknownHost");
+    return { host: unknown, port: unknown, combined: unknown };
+  }
+  const address = reachableDatabaseAddress(host);
+  return { host: address.host, port: String(address.port), combined: formatReachableDatabaseAddress(host) };
 }
 
 interface CredentialRowProps {

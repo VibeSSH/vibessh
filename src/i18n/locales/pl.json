@@ -624,6 +624,7 @@
   },
   "databaseHosts": {
     "title": "Hosty baz danych",
+    "addressNote": "Host i port mówią tylko, gdzie VibeSSH ma szukać tej bazy. Nie przestawiają serwera - jeśli wpiszesz tu inny port, MariaDB dalej nasłuchuje tam, gdzie nasłuchiwała, a aplikacje przestaną się do niej łączyć. Port zmienia się w konfiguracji samego serwera, a potem trzeba użyć akcji „Napraw dostęp z kontenerów”, bo reguła firewalla wpuszczająca kontenery ma port wpisany na stałe.",
     "subtitle": "Silniki MySQL/MariaDB, na których VibeSSH może tworzyć bazy danych dla aplikacji.",
     "addHost": "Dodaj host",
     "loadError": "Nie udało się wczytać hostów baz danych.",
@@ -675,6 +676,8 @@
     "resetError": "Nie udało się zresetować hasła.",
     "credentialsTitle": "Dane dostępowe - {{name}}",
     "credHost": "Host",
+    "credPort": "Port",
+    "credAddress": "Adres (host i port razem)",
     "credDatabase": "Baza danych",
     "credUser": "Użytkownik",
     "credPassword": "Hasło",

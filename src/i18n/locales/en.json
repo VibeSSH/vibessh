@@ -620,6 +620,7 @@
   },
   "databaseHosts": {
     "title": "Database Hosts",
+    "addressNote": "The host and port only say where VibeSSH should look for this database. They do not reconfigure the server - enter a different port here and MariaDB keeps listening where it was, while applications stop being able to reach it. The port is changed in the server's own configuration, and after that use the \"Fix container access\" action, because the firewall rule that lets containers in names the port.",
     "subtitle": "MySQL/MariaDB engines VibeSSH can provision application databases on.",
     "addHost": "Add host",
     "loadError": "Couldn't load database hosts.",
@@ -671,6 +672,8 @@
     "resetError": "Couldn't reset the password.",
     "credentialsTitle": "Connection details - {{name}}",
     "credHost": "Host",
+    "credPort": "Port",
+    "credAddress": "Address (host and port together)",
     "credDatabase": "Database",
     "credUser": "User",
     "credPassword": "Password",

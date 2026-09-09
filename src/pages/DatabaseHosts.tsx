@@ -363,6 +363,11 @@ function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormM
                 <input className="form-input" type="number" min={1} max={65535} value={port} onChange={(e) => setPort(e.target.value)} placeholder="3306" />
               </label>
             </div>
+            {/* Somebody read "Port" as the port their database runs on, changed
+                it to 3307, and spent an evening on a plugin that could no
+                longer open a socket. `update_database_host` isn't even async -
+                it writes this row and touches nothing on the Node. */}
+            <p className="form-note">{t("databaseHosts.addressNote")}</p>
             <div className="form-row">
               <label className="form-field">
                 <span className="form-label">{t("databaseHosts.adminUsername")}</span>
