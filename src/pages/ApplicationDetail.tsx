@@ -690,7 +690,7 @@ export function ApplicationDetail() {
                   directly after the blueprint fields and before the health
                   check and limits, which watch the result rather than
                   decide it. */}
-              {features.includes("environment") && <EnvironmentTab application={application} onSaved={reload} />}
+              {features.includes("environment") && <EnvironmentTab application={application} blueprint={blueprint} onSaved={reload} />}
 
               {application.runtimeType === "docker" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
 

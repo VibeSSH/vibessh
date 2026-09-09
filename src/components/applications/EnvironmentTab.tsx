@@ -9,7 +9,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { recreateApplication, refreshApplicationStatus, setApplicationEnvironment } from "@/services/applicationService";
-import type { ApplicationDetail, EnvironmentVariable } from "@/types/application";
+import type { ApplicationDetail, Blueprint, EnvironmentVariable } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
@@ -38,16 +38,43 @@ async function recreateIfRunningDocker(application: ApplicationDetail) {
 
 interface EnvironmentTabProps {
   application: ApplicationDetail;
+  /** Only for the note below - `null` while it loads, and absent for a
+   *  blueprint that points at nothing, which is most of them. */
+  blueprint?: Blueprint | null;
   onSaved: () => void;
 }
 
-export function EnvironmentTab({ application, onSaved }: EnvironmentTabProps) {
+/**
+ * Explains the two variables nobody typed.
+ *
+ * A blueprint that `connectsTo` another application has its host and port
+ * written here once, when the application is created, from whichever target
+ * was picked in the wizard. Nothing updates them afterwards, and the port is
+ * the one the target listens on *inside its own container* - so somebody who
+ * publishes their MariaDB on 3307 and comes here expecting `PMA_PORT` to have
+ * followed is looking at a value that is both unchanged and correct. That was
+ * reported as a bug, which is fair: the interface said nothing either way.
+ *
+ * Driven by the blueprint's own declaration rather than by naming phpMyAdmin,
+ * so the next blueprint that points at a sibling service explains itself for
+ * free.
+ */
+export function connectionNote(application: ApplicationDetail, blueprint: Blueprint | null | undefined): { host: string; port: string } | null {
+  const connection = blueprint?.connectsTo;
+  if (!connection) return null;
+  const present = (key: string) => application.environment.some((row) => row.key === key);
+  if (!present(connection.hostEnv) && !present(connection.portEnv)) return null;
+  return { host: connection.hostEnv, port: connection.portEnv };
+}
+
+export function EnvironmentTab({ application, blueprint, onSaved }: EnvironmentTabProps) {
   const { t } = useTranslation();
   const [formOpen, setFormOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const connection = connectionNote(application, blueprint);
 
   async function persist(next: EnvironmentVariable[]) {
     setBusy(true);
@@ -96,6 +123,8 @@ export function EnvironmentTab({ application, onSaved }: EnvironmentTabProps) {
       </div>
 
       {error && <p className="page-error-note">{error}</p>}
+
+      {connection && <p className="form-note">{t("applicationDetail.connectionEnvNote", { host: connection.host, port: connection.port })}</p>}
 
       <Card>
         {busy ? (

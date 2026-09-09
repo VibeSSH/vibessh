@@ -212,6 +212,7 @@
     "notRunning": "Nie działa - zużycie zasobów pojawi się po uruchomieniu.",
     "environmentEmpty": "Brak ustawionych zmiennych środowiskowych.",
     "environmentEmptyTitle": "Brak zmiennych",
+    "connectionEnvNote": "{{host}} i {{port}} zostały wpisane przy tworzeniu tej aplikacji, na podstawie bazy wybranej wtedy w kreatorze. Port jest tym, na którym baza słucha wewnątrz swojego kontenera, a nie tym, który publikuje na zewnątrz - zmiana portu na zakładce Porty tamtej aplikacji nic tu nie zmienia i nie powinna. Popraw go tylko wtedy, gdy sam serwer bazy nasłuchuje na innym porcie.",
     "addEnvVar": "Dodaj zmienną",
     "editEnvVar": "Edytuj zmienną",
     "envKey": "Klucz",

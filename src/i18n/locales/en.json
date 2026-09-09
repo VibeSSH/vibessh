@@ -212,6 +212,7 @@
     "notRunning": "Not running - resource usage shows once it's started.",
     "environmentEmpty": "No environment variables set.",
     "environmentEmptyTitle": "No variables",
+    "connectionEnvNote": "{{host}} and {{port}} were filled in when this application was created, from the database picked in the wizard. The port is the one that database listens on inside its own container, not the one it publishes - changing the port on that application's Ports tab does not change this, and should not. Correct it only if the database server itself listens on a different port.",
     "addEnvVar": "Add variable",
     "editEnvVar": "Edit variable",
     "envKey": "Key",
