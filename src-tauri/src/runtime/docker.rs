@@ -1143,7 +1143,8 @@ impl ApplicationRuntime for DockerRuntime {
         match ctx.connection.clone() {
             Some(connection) => {
                 let fifo_path = console_fifo_path(ctx.application.id);
-                Ok(Some(Box::new(DockerConsole { connection, fifo_path })))
+                let attach_script = build_attach_script(ctx, &container_name(ctx.application.id))?;
+                Ok(Some(Box::new(DockerConsole { connection, fifo_path, attach_script })))
             }
             None => {
                 let name = container_name(ctx.application.id);
@@ -1215,6 +1216,41 @@ impl ApplicationConsole for LocalDockerConsole {
     }
 }
 
+/// The shell command that puts one line into the console fifo.
+///
+/// Split out because it is a shell program built by interpolation, and one
+/// of the things interpolated is whatever somebody typed into a console box.
+/// It is quoted twice on purpose - once for `printf`'s own argument, once
+/// for the `sh -c` that `timeout` needs in order to bound a redirect - and
+/// getting that wrong is a remote shell, not a cosmetic bug.
+fn console_write_command(fifo_path: &str, input: &str) -> String {
+    let write = format!("printf '%s\n' {} >> {}", shell_quote(input), shell_quote(fifo_path));
+    format!("timeout {CONSOLE_WRITE_TIMEOUT_SECONDS} sh -c {}", shell_quote(&write))
+}
+
+impl DockerConsole {
+    /// One bounded attempt. `Ok(false)` means the write timed out, which for
+    /// a fifo means one thing only: nothing had it open for reading.
+    ///
+    /// A redirect rather than the `tee` this used to pipe into - one process
+    /// under `timeout` rather than a pipeline whose second half outlives the
+    /// signal sent to the first, holding the fifo open on its way out.
+    /// No `sudo` either way: the fifo lives in a directory owned by the
+    /// connecting admin (see `build_attach_script`).
+    async fn write_once(&self, input: &str) -> AppResult<bool> {
+        let output = self.connection.execute_command(&console_write_command(&self.fifo_path, input)).await?;
+        match output.exit_code {
+            0 => Ok(true),
+            TIMED_OUT => Ok(false),
+            _ => {
+                let detail = output.stderr.trim();
+                let detail = if detail.is_empty() { "couldn't write to the application's console" } else { detail };
+                Err(AppError::Connection(detail.to_string()))
+            }
+        }
+    }
+}
+
 /// Writes into `attach_console_fifo`'s named pipe - a plain one-off SSH exec
 /// per message, same shape as `RemoteConsole::write`, since the actual
 /// long-lived connection to the container's stdin is the background
@@ -1222,7 +1258,24 @@ impl ApplicationConsole for LocalDockerConsole {
 struct DockerConsole {
     connection: Arc<SshSession>,
     fifo_path: String,
+    /// Re-runs `attach_console_fifo`'s work when the pipe turns out to have
+    /// no reader. Built here rather than looked up later because it needs the
+    /// `RuntimeContext`, which only `console()` has.
+    attach_script: String,
 }
+
+/// How long a console write waits for the container to be listening.
+///
+/// Opening a fifo for writing blocks until something opens it for reading -
+/// that is what a fifo is. So a `docker attach` that has died takes the write
+/// with it, forever, and the command sits in the box looking like it was
+/// never sent. Long enough that a busy Node is not mistaken for a dead
+/// attach; short enough that nobody wonders whether the button works.
+const CONSOLE_WRITE_TIMEOUT_SECONDS: u8 = 5;
+
+/// `timeout`'s own exit code for "the command was still running". Anything
+/// else came from the command itself.
+const TIMED_OUT: i32 = 124;
 
 #[async_trait::async_trait]
 impl ApplicationConsole for DockerConsole {
@@ -1237,19 +1290,29 @@ impl ApplicationConsole for DockerConsole {
         // mode doesn't guarantee. `sudo` sidesteps the ownership question
         // entirely, same as every other cross-user write this module
         // already does.
-        let output = self
-            .connection
-            // No `sudo`: the fifo now lives in a directory owned by the
-            // connecting admin (see `build_attach_script`), so writing to
-            // it needs no privilege at all.
-            .execute_command(&format!("printf '%s\\n' {} | tee -a {} >/dev/null", shell_quote(input), shell_quote(&self.fifo_path)))
-            .await?;
+        if self.write_once(input).await? {
+            return Ok(());
+        }
+
+        // Nothing is reading the pipe, so the `docker attach` behind it is
+        // gone. It is tied to one running instance of the container, and a
+        // restart - Docker's own restart policy after a crash, or a start
+        // from anywhere but VibeSSH - leaves the fifo with no reader and no
+        // step that ever notices. Reattaching here is the difference between
+        // a console that recovers and one that has to be explained.
+        let output = self.connection.execute_command(&self.attach_script).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
-            let detail = if detail.is_empty() { "couldn't write to the application's console".to_string() } else { detail.to_string() };
-            return Err(AppError::Connection(detail));
+            let detail = if detail.is_empty() { "couldn't reattach the application's console" } else { detail };
+            return Err(AppError::Connection(detail.to_string()));
         }
-        Ok(())
+
+        if self.write_once(input).await? {
+            return Ok(());
+        }
+        Err(AppError::Connection(
+            "the application isn't reading its console - it was started without an interactive stdin, which only a Recreate can change".into(),
+        ))
     }
 
     fn close(&self) {
@@ -1290,6 +1353,73 @@ impl LogProvider for DockerLogs {
 
 #[cfg(test)]
 mod tests {
+
+    /// What a console write actually runs.
+    ///
+    /// A command typed into an application's console box sat there doing
+    /// nothing: opening a fifo for writing blocks until something opens it
+    /// for reading, and the `docker attach` that was reading had died with a
+    /// container restart. The write had no bound on it, so it waited forever
+    /// and the interface had nothing to say.
+    mod console_write {
+        use super::super::{console_write_command, CONSOLE_WRITE_TIMEOUT_SECONDS};
+
+        #[test]
+        fn is_bounded_so_a_dead_attach_cannot_hang_the_interface() {
+            let command = console_write_command("/tmp/vibessh/console.fifo", "stop");
+
+            assert!(command.starts_with(&format!("timeout {CONSOLE_WRITE_TIMEOUT_SECONDS} ")), "{command}");
+        }
+
+        /// The input is whatever somebody typed into a box, and it reaches a
+        /// remote shell through two levels of quoting. Run for real rather
+        /// than pattern-matched: the only convincing evidence is the bytes
+        /// that come out the other end.
+        ///
+        /// Skipped where no POSIX shell is on PATH - a plain Windows box is
+        /// not a defect in the command.
+        #[test]
+        fn a_console_line_full_of_shell_metacharacters_arrives_verbatim() {
+            let target = std::env::temp_dir().join(format!("vibessh-console-{}.txt", uuid::Uuid::new_v4()));
+            let nasty = r#"lp user CrispiDEV parent add 'mod'; touch /tmp/pwned $(id) `id` "x""#;
+            let command = console_write_command(&target.to_string_lossy(), nasty);
+
+            let run = std::process::Command::new("sh").arg("-c").arg(&command).output();
+            let Ok(output) = run else {
+                eprintln!("no POSIX shell on PATH - skipped");
+                return;
+            };
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+            let written = std::fs::read_to_string(&target).unwrap();
+            let _ = std::fs::remove_file(&target);
+            assert_eq!(written, format!("{nasty}
+"), "the line must arrive exactly as typed, and nothing else must run");
+            assert!(!std::path::Path::new("/tmp/pwned").exists(), "the injected command ran");
+        }
+
+        /// Appended, not overwritten: the fifo is a stream somebody else is
+        /// reading, and a second command must not begin by discarding the
+        /// first.
+        #[test]
+        fn a_second_line_joins_the_first() {
+            let target = std::env::temp_dir().join(format!("vibessh-console-{}.txt", uuid::Uuid::new_v4()));
+            for line in ["first", "second"] {
+                let command = console_write_command(&target.to_string_lossy(), line);
+                let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&command).output() else {
+                    eprintln!("no POSIX shell on PATH - skipped");
+                    return;
+                };
+                assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            }
+
+            let written = std::fs::read_to_string(&target).unwrap();
+            let _ = std::fs::remove_file(&target);
+            assert_eq!(written, "first
+second
+");
+        }
+    }
     use super::*;
     use crate::models::{ApplicationPort, HealthCheckType, RuntimeType};
 
