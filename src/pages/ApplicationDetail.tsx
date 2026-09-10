@@ -178,6 +178,32 @@ export function ApplicationDetail() {
   // buttons act on the id in the URL, so a stale "Running" under a tab you
   // have already switched away from invites stopping the wrong server.
   const knownName = useApplicationTabsStore((state) => state.tabs.find((tab) => tab.id === id)?.name);
+  const rememberedTab = useApplicationTabsStore((state) => state.tabs.find((tab) => tab.id === id)?.lastTab);
+  const rememberTab = useApplicationTabsStore((state) => state.rememberTab);
+
+  /**
+   * Arriving with no tab in the address lands where this Application was
+   * left, not on Overview.
+   *
+   * The strip's own links carry an id and nothing else, so every hop between
+   * two Applications used to reset the view - which is the complaint: copying
+   * a value from one into the other meant walking the same three clicks back
+   * every trip.
+   *
+   * Written into the address rather than held beside it, so everything the
+   * URL already buys stays true: the back button, a reload, a link to a tab,
+   * a screenshot pointed at one. `replace`, because a restored tab is where
+   * you already were, not a place you navigated to.
+   */
+  useEffect(() => {
+    if (requestedTab !== null) return;
+    if (!rememberedTab || !TABS.includes(rememberedTab as Tab) || rememberedTab === "overview") return;
+    setSearchParams({ tab: rememberedTab }, { replace: true });
+  }, [requestedTab, rememberedTab, setSearchParams]);
+
+  useEffect(() => {
+    if (id) rememberTab(id, tab);
+  }, [id, tab, rememberTab]);
   useEffect(() => {
     if (id && application) openTab({ id, name: application.name });
   }, [id, application, openTab]);

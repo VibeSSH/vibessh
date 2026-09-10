@@ -16,6 +16,21 @@ import { create } from "zustand";
 export interface ApplicationTab {
   id: string;
   name: string;
+  /**
+   * Which tab inside the Application was last looked at - "logs", "ports",
+   * and so on.
+   *
+   * Switching between two Applications used to land on Overview every time,
+   * so comparing a port against a port, or copying a database's details into
+   * another Application's environment, meant re-walking the same three clicks
+   * on every trip. The strip exists to make going back and forth one click;
+   * this is what makes that click arrive where you left off.
+   *
+   * A plain `string`: which tabs exist is `ApplicationDetail`'s business, and
+   * this store has no reason to know the list or to be edited whenever it
+   * changes. The page validates it against its own before using it.
+   */
+  lastTab?: string;
 }
 
 const STORED = "vibessh.applicationTabs";
@@ -40,7 +55,11 @@ function load(): ApplicationTab[] {
       .filter((entry): entry is ApplicationTab => {
         return typeof entry === "object" && entry !== null && typeof (entry as ApplicationTab).id === "string";
       })
-      .map((entry) => ({ id: entry.id, name: typeof entry.name === "string" ? entry.name : entry.id }))
+      .map((entry) => ({
+        id: entry.id,
+        name: typeof entry.name === "string" ? entry.name : entry.id,
+        lastTab: typeof entry.lastTab === "string" ? entry.lastTab : undefined,
+      }))
       .slice(0, MAX_TABS);
   } catch {
     // Private browsing, cleared storage, or a value this version cannot
@@ -61,6 +80,8 @@ interface ApplicationTabsState {
   tabs: ApplicationTab[];
   /** Opening one that is already open renames it rather than duplicating it. */
   open: (tab: ApplicationTab) => void;
+  /** Records which tab inside the Application is open, for the next visit. */
+  rememberTab: (id: string, lastTab: string) => void;
   close: (id: string) => void;
   closeAll: () => void;
 }
@@ -73,9 +94,22 @@ export const useApplicationTabsStore = create<ApplicationTabsState>((set) => ({
       const existing = state.tabs.find((candidate) => candidate.id === tab.id);
       // A rename is worth picking up - the strip is the only place the name
       // is shown once you are inside the Application.
+      // A rename must not forget where somebody was: `open` runs on every
+      // visit, carrying only an id and a name.
       const tabs = existing
         ? state.tabs.map((candidate) => (candidate.id === tab.id ? { ...candidate, name: tab.name } : candidate))
         : [...state.tabs, tab].slice(-MAX_TABS);
+      save(tabs);
+      return { tabs };
+    }),
+
+  rememberTab: (id, lastTab) =>
+    set((state) => {
+      const existing = state.tabs.find((tab) => tab.id === id);
+      // Unchanged, or an Application not in the strip at all: return the same
+      // object so nothing subscribed to this store re-renders.
+      if (!existing || existing.lastTab === lastTab) return state;
+      const tabs = state.tabs.map((tab) => (tab.id === id ? { ...tab, lastTab } : tab));
       save(tabs);
       return { tabs };
     }),
