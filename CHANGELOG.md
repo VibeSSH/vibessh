@@ -6,6 +6,43 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.8
+
+### New
+
+- **The Logs tab can go back to the beginning.** Five hundred lines of a
+  server that has just fallen over is a long way to drag a scrollbar, and the
+  line that explains it is usually the first one rather than the last. Both
+  ends are one press now.
+- **Clearing the logs keeps a copy.** The history VibeSSH captures survives
+  restarts and container recreates - which is the point of it, and also why it
+  grows past the part anybody wants to read. Clearing it puts the whole thing
+  in an `archive/` file first and tells you where. What it cannot clear is the
+  container's own buffer: those lines come back on the next refresh, and the
+  dialog says so rather than leaving you to think the button is broken.
+- **Host and port can be copied separately.** The connection details for an
+  application's database offered one field, labelled "Host", holding
+  `host.docker.internal:3307` - the two glued together. Pasted into a
+  `MYSQL_HOST` that has a `MYSQL_PORT` beside it, that is a port inside a
+  hostname and a connection that never opens. All three shapes are offered
+  now, each labelled for what it is.
+
+### Fixed
+
+- **The database host's port field says what it does not do.** It records
+  where VibeSSH should connect - it does not move the server. Entering a port
+  MariaDB is not listening on quietly broke every application that reached it,
+  with nothing said anywhere. There is now a note under the field, including
+  the part people find out the hard way: changing the server's real port needs
+  **Fix container access** afterwards, because the firewall rule that lets
+  containers in has the port written into it.
+- **`PMA_HOST` and `PMA_PORT` explain themselves.** They are filled in once,
+  when phpMyAdmin is created, from the database picked in the wizard - and the
+  port is the one that database listens on *inside its own container*, not the
+  one it publishes. Somebody published theirs on a different port, expected
+  these to follow, and recreated the container when they did not. They were
+  right to ask; nothing said either way.
+
 ## 0.1.0-beta.7
 
 ### Fixed
