@@ -149,6 +149,53 @@ impl LogCaptureStore {
         Ok(())
     }
 
+    /// Puts this Application's captured history aside and starts a new one.
+    ///
+    /// The history is what grows: it survives restarts, recreates and
+    /// reconnections, and on a chatty Application it reaches thousands of
+    /// lines that nobody wants to scroll past to reach today's failure. This
+    /// empties it - and keeps every line, in `archive/`, because a log
+    /// somebody deletes is usually a log somebody wants ten minutes later.
+    ///
+    /// **A rename, not a copy.** It is atomic, costs nothing on a two-megabyte
+    /// file, and cannot leave a half-written duplicate behind if the disk
+    /// fills or the app is closed mid-write. `archive/` is inside the same
+    /// directory precisely so the rename stays within one filesystem.
+    ///
+    /// **What this cannot clear** is the runtime's own buffer. `docker logs`
+    /// still holds whatever the container has written, and the next poll will
+    /// capture it again - erasing that means truncating a file under
+    /// `/var/lib/docker` as root, which is not this store's business. So the
+    /// tab refills with the container's current tail rather than staying
+    /// empty, and the caller says so before doing it.
+    ///
+    /// `Ok(None)` when there was nothing captured - no file, or an empty one.
+    /// Nothing is written in that case, so an accidental second press does not
+    /// litter `archive/` with empty files.
+    pub async fn archive_and_clear(&self, application_id: Uuid) -> AppResult<Option<PathBuf>> {
+        let lock = self.lock_for(application_id).await;
+        let _guard = lock.lock().await;
+
+        let path = self.path_for(application_id);
+        let has_content = tokio::fs::metadata(&path).await.map(|meta| meta.len() > 0).unwrap_or(false);
+        if !has_content {
+            return Ok(None);
+        }
+
+        let archive_dir = self.dir.join("archive");
+        tokio::fs::create_dir_all(&archive_dir)
+            .await
+            .map_err(|err| AppError::Storage(format!("failed to create the log archive directory: {err}")))?;
+
+        let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        let destination = archive_dir.join(format!("{application_id}-{stamp}.log"));
+        tokio::fs::rename(&path, &destination)
+            .await
+            .map_err(|err| AppError::Storage(format!("failed to archive the captured logs: {err}")))?;
+
+        Ok(Some(destination))
+    }
+
     pub async fn delete(&self, application_id: Uuid) {
         let lock = self.lock_for(application_id).await;
         let _guard = lock.lock().await;
@@ -172,6 +219,64 @@ mod tests {
 
     fn lines(values: &[&str]) -> Vec<String> {
         values.iter().map(|v| v.to_string()).collect()
+    }
+
+    /// Clearing a log is the one operation here that destroys something, so
+    /// what it keeps matters more than what it removes.
+    #[tokio::test]
+    async fn clearing_keeps_every_line_in_the_archive() {
+        let store = temp_store();
+        let id = Uuid::new_v4();
+        store.append(id, &lines(&["first", "second", "third"])).await.unwrap();
+
+        let archived = store.archive_and_clear(id).await.unwrap().expect("a captured log is archived");
+
+        assert_eq!(store.tail(id, 100).await.unwrap(), Vec::<String>::new(), "the live history is empty afterwards");
+        let kept = tokio::fs::read_to_string(&archived).await.unwrap();
+        assert_eq!(kept.lines().collect::<Vec<_>>(), vec!["first", "second", "third"]);
+    }
+
+    /// The Application keeps running, and the next poll appends to a file that
+    /// is no longer there. It has to come back rather than error.
+    #[tokio::test]
+    async fn capturing_continues_after_a_clear() {
+        let store = temp_store();
+        let id = Uuid::new_v4();
+        store.append(id, &lines(&["before"])).await.unwrap();
+        store.archive_and_clear(id).await.unwrap();
+
+        store.append(id, &lines(&["after"])).await.unwrap();
+
+        assert_eq!(store.tail(id, 100).await.unwrap(), lines(&["after"]));
+    }
+
+    /// Pressing it twice, or on an Application that has never said anything,
+    /// must not fill the archive with empty files.
+    #[tokio::test]
+    async fn clearing_nothing_archives_nothing() {
+        let store = temp_store();
+        let id = Uuid::new_v4();
+
+        assert!(store.archive_and_clear(id).await.unwrap().is_none(), "an application with no captured log");
+
+        store.append(id, &lines(&["one"])).await.unwrap();
+        assert!(store.archive_and_clear(id).await.unwrap().is_some());
+        assert!(store.archive_and_clear(id).await.unwrap().is_none(), "a second press with nothing new");
+    }
+
+    /// One Application's clear is not another's - they share a directory and
+    /// differ only by the id in the filename.
+    #[tokio::test]
+    async fn clearing_one_application_leaves_the_others_alone() {
+        let store = temp_store();
+        let cleared = Uuid::new_v4();
+        let untouched = Uuid::new_v4();
+        store.append(cleared, &lines(&["mine"])).await.unwrap();
+        store.append(untouched, &lines(&["theirs"])).await.unwrap();
+
+        store.archive_and_clear(cleared).await.unwrap();
+
+        assert_eq!(store.tail(untouched, 100).await.unwrap(), lines(&["theirs"]));
     }
 
     #[tokio::test]

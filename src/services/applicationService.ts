@@ -149,6 +149,18 @@ export function getApplicationLogs(id: string, maxLines: number): Promise<string
   return callCommand<string[]>("get_application_logs", { id, maxLines });
 }
 
+/**
+ * Empties the log history VibeSSH keeps for this application, after putting a
+ * copy aside. Answers with where that copy went, or `null` when there was
+ * nothing captured to keep.
+ *
+ * The tab does not go quiet: whatever the runtime itself still holds is
+ * captured again on the next fetch. See the Rust `archive_and_clear`.
+ */
+export function clearApplicationLogs(id: string): Promise<string | null> {
+  return callCommand<string | null>("clear_application_logs", { id });
+}
+
 /** Sends one line to the application's stdin/console - rejects with a clear message when the runtime has no console at all, or reports it as read-only (see `runtime::ApplicationConsole`'s own doc comment for both cases). */
 /**
  * Sends one command to the server inside an application and returns what it

@@ -107,6 +107,20 @@ pub async fn application_logs(
     log_capture.tail(id, max_lines).await
 }
 
+/// Empties this Application's captured log history, keeping a copy.
+///
+/// Returns where the copy went, or `None` when there was nothing to keep.
+///
+/// The Logs tab does not go quiet afterwards: the runtime still holds its own
+/// buffer - `docker logs` on a container nobody recreated is unchanged by
+/// this - and the next fetch captures it again. What goes is the history
+/// accumulated across restarts and recreates, which is the part that grows
+/// without limit and the part somebody clearing logs is actually looking at.
+pub async fn clear_application_logs(log_capture: &LogCaptureStore, id: Uuid) -> AppResult<Option<String>> {
+    let archived = log_capture.archive_and_clear(id).await?;
+    Ok(archived.map(|path| path.to_string_lossy().into_owned()))
+}
+
 /// How many already-captured lines are used to locate the overlap.
 ///
 /// One line is not enough, which is what the previous implementation used.

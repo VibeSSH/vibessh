@@ -232,6 +232,7 @@ pub fn run() {
             commands::application_commands::change_application_blueprint,
             commands::application_commands::run_application_command,
             commands::application_commands::update_application_config,
+            commands::application_commands::clear_application_logs,
             commands::application_commands::follow_application_logs,
             commands::application_commands::stop_following_application_logs,
             commands::application_backup_commands::list_application_backups,

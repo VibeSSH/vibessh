@@ -1,5 +1,5 @@
 import { TabUnderline } from "@/components/ui/TabUnderline";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,7 @@ import { PortsTab } from "@/components/applications/PortsTab";
 import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
 import {
   getApplication,
+  clearApplicationLogs,
   getApplicationLogs,
   getApplicationResourceUsage,
   killApplication,
@@ -129,12 +130,19 @@ export function ApplicationDetail() {
   const [logs, setLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
+  /** The scrolling element itself, so "go to the beginning" can act on it -
+   *  500 lines of a crashed server's output is a long way to drag a
+   *  scrollbar, and the answer is nearly always at the top of them. */
+  const logsRef = useRef<HTMLPreElement>(null);
+  const [clearingLogs, setClearingLogs] = useState(false);
+  const [clearLogsBusy, setClearLogsBusy] = useState(false);
 
   const [migrateOpen, setMigrateOpen] = useState(false);
   const [migrateTargetServerId, setMigrateTargetServerId] = useState("");
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
   const migrateBackdrop = useModalDialog(() => !migrateBusy && setMigrateOpen(false), { labelledBy: "applicationdetail-dialog-title-2" });
+  const clearLogsBackdrop = useModalDialog(() => !clearLogsBusy && setClearingLogs(false), { labelledBy: "applicationdetail-dialog-title-3" });
 
   /**
    * The application itself, from the cache.
@@ -262,6 +270,34 @@ export function ApplicationDetail() {
   useEffect(() => {
     if (tab === "logs") loadLogs();
   }, [tab, loadLogs]);
+
+  /** Jumps the log pane to one end. Instant rather than smooth: over 500
+   *  lines a smooth scroll is a long animation to sit through, and the point
+   *  of the button is to be already there. */
+  function scrollLogsTo(edge: "top" | "bottom") {
+    const pane = logsRef.current;
+    if (!pane) return;
+    pane.scrollTop = edge === "top" ? 0 : pane.scrollHeight;
+  }
+
+  async function handleClearLogs() {
+    if (!id) return;
+    setClearLogsBusy(true);
+    setLogsError(null);
+    try {
+      const archived = await clearApplicationLogs(id);
+      setClearingLogs(false);
+      // Where the copy went is the whole reason this is safe to press, so it
+      // is said out loud rather than left in a directory nobody knows about.
+      toastSuccess(archived ? t("applicationDetail.logsClearedTo", { path: archived }) : t("applicationDetail.logsAlreadyEmpty"));
+      loadLogs();
+    } catch (err) {
+      setLogsError(errorMessage(err, t));
+      setClearingLogs(false);
+    } finally {
+      setClearLogsBusy(false);
+    }
+  }
 
   /**
    * Runs a lifecycle verb.
@@ -707,10 +743,22 @@ export function ApplicationDetail() {
           {tab === "logs" && (
             <Card>
               {logsError && <p className="form-note form-note-danger form-note-spaced">{logsError}</p>}
-              <pre className="container-logs-output">
+              <pre className="container-logs-output" ref={logsRef}>
                 {logsLoading ? t("applicationDetail.logsLoading") : logs.join("\n") || t("applicationDetail.logsEmpty")}
               </pre>
               <div className="form-actions">
+                <Button variant="secondary" onClick={() => scrollLogsTo("top")} disabled={logsLoading || logs.length === 0}>
+                  <Icon name="chevron-up" size={14} />
+                  {t("applicationDetail.logsToTop")}
+                </Button>
+                <Button variant="secondary" onClick={() => scrollLogsTo("bottom")} disabled={logsLoading || logs.length === 0}>
+                  <Icon name="chevron-down" size={14} />
+                  {t("applicationDetail.logsToBottom")}
+                </Button>
+                <Button variant="secondary" onClick={() => setClearingLogs(true)} disabled={logsLoading}>
+                  <Icon name="trash" size={14} />
+                  {t("applicationDetail.logsClear")}
+                </Button>
                 <Button variant="secondary" onClick={loadLogs} disabled={logsLoading}>
                   <Icon name="refresh-cw" size={14} />
                   {t("common.refresh")}
@@ -726,6 +774,28 @@ export function ApplicationDetail() {
 
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
+        </div>
+      )}
+
+      {clearingLogs && (
+        <div className="modal-backdrop" {...clearLogsBackdrop.backdropProps}>
+          <div className="modal-panel modal-panel-sm" {...clearLogsBackdrop.panelProps}>
+            <div className="modal-header">
+              <h2 className="modal-title" id="applicationdetail-dialog-title-3">{t("applicationDetail.logsClearTitle")}</h2>
+              <IconButton icon="x" size="sm" onClick={() => setClearingLogs(false)} title={t("common.close")} />
+            </div>
+            <div className="modal-body">
+              <p className="dialog-body-text">{t("applicationDetail.logsClearBody")}</p>
+              <div className="form-actions">
+                <Button variant="secondary" onClick={() => setClearingLogs(false)} disabled={clearLogsBusy}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="primary" onClick={handleClearLogs} disabled={clearLogsBusy}>
+                  {clearLogsBusy ? t("applicationDetail.logsClearing") : t("applicationDetail.logsClear")}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

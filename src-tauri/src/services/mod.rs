@@ -42,7 +42,7 @@ pub use ai_service::{
     set_ai_config, test_ai_connection,
 };
 pub use application_service::{
-    add_application_port, application_console_write, change_application_blueprint, application_health_check, application_logs, application_resource_usage, run_application_command,
+    add_application_port, application_console_write, change_application_blueprint, application_health_check, application_logs, application_resource_usage, clear_application_logs, run_application_command,
     rename_application,
     follow_application_logs,
     refresh_vibe_network_bind_addresses,

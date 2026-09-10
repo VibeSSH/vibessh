@@ -532,6 +532,13 @@ pub async fn get_application_logs(
     services::application_logs(&repo, &server_repo, &sessions, &local_process_manager, &log_capture, id, max_lines).await
 }
 
+/// Empties the captured log history, answering with the path the copy was
+/// kept at - or `None` when there was nothing captured to keep.
+#[tauri::command]
+pub async fn clear_application_logs(log_capture: State<'_, LogCaptureStore>, id: Uuid) -> AppResult<Option<String>> {
+    services::clear_application_logs(&log_capture, id).await
+}
+
 #[tauri::command]
 pub async fn write_application_console(
     repo: State<'_, ApplicationRepository>,
