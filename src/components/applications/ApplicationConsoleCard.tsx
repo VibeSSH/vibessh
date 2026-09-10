@@ -123,6 +123,24 @@ const LEVEL_COLOURS: Record<string, string | undefined> = {
   debug: "90",
 };
 
+/**
+ * Whether this keystroke means "copy" in the application console.
+ *
+ * **Plain Ctrl+C, which the SSH terminal deliberately does not treat this
+ * way.** There, Ctrl+C has to keep reaching the shell as "interrupt" - that
+ * is the whole reason terminals moved copy onto Ctrl+Shift+C. This console
+ * has no shell to reach: the terminal is created with `disableStdin`, and
+ * commands are typed into the field below it and sent with Enter. So the
+ * keystroke has no other job here, and xterm swallowing it left somebody
+ * selecting a stack trace, pressing Ctrl+C, and getting nothing at all.
+ *
+ * Ctrl+Shift+C is accepted as well, for anyone who has the terminal habit.
+ */
+export function isCopyChord(event: Pick<KeyboardEvent, "type" | "ctrlKey" | "metaKey" | "key">): boolean {
+  if (event.type !== "keydown") return false;
+  return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
+}
+
 export function ApplicationConsoleCard({ applicationId, isRunning }: ApplicationConsoleCardProps) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
@@ -340,6 +358,15 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
+
+    // The clipboard is written explicitly rather than left to the browser's
+    // own copy: the selection lives in xterm's renderer, not in the document,
+    // so there is nothing for a native copy to pick up.
+    term.attachCustomKeyEventHandler((event) => {
+      if (!isCopyChord(event) || !term.hasSelection()) return true;
+      void copyToClipboard(term.getSelection(), { copied: t("common.copied"), failed: t("common.copyFailed") });
+      return false;
+    });
 
     const resize = new ResizeObserver(() => {
       try {
