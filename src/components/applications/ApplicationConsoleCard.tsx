@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { useContextMenu } from "@/components/ui/ContextMenu";
 import { copyToClipboard } from "@/utils/copyToClipboard";
+import { loadHistory, NOT_BROWSING, rememberCommand, stepThroughHistory, type HistoryPosition } from "./consoleHistory";
 import {
   followApplicationLogs,
   getApplicationLogs,
@@ -146,6 +147,11 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
   const [lines, setLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  /** Commands already sent to this application, oldest first, and where the
+   *  arrow keys have walked to in them. Read from storage on the first
+   *  render, because this card unmounts whenever another tab is looked at. */
+  const [history, setHistory] = useState<string[]>(() => loadHistory(applicationId));
+  const [position, setPosition] = useState<HistoryPosition>(NOT_BROWSING);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -173,6 +179,11 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
    * holds polling back until the follow has either started or failed, so
    * exactly one source ever fills the buffer.
    */
+  useEffect(() => {
+    setHistory(loadHistory(applicationId));
+    setPosition(NOT_BROWSING);
+  }, [applicationId]);
+
   const [source, setSource] = useState<"deciding" | "stream" | "poll">("deciding");
   // Read by the reconnect below, which lives inside an effect and would
   // otherwise see the line count as it was when that effect first ran.
@@ -418,6 +429,18 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     renderedRef.current = lines;
   }, [lines]);
 
+  /** One press of Up or Down in the command box. */
+  function handleHistoryKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const stepped = stepThroughHistory(history, position, input, event.key === "ArrowUp" ? "older" : "newer");
+    if (!stepped) return;
+    // Only once there is something to show: an unhandled Down still does the
+    // ordinary thing, and an unhandled Up leaves the caret where it was.
+    event.preventDefault();
+    setInput(stepped.value);
+    setPosition(stepped.position);
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const trimmed = input.trim();
@@ -426,6 +449,10 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
     try {
       await writeApplicationConsole(applicationId, trimmed);
       setInput("");
+      // Recorded only once it has actually been sent - a command the console
+      // refused is not one to offer back on the next Up.
+      setHistory(rememberCommand(applicationId, trimmed));
+      setPosition(NOT_BROWSING);
       // Sending a command is a reason to want the newest output, and xterm
       // only follows the tail while the view is already at it.
       termRef.current?.scrollToBottom();
@@ -497,7 +524,14 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
           <input
             className="form-input"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              // Typing means this is a new command now, not the old one being
+              // looked at - so Down goes back to what is in the box rather
+              // than to a draft nobody remembers writing.
+              setPosition(NOT_BROWSING);
+            }}
+            onKeyDown={handleHistoryKey}
             placeholder={isRunning ? t("applicationConsole.placeholder") : t("applicationConsole.notRunning")}
             disabled={!isRunning || sending}
           />
