@@ -6,6 +6,35 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.9
+
+### Fixed
+
+- **A command typed into an application's console no longer just sits there.**
+  The console feeds the container through a pipe that a background `docker
+  attach` reads, and that attach belongs to one running instance of the
+  container - so a restart, whether Docker's own after a crash or a start from
+  outside VibeSSH, left the pipe with nobody reading it. Writing to a pipe
+  nobody is reading waits forever, which is exactly what the interface did.
+  The console now gives it five seconds, reattaches, and tries again, so the
+  usual case fixes itself. When it genuinely cannot be fixed from there - a
+  container created without an interactive stdin can never gain one - it says
+  so, and says that Recreate is the answer.
+- **Ctrl+C copies in the application console.** Selecting a stack trace and
+  pressing it did nothing at all: the terminal swallowed the keystroke and
+  only the right-click menu could copy. Plain Ctrl+C here, deliberately unlike
+  the SSH terminal, where it has to keep reaching the shell as "interrupt" -
+  this console has no shell to reach, since commands go through the field
+  below it.
+
+### Changed
+
+- **Switching between applications lands where you left off.** The tab strip
+  is there to make going back and forth one click; it was one click to the
+  application and three more back to the tab you had been on, every time.
+  Which tab each application was last showing is remembered now. A link to a
+  particular tab still wins, so the guide's links go where they say.
+
 ## 0.1.0-beta.8
 
 ### New
