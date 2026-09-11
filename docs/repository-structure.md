@@ -1,6 +1,6 @@
 # Repository structure
 
-Steps 1 to 3 are done; steps 4 and 5 are still a proposal. What is here today, why it reads as a
+Steps 1 to 4 are done; step 5 is still a proposal. What is here today, why it reads as a
 mess, what it should look like, and in which order to get there without
 breaking the build.
 
@@ -118,7 +118,8 @@ directory moves and nothing else changes.
 
 | Coupling | Where | Breaks if |
 | --- | --- | --- |
-| `include_str!("../../../docs/guide/*.md")` | `src-tauri/src/ai/knowledge.rs`, ~60 lines | the guide moves, or `src-tauri` does |
+| `include_str!("../../../shared/guide/*.md")` | `src-tauri/src/ai/knowledge.rs`, 66 lines | the guide moves, or `src-tauri` does |
+| `CARGO_MANIFEST_DIR` + `"../shared/guide"`, read at runtime | `knowledge.rs`'s corpus test | either moves |
 | `import.meta.glob("../../docs/guide/*.md")` | `src/guide/guideDocs.ts`, `guideImages.ts` | the guide moves, or `src/` does |
 | `frontendDist: "../dist"` | `src-tauri/tauri.conf.json` | the frontend output moves |
 | `beforeDevCommand: "bun run dev"` | `src-tauri/tauri.conf.json` | `package.json` stops being at the root |
@@ -197,9 +198,17 @@ prose ("three findings in `AUDIT_REPORT.md`") were left alone: they name a
 document rather than point at a file, and rewriting those would have been
 noise in a hundred comments.
 
-**Step 4 — move the guide to `shared/guide/`.** ~60 `include_str!` paths and
-two globs. Mechanical but wide; worth doing as its own commit so that a
-bisect lands on it cleanly.
+**Step 4 — move the guide to `shared/guide/`. Done.** 66 `include_str!`
+paths, three globs, and one that the table had not listed: a test in
+`knowledge.rs` that reads the directory at *runtime* through
+`CARGO_MANIFEST_DIR` to catch a guide page nobody registered. A comment
+reference would have been harmless; that one would have failed the build.
+
+Both readers were checked rather than assumed. The frontend bundle in
+`dist/assets/*.js` contains the guide text, and
+`guide_corpus_tests::every_guide_document_is_in_the_corpus` passes - which is
+exactly the test that compares what is on disk against what was compiled in,
+so it could not pass if the directory path were wrong.
 
 **Step 5 — move the Rust crates.** `src-tauri` to `apps/desktop/core`, `agent`
 to `apps/agent`, `backend` to `apps/backend`, `protocol` to

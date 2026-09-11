@@ -1,7 +1,7 @@
 /**
  * The in-app guide, loaded from the same markdown the assistant reads.
  *
- * One corpus, two readers. `docs/guide/*.md` is embedded into the binary by
+ * One corpus, two readers. `shared/guide/*.md` is embedded into the binary by
  * `ai::knowledge` for Vibe AI and imported here for the Guide page, so an
  * answer the assistant gives and a page the user opens cannot describe the
  * app differently - there is only one description. Adding a topic is adding
@@ -109,7 +109,7 @@ export function toGuideDoc(path: string, source: string): GuideDoc | null {
   };
 }
 
-const rawFiles = import.meta.glob("../../../../../docs/guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const rawFiles = import.meta.glob("../../../../../shared/guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 const allDocs: GuideDoc[] = Object.entries(rawFiles)
   .map(([path, source]) => toGuideDoc(path, source))

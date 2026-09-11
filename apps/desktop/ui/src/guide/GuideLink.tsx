@@ -4,7 +4,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { guideDoc } from "./guideDocs";
 
 interface GuideLinkProps {
-  /** The topic's id - its file name in `docs/guide`. */
+  /** The topic's id - its file name in `shared/guide`. */
   topic: string;
 }
 
