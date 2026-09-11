@@ -1,4 +1,4 @@
-// Regenerates src/assets/lucide-subset.json - a hand-picked slice of
+// Regenerates apps/desktop/ui/src/assets/lucide-subset.json - a hand-picked slice of
 // @iconify-json/lucide's full icon set (1800+ icons), bundled into the app
 // so <Icon> never fetches icon data over the network at runtime (Voltius
 // solves this at build time with a custom Vite plugin that auto-scans
@@ -77,6 +77,10 @@ const ICON_NAMES = [
 ];
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+// Dependencies hoist to the workspace root; the subset belongs to the UI
+// package that imports it. Step 1 of docs/repository-structure.md split
+// those two apart.
+const ui = path.join(root, "apps", "desktop", "ui");
 const source = JSON.parse(readFileSync(path.join(root, "node_modules/@iconify-json/lucide/icons.json"), "utf8"));
 
 const missing = ICON_NAMES.filter((name) => !source.icons[name]);
@@ -92,6 +96,6 @@ const subset = {
   icons: Object.fromEntries(ICON_NAMES.map((name) => [name, source.icons[name]])),
 };
 
-const outPath = path.join(root, "src/assets/lucide-subset.json");
+const outPath = path.join(ui, "src/assets/lucide-subset.json");
 writeFileSync(outPath, JSON.stringify(subset, null, 2) + "\n");
 console.log(`Wrote ${ICON_NAMES.length} icons to ${path.relative(root, outPath)}`);

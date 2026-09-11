@@ -46,7 +46,7 @@ describe("parseFrontmatter", () => {
 
 describe("parseFileName", () => {
   it("splits the topic from its language", () => {
-    expect(parseFileName("../../docs/guide/ports.pl.md")).toEqual({ id: "ports", language: "pl" });
+    expect(parseFileName("../../../../../docs/guide/ports.pl.md")).toEqual({ id: "ports", language: "pl" });
     expect(parseFileName("application-files.en.md")).toEqual({ id: "application-files", language: "en" });
   });
 

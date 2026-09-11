@@ -564,9 +564,13 @@ testing the agent standalone, without the desktop app running.
 ## Project structure
 
 ```
-Cargo.toml                  Workspace root (members: src-tauri, agent, protocol, backend)
+Cargo.toml                  Cargo workspace root (members: src-tauri, agent, protocol, backend)
+package.json                Bun workspace root - holds the Tauri CLI and delegates every
+                            frontend script to the UI package. `bun run dev|build|test|
+                            typecheck` still work from here; see docs/repository-structure.md
 
-src/                        Frontend (React + TypeScript)
+apps/desktop/ui/            Frontend (React + TypeScript) - its own package, with its own
+                            package.json, vite/vitest configs, tsconfig, index.html and public/
   components/
     layout/                 Sidebar (grouped, collapsible), Rail, TitleBar, AppLayout
     ui/                     Reusable design-system components
@@ -593,7 +597,8 @@ src/                        Frontend (React + TypeScript)
                             files.ts (RemoteFileEntry)
   config/                   Navigation/module config
 
-src-tauri/                  Desktop backend (Rust, Tauri)
+src-tauri/                  Desktop backend (Rust, Tauri) - reads the UI's build output from
+                            apps/desktop/ui/dist, see tauri.conf.json's frontendDist
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
                              server_commands.rs, ssh_commands.rs, terminal_commands.rs,
@@ -664,6 +669,12 @@ protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
     error.rs                        ProtocolErrorCode
     pairing.rs                       generate_pairing_code(), PAIRING_CODE_TTL
     capabilities.rs                   AgentCapabilities (docker/systemd/minecraft/fileAccess/terminal)
+
+docs/
+  guide/                     The in-app guide - a build input, not prose: compiled into the
+                             Rust binary by include_str! and into the UI bundle by
+                             import.meta.glob. See docs/repository-structure.md
+  repository-structure.md    Where everything goes, and what is still to move
 
 scripts/
   setup.ps1                  Setup/build launcher

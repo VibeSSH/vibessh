@@ -4,10 +4,10 @@
   "version": "0.1.0-beta.9",
   "identifier": "dev.vibessh.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
-    "beforeBuildCommand": "bun run build",
+    "beforeDevCommand": "bun run --filter vibessh-ui dev",
+    "beforeBuildCommand": "bun run --filter vibessh-ui build",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../dist"
+    "frontendDist": "../apps/desktop/ui/dist"
   },
   "app": {
     "windows": [

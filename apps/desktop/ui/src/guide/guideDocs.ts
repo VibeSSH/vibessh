@@ -109,7 +109,7 @@ export function toGuideDoc(path: string, source: string): GuideDoc | null {
   };
 }
 
-const rawFiles = import.meta.glob("../../docs/guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+const rawFiles = import.meta.glob("../../../../../docs/guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 const allDocs: GuideDoc[] = Object.entries(rawFiles)
   .map(([path, source]) => toGuideDoc(path, source))

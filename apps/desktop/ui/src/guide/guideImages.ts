@@ -11,7 +11,7 @@
  * screenshot that has not been captured yet leaves a paragraph gap rather
  * than a broken image icon in the middle of a manual.
  */
-const files = import.meta.glob("../../docs/guide/images/*.{png,jpg,webp}", { query: "?url", import: "default", eager: true }) as Record<
+const files = import.meta.glob("../../../../../docs/guide/images/*.{png,jpg,webp}", { query: "?url", import: "default", eager: true }) as Record<
   string,
   string
 >;
