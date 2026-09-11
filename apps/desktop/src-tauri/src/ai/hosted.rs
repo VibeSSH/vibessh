@@ -1,7 +1,7 @@
 //! `AiProvider` for the model VibeSSH includes.
 //!
 //! **What is deliberately absent here.** No base URL, no model name, no API
-//! key. All three live on the VibeSSH backend (`backend/src/ai.rs`), and
+//! key. All three live on the VibeSSH backend (`apps/backend/src/ai.rs`), and
 //! that is the entire reason this provider exists rather than the desktop
 //! simply shipping with a key preconfigured. A desktop binary is
 //! inspectable: a key inside it is a published key, and once someone holds

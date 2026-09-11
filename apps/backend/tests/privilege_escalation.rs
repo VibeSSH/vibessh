@@ -10,7 +10,7 @@
 //! checkout has. Without the marker these panic in `common::database_url`
 //! and, because cargo stops at the first failing test binary, they took the
 //! rest of `cargo test --workspace` down with them. Same convention the
-//! real-host tests in `src-tauri/tests/` already use. Run them explicitly:
+//! real-host tests in `apps/desktop/src-tauri/tests/` already use. Run them explicitly:
 //! `DATABASE_URL=... cargo test -p vibessh-backend -- --ignored`.
 mod common;
 

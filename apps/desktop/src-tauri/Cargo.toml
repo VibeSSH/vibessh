@@ -30,7 +30,7 @@ log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = "0.1"
-vibessh-protocol = { path = "../protocol" }
+vibessh-protocol = { path = "../../../crates/protocol" }
 # Generated database names/usernames/passwords for Application Databases
 # (services::database_service) - same workspace version `protocol`'s own
 # generate_pairing_code already uses, not a new choice.
@@ -48,7 +48,7 @@ zip = "2"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "fs", "io-util", "net", "process"] }
 # Cross-platform CPU/RAM-per-PID sampling for LocalProcessRuntime's
 # resource_usage() - same crate and version the `agent` crate already uses
-# for the identical purpose (see agent/src/metrics.rs), not a new pattern.
+# for the identical purpose (see apps/agent/src/metrics.rs), not a new pattern.
 sysinfo = "0.39"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
@@ -70,7 +70,7 @@ rusqlite_migration = "1"
 # the default aws-lc-rs backend: aws-lc-rs needs cmake to build its C/asm
 # core, which isn't guaranteed to be installed; ring builds with just the
 # MSVC toolchain already required for this project (same backend rustls
-# already uses here, see agent/Cargo.toml).
+# already uses here, see apps/agent/Cargo.toml).
 russh = { version = "0.63", default-features = false, features = ["ring", "rsa"] }
 # SFTP (Files module) - runs over a subsystem channel on the same russh
 # connection, not a separate transport.

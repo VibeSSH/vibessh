@@ -14,7 +14,7 @@ interface BlueprintTranslation {
 
 /**
  * A built-in Blueprint's name/description/field text comes straight from
- * the Rust backend as plain English (`src-tauri/src/blueprints/*.rs`) -
+ * the Rust backend as plain English (`apps/desktop/src-tauri/src/blueprints/*.rs`) -
  * there's no backend-side i18n mechanism for it, and building one (locale
  * negotiation over the Tauri IPC boundary, translated copies of every
  * field baked into the Rust structs) would be a lot of backend surface for
@@ -208,7 +208,7 @@ export function translateBlueprint(blueprint: Blueprint, language: string): Blue
  * Polish names for the templates that ship with VibeSSH.
  *
  * Keyed by id rather than by name, because the name is the thing being
- * replaced. The ids are fixed in `src-tauri/src/storage/builtin_templates.rs`
+ * replaced. The ids are fixed in `apps/desktop/src-tauri/src/storage/builtin_templates.rs`
  * and pinned there by a test that asserts these exact strings - a built-in
  * whose id changed would quietly fall back to its English name rather than
  * breaking, which is why that test exists.

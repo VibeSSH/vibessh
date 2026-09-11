@@ -19,7 +19,7 @@ path = "src/main.rs"
 # and the serialising lock has to be held across await points - which
 # a std Mutex must never be.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
-# Matches the version the vibe-agent crate already uses (see agent/Cargo.toml)
+# Matches the version the vibe-agent crate already uses (see apps/agent/Cargo.toml)
 # - one axum major across the workspace's server-side binaries.
 axum = "0.7"
 serde = { workspace = true }

@@ -3,8 +3,8 @@
 Pre-implementation analysis for the Applications feature layer. No code
 changes accompany this document - see the numbered "START" request this
 answers. Findings are based on a full read of the relevant source (not
-guessed): `src-tauri/src/{transport,ssh,agent_client,state,storage,
-commands,services}`, `agent/src/*`, `protocol/src/*`, and the frontend
+guessed): `apps/desktop/src-tauri/src/{transport,ssh,agent_client,state,storage,
+commands,services}`, `apps/agent/src/*`, `crates/protocol/src/*`, and the frontend
 router/stores/navigation.
 
 ## 1. Executive summary — what the codebase actually supports today
@@ -14,7 +14,7 @@ this document, so they're stated up front rather than buried in Section 7.
 
 **Finding A: `ServerConnection` (the abstraction the brief asks Runtime to
 avoid re-inventing) already exists, but only one of its two intended
-implementations does.** `src-tauri/src/transport/mod.rs` defines the trait
+implementations does.** `apps/desktop/src-tauri/src/transport/mod.rs` defines the trait
 (`execute_command`, `get_metrics`, `list_processes`, the systemd six,
 the Docker six, the SFTP five - 20 methods) with a doc comment naming
 `SshTransport` and `AgentTransport` as its two implementations. Only
@@ -33,12 +33,12 @@ show a live metrics push during the pairing flow itself.**
 capability, and this is a real gap, not a planned-but-unbuilt one.**
 Exhaustive grep across `agent/` for `Child|spawn|tokio::process|Command::
 new` returns nothing except async task spawns in its own test harness -
-no `std::process::Command`, no `tokio::process`. `agent/Cargo.toml`'s
+no `std::process::Command`, no `tokio::process`. `apps/agent/Cargo.toml`'s
 tokio doesn't even enable the `process` feature. The WebSocket connection
-loop (`agent/src/transport/connection.rs`) only *sends* `Heartbeat` and
+loop (`apps/agent/src/transport/connection.rs`) only *sends* `Heartbeat` and
 `MetricsUpdate`; every other `ServerEvent` variant (`ServiceUpdate`,
 `ProcessUpdate`, `TerminalOutput`, `LogsLine`, `QuickActionProgress`) is
-defined in `protocol/src/events.rs` but **nothing in the agent ever
+defined in `crates/protocol/src/events.rs` but **nothing in the agent ever
 constructs one**, and there is no message type at all for desktop→agent
 commands beyond the initial handshake. The agent is a push-only metrics
 source today.
@@ -141,7 +141,7 @@ Application (new)
   │                              LocalFileProvider is genuinely new (existing
   │                              Files module has never touched the local
   │                              filesystem - it's 100% SFTP today)
-  └─ audit events ────────────► backend/src/audit.rs's pattern (existing,
+  └─ audit events ────────────► apps/backend/src/audit.rs's pattern (existing,
                                  but that's the *cloud* team backend, a
                                  separate Postgres service - Applications
                                  is a *local* SQLite feature. See Section 9:
@@ -162,7 +162,7 @@ Section 9.
 ## 4. Application domain model
 
 ```rust
-// src-tauri/src/models/application.rs
+// apps/desktop/src-tauri/src/models/application.rs
 
 pub enum ApplicationLocation { Local, Remote }  // derived, not stored: Local ⇔ server_id.is_none()
 
@@ -201,7 +201,7 @@ and vice versa - the brief's own Section 32 rule).
 ### 5.1 The trait
 
 ```rust
-// src-tauri/src/runtime/mod.rs
+// apps/desktop/src-tauri/src/runtime/mod.rs
 
 #[async_trait::async_trait]
 pub trait ApplicationRuntime: Send + Sync {

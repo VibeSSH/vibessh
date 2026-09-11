@@ -8,7 +8,7 @@
     "apps/desktop/ui"
   ],
   "scripts": {
-    "tauri": "tauri",
+    "tauri": "cd apps/desktop && tauri",
     "dev": "bun run --filter vibessh-ui dev",
     "build": "bun run --filter vibessh-ui build",
     "preview": "bun run --filter vibessh-ui preview",

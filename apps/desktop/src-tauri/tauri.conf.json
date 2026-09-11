@@ -7,7 +7,7 @@
     "beforeDevCommand": "bun run --filter vibessh-ui dev",
     "beforeBuildCommand": "bun run --filter vibessh-ui build",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../apps/desktop/ui/dist"
+    "frontendDist": "../ui/dist"
   },
   "app": {
     "windows": [
@@ -40,8 +40,8 @@
     "licenseFile": "../LICENSE.txt",
     "windows": {
       "nsis": {
-        "headerImage": "../apps/desktop/installer/header.bmp",
-        "sidebarImage": "../apps/desktop/installer/sidebar.bmp",
+        "headerImage": "../installer/header.bmp",
+        "sidebarImage": "../installer/sidebar.bmp",
         "installerIcon": "icons/icon.ico",
         "installMode": "both",
         "languages": [

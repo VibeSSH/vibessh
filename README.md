@@ -68,7 +68,7 @@ actually enforced.
 - [x] App shell — layout, routing, design system, reusable components
 - [x] Connection model. (The `ServerConnection` trait this originally
       introduced was removed - it only ever had one implementation and none
-      of its methods was ever called; see `src-tauri/src/transport/mod.rs`.)
+      of its methods was ever called; see `apps/desktop/src-tauri/src/transport/mod.rs`.)
 - [x] Vibe Agent skeleton — standalone daemon, durable identity, no network yet
 - [x] Desktop ↔ Agent protocol — WebSocket, handshake/version check, heartbeat,
       reconnect with backoff, typed event enum (`protocol` crate, shared by
@@ -79,10 +79,10 @@ actually enforced.
       only thing persisted on the agent, and which the desktop stores in the
       OS credential store (Windows Credential Manager / Keychain / Secret
       Service), not a plaintext file
-- [x] Agent installer — `agent/install/install.sh`: detects OS/arch,
+- [x] Agent installer — `apps/agent/install/install.sh`: detects OS/arch,
       downloads + checksums a release, installs a dedicated systemd service
       as a non-root user. Run for real end-to-end on a live Ubuntu 24.04 box
-      (see `agent/install/README.md`) - only the download step is unverified,
+      (see `apps/agent/install/README.md`) - only the download step is unverified,
       since there's no published release to fetch yet
 - [x] Systemd/privilege hardening (Etap G) — `docs/security/agent-privileges.md`
       analyzes which future agent features need elevated access and why.
@@ -564,7 +564,8 @@ testing the agent standalone, without the desktop app running.
 ## Project structure
 
 ```
-Cargo.toml                  Cargo workspace root (members: src-tauri, agent, protocol, backend)
+Cargo.toml                  Cargo workspace root (members: apps/desktop/src-tauri, apps/agent,
+                            apps/backend, crates/protocol)
 package.json                Bun workspace root - holds the Tauri CLI and delegates every
                             frontend script to the UI package. `bun run dev|build|test|
                             typecheck` still work from here; see docs/repository-structure.md
@@ -597,8 +598,10 @@ apps/desktop/ui/            Frontend (React + TypeScript) - its own package, wit
                             files.ts (RemoteFileEntry)
   config/                   Navigation/module config
 
-src-tauri/                  Desktop backend (Rust, Tauri) - reads the UI's build output from
-                            apps/desktop/ui/dist, see tauri.conf.json's frontendDist
+apps/desktop/src-tauri/      Desktop backend (Rust, Tauri) - reads the UI's build output from
+                            ../ui/dist, its sibling. Keeps the `src-tauri` name because the
+                            Tauri CLI and tauri-action both find a project by looking for a
+                            directory of that name; see docs/repository-structure.md
   src/
     commands/                Tauri command entry points (thin), incl. pairing_commands.rs,
                              server_commands.rs, ssh_commands.rs, terminal_commands.rs,
@@ -630,7 +633,7 @@ src-tauri/                  Desktop backend (Rust, Tauri) - reads the UI's build
                                reimplementation of it)
   icons/                       App icon set (placeholder — see below)
 
-agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
+apps/agent/                  Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
   src/
     main.rs                   CLI entry: `pair <code>` or daemon startup
     cli.rs                     `vibe-agent pair` - blocking call to the control endpoint
@@ -645,7 +648,7 @@ agent/                       Vibe Agent daemon (Rust, Tokio, no Tauri/GUI)
     pairing/                          PairingRegistry (one-time code) + credential.rs (hash, never plaintext)
     transport/                         WS server (handshake, heartbeat, metrics tick) + local-only pairing control HTTP route
 
-backend/                     Self-hostable Team/Roles/Permissions/Invitations/Audit
+apps/backend/                Self-hostable Team/Roles/Permissions/Invitations/Audit
                              service (Rust, Axum, sqlx, Postgres) - separate network
                              service, not part of the desktop app's own local SQLite
   src/
@@ -661,7 +664,7 @@ backend/                     Self-hostable Team/Roles/Permissions/Invitations/Au
   docker-compose.yml / Dockerfile   Reference self-hosted deployment (not
                                     exercised in dev - no Docker in this environment)
 
-protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
+crates/protocol/             Shared Desktop<->Agent DTOs (no I/O, no runtime)
   src/
     handshake.rs               HandshakeRequest/Response, PROTOCOL_VERSION
     events.rs                    ServerEvent enum (metrics.update, terminal.output, ...)
@@ -670,10 +673,12 @@ protocol/                    Shared Desktop<->Agent DTOs (no I/O, no runtime)
     pairing.rs                       generate_pairing_code(), PAIRING_CODE_TTL
     capabilities.rs                   AgentCapabilities (docker/systemd/minecraft/fileAccess/terminal)
 
-docs/
+shared/
   guide/                     The in-app guide - a build input, not prose: compiled into the
                              Rust binary by include_str! and into the UI bundle by
                              import.meta.glob. See docs/repository-structure.md
+
+docs/
   architecture/              APPLICATIONS_ARCHITECTURE.md, future-host-mesh.md, navio.md
   security/                  threat-model.md, security-review.md, agent-privileges.md
   planning/                  AUDIT_REPORT.md, FIX_PLAN.md, UI_AUDIT.md - snapshots of work,
@@ -683,11 +688,11 @@ docs/
 scripts/
   setup.ps1                  Setup/build launcher
 
-apps/desktop/installer/      Read only by src-tauri/tauri.conf.json's nsis block
+apps/desktop/installer/      Read only by apps/desktop/src-tauri/tauri.conf.json's nsis block
   header.bmp                 NSIS wizard header banner (150x57)
   sidebar.bmp                NSIS wizard Welcome/Finish page art (164x314)
 
-agent/install/               Linux agent installer (curl | sudo sh) - not the same
+apps/agent/install/               Linux agent installer (curl | sudo sh) - not the same
   install.sh                 thing as apps/desktop/installer/ above, which is the
   test.sh                    Windows *desktop app* installer wizard. It sits inside
   README.md                  the agent crate so step 5 carries it along.
@@ -699,7 +704,7 @@ LICENSE.txt                  Shown on the installer's license page
 
 `bun run tauri build` (or `./scripts/setup.ps1 -Build`) produces a real
 Windows installer wizard via NSIS — not a custom-built one, Tauri generates
-it from `src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
+it from `apps/desktop/src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
 
 1. Language selector (Polish / English)
 2. Welcome page (branded with `apps/desktop/installer/sidebar.bmp`)
@@ -718,7 +723,7 @@ template via `nsis.template`.
 
 ## Agent installer
 
-The *server-side* counterpart to the wizard above: `agent/install/install.sh`
+The *server-side* counterpart to the wizard above: `apps/agent/install/install.sh`
 installs `vibe-agent` on a Linux host as a systemd service, run as:
 
 ```sh
@@ -727,14 +732,14 @@ vibe-agent pair <CODE-SHOWN-IN-VIBESSH>
 ```
 
 No release is published yet, so the real one-liner can't be exercised
-end-to-end - see `agent/install/README.md` for what's actually verified
+end-to-end - see `apps/agent/install/README.md` for what's actually verified
 (architecture/OS detection, checksum logic for real, everything else on a
 real Linux box via `VIBESSH_INSTALL_LOCAL_BINARY`) versus what still needs
 a Linux VM to prove.
 
 ## Icon
 
-`src-tauri/icons/` currently holds a placeholder generated from
+`apps/desktop/src-tauri/icons/` currently holds a placeholder generated from
 `public/vibessh-mark.svg`. Drop the real VibeSSH mark in as a single square
 PNG (ideally 1024x1024) and regenerate the full set with the Tauri CLI:
 
@@ -742,7 +747,7 @@ PNG (ideally 1024x1024) and regenerate the full set with the Tauri CLI:
 bun run tauri icon path/to/vibessh-icon.png
 ```
 
-This overwrites `src-tauri/icons/*` with correctly sized PNG/ICO/ICNS files.
+This overwrites `apps/desktop/src-tauri/icons/*` with correctly sized PNG/ICO/ICNS files.
 Update `public/vibessh-mark.svg` (used in the sidebar) separately if you
 swap the mark.
 

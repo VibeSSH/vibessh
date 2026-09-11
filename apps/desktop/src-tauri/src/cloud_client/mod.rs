@@ -93,7 +93,7 @@ impl CloudClient {
     }
 
     /// Best-effort: the backend always returns `{ kind, message }` on error
-    /// (see backend/src/errors.rs), but this falls back to the raw body if
+    /// (see apps/backend/src/errors.rs), but this falls back to the raw body if
     /// something ahead of it (a proxy, a network edge case) ever returns
     /// something else - never panics on an unexpected error shape.
     fn error_for(status: StatusCode, body: String) -> AppError {
@@ -136,7 +136,7 @@ impl CloudClient {
     ///
     /// No model, endpoint or key crosses this call in either direction -
     /// all three belong to the backend, which is the whole point of the
-    /// hosted arrangement (see `backend/src/ai.rs`). What comes back is an
+    /// hosted arrangement (see `apps/backend/src/ai.rs`). What comes back is an
     /// answer and the account's remaining allowance.
     pub async fn ai_chat(&self, access_token: &str, messages: &serde_json::Value) -> AppResult<CloudAiAnswer> {
         self.send(Method::POST, "/ai/chat", Some(access_token), Some(&json!({ "messages": messages }))).await

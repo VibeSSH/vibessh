@@ -1,6 +1,6 @@
 # Repository structure
 
-Steps 1 to 4 are done; step 5 is still a proposal. What is here today, why it reads as a
+All five steps are done. What follows is the reasoning, and what each one cost. What is here today, why it reads as a
 mess, what it should look like, and in which order to get there without
 breaking the build.
 
@@ -15,9 +15,9 @@ named directory. The fifth — the frontend — *is* the repository root:
 | `vite.config.ts`, `vitest.config.ts`, `tsconfig*.json` | the desktop UI |
 | `package.json`, `bun.lock`, `node_modules/` | the desktop UI |
 | `Cargo.toml`, `Cargo.lock`, `clippy.toml`, `target/` | the Rust workspace |
-| `src-tauri/`, `agent/`, `protocol/`, `backend/` | its four members |
+| `apps/desktop/src-tauri/`, `agent/`, `protocol/`, `backend/` | its four members |
 | `installer/` | `src-tauri` only (NSIS bitmaps) |
-| `agent/install/` | `agent` only |
+| `apps/agent/install/` | `agent` only |
 | `scripts/` | one repo-wide script, one frontend script |
 | `docs/` | prose, plus `docs/guide/` which is a **build input** |
 | `AUDIT_REPORT.md`, `FIX_PLAN.md` | planning, not product |
@@ -35,7 +35,7 @@ So the five problems, named precisely:
    Pterodactyl import, the AI assistant — behind a name that promises Tauri
    glue.
 4. **Loose directories with one owner each.** `installer/` is read only by
-   `src-tauri/tauri.conf.json`; `agent/install/` ships only with the agent.
+   `apps/desktop/src-tauri/tauri.conf.json`; `apps/agent/install/` ships only with the agent.
    Sitting at the root, they look repo-wide.
 5. **`backend/` is a deployable service** with its own Dockerfile and
    compose file, sitting as a peer of `protocol/`, a nine-file DTO crate.
@@ -54,16 +54,16 @@ vibessh/
 ├── apps/                      things that ship to somebody
 │   ├── desktop/
 │   │   ├── ui/                was: src/, index.html, public/, vite+vitest+tsconfig, package.json
-│   │   ├── core/              was: src-tauri/ (minus the guide corpus)
+│   │   ├── src-tauri/         was: src-tauri/ - name kept, see below
 │   │   └── installer/         was: installer/ - NSIS bitmaps, read only from here
 │   ├── agent/                 was: agent/
-│   │   └── install/           was: agent/install/
+│   │   └── install/           was: apps/agent/install/
 │   └── backend/               was: backend/ - unchanged, already self-contained
 ├── crates/
 │   └── protocol/              was: protocol/ - the wire format both ends share
 ├── shared/
-│   └── guide/                 was: docs/guide/ - compiled into ui AND core
-├── docs/                      prose only
+│   └── guide/                 was: docs/guide/ - compiled into ui AND src-tauri
+├── docs/                      prose, except the four files the AI corpus embeds
 │   ├── architecture/          APPLICATIONS_ARCHITECTURE.md, future-host-mesh.md, navio.md
 │   ├── security/              threat-model.md, security-review.md, agent-privileges.md
 │   └── planning/              AUDIT_REPORT.md, FIX_PLAN.md, UI_AUDIT.md
@@ -81,10 +81,14 @@ own. Nesting says that. It also gives the frontend somewhere to put its own
 `package.json`, `node_modules/` and `dist/` so that none of them are root
 entries any more.
 
-**`core`, not `src-tauri`.** Tauri is how it reaches a window. What is in
-there is the product: SSH, Docker, blueprints, firewall, storage. A
-contributor looking for "where does an application get provisioned" should
-not have to know which desktop framework was chosen.
+**`src-tauri` keeps its name, under `apps/desktop/`.** The argument for
+renaming it to `core` still stands - Tauri is how it reaches a window, and
+what is in there is the product. It lost to a concrete risk: the release
+pipeline's `tauri-action` finds the project by looking for a `src-tauri` child
+of `projectPath`, and that behaviour cannot be checked without cutting a real
+tag. Renaming would have traded a verifiable arrangement for one whose first
+failure is a broken release. Sitting beside `ui/` and `installer/` under
+`apps/desktop/`, the parent already says what it is.
 
 **`shared/guide`, not `docs/guide`.** This is the one piece of the current
 layout that is actively misleading, and the code says so itself — "One corpus,
@@ -93,8 +97,11 @@ the frontend bundle by `import.meta.glob`. It is a build input that happens to
 be written in Markdown, and filing it under `docs/` invites somebody to
 reorganise prose and break two builds. Under `shared/` its role is visible.
 
-**`docs/` for prose only.** Once the guide moves out, everything left is read
-by people, and the three sub-folders separate what a contributor needs
+**`docs/` for prose - almost.** This was stated too strongly. Three of these
+documents are *also* compiled into the Rust binary: the AI assistant's corpus
+embeds `APPLICATIONS_ARCHITECTURE.md`, `threat-model.md`, `agent-privileges.md`
+and the `README.md` alongside the guide. Step 5 found that by failing to
+compile. The rest is read by people, and the three sub-folders separate what a contributor needs
 (architecture), what a reviewer needs (security), and what is a snapshot of
 work in progress (planning). `AUDIT_REPORT.md` and `FIX_PLAN.md` are the two
 that most obviously do not belong at the root beside `LICENSE.txt`.
@@ -118,16 +125,19 @@ directory moves and nothing else changes.
 
 | Coupling | Where | Breaks if |
 | --- | --- | --- |
-| `include_str!("../../../shared/guide/*.md")` | `src-tauri/src/ai/knowledge.rs`, 66 lines | the guide moves, or `src-tauri` does |
-| `CARGO_MANIFEST_DIR` + `"../shared/guide"`, read at runtime | `knowledge.rs`'s corpus test | either moves |
+| `include_str!("../../../shared/guide/*.md")` | `apps/desktop/src-tauri/src/ai/knowledge.rs`, 66 lines | the guide moves, or `src-tauri` does |
+| `CARGO_MANIFEST_DIR` + `"../../../shared/guide"`, read at runtime | `knowledge.rs`'s corpus test | either moves |
+| `include_str!` of `README.md`, `APPLICATIONS_ARCHITECTURE.md`, `threat-model.md`, `agent-privileges.md` | `knowledge.rs`, the AI corpus | the docs move, or the crate does |
+| `path = "../protocol"` | `src-tauri/Cargo.toml`, `agent/Cargo.toml` | either crate moves |
+| `projectPath` (absent, so the repository root) | `release.yml`'s `tauri-action` | `src-tauri` stops being a child of it |
 | `import.meta.glob("../../docs/guide/*.md")` | `src/guide/guideDocs.ts`, `guideImages.ts` | the guide moves, or `src/` does |
-| `frontendDist: "../dist"` | `src-tauri/tauri.conf.json` | the frontend output moves |
-| `beforeDevCommand: "bun run dev"` | `src-tauri/tauri.conf.json` | `package.json` stops being at the root |
-| `headerImage: "../installer/*.bmp"` | `src-tauri/tauri.conf.json` | `installer/` moves |
+| `frontendDist: "../dist"` | `apps/desktop/src-tauri/tauri.conf.json` | the frontend output moves |
+| `beforeDevCommand: "bun run dev"` | `apps/desktop/src-tauri/tauri.conf.json` | `package.json` stops being at the root |
+| `headerImage: "../installer/*.bmp"` | `apps/desktop/src-tauri/tauri.conf.json` | `installer/` moves |
 | `alias "@" -> ./src` | `vite.config.ts` | the UI source moves |
-| `import promptSource from "../../src-tauri/src/ai/prompt.rs?raw"` | `src/config/navigation.promptParity.test.ts` | either side moves |
+| `import promptSource from "../../apps/desktop/src-tauri/src/ai/prompt.rs?raw"` | `src/config/navigation.promptParity.test.ts` | either side moves |
 | `members = ["src-tauri", "agent", "protocol", "backend"]` | `Cargo.toml` | any crate moves |
-| `workspaces: src-tauri`, `require('./src-tauri/tauri.conf.json')`, `cp src-tauri/icons/...` | `.github/workflows/release.yml` | `src-tauri` moves |
+| `workspaces: src-tauri`, `require('./apps/desktop/src-tauri/tauri.conf.json')`, `cp apps/desktop/src-tauri/icons/...` | `.github/workflows/release.yml` | `src-tauri` moves |
 | `./scripts/setup.ps1` in the README and in contributor habit | `scripts/` | `scripts/` moves |
 
 The guide corpus is the sharp one: it is the only asset with two compile-time
@@ -155,7 +165,7 @@ last. Every step ends with `cargo clippy -D warnings`, `cargo test`,
 Two things went differently from the plan above, both worth recording:
 
 *The root keeps a `package.json`.* The plan said to move it outright. The
-Tauri CLI looks for `src-tauri/` beside the directory it is invoked in and
+Tauri CLI looks for `apps/desktop/src-tauri/` beside the directory it is invoked in and
 does not search upwards, so moving the only manifest would have meant either
 running `tauri` from a directory with no `src-tauri` beside it, or passing
 `--config` and fighting every path it resolves relative to that. Instead the
@@ -178,7 +188,7 @@ belongs.
 `apps/desktop/installer/`, read only by `tauri.conf.json`'s nsis block; both
 bitmap paths were checked by resolving them from the config's own directory.
 
-The agent installer went to `agent/install/` rather than `apps/agent/install/`:
+The agent installer went to `apps/agent/install/` rather than `apps/agent/install/`:
 the agent crate is still at the root until step 5, and creating `apps/agent/`
 now would have meant two directories called agent, in two places, for the sake
 of one intermediate commit. Inside the crate it already sits in its final
@@ -210,12 +220,22 @@ Both readers were checked rather than assumed. The frontend bundle in
 exactly the test that compares what is on disk against what was compiled in,
 so it could not pass if the directory path were wrong.
 
-**Step 5 — move the Rust crates.** `src-tauri` to `apps/desktop/core`, `agent`
-to `apps/agent`, `backend` to `apps/backend`, `protocol` to
-`crates/protocol`. Workspace members, the Rust CI job, and four places in the
-release workflow. This is the most invasive step and the one most likely to
-strand the release pipeline, which is why it is last: everything before it is
-already banked.
+**Step 5 — move the Rust crates. Done.** `src-tauri` to
+`apps/desktop/src-tauri` (name kept, see above), `agent` to `apps/agent`,
+`backend` to `apps/backend`, `protocol` to `crates/protocol`.
+
+96 root-shaped path references, the workspace member list, two
+`path = "../protocol"` dependencies, the rust-cache key, `projectPath` on
+`tauri-action`, four paths in the release workflow, three `.gitignore` rules
+and one in `.gitattributes`. Both halves of `tauri.conf.json` got *shorter*
+rather than longer: the UI and the installer art are siblings now, so
+`../apps/desktop/ui/dist` became `../ui/dist`.
+
+The root script is `cd apps/desktop && tauri`, because the CLI looks for a
+`src-tauri` child of the directory it runs in.
+
+What this step found, by failing to compile: `knowledge.rs` embeds four
+documents that are not the guide, so `docs/` is not prose only after all.
 
 ## What not to do
 

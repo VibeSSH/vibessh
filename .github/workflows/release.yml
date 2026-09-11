@@ -67,7 +67,7 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: apps/desktop/src-tauri
           # Otherwise the two platforms share one cache and evict each other.
           key: ${{ matrix.platform }}
 
@@ -90,7 +90,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          conf=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
           tag="${GITHUB_REF_NAME#v}"
           if [ "$conf" != "$tag" ]; then
             echo "::error::tauri.conf.json says $conf, the tag says $tag"
@@ -109,10 +109,11 @@ jobs:
           # release in it would be unreachable by the updater. The bundler
           # still signs what it builds and leaves the signature beside the
           # installer, which is all the next step needs.
+          projectPath: apps/desktop
           args: --verbose --bundles ${{ matrix.bundles }}
 
       # The installer paths come from the action's own output rather than from
-      # a guess: an earlier attempt looked under `src-tauri/target`, which does
+      # a guess: an earlier attempt looked under `apps/desktop/src-tauri/target`, which does
       # not exist here, because this is a Cargo workspace and the target
       # directory sits at the repository root.
       - name: Collect what was built
@@ -158,7 +159,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
           # The binary is at the workspace root's target directory, not under
           # src-tauri - the same thing that misled the artifact collector.
           binary=target/release/vibessh
@@ -170,7 +171,7 @@ jobs:
           staging=$(mktemp -d)/vibessh
           mkdir -p "$staging"
           cp "$binary" "$staging/vibessh"
-          cp src-tauri/icons/128x128@2x.png "$staging/vibessh.png"
+          cp apps/desktop/src-tauri/icons/128x128@2x.png "$staging/vibessh.png"
           # The one thing somebody extracting this needs to know: the binary
           # links against the system webkit, and without it the failure is a
           # loader error that names a library rather than a missing package.
@@ -240,7 +241,7 @@ jobs:
           cargo build --release -p vibe-agent --target x86_64-unknown-linux-gnu
           cargo build --release -p vibe-agent --target aarch64-unknown-linux-gnu
 
-      # The names and the checksum format are what `agent/install/install.sh`
+      # The names and the checksum format are what `apps/agent/install/install.sh`
       # asks for: `vibe-agent-linux-<arch>` beside a `.sha256` in sha256sum's
       # own "<digest>  <filename>" layout.
       - name: Install the signing tool
@@ -255,7 +256,7 @@ jobs:
           # can point at a public URL. It used to point into this repository,
           # which is private, so every user got a 404 from the very first
           # step.
-          cp agent/install/install.sh release-artifacts/install.sh
+          cp apps/agent/install/install.sh release-artifacts/install.sh
           cd release-artifacts
           for file in vibe-agent-linux-amd64 vibe-agent-linux-arm64; do
             sha256sum "$file" > "$file.sha256"

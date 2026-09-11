@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "agent", "protocol", "backend"]
+members = ["apps/desktop/src-tauri", "apps/agent", "apps/backend", "crates/protocol"]
 
 # Desktop app (src-tauri) and Vibe Agent (agent) are independent binaries —
 # the agent never depends on Tauri, the desktop never depends on the agent.

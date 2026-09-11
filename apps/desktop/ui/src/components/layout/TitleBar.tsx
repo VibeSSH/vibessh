@@ -50,7 +50,7 @@ function TitleBarBtn({ icon, size, onClick, className, ariaLabel }: TitleBarBtnP
 /**
  * A custom-drawn titlebar replacing the OS chrome (tauri.conf.json sets
  * `decorations: false`), matching Voltius's own frameless-window setup
- * (voltius/src-tauri/tauri.conf.json, voltius/src/components/layout/
+ * (voltius/apps/desktop/src-tauri/tauri.conf.json, voltius/src/components/layout/
  * TitleBar.tsx). Dragging is wired by hand rather than the `data-tauri-
  * drag-region` HTML attribute, same as Voltius: a mousedown anywhere on the
  * bar that isn't a button/input/link starts the OS window-move gesture via

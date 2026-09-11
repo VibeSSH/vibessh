@@ -1,4 +1,4 @@
-/** Mirrors backend/src/permissions.rs's catalog - the frontend never invents
+/** Mirrors apps/backend/src/permissions.rs's catalog - the frontend never invents
  * its own permission strings, only checks against these.
  *
  * `TEAM_VIEW` and `TEAM_UPDATE` are currently checked nowhere, and are kept

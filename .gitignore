@@ -1,7 +1,7 @@
 node_modules/
 dist/
 target/
-src-tauri/gen/
+apps/desktop/src-tauri/gen/
 *.log
 .DS_Store
 .env
@@ -10,5 +10,5 @@ src-tauri/gen/
 # Committed deliberately when a property test finds a real bug - the file is
 # the regression test. Ignored otherwise so a transient local failure does not
 # arrive in a diff as noise.
-src-tauri/proptest-regressions/
-src-tauri/tests/*.proptest-regressions
+apps/desktop/src-tauri/proptest-regressions/
+apps/desktop/src-tauri/tests/*.proptest-regressions

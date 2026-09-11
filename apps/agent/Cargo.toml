@@ -25,7 +25,7 @@ env_logger = "0.11"
 hostname = "0.4"
 os_info = "3"
 dirs = "5"
-vibessh-protocol = { path = "../protocol" }
+vibessh-protocol = { path = "../../crates/protocol" }
 # axum covers both halves of Etap D's transport (HTTP request/response and
 # WebSocket realtime) with one dependency instead of stitching two libraries
 # together.

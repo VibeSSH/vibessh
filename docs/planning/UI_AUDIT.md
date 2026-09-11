@@ -16,7 +16,7 @@ Two things shape every recommendation below:
    handful of places that *don't* reflow (`.stat-grid` most notably) and
    the total absence of any layout-level breakpoint for the shell itself
    (sidebar auto-behavior, page padding).
-2. **The Tauri window has `minWidth: 960` / `minHeight: 600`** (`src-tauri/
+2. **The Tauri window has `minWidth: 960` / `minHeight: 600`** (`apps/desktop/src-tauri/
    tauri.conf.json`). The brief's requested test widths of 900px and 800px
    are below what the OS window can currently reach - a user can never
    actually see the app at those sizes today. Recommendation: keep 960 as

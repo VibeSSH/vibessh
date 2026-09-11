@@ -43,7 +43,7 @@ Two separate things are testable independently of that:
 anywhere with a POSIX shell, including this Windows dev machine:
 
 ```sh
-sh agent/install/test.sh
+sh apps/agent/install/test.sh
 ```
 
 This is real verification, not a simulation: `detect_os` is asserted to

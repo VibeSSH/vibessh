@@ -14,7 +14,7 @@ What was actually done, so the limits of this report are clear:
 | Activity | Status |
 |---|---|
 | Full repo file map, workspace/crate structure | Done |
-| Read of every `src-tauri/src/**` module (services, runtime, files, firewall, network, storage, ssh, state) | Done |
+| Read of every `apps/desktop/src-tauri/src/**` module (services, runtime, files, firewall, network, storage, ssh, state) | Done |
 | Read of `agent/`, `protocol/`, `backend/` | Done |
 | Read of all frontend services, stores, hooks, i18n; structural sweep of pages/components | Done |
 | `cargo clippy --workspace --all-targets` | Done — **3 compile errors**, 72 lib warnings |
@@ -73,7 +73,7 @@ Cargo workspace (4 members)
 ├── protocol/        pure DTOs, no I/O — shared wire format          [clean]
 ├── agent/           vibe-agent daemon: wss + loopback control       [clean]
 ├── backend/         Teams/Roles/Permissions/Audit HTTP service      [clean]
-└── src-tauri/       the desktop app — everything else
+└── apps/desktop/src-tauri/       the desktop app — everything else
     ├── commands/    18 modules, 178 registered Tauri commands
     ├── services/    20 modules  ← business logic
     ├── runtime/     docker | systemd | local_process | remote_process | health_check
@@ -99,7 +99,7 @@ Layering is generally sound: `commands → services → {runtime, files, storage
 ### 2.2 Architecture findings
 
 **A-001 — `ServerConnection` is 100% dead abstraction | MEDIUM | P2**
-`src-tauri/src/transport/mod.rs:15-35`. A 20-method trait whose doc comment names `SshTransport` and `AgentTransport` as implementations. Only one impl exists (`ssh/transport.rs`), and the compiler confirms **not one of the 20 methods is ever called**:
+`apps/desktop/src-tauri/src/transport/mod.rs:15-35`. A 20-method trait whose doc comment names `SshTransport` and `AgentTransport` as implementations. Only one impl exists (`ssh/transport.rs`), and the compiler confirms **not one of the 20 methods is ever called**:
 
 ```
 warning: multiple methods are never used --> src-tauri\src\transport\mod.rs:17:14
@@ -114,7 +114,7 @@ Every call site uses the concrete `SshSession` directly. This is the "abstractio
 **Fix:** either implement `AgentTransport` or remove Agent Mode from the shipping UI and label it a preview.
 
 **A-003 — `retry_on_connection_failure` retries on *every* error | HIGH | P1**
-`src-tauri/src/services/ssh_service.rs:29-42`. Despite the name, it matches `Err(_)` and then drops the SSH session, opens a **brand-new TCP+auth handshake**, and re-runs the entire closure. Consequences:
+`apps/desktop/src-tauri/src/services/ssh_service.rs:29-42`. Despite the name, it matches `Err(_)` and then drops the SSH session, opens a **brand-new TCP+auth handshake**, and re-runs the entire closure. Consequences:
 - `pull_application_image` failing on a typo'd image name triggers a full reconnect and a **second multi-minute `docker pull`**.
 - `check_external_port_available` returning `InvalidInput("port already published")` tears down a healthy SSH session.
 - `.map_err(|_| first_err)` **discards the second error**, so if the retry fails more informatively the user still sees the stale first message.
@@ -124,7 +124,7 @@ Every call site uses the concrete `SshSession` directly. This is the "abstractio
 **Test required:** does not retry on `InvalidInput`; retries once on `Connection`; surfaces the second error when both fail.
 
 **A-004 — Nine SQLite connections to one file, no WAL, no busy_timeout | HIGH | P0**
-`src-tauri/src/lib.rs:98-124` opens nine repositories against the *same* `db_path`. Each holds its own `Connection` behind its own `Mutex`, and each runs `migrations().to_latest()` on open. None sets `journal_mode=WAL` or `busy_timeout` (grep confirms only `foreign_keys` is ever set).
+`apps/desktop/src-tauri/src/lib.rs:98-124` opens nine repositories against the *same* `db_path`. Each holds its own `Connection` behind its own `Mutex`, and each runs `migrations().to_latest()` on open. None sets `journal_mode=WAL` or `busy_timeout` (grep confirms only `foreign_keys` is ever set).
 - **Startup race:** nine concurrent `to_latest()` transactions on a fresh DB. The losers get `SQLITE_BUSY` immediately (default timeout is 0) and `lib.rs`'s `?` propagates → **the app fails to launch**, intermittently.
 - **Runtime:** the per-repository `Mutex`es serialise nothing *across* repositories. Any write in `ApplicationRepository` concurrent with a `ServerRepository` write returns `SQLITE_BUSY` → `AppError::Storage("database is locked")` in the user's face.
 
@@ -275,7 +275,7 @@ The injector is normally the operator themselves — but the `backend/` crate sh
 **Test required:** `sql_quote("x\\")` and `sql_quote("a'; DROP DATABASE x; --")` both produce inert literals.
 
 **S-010 — Agent Mode disables TLS verification on every connection, with no pinning | HIGH | P1**
-`src-tauri/src/agent_client/mod.rs:207-208`:
+`apps/desktop/src-tauri/src/agent_client/mod.rs:207-208`:
 
 ```rust
 .danger_accept_invalid_certs(true)
@@ -353,17 +353,17 @@ What remains is narrower but real: the extraction itself is file-by-file over th
 — literally the example given in the brief. These strings are also **untranslated English**, in an app that otherwise has 1120/1120 i18n coverage. See §10.
 
 **S-020 — `AppError` has no structured taxonomy | HIGH | P1**
-`src-tauri/src/errors/mod.rs` has six variants — `NotFound`, `InvalidInput`, `Storage`, `Connection`, `Internal`, `Unauthorized` — all carrying a bare `String`. There is no `PermissionDenied`, `PortInUse`, `DockerUnavailable`, `RuntimeUnavailable`, `Timeout`, `AgentUnavailable`, `FirewallApplyFailed`, or `DnsSyncFailed`. Every distinct failure is flattened into prose, then shown to the user directly. Retry logic cannot distinguish transient from permanent. See §10.
+`apps/desktop/src-tauri/src/errors/mod.rs` has six variants — `NotFound`, `InvalidInput`, `Storage`, `Connection`, `Internal`, `Unauthorized` — all carrying a bare `String`. There is no `PermissionDenied`, `PortInUse`, `DockerUnavailable`, `RuntimeUnavailable`, `Timeout`, `AgentUnavailable`, `FirewallApplyFailed`, or `DnsSyncFailed`. Every distinct failure is flattened into prose, then shown to the user directly. Retry logic cannot distinguish transient from permanent. See §10.
 
 **S-021 — No test coverage on the most security-critical module | HIGH | P0**
-`src-tauri/tests/vibe_network.rs` does not compile (F-001). The DNS + firewall + mesh integration test — covering exactly the subsystems with the most CRITICAL findings — has not run since the `dns_suffix` and `FirewallRuleRepository` parameters were added.
+`apps/desktop/src-tauri/tests/vibe_network.rs` does not compile (F-001). The DNS + firewall + mesh integration test — covering exactly the subsystems with the most CRITICAL findings — has not run since the `dns_suffix` and `FirewallRuleRepository` parameters were added.
 
 ### 3.3 MEDIUM
 
 | ID | Finding | File |
 |---|---|---|
-| S-022 | Pairing code compared with non-constant-time `==`, while the credential path correctly uses constant-time compare | `agent/src/pairing/mod.rs::try_consume` |
-| S-023 | S3 backup endpoint accepts `http://` — credentials and backup contents in cleartext | `src-tauri/src/s3/mod.rs:97` |
+| S-022 | Pairing code compared with non-constant-time `==`, while the credential path correctly uses constant-time compare | `apps/agent/src/pairing/mod.rs::try_consume` |
+| S-023 | S3 backup endpoint accepts `http://` — credentials and backup contents in cleartext | `apps/desktop/src-tauri/src/s3/mod.rs:97` |
 | S-024 | `phpmyadmin_url` builds `http://` and appends `?db=` with **no URL encoding** — breaks on `&`/`#`/space; phpMyAdmin credentials over cleartext | `database_service.rs::phpmyadmin_url` |
 | S-025 | `/etc/hosts` rewritten with non-atomic `sed -i` + `tee -a`, no lock — concurrent syncs interleave into duplicate or lost blocks; if `sed` succeeds and `tee` fails the Node loses all DNS | `dns_service.rs::push_fragment` |
 | S-026 | `leave_node` removes the DB row even when `wireguard::teardown` fails (it always returns `Ok`, discarding errors) — leaves a **stale peer** with a live interface | `network_service.rs::leave_node` |
@@ -374,8 +374,8 @@ What remains is narrower but real: the extraction itself is file-by-file over th
 | S-031 | Aborting a transfer leaves a **partial file** on the remote with no cleanup and no `.part`-then-rename | `state/file_transfers.rs` |
 | S-032 | `docker login` persists credentials to `/root/.docker/config.json` (base64, not encrypted) on every Node, never cleaned up | `application_service.rs::ensure_registry_login` |
 | S-033 | Automatic `apt-get install` of `mariadb-server` / `mysql-client` / `wireguard-tools` as a side effect of ordinary UI actions, with errors discarded | `database_service.rs`, `network/wireguard.rs` |
-| S-034 | Installer verifies a SHA-256 checksum fetched from the **same host** as the binary — protects against corruption, not a compromised release host. No signing. (Already in `docs/security/security-review.md` #5; still open.) | `agent/install/install.sh` |
-| S-035 | Handshake replay: the raw bearer credential is sent with no nonce/challenge (documented tradeoff), now compounded by S-010's absent cert validation | `agent/src/transport` |
+| S-034 | Installer verifies a SHA-256 checksum fetched from the **same host** as the binary — protects against corruption, not a compromised release host. No signing. (Already in `docs/security/security-review.md` #5; still open.) | `apps/agent/install/install.sh` |
+| S-035 | Handshake replay: the raw bearer credential is sent with no nonce/challenge (documented tradeoff), now compounded by S-010's absent cert validation | `apps/agent/src/transport` |
 | S-036 | Keyring deletions on delete paths are all `let _ = ...` — failed deletions leave orphaned secrets in the OS credential store forever | `application_service.rs`, `database_service.rs` |
 
 ---
@@ -423,7 +423,7 @@ The single most valuable structural fix is **not** any one of these. Four of the
 ## 5. Build, Tests and Tooling
 
 **F-001 — `cargo test --workspace` does not compile | CRITICAL | P0**
-`src-tauri/tests/vibe_network.rs` has three call-site signature mismatches:
+`apps/desktop/src-tauri/tests/vibe_network.rs` has three call-site signature mismatches:
 - `:178` `services::create_dns_alias(...)` — 3 args supplied, 4 expected (missing `suffix: &str`)
 - `:181` `services::sync_dns(...)` — 5 supplied, 6 expected (missing `suffix: &str`)
 - `:189` `services::sync_application_node_firewall(...)` — 5 supplied, 6 expected (missing `&FirewallRuleRepository`)
@@ -434,7 +434,7 @@ The production signatures gained these parameters and the test was never updated
 Mostly `doc_lazy_continuation` (cosmetic). Two substantive: `clippy::await_holding_lock` at `services/application_service.rs:1644` (a `MutexGuard` held across four `.await` points — test code, but a deadlock-shaped pattern), and `clippy::mem_replace_option_with_some` at `ssh/client.rs:190`. Warnings are not denied anywhere, and there is **no CI configuration in the repository at all**.
 
 **F-005 — All 77 backend integration tests fail on any machine without Postgres | HIGH | P0**
-`backend/tests/*.rs` call `common::database_url()`, which `expect()`s `DATABASE_URL`. None were marked `#[ignore]`, unlike every real-dependency test in `src-tauri/tests/`. Because cargo stops at the first failing test binary, `audit.rs` (alphabetically first) took the entire rest of `cargo test --workspace` down with it — so the workspace suite was red by default even before F-001. Fixed in Phase A alongside F-001.
+`backend/tests/*.rs` call `common::database_url()`, which `expect()`s `DATABASE_URL`. None were marked `#[ignore]`, unlike every real-dependency test in `apps/desktop/src-tauri/tests/`. Because cargo stops at the first failing test binary, `audit.rs` (alphabetically first) took the entire rest of `cargo test --workspace` down with it — so the workspace suite was red by default even before F-001. Fixed in Phase A alongside F-001.
 
 **F-003 — No frontend test framework whatsoever | HIGH | P1**
 `package.json` has **no** `test` script and no vitest/jest/playwright/testing-library dependency. Zero tests exist for ~18k lines of TypeScript, including the wizard flows, the file manager, the terminal, and every store. There is also no `lint` script and no `typecheck` script — `tsc --noEmit` passes but nothing enforces it.
@@ -647,10 +647,10 @@ Serialize as `{ code: "port_in_use", params: { port: 25565, owner: "nginx" }, de
 | `inactivity_timeout: 60s` vs. no command timeout | `ssh/client.rs` — actively conflicting (P-004) |
 | Poll intervals `2000/5000/6000/15000/20000` ms | 5 separate frontend files, no shared config (P-001) |
 | `MAX_STORED_LINES = 5000` | `storage/log_capture.rs` |
-| `MAX_FAILED_ATTEMPTS = 10`, pairing TTL | `agent/src/pairing/mod.rs` |
+| `MAX_FAILED_ATTEMPTS = 10`, pairing TTL | `apps/agent/src/pairing/mod.rs` |
 | `LISTEN_PORT = 54221`, `MESH_CIDR = 10.77.0.0/16`, `MESH_CIDR_SECOND_OCTET = 77` | `wireguard.rs`, `node_network_repository.rs` — not configurable; will collide with an existing 10.77/16 network |
 | `APP_NETWORK_PREFIX`/`LINK_NETWORK_PREFIX` (was `NETWORK_NAME = "vibessh-net"`) | `runtime/docker.rs` |
-| `DEFAULT_BIND_ADDR = "0.0.0.0:7420"` | `agent/src/main.rs` |
+| `DEFAULT_BIND_ADDR = "0.0.0.0:7420"` | `apps/agent/src/main.rs` |
 | `HELPER_PATH`, `SUDOERS_PATH` | `files/sudo_user.rs` |
 | `GENERATED_PASSWORD_LEN = 24`, `MAX_DATABASE_NAME_LEN`, `MAX_USERNAME_LEN` | `database_service.rs` |
 | Archive size/entry/depth caps | **absent entirely** — see S-011 |

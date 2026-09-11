@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 // Read through Vite rather than through `node:fs`: this project's tsconfig
 // covers `src` with the browser lib only, and `?raw` is already how the
 // guide loads its own markdown.
-import promptSource from "../../../../../src-tauri/src/ai/prompt.rs?raw";
+import promptSource from "../../../src-tauri/src/ai/prompt.rs?raw";
 import en from "@/i18n/locales/en.json";
 import { sidebarGroups } from "./navigation";
 

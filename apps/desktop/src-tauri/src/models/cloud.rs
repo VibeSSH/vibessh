@@ -1,5 +1,5 @@
 //! DTOs mirroring the cloud backend's actual JSON shapes (see
-//! backend/src/models.rs) - camelCase to match its `#[serde(rename_all =
+//! apps/backend/src/models.rs) - camelCase to match its `#[serde(rename_all =
 //! "camelCase")]` on every response, since these are deserialized directly
 //! from real HTTP responses, not constructed locally.
 use chrono::{DateTime, Utc};

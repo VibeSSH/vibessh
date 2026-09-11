@@ -28,7 +28,7 @@ restarting, enabling, or disabling units outside the caller's own session -
 an unprivileged user gets `Access denied` by default, full stop.
 
 **Solution: a polkit rule with a root-owned allowlist file**, installed by
-`agent/install/install.sh` (`install_polkit_rule`, `ensure_directories`).
+`apps/agent/install/install.sh` (`install_polkit_rule`, `ensure_directories`).
 The rule (`/etc/polkit-1/rules.d/49-vibessh-agent.rules`) authorizes
 `vibessh-agent` to `start`/`stop`/`restart`/`try-restart`/`reload*` and
 `enable`/`disable` - but only for unit names listed in
@@ -83,7 +83,7 @@ deferred. Two consequences follow that the original framing hides:
 - **VibeSSH assumes passwordless `sudo` on every managed Node.** Not just
   for Docker: `ufw`, `wg-quick`, `useradd`, `install`, `mysql` and the file
   helper all rely on it. That requirement is not stated in
-  `agent/install/README.md` or the setup flow, and a Node whose admin
+  `apps/agent/install/README.md` or the setup flow, and a Node whose admin
   account prompts for a password fails in confusing ways rather than being
   refused up front.
 

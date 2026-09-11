@@ -25,7 +25,7 @@ Companion to `AUDIT_REPORT.md` (commit `bb04132`). Phases are ordered by risk, n
 
 If a problem cannot be sensibly tested (e.g. a doc correction), say so explicitly in the commit message rather than skipping the test silently.
 
-**Blocker:** F-001 must be fixed first. Until `src-tauri/tests/vibe_network.rs` compiles, step 3 is impossible for anything in this plan.
+**Blocker:** F-001 must be fixed first. Until `apps/desktop/src-tauri/tests/vibe_network.rs` compiles, step 3 is impossible for anything in this plan.
 
 ---
 
@@ -36,7 +36,7 @@ Nothing ships until every item here is closed.
 ### A.0 — Unblock the test suite
 | # | Item | Finding | Files |
 |---|---|---|---|
-| A.0.1 | Fix the three call-site signature mismatches | F-001 | `src-tauri/tests/vibe_network.rs:178,181,189` |
+| A.0.1 | Fix the three call-site signature mismatches | F-001 | `apps/desktop/src-tauri/tests/vibe_network.rs:178,181,189` |
 
 *Test:* `cargo test --workspace --no-run` exits 0.
 
@@ -45,7 +45,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 
 | # | Item | Finding | Files |
 |---|---|---|---|
-| A.1.1 | Create `src-tauri/src/ssh/command.rs`: one `ShellCommand` builder with a single `shell_quote`, a single `reject_unsafe` (blocking `\n \r $ ` ` ( ) { } \` and null bytes), and typed validators for hostname, IP, CIDR, WireGuard key, port, octal mode, Linux username, Docker image ref | S-002, duplication | new file |
+| A.1.1 | Create `apps/desktop/src-tauri/src/ssh/command.rs`: one `ShellCommand` builder with a single `shell_quote`, a single `reject_unsafe` (blocking `\n \r $ ` ` ( ) { } \` and null bytes), and typed validators for hostname, IP, CIDR, WireGuard key, port, octal mode, Linux username, Docker image ref | S-002, duplication | new file |
 | A.1.2 | Delete all six duplicate `shell_quote` copies and the three `reject_*` variants; migrate every call site | duplication | `dedicated_user.rs`, `files/sudo_user.rs`, `runtime/docker.rs`, `services/{application,database,dns}_service.rs`, `runtime/remote_process.rs` |
 | A.1.3 | Quote the WireGuard heredoc (`<<'VIBESSH_WG_EOF'`); substitute the private key on the Node from a placeholder instead of shell expansion | **S-002** | `network/wireguard.rs::build_apply_script` |
 | A.1.4 | Validate every peer field as base64 key / hostname-or-IP before it enters a config | **S-002** | `network/wireguard.rs` |
@@ -95,7 +95,7 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 ### A.6 — Startup and crash resilience
 | # | Item | Finding | Files |
 |---|---|---|---|
-| A.6.1 | Migrate once at startup, before any repository opens; set `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` on every connection; share one pool | **A-004 / D-001** | `src-tauri/src/lib.rs`, all 9 repositories |
+| A.6.1 | Migrate once at startup, before any repository opens; set `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` on every connection; share one pool | **A-004 / D-001** | `apps/desktop/src-tauri/src/lib.rs`, all 9 repositories |
 | A.6.2 | Replace every `expect()` on stored DB values with a fallible `row_to_*` that skips + logs a malformed row | **A-005** | `storage/server_repository.rs:426,454,459`, `storage/application_repository.rs:569,573` |
 | A.6.3 | Cap declared entry size, total extracted bytes and entry count in `extract_zip`; stream through a `take()`-limited reader | **S-011** | `files/archive.rs` |
 | A.6.4 | Skip symlinks and track visited canonical paths in `collect_for_zip` | **S-017** | `files/archive.rs` |
@@ -105,8 +105,8 @@ The single highest-leverage change in the whole plan. Four CRITICALs share this 
 ### A.7 — Agent transport
 | # | Item | Finding | Files |
 |---|---|---|---|
-| A.7.1 | Implement TOFU certificate pinning for Agent Mode, matching the SSH path: store the fingerprint on first successful pairing, reject mismatches thereafter. Remove `danger_accept_invalid_*` | **S-010** | `src-tauri/src/agent_client/mod.rs`, `storage/server_repository.rs` |
-| A.7.2 | Constant-time comparison for the pairing code | S-022 | `agent/src/pairing/mod.rs::try_consume` |
+| A.7.1 | Implement TOFU certificate pinning for Agent Mode, matching the SSH path: store the fingerprint on first successful pairing, reject mismatches thereafter. Remove `danger_accept_invalid_*` | **S-010** | `apps/desktop/src-tauri/src/agent_client/mod.rs`, `storage/server_repository.rs` |
+| A.7.2 | Constant-time comparison for the pairing code | S-022 | `apps/agent/src/pairing/mod.rs::try_consume` |
 
 *Tests:* a differing certificate is rejected; the first connection stores the fingerprint; pairing-code comparison uses `subtle`/`constant_time_eq`.
 

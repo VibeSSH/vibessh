@@ -30,7 +30,7 @@ export default defineConfig({
     strictPort: true,
     host: host || false,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: ["**/apps/desktop/src-tauri/**"],
     },
   },
   envPrefix: ["VITE_", "TAURI_"],

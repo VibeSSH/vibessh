@@ -35,7 +35,7 @@ pairing code and, worse, the durable credential issued right after it: a
 bearer secret good for full agent access until the next re-pair.
 
 **Fixed**: the public endpoint is now `wss://` with a self-signed
-certificate the agent generates once and persists (`agent/src/tls.rs`).
+certificate the agent generates once and persists (`apps/agent/src/tls.rs`).
 This defeats *passive* eavesdropping - the realistic everyday threat.
 It does **not** defeat an *active* attacker positioned on the very first
 connection, who could present their own certificate before the desktop has
@@ -205,6 +205,6 @@ test server runs `ufw` with a default-deny incoming policy and no rule for
 port 7420, so this change did not, in practice, expose anything there - a
 firewall allow rule is still a separate, explicit step for an admin who
 wants an agent actually reachable from the internet. That requirement is
-documented in `agent/install/README.md`, not automated by `install.sh` -
+documented in `apps/agent/install/README.md`, not automated by `install.sh` -
 opening a firewall port is exactly the kind of thing an installer
 shouldn't do silently.

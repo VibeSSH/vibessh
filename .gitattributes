@@ -9,4 +9,4 @@
 # core.autocrlf setting would trip that same "modified" check for no real
 # reason, so migrations always check out with LF regardless of local
 # settings, same as shell scripts above.
-backend/migrations/*.sql text eol=lf
+apps/backend/migrations/*.sql text eol=lf
