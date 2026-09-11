@@ -95,7 +95,7 @@
 
 /*
  * Spacing / typography / z-index scale - additive tokens from the UI
- * cleanup pass (see docs/UI_AUDIT.md). These name a vocabulary that mostly
+ * cleanup pass (see docs/planning/UI_AUDIT.md). These name a vocabulary that mostly
  * already matched what components used ad hoc (4/8/12/16/20/24 show up
  * constantly); they don't change any existing rule by themselves. New or
  * touched CSS should reach for these instead of a fresh magic number.

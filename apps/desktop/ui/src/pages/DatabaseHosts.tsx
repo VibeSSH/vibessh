@@ -31,7 +31,7 @@ import { NodeIcon } from "@/components/servers/NodeIcon";
 
 /**
  * Global admin list of MySQL/MariaDB engines VibeSSH can provision
- * databases on (docs/APPLICATIONS_ARCHITECTURE.md Section 12) - a separate
+ * databases on (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12) - a separate
  * top-level page, not a per-Server or per-Application tab, since one host
  * is meant to be reused across many applications, the same "registered
  * once, linked from many places" shape Servers already has.
@@ -406,7 +406,7 @@ interface PhpmyadminLinkModalProps {
   onSaved: () => void;
 }
 
-/** No dedicated phpMyAdmin Blueprint needed - any existing Docker application (typically `generic-docker` with image `phpmyadmin/phpmyadmin`) can be linked here (docs/APPLICATIONS_ARCHITECTURE.md Section 12.3, Option A). */
+/** No dedicated phpMyAdmin Blueprint needed - any existing Docker application (typically `generic-docker` with image `phpmyadmin/phpmyadmin`) can be linked here (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12.3, Option A). */
 function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProps) {
   const { t } = useTranslation();
   const backdrop = useModalDialog(onClose, { labelledBy: "databasehosts-dialog-title-3" });

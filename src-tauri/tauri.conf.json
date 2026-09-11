@@ -40,8 +40,8 @@
     "licenseFile": "../LICENSE.txt",
     "windows": {
       "nsis": {
-        "headerImage": "../installer/header.bmp",
-        "sidebarImage": "../installer/sidebar.bmp",
+        "headerImage": "../apps/desktop/installer/header.bmp",
+        "sidebarImage": "../apps/desktop/installer/sidebar.bmp",
         "installerIcon": "icons/icon.ico",
         "installMode": "both",
         "languages": [

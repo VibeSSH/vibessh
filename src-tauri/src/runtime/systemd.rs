@@ -3,7 +3,7 @@
 //! reused verbatim via `SshSession`'s own methods, `validate_unit_name`'s
 //! injection-safe validation reused as-is) with unit file create/update,
 //! which that module didn't need before Applications existed. See
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 5.3 for the design and why
+//! docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5.3 for the design and why
 //! this is SSH-only (no Agent path) for now.
 //!
 //! **Known limitation, stated rather than hidden**: units are written to
@@ -68,7 +68,7 @@ fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<SystemdConfig> {
 
 /// `vibessh-app-<uuid>.service` - unambiguously VibeSSH-owned so this
 /// runtime never creates, touches, or removes a unit it didn't create
-/// itself (docs/APPLICATIONS_ARCHITECTURE.md Section 5.3). Always accepted
+/// itself (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5.3). Always accepted
 /// by `validate_unit_name`, since a `Uuid`'s `Display` is only hex digits
 /// and hyphens - validated anyway before every remote use, as defense in
 /// depth against that assumption ever changing.

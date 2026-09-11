@@ -1,4 +1,4 @@
-//! The Application domain model - see docs/APPLICATIONS_ARCHITECTURE.md for
+//! The Application domain model - see docs/architecture/APPLICATIONS_ARCHITECTURE.md for
 //! the full design this implements. `Application` itself deliberately
 //! doesn't carry environment/ports/runtime-config/metadata inline; those
 //! live in their own tables (real per-row CRUD, not a JSON blob - see the
@@ -31,7 +31,7 @@ pub enum RuntimeType {
 /// trusted for anything user-facing - persisted only so the UI has
 /// something to show before the first live refresh completes after an app
 /// restart, not because this column is itself authoritative (see
-/// docs/APPLICATIONS_ARCHITECTURE.md Section 4).
+/// docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ApplicationStatus {
@@ -246,7 +246,7 @@ pub struct ApplicationPort {
     #[serde(default = "default_visibility")]
     pub visibility: PortVisibility,
     /// Blueprint-declared as required - the UI lets it be edited, not
-    /// removed (docs/APPLICATIONS_ARCHITECTURE.md's Ports tab spec).
+    /// removed (docs/architecture/APPLICATIONS_ARCHITECTURE.md's Ports tab spec).
     pub required: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

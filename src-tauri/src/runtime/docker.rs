@@ -4,7 +4,7 @@
 //! injection-safe validation reused as-is) with `docker create`, which that
 //! module didn't need before Applications existed. SSH-only, matching the
 //! same confirmed decision `runtime::systemd` documents
-//! (docs/APPLICATIONS_ARCHITECTURE.md Section 5.3/11) - Agent-managed
+//! (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5.3/11) - Agent-managed
 //! Docker stays a later, explicit decision made with a real feature in
 //! hand, not granted on spec.
 //!

@@ -5,7 +5,7 @@ use uuid::Uuid;
 /// channel this travels over and the revisioning around it, but carries no
 /// real payload yet (no firewall rules, WireGuard config, or DNS fragments
 /// exist to push - those are later, deferred phases, see
-/// docs/APPLICATIONS_ARCHITECTURE.md's own Etap M roadmap notes). An empty
+/// docs/architecture/APPLICATIONS_ARCHITECTURE.md's own Etap M roadmap notes). An empty
 /// struct rather than `()` so adding real fields later is a
 /// backward-compatible schema change (`#[serde(default)]` per field). An
 /// Agent applying an empty state always succeeds - there is nothing yet

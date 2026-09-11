@@ -1,5 +1,5 @@
 //! The runtime abstraction Applications is built on - see
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. One
+//! docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5 for the full design. One
 //! trait, `Box<dyn ApplicationRuntime>` held by commands and services, and
 //! exactly one place (`runtime_for`) that matches on `RuntimeType` to pick
 //! which implementation to construct.
@@ -131,7 +131,7 @@ pub trait ApplicationRuntime: Send + Sync {
 
     /// `Ok(None)` (not an error) when this runtime/application genuinely
     /// has no interactive console - e.g. a systemd unit with no stdin
-    /// (docs/APPLICATIONS_ARCHITECTURE.md's Console section) - the UI must
+    /// (docs/architecture/APPLICATIONS_ARCHITECTURE.md's Console section) - the UI must
     /// show a clearly-labeled read-only state for that, never silently
     /// swallow input.
     async fn console(&self, ctx: &RuntimeContext<'_>) -> AppResult<Option<Box<dyn ApplicationConsole>>>;

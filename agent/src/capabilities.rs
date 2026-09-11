@@ -2,7 +2,7 @@
 //! fresh on every accepted handshake so it can't go stale across a long
 //! agent uptime (Docker or a Minecraft server can start after the agent
 //! does). Detects real system state, not whether the agent has a feature
-//! *implemented* for it yet - see docs/agent-privileges.md in the main
+//! *implemented* for it yet - see docs/security/agent-privileges.md in the main
 //! repo for why several of these (Docker, systemd unit management) aren't
 //! actionable through the agent even when detected as present.
 

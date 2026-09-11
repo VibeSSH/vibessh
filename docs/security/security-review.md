@@ -185,7 +185,7 @@ rules), not something to duplicate inside the agent.
   or pending pairing code is rejected outright - verified by two dedicated
   tests. No anonymous/unauthenticated access path exists.
 - **Local privilege escalation**: covered extensively in
-  `docs/agent-privileges.md` (Etap G) - systemd unit management is
+  `docs/security/agent-privileges.md` (Etap G) - systemd unit management is
   polkit-gated behind a root-owned allowlist the agent cannot self-modify
   (verified for real: empty allowlist denies, adding a unit allows it, the
   agent can't write or delete-and-replace the allowlist file). Docker and
@@ -205,6 +205,6 @@ test server runs `ufw` with a default-deny incoming policy and no rule for
 port 7420, so this change did not, in practice, expose anything there - a
 firewall allow rule is still a separate, explicit step for an admin who
 wants an agent actually reachable from the internet. That requirement is
-documented in `agent-install/README.md`, not automated by `install.sh` -
+documented in `agent/install/README.md`, not automated by `install.sh` -
 opening a firewall port is exactly the kind of thing an installer
 shouldn't do silently.

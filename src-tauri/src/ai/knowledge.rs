@@ -235,9 +235,9 @@ impl KeywordKnowledgeService {
             ("Poradnik - Bot Node.js", include_str!("../../../docs/guide/app-nodejs-bot.pl.md")),
             ("Guide - Python bot", include_str!("../../../docs/guide/app-python-bot.en.md")),
             ("Poradnik - Bot Python", include_str!("../../../docs/guide/app-python-bot.pl.md")),
-            ("Applications architecture", include_str!("../../../docs/APPLICATIONS_ARCHITECTURE.md")),
-            ("Threat model", include_str!("../../../docs/threat-model.md")),
-            ("Agent privileges", include_str!("../../../docs/agent-privileges.md")),
+            ("Applications architecture", include_str!("../../../docs/architecture/APPLICATIONS_ARCHITECTURE.md")),
+            ("Threat model", include_str!("../../../docs/security/threat-model.md")),
+            ("Agent privileges", include_str!("../../../docs/security/agent-privileges.md")),
             ("README", include_str!("../../../README.md")),
         ];
         let mut sections = Vec::new();

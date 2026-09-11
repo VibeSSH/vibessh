@@ -1,6 +1,6 @@
 //! The Blueprint domain model - see `blueprints` module's own doc comment
 //! for how this data connects to the four `ApplicationRuntime`
-//! implementations, and docs/APPLICATIONS_ARCHITECTURE.md Section 7.5 for
+//! implementations, and docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 7.5 for
 //! why `features` here is a different concept from host-level
 //! `AgentCapabilities`.
 
@@ -181,7 +181,7 @@ pub enum BlueprintFeature {
     Environment,
     Ports,
     HealthCheck,
-    /// Gates the Databases tab (docs/APPLICATIONS_ARCHITECTURE.md Section
+    /// Gates the Databases tab (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section
     /// 12.2) - not declared by every blueprint the way Health Check/Ports
     /// are; a self-managed database only makes sense for something that
     /// actually talks to one, matching the original brief's own

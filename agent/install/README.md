@@ -1,4 +1,4 @@
-# agent-install
+# agent/install
 
 `install.sh` is the Etap F installer: it fetches, verifies, and installs
 `vibe-agent` as a systemd service on a Linux host. It does not implement any
@@ -18,7 +18,7 @@ vibe-agent pair <CODE-SHOWN-IN-VIBESSH>
 ```
 
 The agent listens on `0.0.0.0:7420` by default (TLS + pairing-code/credential
-auth are what make that safe - see `docs/security-review.md`), but
+auth are what make that safe - see `docs/security/security-review.md`), but
 `install.sh` does not touch your firewall. For the desktop to actually
 reach it from elsewhere, allow the port explicitly, e.g.:
 
@@ -43,7 +43,7 @@ Two separate things are testable independently of that:
 anywhere with a POSIX shell, including this Windows dev machine:
 
 ```sh
-sh agent-install/test.sh
+sh agent/install/test.sh
 ```
 
 This is real verification, not a simulation: `detect_os` is asserted to
@@ -88,7 +88,7 @@ units at all - `install.sh` ships an empty allowlist on purpose. To let it
 manage one (e.g. so a future Quick Action can restart nginx), add the unit
 name to `/etc/vibessh/managed-units.conf` (one per line, root-owned - the
 agent can read it, not write it) and there's nothing else to do; the
-polkit rule watches that file live. See `docs/agent-privileges.md` in the
+polkit rule watches that file live. See `docs/security/agent-privileges.md` in the
 main repo for the full reasoning, including why Docker access and
 cross-user process/file access are deliberately *not* covered by this
 installer yet.
@@ -110,4 +110,4 @@ deviation from what the planning doc suggested was needed.
   gap is covered (see the polkit section above); Docker and anything
   needing another user's files/processes are deliberately not, since no
   feature uses them yet. Full reasoning and the intended pattern for each
-  (an opt-in flag, a sudo-helper) are in `docs/agent-privileges.md`.
+  (an opt-in flag, a sudo-helper) are in `docs/security/agent-privileges.md`.

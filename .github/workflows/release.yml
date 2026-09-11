@@ -240,7 +240,7 @@ jobs:
           cargo build --release -p vibe-agent --target x86_64-unknown-linux-gnu
           cargo build --release -p vibe-agent --target aarch64-unknown-linux-gnu
 
-      # The names and the checksum format are what `agent-install/install.sh`
+      # The names and the checksum format are what `agent/install/install.sh`
       # asks for: `vibe-agent-linux-<arch>` beside a `.sha256` in sha256sum's
       # own "<digest>  <filename>" layout.
       - name: Install the signing tool
@@ -255,7 +255,7 @@ jobs:
           # can point at a public URL. It used to point into this repository,
           # which is private, so every user got a 404 from the very first
           # step.
-          cp agent-install/install.sh release-artifacts/install.sh
+          cp agent/install/install.sh release-artifacts/install.sh
           cd release-artifacts
           for file in vibe-agent-linux-amd64 vibe-agent-linux-arm64; do
             sha256sum "$file" > "$file.sha256"

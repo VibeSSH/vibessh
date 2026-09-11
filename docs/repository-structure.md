@@ -1,6 +1,6 @@
 # Repository structure
 
-Step 1 is done; steps 2 to 5 are still a proposal. What is here today, why it reads as a
+Steps 1 to 3 are done; steps 4 and 5 are still a proposal. What is here today, why it reads as a
 mess, what it should look like, and in which order to get there without
 breaking the build.
 
@@ -17,7 +17,7 @@ named directory. The fifth — the frontend — *is* the repository root:
 | `Cargo.toml`, `Cargo.lock`, `clippy.toml`, `target/` | the Rust workspace |
 | `src-tauri/`, `agent/`, `protocol/`, `backend/` | its four members |
 | `installer/` | `src-tauri` only (NSIS bitmaps) |
-| `agent-install/` | `agent` only |
+| `agent/install/` | `agent` only |
 | `scripts/` | one repo-wide script, one frontend script |
 | `docs/` | prose, plus `docs/guide/` which is a **build input** |
 | `AUDIT_REPORT.md`, `FIX_PLAN.md` | planning, not product |
@@ -35,7 +35,7 @@ So the five problems, named precisely:
    Pterodactyl import, the AI assistant — behind a name that promises Tauri
    glue.
 4. **Loose directories with one owner each.** `installer/` is read only by
-   `src-tauri/tauri.conf.json`; `agent-install/` ships only with the agent.
+   `src-tauri/tauri.conf.json`; `agent/install/` ships only with the agent.
    Sitting at the root, they look repo-wide.
 5. **`backend/` is a deployable service** with its own Dockerfile and
    compose file, sitting as a peer of `protocol/`, a nine-file DTO crate.
@@ -57,7 +57,7 @@ vibessh/
 │   │   ├── core/              was: src-tauri/ (minus the guide corpus)
 │   │   └── installer/         was: installer/ - NSIS bitmaps, read only from here
 │   ├── agent/                 was: agent/
-│   │   └── install/           was: agent-install/
+│   │   └── install/           was: agent/install/
 │   └── backend/               was: backend/ - unchanged, already self-contained
 ├── crates/
 │   └── protocol/              was: protocol/ - the wire format both ends share
@@ -173,12 +173,29 @@ gate.
 `bun.lock` also stays at the root, which is where a workspace lockfile
 belongs.
 
-**Step 2 — move the loose owned folders.** `installer/` under
-`apps/desktop/`, `agent-install/` under `apps/agent/install/`. Two paths in
-`tauri.conf.json`, and the release workflow's reference to the install script.
+**Step 2 — move the loose owned folders. Done.** `installer/` is
+`apps/desktop/installer/`, read only by `tauri.conf.json`'s nsis block; both
+bitmap paths were checked by resolving them from the config's own directory.
 
-**Step 3 — sort `docs/`.** Pure prose moves, no build impact, as long as
-`docs/guide/` is left alone for now. Cheapest step; do it whenever.
+The agent installer went to `agent/install/` rather than `apps/agent/install/`:
+the agent crate is still at the root until step 5, and creating `apps/agent/`
+now would have meant two directories called agent, in two places, for the sake
+of one intermediate commit. Inside the crate it already sits in its final
+relative position, so step 5 carries it along for free.
+
+**Step 3 — sort `docs/`. Done.** `architecture/`, `security/` and
+`planning/`, with `AUDIT_REPORT.md` and `FIX_PLAN.md` coming in off the
+repository root. `docs/guide/` is untouched, and `repository-structure.md`
+stays at the top of `docs/` as the map of the rest.
+
+The move itself was free; carrying its references was not, and this is the
+part the plan underestimated by calling it "the cheapest step". These
+documents are cited **193 times** across the codebase, nearly all from Rust
+and TypeScript doc comments - `docs/APPLICATIONS_ARCHITECTURE.md` alone
+appears 73 times. Every path-shaped reference was rewritten. Bare mentions in
+prose ("three findings in `AUDIT_REPORT.md`") were left alone: they name a
+document rather than point at a file, and rewriting those would have been
+noise in a hundred comments.
 
 **Step 4 — move the guide to `shared/guide/`.** ~60 `include_str!` paths and
 two globs. Mechanical but wide; worth doing as its own commit so that a

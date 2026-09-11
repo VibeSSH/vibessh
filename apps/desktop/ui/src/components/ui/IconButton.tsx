@@ -11,7 +11,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   iconSize?: number;
   size?: Size;
   danger?: boolean;
-  /** Required, not optional - an icon-only button with no accessible name is exactly the gap docs/UI_AUDIT.md's accessibility pass exists to close. Used as both the native tooltip and aria-label. */
+  /** Required, not optional - an icon-only button with no accessible name is exactly the gap docs/planning/UI_AUDIT.md's accessibility pass exists to close. Used as both the native tooltip and aria-label. */
   title: string;
 }
 

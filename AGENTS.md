@@ -133,7 +133,7 @@ integration pass. Treat that as the largest outstanding risk.
 |---|---|
 | `AUDIT_REPORT.md` | The full audit. §16 lists its own corrections — read it before trusting a finding. |
 | `FIX_PLAN.md` | Phased remediation, annotated with what is done and what was deliberately skipped. |
-| `docs/threat-model.md` | Maintained. Update it when a feature crosses a boundary. |
-| `docs/security-review.md` | Historical (Etap K), superseded, annotated where it became false. |
-| `docs/agent-privileges.md` | The privilege model, corrected where the decision it described was overtaken. |
-| `docs/APPLICATIONS_ARCHITECTURE.md` | The Applications design. Accurate. |
+| `docs/security/threat-model.md` | Maintained. Update it when a feature crosses a boundary. |
+| `docs/security/security-review.md` | Historical (Etap K), superseded, annotated where it became false. |
+| `docs/security/agent-privileges.md` | The privilege model, corrected where the decision it described was overtaken. |
+| `docs/architecture/APPLICATIONS_ARCHITECTURE.md` | The Applications design. Accurate. |

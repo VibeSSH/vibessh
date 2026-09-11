@@ -3,7 +3,7 @@
 //!
 //! Pterodactyl is this project's reference point throughout - per-application
 //! databases, eggs, allocations and the Java-version picker are all shaped
-//! after it (see `docs/APPLICATIONS_ARCHITECTURE.md`). That is why an
+//! after it (see `docs/architecture/APPLICATIONS_ARCHITECTURE.md`). That is why an
 //! importer is worth having at all: the two models line up almost field for
 //! field, so a migration is mostly translation rather than reconstruction.
 //!

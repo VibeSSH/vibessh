@@ -223,7 +223,7 @@ EOF
     fi
 }
 
-# Etap G's privilege analysis (see docs/agent-privileges.md in the main repo)
+# Etap G's privilege analysis (see docs/security/agent-privileges.md in the main repo)
 # concluded systemd unit management is the one operation with a clean,
 # narrow polkit-based solution available today: this rule lets the service
 # user start/stop/restart/enable/disable ONLY units listed in

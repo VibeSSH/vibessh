@@ -44,7 +44,7 @@ impl DockerCommandRunner for SshSession {
     async fn docker(&self, args: &[&str]) -> AppResult<CommandOutput> {
         // `sudo` because a managed Node's admin is assumed to have passwordless
         // sudo rather than to be in the `docker` group - see
-        // `docs/agent-privileges.md`.
+        // `docs/security/agent-privileges.md`.
         let mut line = String::from("sudo docker");
         for arg in args {
             line.push(' ');

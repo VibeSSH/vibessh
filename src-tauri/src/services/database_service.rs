@@ -1,6 +1,6 @@
 //! Application Databases (Phase 11's real implementation, on top of the
 //! schema+types foundation in `models::database`/`storage::database_repository`)
-//! - see docs/APPLICATIONS_ARCHITECTURE.md Section 12.1 for the full design
+//! - see docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12.1 for the full design
 //! this follows. Provisioning never speaks the MySQL wire protocol
 //! directly from the desktop (a `database_hosts.host` like `"127.0.0.1"` is
 //! only reachable from *that host's own shell*, not from VibeSSH's own
@@ -157,7 +157,7 @@ pub fn delete_database_host(repo: &DatabaseRepository, id: Uuid) -> AppResult<()
 }
 
 /// Links (or unlinks, `application_id: None`) the built-in phpMyAdmin
-/// instance deployed for this host - see docs/APPLICATIONS_ARCHITECTURE.md
+/// instance deployed for this host - see docs/architecture/APPLICATIONS_ARCHITECTURE.md
 /// Section 12.3. No new Blueprint is needed for phpMyAdmin itself:
 /// `blueprints::GenericDockerBlueprint` (image `phpmyadmin/phpmyadmin`,
 /// `PMA_HOST`/`PMA_PORT` set through the Application's own existing
@@ -319,7 +319,7 @@ pub async fn reset_application_database_password(
 }
 
 /// Builds the URL a "Open in phpMyAdmin" button opens in the system browser
-/// (docs/APPLICATIONS_ARCHITECTURE.md Section 12.2) - `Err` when there's
+/// (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12.2) - `Err` when there's
 /// nothing actually openable yet (no phpMyAdmin linked, or it has no
 /// published port), rather than handing back a URL that would just fail to
 /// load. `database_name` is optional and only pre-fills phpMyAdmin's own
@@ -871,7 +871,7 @@ fn socket_auth_refusal(detail: &str) -> Option<String> {
 /// `runtime::docker::build_create_command`/`runtime::systemd::render_unit_file`
 /// already use for the same reason. `MYSQL_PWD` (not `-p<password>`) so the
 /// password never appears in a `ps`-visible argument list, only in this
-/// one exec channel's own environment - see `docs/APPLICATIONS_ARCHITECTURE.md`
+/// one exec channel's own environment - see `docs/architecture/APPLICATIONS_ARCHITECTURE.md`
 /// Section 12.1.
 ///
 /// `--protocol=TCP` is required, not cosmetic: the `mysql` client silently

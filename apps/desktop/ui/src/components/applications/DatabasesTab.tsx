@@ -33,7 +33,7 @@ interface DatabasesTabProps {
   applicationId: string;
 }
 
-/** docs/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, per-row regenerate/remove, and "Open in phpMyAdmin" (only shown once a host has one linked - see DatabaseHosts.tsx) which opens the deployed instance in the system browser with the database name pre-filled. Login itself still happens in phpMyAdmin's own form - real SSO would need phpMyAdmin's `signon` auth mode configured against something, out of scope for this first pass (Section 12.2). */
+/** docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12.2's Databases tab - list of provisioned databases, a "New Database" inline form (host picker + optional purpose text, everything else generated server-side), password reveal-on-click, per-row regenerate/remove, and "Open in phpMyAdmin" (only shown once a host has one linked - see DatabaseHosts.tsx) which opens the deployed instance in the system browser with the database name pre-filled. Login itself still happens in phpMyAdmin's own form - real SSO would need phpMyAdmin's `signon` auth mode configured against something, out of scope for this first pass (Section 12.2). */
 export function DatabasesTab({ applicationId }: DatabasesTabProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();

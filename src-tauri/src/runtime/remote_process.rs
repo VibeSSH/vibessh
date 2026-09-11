@@ -1,6 +1,6 @@
 //! `RemoteProcessRuntime` - a raw, non-systemd, non-Docker process kept
 //! alive on a remote host over SSH, per
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 5.3's "nohup + PID + FIFO"
+//! docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5.3's "nohup + PID + FIFO"
 //! design (the recommended option there, over tmux - tmux needs to be
 //! installed on the remote host, which isn't guaranteed).
 //!

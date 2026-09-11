@@ -1,5 +1,5 @@
 //! Blueprints - declarative descriptions of "what kind of application is
-//! this" (docs/APPLICATIONS_ARCHITECTURE.md Section 7.5, brief's own
+//! this" (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 7.5, brief's own
 //! "declarative, versioned schema controlling both backend behavior AND
 //! UI"). `models::Blueprint` is the *data* - id, display info, which
 //! `RuntimeType`s it supports, which UI features it needs, and the input
@@ -12,7 +12,7 @@
 //! `LocalProcessConfig`/`SystemdConfig`/`RemoteProcessConfig` all share.
 //!
 //! **Deliberate scope decision, differing from
-//! docs/APPLICATIONS_ARCHITECTURE.md Section 6's own SQL sketch**: this
+//! docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 6's own SQL sketch**: this
 //! phase does NOT persist blueprint definitions into a `blueprints` SQLite
 //! table. That table's only real purpose is versioning/serving *custom*
 //! (user-imported) blueprint definitions - a feature that doesn't exist yet

@@ -79,12 +79,12 @@ actually enforced.
       only thing persisted on the agent, and which the desktop stores in the
       OS credential store (Windows Credential Manager / Keychain / Secret
       Service), not a plaintext file
-- [x] Agent installer — `agent-install/install.sh`: detects OS/arch,
+- [x] Agent installer — `agent/install/install.sh`: detects OS/arch,
       downloads + checksums a release, installs a dedicated systemd service
       as a non-root user. Run for real end-to-end on a live Ubuntu 24.04 box
-      (see `agent-install/README.md`) - only the download step is unverified,
+      (see `agent/install/README.md`) - only the download step is unverified,
       since there's no published release to fetch yet
-- [x] Systemd/privilege hardening (Etap G) — `docs/agent-privileges.md`
+- [x] Systemd/privilege hardening (Etap G) — `docs/security/agent-privileges.md`
       analyzes which future agent features need elevated access and why.
       Systemd unit management (Quick Actions) gets a polkit rule authorizing
       only allowlisted units, with the allowlist file deliberately
@@ -395,7 +395,7 @@ actually enforced.
       Verified end-to-end against the test server through a real WebSocket
       handshake: reported RAM/disk totals matched what `free -h`/`df -h`
       showed on that box independently
-- [x] Security review (Etap K) — full writeup in `docs/security-review.md`
+- [x] Security review (Etap K) — full writeup in `docs/security/security-review.md`
       covering all 16 areas the plan calls out, with LOW/MEDIUM/HIGH/CRITICAL
       severities. Two CRITICALs, fixed: (1) the pairing code and issued
       credential were transmitted in plaintext - the public endpoint is now
@@ -674,19 +674,23 @@ docs/
   guide/                     The in-app guide - a build input, not prose: compiled into the
                              Rust binary by include_str! and into the UI bundle by
                              import.meta.glob. See docs/repository-structure.md
+  architecture/              APPLICATIONS_ARCHITECTURE.md, future-host-mesh.md, navio.md
+  security/                  threat-model.md, security-review.md, agent-privileges.md
+  planning/                  AUDIT_REPORT.md, FIX_PLAN.md, UI_AUDIT.md - snapshots of work,
+                             not product documentation
   repository-structure.md    Where everything goes, and what is still to move
 
 scripts/
   setup.ps1                  Setup/build launcher
 
-installer/
+apps/desktop/installer/      Read only by src-tauri/tauri.conf.json's nsis block
   header.bmp                 NSIS wizard header banner (150x57)
   sidebar.bmp                NSIS wizard Welcome/Finish page art (164x314)
 
-agent-install/               Linux agent installer (curl | sudo sh) - not
-  install.sh                 the same thing as installer/ above, which is
-  test.sh                    the Windows *desktop app* installer wizard
-  README.md
+agent/install/               Linux agent installer (curl | sudo sh) - not the same
+  install.sh                 thing as apps/desktop/installer/ above, which is the
+  test.sh                    Windows *desktop app* installer wizard. It sits inside
+  README.md                  the agent crate so step 5 carries it along.
 
 LICENSE.txt                  Shown on the installer's license page
 ```
@@ -698,7 +702,7 @@ Windows installer wizard via NSIS — not a custom-built one, Tauri generates
 it from `src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
 
 1. Language selector (Polish / English)
-2. Welcome page (branded with `installer/sidebar.bmp`)
+2. Welcome page (branded with `apps/desktop/installer/sidebar.bmp`)
 3. License page (`LICENSE.txt` — full AGPL-3.0-or-later text)
 4. Install scope: just me / all users (`installMode: "both"`)
 5. Install directory
@@ -707,14 +711,14 @@ it from `src-tauri/tauri.conf.json`'s `bundle.windows.nsis` config:
 
 Output lands in `target/release/bundle/nsis/*.exe` (workspace-root target
 dir, since `agent/` made this a Cargo workspace). To restyle it, edit the
-`nsis` block in `tauri.conf.json` or swap `installer/header.bmp` and
-`installer/sidebar.bmp` (keep the exact pixel sizes — NSIS requires them).
+`nsis` block in `tauri.conf.json` or swap `apps/desktop/installer/header.bmp` and
+`apps/desktop/installer/sidebar.bmp` (keep the exact pixel sizes — NSIS requires them).
 For anything the config can't express, Tauri supports a fully custom `.nsi`
 template via `nsis.template`.
 
 ## Agent installer
 
-The *server-side* counterpart to the wizard above: `agent-install/install.sh`
+The *server-side* counterpart to the wizard above: `agent/install/install.sh`
 installs `vibe-agent` on a Linux host as a systemd service, run as:
 
 ```sh
@@ -723,7 +727,7 @@ vibe-agent pair <CODE-SHOWN-IN-VIBESSH>
 ```
 
 No release is published yet, so the real one-liner can't be exercised
-end-to-end - see `agent-install/README.md` for what's actually verified
+end-to-end - see `agent/install/README.md` for what's actually verified
 (architecture/OS detection, checksum logic for real, everything else on a
 real Linux box via `VIBESSH_INSTALL_LOCAL_BINARY`) versus what still needs
 a Linux VM to prove.

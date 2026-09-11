@@ -1,4 +1,4 @@
-//! SQLite-backed Application records - see docs/APPLICATIONS_ARCHITECTURE.md
+//! SQLite-backed Application records - see docs/architecture/APPLICATIONS_ARCHITECTURE.md
 //! for the full design. A separate repository struct from `ServerRepository`
 //! (same one-concern-per-repository convention as `credentials`/
 //! `cloud_config` being their own modules) even though both open the same
@@ -305,7 +305,7 @@ impl ApplicationRepository {
 
     /// Used before deleting a Server, to show the user what's still
     /// attached rather than let the FK constraint surface as a bare error
-    /// (docs/APPLICATIONS_ARCHITECTURE.md Section 9).
+    /// (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 9).
     pub fn list_by_server(&self, server_id: Uuid) -> AppResult<Vec<Application>> {
         let conn = self.lock();
         let mut stmt = conn

@@ -1,5 +1,5 @@
 //! `ApplicationFileProvider` - the abstraction behind an Application's own
-//! Files tab (docs/APPLICATIONS_ARCHITECTURE.md's Files section; distinct
+//! Files tab (docs/architecture/APPLICATIONS_ARCHITECTURE.md's Files section; distinct
 //! from the older, host-wide "Node Files" module in `commands::file_commands`,
 //! which this deliberately does not touch or extend). Every operation is
 //! confined to one Application's own `working_directory` - never the whole

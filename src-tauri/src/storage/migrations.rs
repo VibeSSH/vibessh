@@ -84,7 +84,7 @@ const STEPS: &[Step] = &[
             );",
             down: Some("DROP TABLE ssh_known_hosts; DROP TABLE servers;"),
         },
-        // Migration 2: Applications (see docs/APPLICATIONS_ARCHITECTURE.md).
+        // Migration 2: Applications (see docs/architecture/APPLICATIONS_ARCHITECTURE.md).
         // `server_id` is nullable (NULL = a Local application, running on
         // this device rather than a VibeSSH-managed remote server) and
         // ON DELETE RESTRICT rather than CASCADE or SET NULL - a server
@@ -182,7 +182,7 @@ const STEPS: &[Step] = &[
             down: None,
         },
         // Migration 4: Application Databases - Phase 11 *foundation only*
-        // (docs/APPLICATIONS_ARCHITECTURE.md Section 12 / Section 10 phase
+        // (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12 / Section 10 phase
         // list). Schema + types land here; the actual provisioning
         // (`mysql`/`mariadb` CLI execution over SSH), the phpMyAdmin
         // Blueprint, and the Databases tab UI are deliberately not built

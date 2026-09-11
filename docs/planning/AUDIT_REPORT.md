@@ -110,7 +110,7 @@ Every call site uses the concrete `SshSession` directly. This is the "abstractio
 **Test required:** none (deletion) / trait-object round-trip test (retention).
 
 **A-002 — Agent Mode is a documented dead end | HIGH | P1**
-`docs/APPLICATIONS_ARCHITECTURE.md` states it, and the code confirms it: `files/mod.rs::provider_for` has no Agent branch, `runtime::docker` is SSH-only, `ServerCard.tsx` hides Files/Monitor/Actions/Terminal for agent cards. An agent-paired Node does essentially nothing after pairing. This is a product-completeness finding: shipping a "Node connection mode" that disables most of the app is a release blocker for the *feature*, not for the release.
+`docs/architecture/APPLICATIONS_ARCHITECTURE.md` states it, and the code confirms it: `files/mod.rs::provider_for` has no Agent branch, `runtime::docker` is SSH-only, `ServerCard.tsx` hides Files/Monitor/Actions/Terminal for agent cards. An agent-paired Node does essentially nothing after pairing. This is a product-completeness finding: shipping a "Node connection mode" that disables most of the app is a release blocker for the *feature*, not for the release.
 **Fix:** either implement `AgentTransport` or remove Agent Mode from the shipping UI and label it a preview.
 
 **A-003 — `retry_on_connection_failure` retries on *every* error | HIGH | P1**
@@ -282,7 +282,7 @@ The injector is normally the operator themselves — but the `backend/` crate sh
 .danger_accept_invalid_hostnames(true)
 ```
 
-`docs/security-review.md` documents this as an accepted bootstrap tradeoff whose "concrete next hardening step" is pinning the fingerprint after first use. That step was never taken — grep finds no fingerprint storage or comparison anywhere in `agent_client`. Agent Mode is therefore MITM-able on **every** connection, not only the first, and the bearer credential is replayable by any active on-path attacker. This is also inconsistent with the SSH path in the same application, which implements TOFU correctly.
+`docs/security/security-review.md` documents this as an accepted bootstrap tradeoff whose "concrete next hardening step" is pinning the fingerprint after first use. That step was never taken — grep finds no fingerprint storage or comparison anywhere in `agent_client`. Agent Mode is therefore MITM-able on **every** connection, not only the first, and the bearer credential is replayable by any active on-path attacker. This is also inconsistent with the SSH path in the same application, which implements TOFU correctly.
 **Fix:** implement the same TOFU the SSH path already has.
 **Test required:** connection to an agent presenting a different certificate is rejected; first connection stores the fingerprint.
 
@@ -343,7 +343,7 @@ What remains is narrower but real: the extraction itself is file-by-file over th
 `runtime/docker.rs`: every container joins `--network vibessh-net` with `--network-alias <slug>` and gets `--add-host host.docker.internal:host-gateway`. Combined with `ensure_mysql_listens_on_all_interfaces`'s `ufw allow in on docker0`, Application A can reach Application B's **internal, unpublished** ports directly by name, and can reach the host's MariaDB. This is a deliberate design (it is what makes service discovery work) but it is not stated as a security boundary anywhere and contradicts §6's isolation claims.
 **Fix:** per-Application networks by default with explicit opt-in links; or document the shared network as an accepted, visible trust boundary in the UI.
 
-**Status: fixed** (the first option, deliberately — see `FIX_PLAN.md` B.17). Each Application now gets its own bridge network and reaches nothing by default. A connection granted in the Ports tab creates a private network holding exactly those two containers, which is why granting A→C and B→C does not also connect A to B. Applied on every start and on every grant or revoke, so revoking takes effect on a running container. **Breaking for an existing Node:** connectivity that worked because everything shared `vibessh-net` stops at the next start and has to be granted. Guessing which of those connections were load-bearing would have meant re-creating the exposure under a new name. The host-MariaDB half of this finding is *not* closed — see `docs/threat-model.md`.
+**Status: fixed** (the first option, deliberately — see `FIX_PLAN.md` B.17). Each Application now gets its own bridge network and reaches nothing by default. A connection granted in the Ports tab creates a private network holding exactly those two containers, which is why granting A→C and B→C does not also connect A to B. Applied on every start and on every grant or revoke, so revoking takes effect on a running container. **Breaking for an existing Node:** connectivity that worked because everything shared `vibessh-net` stops at the next start and has to be granted. Guessing which of those connections were load-bearing would have meant re-creating the exposure under a new name. The host-MariaDB half of this finding is *not* closed — see `docs/security/threat-model.md`.
 
 **S-019 — Frontend receives raw Rust error strings and discards the error kind | HIGH | P1**
 `src/services/tauri.ts::normalizeError` reduces `{ kind, message }` to `new Error(message)`. The `kind` discriminator that `AppError`'s `Serialize` impl deliberately provides is **thrown away**, so the frontend cannot branch on error type at all. What reaches the user is `AppError::Display` verbatim:
@@ -374,7 +374,7 @@ What remains is narrower but real: the extraction itself is file-by-file over th
 | S-031 | Aborting a transfer leaves a **partial file** on the remote with no cleanup and no `.part`-then-rename | `state/file_transfers.rs` |
 | S-032 | `docker login` persists credentials to `/root/.docker/config.json` (base64, not encrypted) on every Node, never cleaned up | `application_service.rs::ensure_registry_login` |
 | S-033 | Automatic `apt-get install` of `mariadb-server` / `mysql-client` / `wireguard-tools` as a side effect of ordinary UI actions, with errors discarded | `database_service.rs`, `network/wireguard.rs` |
-| S-034 | Installer verifies a SHA-256 checksum fetched from the **same host** as the binary — protects against corruption, not a compromised release host. No signing. (Already in `docs/security-review.md` #5; still open.) | `agent-install/install.sh` |
+| S-034 | Installer verifies a SHA-256 checksum fetched from the **same host** as the binary — protects against corruption, not a compromised release host. No signing. (Already in `docs/security/security-review.md` #5; still open.) | `agent/install/install.sh` |
 | S-035 | Handshake replay: the raw bearer credential is sent with no nonce/challenge (documented tradeoff), now compounded by S-010's absent cert validation | `agent/src/transport` |
 | S-036 | Keyring deletions on delete paths are all `let _ = ...` — failed deletions leave orphaned secrets in the OS credential store forever | `application_service.rs`, `database_service.rs` |
 
@@ -442,7 +442,7 @@ Mostly `doc_lazy_continuation` (cosmetic). Two substantive: `clippy::await_holdi
 **F-004 — Dependency vulnerabilities | MEDIUM | P1**
 `npm audit`: **1 high (vite), 3 moderate (esbuild, react-router, react-router-dom)**. `cargo audit` could not be run — `cargo-audit` is not installed. Both must be run and cleared before release.
 
-**Status: cleared on the npm side; one Rust advisory has no fix and is ignored explicitly.** `cargo audit` — which the audit itself could not run — reports RUSTSEC-2023-0071 (Marvin Attack, 5.9 medium) against `rsa`, arriving transitively through both `russh` and `sqlx-mysql`, with "No fixed upgrade is available!". CI ignores that single advisory id with the reasoning inline, and `docs/threat-model.md` carries the exposure and the condition that would remove it. Every other advisory, at any severity, still fails the job.
+**Status: cleared on the npm side; one Rust advisory has no fix and is ignored explicitly.** `cargo audit` — which the audit itself could not run — reports RUSTSEC-2023-0071 (Marvin Attack, 5.9 medium) against `rsa`, arriving transitively through both `russh` and `sqlx-mysql`, with "No fixed upgrade is available!". CI ignores that single advisory id with the reasoning inline, and `docs/security/threat-model.md` carries the exposure and the condition that would remove it. Every other advisory, at any severity, still fails the job.
 
 vite 5 → 8 (not 7 — the advisory range had moved by the time this was worked, and 8 is where the fix landed) and react-router 6 → 7. `npm audit` reports zero advisories at every level, and CI's gate is now `--audit-level=moderate` rather than the `critical` it had been loosened to. `cargo audit` runs in CI and is clean. Vite 8 replaces esbuild with Rolldown/oxc, which is what removed esbuild — and its advisory — from the tree entirely; `build.minify` had to move from `"esbuild"` to `"oxc"` for the same reason.
 
@@ -584,7 +584,7 @@ See S-019. The user sees `connection error: docker create failed`, `invalid inpu
 `sync_firewall_best_effort` (log-only), `attach_console_fifo` (`let _ =`), `ensure_helper_installed` (`let _ =`), `ensure_working_directory_owned_by_dedicated_user` (`let _ =`), `ensure_mysql_*` (all `let _ =`), `wireguard::teardown` (always `Ok`). In each case the user sees success while the Node is in a different state than the UI shows.
 
 **U-006 — Visual/responsive audit not performed | INFO | P2**
-The brief asks for a visual sweep at 1920/1600/1440/1366/1280/1024/900/800. This requires a built Tauri binary and a live SSH Node; neither was available in this session. `docs/UI_AUDIT.md` exists and should be re-validated against current code in Phase F. **Treat responsive behaviour, clipping, contrast and spacing as unaudited, not as clean.**
+The brief asks for a visual sweep at 1920/1600/1440/1366/1280/1024/900/800. This requires a built Tauri binary and a live SSH Node; neither was available in this session. `docs/planning/UI_AUDIT.md` exists and should be re-validated against current code in Phase F. **Treat responsive behaviour, clipping, contrast and spacing as unaudited, not as clean.**
 
 ---
 
@@ -687,9 +687,9 @@ The original warning below still stands, and applies to this list more than to a
 
 ## 13. Documentation Consistency
 
-- **`docs/security-review.md` is materially stale.** It states *"no code path anywhere in the agent executes a shell command with any input"* and marks command injection and path traversal as *"N/A until a feature that actually shells out exists"*. Since then the desktop has grown Docker, SFTP, sudo-helper, UFW, WireGuard and DNS modules that shell out constantly — and S-002 is exactly the injection the document says does not exist. It must be re-run and re-dated.
-- **`docs/agent-privileges.md`** states the Docker-group decision is *"deferred"*. In practice `runtime/docker.rs` runs `sudo docker` through the connecting admin's broad sudo — the same root-equivalence the document was avoiding, reached by a different route, undocumented.
-- **`docs/APPLICATIONS_ARCHITECTURE.md`** is accurate about the Agent gap (A-002) — good.
+- **`docs/security/security-review.md` is materially stale.** It states *"no code path anywhere in the agent executes a shell command with any input"* and marks command injection and path traversal as *"N/A until a feature that actually shells out exists"*. Since then the desktop has grown Docker, SFTP, sudo-helper, UFW, WireGuard and DNS modules that shell out constantly — and S-002 is exactly the injection the document says does not exist. It must be re-run and re-dated.
+- **`docs/security/agent-privileges.md`** states the Docker-group decision is *"deferred"*. In practice `runtime/docker.rs` runs `sudo docker` through the connecting admin's broad sudo — the same root-equivalence the document was avoiding, reached by a different route, undocumented.
+- **`docs/architecture/APPLICATIONS_ARCHITECTURE.md`** is accurate about the Agent gap (A-002) — good.
 - **`README.md`** (47 KB) — feature claims were not line-by-line verified against code; recommend a dedicated pass in Phase G.
 - No `AGENTS.md` or `CLAUDE.md` exists despite the brief referencing them.
 
@@ -749,7 +749,7 @@ themselves).
 | **S-003** — the WireGuard key is not world-readable in `/tmp` | `/etc/wireguard/vibessh-privatekey` is `0600 root:root`; nothing in `/tmp`. |
 | **S-004** — the console FIFO is not reachable by other Applications | `/run/vibessh/console/*.stdin` are `0600 ubuntu:ubuntu`, outside every bind mount. |
 | **S-005** — path traversal through a symlink | An existing `#[ignore]`d test proves a symlink pointing outside the sandbox is refused on the real server. |
-| Passwordless `sudo` | The standing assumption `docs/threat-model.md` records is true on both nodes. |
+| Passwordless `sudo` | The standing assumption `docs/security/threat-model.md` records is true on both nodes. |
 | The ufw lockout guard's input | `SSH_CONNECTION` field 4 reads `22`, and ufw allows 22 - so `live_ssh_port()` would resolve correctly. The *guard itself* is still unexecuted; enabling ufw on a live host was not run. |
 
 **What the pass found that no test could.** Every fix in this branch is

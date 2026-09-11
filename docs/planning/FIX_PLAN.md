@@ -509,7 +509,7 @@ never would. Both are fixed and commented at the call site.
 | F.2 | `aria-label` on every icon-only control | U-002 |
 | F.3 | "Configuration pending" state after env/image/limits/port changes, with a Recreate banner explaining the restart | U-003 |
 | F.4 | ~~Replace every "success on partial failure" path with an accurate outcome state~~ **Done** | U-005 |
-| F.5 | Run the visual pass at 1920/1600/1440/1366/1280/1024/900/800; re-validate `docs/UI_AUDIT.md` against current code | U-006 |
+| F.5 | Run the visual pass at 1920/1600/1440/1366/1280/1024/900/800; re-validate `docs/planning/UI_AUDIT.md` against current code | U-006 |
 | F.6 | ~~Keyboard navigation and tab-order review; contrast check; ensure no status is conveyed by colour alone~~ **Done** | §9 |
 
 ---
@@ -517,27 +517,27 @@ never would. Both are fixed and commented at the call site.
 ## PHASE G — Documentation
 
 > **Status: done.**
-> G.1 `docs/security-review.md` carries a superseded banner and its two
+> G.1 `docs/security/security-review.md` carries a superseded banner and its two
 > false "N/A" entries (command injection, path traversal) are corrected
 > in place; finding 1's residual risk is marked fixed. Nothing deleted -
 > the gap between what it claimed and what was true is itself worth
 > keeping visible.
-> G.2 `docs/agent-privileges.md` - the Docker decision it described as
+> G.2 `docs/security/agent-privileges.md` - the Docker decision it described as
 > "deferred" was made elsewhere by default (`sudo docker` as the admin),
 > and the two consequences it hid are now written down, including the
 > undocumented passwordless-sudo assumption.
 > G.3 README - two module claims did not match the code ("scripted
 > multi-step quick actions", "VibeSSH Pro") and are corrected. **Spot-checked,
 > not line-by-line verified**: the file is 47 KB and the rest was sampled.
-> G.4 `docs/threat-model.md` - new, maintained, with the standing
+> G.4 `docs/security/threat-model.md` - new, maintained, with the standing
 > assumptions that were previously undocumented.
 > G.5 `AGENTS.md` - the six rules that would have prevented four of the
 > seven CRITICALs, each naming the finding it comes from.
 
 | # | Item | Finding |
 |---|---|---|
-| G.1 | Re-run and re-date `docs/security-review.md` — its central claim ("nothing shells out") is now false | §13 |
-| G.2 | Update `docs/agent-privileges.md` to describe the actual `sudo docker` path | §13 |
+| G.1 | Re-run and re-date `docs/security/security-review.md` — its central claim ("nothing shells out") is now false | §13 |
+| G.2 | Update `docs/security/agent-privileges.md` to describe the actual `sudo docker` path | §13 |
 | G.3 | Verify `README.md` feature claims line-by-line against code | §13 |
 | G.4 | Document the trust boundaries from `AUDIT_REPORT.md` §4 as a maintained threat model | §4 |
 | G.5 | Add `CONTRIBUTING`/`AGENTS.md` covering the shell-command rule (A.1), the "no secrets in argv" rule (S-008), and the "no `let _ =` on user-visible operations" rule | §12 |

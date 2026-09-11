@@ -57,7 +57,7 @@
 /* auto-fit/minmax rather than a hardcoded 4-column grid - matches
    .servers-grid/.monitor-history-grid's own reflow pattern, so the stat
    row steps down to 2 or 1 columns instead of squashing at narrow widths
-   (see docs/UI_AUDIT.md, finding C1). */
+   (see docs/planning/UI_AUDIT.md, finding C1). */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -95,7 +95,7 @@
    whose 20px horizontal padding is sized for sitting inside a modal's own
    20px-padded header/body, not a plain page where the title above it has
    no such inset (was a real 20px left-edge misalignment - see
-   docs/UI_AUDIT.md's Phase 8 notes). */
+   docs/planning/UI_AUDIT.md's Phase 8 notes). */
 .page-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -2,7 +2,7 @@
 //! with `server_id: None` (see `models::application::ApplicationLocation`).
 //! Everything here runs on this machine: no SSH, no Agent, nothing remote -
 //! which is what let this be the runtime Phase 2 could implement and test
-//! first, without any remote host (docs/APPLICATIONS_ARCHITECTURE.md
+//! first, without any remote host (docs/architecture/APPLICATIONS_ARCHITECTURE.md
 //! Section 10).
 //!
 //! Interpretation of `ApplicationRuntime::stop`'s `graceful` flag, since

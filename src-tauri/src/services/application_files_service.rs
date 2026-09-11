@@ -13,7 +13,7 @@
 //! real RBAC is the cloud Team/Role backend (`services::cloud_service`),
 //! entirely separate infrastructure from this local, per-device SQLite
 //! feature - the same "RBAC hook, not RBAC" gap
-//! docs/APPLICATIONS_ARCHITECTURE.md already documents for Applications as
+//! docs/architecture/APPLICATIONS_ARCHITECTURE.md already documents for Applications as
 //! a whole. `PERMISSION_*` below exist so the *names* are settled and
 //! ready to wire into a real enforcement point once one exists, not as
 //! dead ceremony - nothing in this module currently checks them.

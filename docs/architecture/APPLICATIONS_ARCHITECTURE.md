@@ -327,7 +327,7 @@ Finding B) — the brief explicitly warns against a naive
 **`SystemdRuntime`** — extends `ssh/systemd.rs` (list/start/stop/restart/
 enable/disable already exist and are reused verbatim) with unit
 create/update/remove, which don't exist yet. **Critical constraint found
-in `docs/agent-privileges.md`, directly relevant here**: Agent-mode
+in `docs/security/agent-privileges.md`, directly relevant here**: Agent-mode
 systemd is gated by a root-owned `managed-units.conf` allowlist with *no
 automated way to add an entry yet* ("an admin edits it by hand... an
 intentional v1 limitation"). SSH-mode has no such gate (runs as whatever
@@ -344,7 +344,7 @@ rule) - `validate_unit_name` already accepts this shape unchanged.
 **`DockerRuntime`** — extends `ssh/docker.rs` (list/start/stop/restart/
 remove/logs already exist) with `docker create`/`docker run`. **Same kind
 of constraint as systemd, worth deciding now rather than deferring again**:
-`docs/agent-privileges.md` explicitly deferred Agent's `docker` group
+`docs/security/agent-privileges.md` explicitly deferred Agent's `docker` group
 membership because granting it "before any Docker feature exists to use
 it" would hand out root-equivalent access speculatively. That feature now
 exists (this brief). Recommendation: **keep Docker SSH-only for this
@@ -670,7 +670,7 @@ that out:
 (Section 12.3) - both recorded here as decided, not just recommended.
 
 1. ~~**Docker/systemd via Agent**~~ **Decided: SSH-only for now** (Section
-   5.3) - matches `docs/agent-privileges.md`'s own earlier deferral of
+   5.3) - matches `docs/security/agent-privileges.md`'s own earlier deferral of
    Agent's `docker` group membership as "root-equivalent access on spec."
    Revisit once Agent-managed applications become their own phase.
 2. **`sysinfo` and `tokio` `process` feature** as new dependencies for

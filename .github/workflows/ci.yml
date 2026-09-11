@@ -164,7 +164,7 @@ jobs:
       # level above records - or dropping MySQL support and SSH RSA keys,
       # which is not proportionate to a medium-severity timing sidechannel
       # against a code path neither library uses for private-key decryption.
-      # See docs/threat-model.md for the exposure and for what would remove
+      # See docs/security/threat-model.md for the exposure and for what would remove
       # this line.
       #
       # It is a deliberately narrow ignore: one advisory id, not a severity

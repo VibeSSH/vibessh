@@ -1,5 +1,5 @@
 //! The Vibe Network - a WireGuard-based private overlay between Nodes
-//! (Etap M4). See `docs/APPLICATIONS_ARCHITECTURE.md`'s own Etap L note and
+//! (Etap M4). See `docs/architecture/APPLICATIONS_ARCHITECTURE.md`'s own Etap L note and
 //! this project's Etap M planning doc for the full design; this module is
 //! the mechanism, `services::network_service` is the orchestration
 //! (IPAM + membership + full-mesh reconcile) built on top of it.

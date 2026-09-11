@@ -73,7 +73,7 @@ async fn run_daemon() {
 
     // Etap K: the control endpoint has no authentication of its own at all
     // - its entire security model is "loopback-only, so reaching it already
-    // implies shell-level trust" (see docs/agent-privileges.md). That was
+    // implies shell-level trust" (see docs/security/agent-privileges.md). That was
     // previously only a comment; a typo'd or copy-pasted
     // VIBESSH_AGENT_CONTROL_BIND would have silently exposed pairing
     // control to the network with zero auth. Refusing to start is the fix.

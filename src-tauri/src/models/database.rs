@@ -1,5 +1,5 @@
 //! Application Databases domain model - Phase 11 *foundation only*
-//! (docs/APPLICATIONS_ARCHITECTURE.md Section 12). Schema + types + storage
+//! (docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12). Schema + types + storage
 //! land here; there is no `services::database_service` yet - the actual
 //! `mysql`/`mariadb` CLI provisioning over SSH, the phpMyAdmin Blueprint,
 //! and the Databases tab UI are deliberately not built, so nothing in this
@@ -41,7 +41,7 @@ pub struct DatabaseHost {
     pub engine: DatabaseEngine,
     /// As reachable from *that host's own shell*, e.g. `"127.0.0.1"` - not
     /// necessarily reachable from the VibeSSH desktop directly (see
-    /// docs/APPLICATIONS_ARCHITECTURE.md Section 12.1 for why provisioning
+    /// docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 12.1 for why provisioning
     /// goes through `SshSession::execute_command`, never a direct MySQL-
     /// protocol connection from the desktop).
     pub host: String,
