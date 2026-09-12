@@ -34,6 +34,18 @@ services:
     environment:
       DATABASE_URL: postgres://vibessh_app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/vibessh
       VIBESSH_BACKEND_BIND: 0.0.0.0:8787
+      # Missing here until the first real deployment, which is exactly the
+      # kind of thing the note at the top of this file warns about: the
+      # process refuses to start without it (main.rs), so the container
+      # restarted in a loop with the reason only visible in its logs.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET - e.g. `openssl rand -base64 48`}
+      # Optional: unset means this deployment simply reports that it has no
+      # included model, and users bring their own key. Empty defaults so that
+      # a missing value is not an error.
+      AI_UPSTREAM_BASE_URL: ${AI_UPSTREAM_BASE_URL:-}
+      AI_UPSTREAM_API_KEY: ${AI_UPSTREAM_API_KEY:-}
+      AI_UPSTREAM_MODEL: ${AI_UPSTREAM_MODEL:-}
+      AI_DAILY_QUESTION_LIMIT: ${AI_DAILY_QUESTION_LIMIT:-}
     ports:
       - "8787:8787"
 
