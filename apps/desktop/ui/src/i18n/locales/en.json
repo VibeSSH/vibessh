@@ -1131,6 +1131,8 @@
     "required": "Required",
     "saveError": "Couldn't save the port.",
     "syncFirewall": "Sync Firewall",
+    "protected": "Protected",
+    "unprotected": "Unprotected",
     "title": "Ports"
   },
   "provisionMember": {

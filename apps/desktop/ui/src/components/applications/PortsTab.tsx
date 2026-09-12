@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ConnectionsCard } from "@/components/applications/ConnectionsCard";
 import { queryKeys } from "@/services/queryKeys";
+import { getNodeFirewallOverview } from "@/services/serverService";
+import { portProtection, type PortProtection } from "./portProtection";
 import { GuideLink } from "@/guide/GuideLink";
 import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { Badge } from "@/components/ui/Badge";
@@ -29,6 +31,24 @@ import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "./PortsTab.css";
 import { errorMessage } from "@/services/tauri";
+
+/**
+ * Says whether one port is actually restricted right now.
+ *
+ * Nothing at all for a port that is meant to be public - a red badge on
+ * every correctly-published port is how people learn to ignore red badges -
+ * and nothing while the answer is unknown, because a confident "protected"
+ * there would be the dangerous guess.
+ */
+function ProtectionBadge({ state }: { state: PortProtection }) {
+  const { t } = useTranslation();
+  if (state === "public" || state === "unknown") return null;
+  return (
+    <Badge tone={state === "protected" ? "success" : "danger"}>
+      {t(state === "protected" ? "portsTab.protected" : "portsTab.unprotected")}
+    </Badge>
+  );
+}
 
 interface PortsTabProps {
   applicationId: string;
@@ -91,6 +111,23 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     queryFn: () => listApplicationPorts(applicationId),
   });
   const error = loadError ? errorMessage(loadError, t) : null;
+
+  /**
+   * The Node's firewall, read on open rather than after a Sync press.
+   *
+   * A published Docker port is bound widely and only this narrows it, so
+   * "is this port actually restricted" is the question somebody arrives at
+   * the tab with - not one they should have to press a button that sounds
+   * like it changes something to answer. A local application has no Node,
+   * and a failed read stays `undefined` rather than becoming "unprotected":
+   * not knowing is its own answer, and the badge says so.
+   */
+  const { data: firewall } = useQuery({
+    queryKey: queryKeys.nodeFirewall(application.serverId ?? ""),
+    queryFn: () => getNodeFirewallOverview(application.serverId as string),
+    enabled: Boolean(application.serverId),
+    retry: false,
+  });
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingPort, setEditingPort] = useState<ApplicationPort | null>(null);
@@ -188,6 +225,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                   </span>
                 </div>
                 <Badge tone={visibilityTone(port.visibility)}>{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
+                <ProtectionBadge state={portProtection(port, firewall)} />
                 {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
                 {canEditPorts && (
                 <IconButton

@@ -1138,6 +1138,8 @@
     "required": "Wymagany",
     "saveError": "Nie udało się zapisać portu.",
     "syncFirewall": "Zsynchronizuj firewall",
+    "protected": "Chroniony",
+    "unprotected": "Niechroniony",
     "title": "Porty"
   },
   "provisionMember": {

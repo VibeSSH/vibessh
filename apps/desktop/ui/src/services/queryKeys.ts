@@ -9,6 +9,9 @@
  * list.
  */
 export const queryKeys = {
+  /** The Node's firewall as it stands, read without changing anything - what
+   *  tells the Ports tab whether each port is actually restricted. */
+  nodeFirewall: (serverId: string) => ["nodeFirewall", serverId] as const,
   /** Every application, for the dashboard and for pickers. */
   applications: () => ["applications"] as const,
   application: (id: string) => ["application", id] as const,
