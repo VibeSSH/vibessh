@@ -66,6 +66,30 @@ impl HostedProvider {
 /// a missing team, and remapping every status there would break every other
 /// cloud call.
 fn hosted_error(err: AppError) -> AppError {
+    // The backend names its own refusals, so classify by that name first.
+    // Matching only on the coarse variants used to work because every
+    // backend error arrived as one; they now arrive as `AppError::Cloud`,
+    // and a `not_found` falling through to the catch-all below turned "this
+    // deployment has no included model" - which tells somebody to use their
+    // own key - into "a problem on the VibeSSH side, try later", which tells
+    // them to wait for something that will never happen on its own.
+    if let AppError::Cloud { kind, code, .. } = &err {
+        if code == "ai_not_hosted" {
+            return AppError::AiHostedUnavailable;
+        }
+        return match kind.as_str() {
+            "not_found" => AppError::AiHostedUnavailable,
+            // Signing in again is the remedy, and the interface says so.
+            "unauthorized" | "password_change_required" => err,
+            // The caller's own input - an empty question, one too long -
+            // which the backend already described precisely.
+            "invalid_input" | "conflict" => err,
+            _ => {
+                log::warn!("the hosted AI call failed: {err}");
+                AppError::AiHostedFailed
+            }
+        };
+    }
     match err {
         AppError::NotFound(_) => AppError::AiHostedUnavailable,
         // Pass through the ones that are already right.
@@ -123,6 +147,34 @@ impl AiProvider for HostedProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cloud(kind: &str, code: &str) -> AppError {
+        AppError::Cloud { kind: kind.into(), code: code.into(), params: serde_json::Value::Null, message: "backend said so".into() }
+    }
+
+    /// The regression this guards against: backend errors stopped arriving
+    /// as the coarse variants once they started carrying their own codes, so
+    /// a "no included model" answer fell through to the catch-all. The user
+    /// was told to try later instead of to use their own key - advice to
+    /// wait for something that never happens on its own.
+    #[test]
+    fn a_backend_with_no_included_model_says_so_rather_than_reporting_a_failure() {
+        assert!(matches!(hosted_error(cloud("not_found", "ai_not_hosted")), AppError::AiHostedUnavailable));
+    }
+
+    #[test]
+    fn a_refusal_the_user_can_act_on_is_passed_through_unchanged() {
+        assert!(matches!(hosted_error(cloud("unauthorized", "access_token_invalid")), AppError::Cloud { .. }));
+        assert!(matches!(hosted_error(cloud("invalid_input", "ai_empty_question")), AppError::Cloud { .. }));
+    }
+
+    /// Anything this module has not classified is still the generic hosted
+    /// failure, which is the honest answer for something the user cannot act
+    /// on.
+    #[test]
+    fn an_unclassified_backend_error_is_still_a_hosted_failure() {
+        assert!(matches!(hosted_error(cloud("internal", "whatever")), AppError::AiHostedFailed));
+    }
 
     #[test]
     fn roles_map_to_the_names_the_backend_expects() {
