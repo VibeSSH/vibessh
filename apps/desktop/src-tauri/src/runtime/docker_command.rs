@@ -264,6 +264,27 @@ impl DockerCommandRunner for LocalDocker {
 /// The remote rendering is worth pinning because it is the half that cannot
 /// be checked by running it: an argument that loses its quoting becomes two
 /// arguments on the far side of an SSH channel, silently.
+/// Writes a file the rest of the machine cannot read.
+///
+/// On Unix the mode goes on at creation rather than afterwards: a `chmod`
+/// following an ordinary create leaves the file briefly world-readable, and
+/// a secret that is readable for an instant is readable. Windows has no
+/// mode; a file in the user's own temp directory is already confined to that
+/// account by the directory's ACL.
+async fn write_owner_only(path: &std::path::Path, contents: &str) -> AppResult<()> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).await.map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", path.display())))?;
+    tokio::io::AsyncWriteExt::write_all(&mut file, contents.as_bytes())
+        .await
+        .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", path.display())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,25 +404,4 @@ mod tests {
 
         assert_eq!(structural.matches(QUOTE).count() % 2, 0, "unbalanced quoting: {rendered}");
     }
-}
-
-/// Writes a file the rest of the machine cannot read.
-///
-/// On Unix the mode goes on at creation rather than afterwards: a `chmod`
-/// following an ordinary create leaves the file briefly world-readable, and
-/// a secret that is readable for an instant is readable. Windows has no
-/// mode; a file in the user's own temp directory is already confined to that
-/// account by the directory's ACL.
-async fn write_owner_only(path: &std::path::Path, contents: &str) -> AppResult<()> {
-    let mut options = tokio::fs::OpenOptions::new();
-    options.create(true).truncate(true).write(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(path).await.map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", path.display())))?;
-    tokio::io::AsyncWriteExt::write_all(&mut file, contents.as_bytes())
-        .await
-        .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", path.display())))
 }
