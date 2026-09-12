@@ -114,10 +114,10 @@ nothing. The worst outcome of a successful injection is a wrong answer.
 | Attacker | Can they cross? | Notes |
 |---|---|---|
 | Malicious/compromised Application container | **No, for the isolation VibeSSH claims** | Files (per-Application staging, 0600), console (FIFO outside the bind mount) and now network: each Application has its own Docker network and reaches another only where an operator granted it, via a private two-member network. It can still reach the host's MariaDB across `docker0` and is still confined only by that database's own grants — see the open question below. |
-| Unprivileged local user on a Node | **No** | The predictable-`/tmp` symlink and world-readable key paths are gone; VibeSSH's Node-side files live under a root-write-only `/run/vibessh`. |
+| Unprivileged local user on a Node | **No** | Node-side files live under a root-write-only `/run/vibessh`, and what does go to `/tmp` goes into a `mktemp -d` directory rather than a name anyone could create first. Secrets never travel as command arguments (`/proc/<pid>/cmdline` is world-readable) or in a unit file (`/etc/systemd/system` is not private): `--env-file` and `EnvironmentFile=` point at 0600 files. An earlier version of this row claimed the predictable-`/tmp` problem was already gone while the Docker installer still wrote to a fixed path - see the note below on what this table is for. |
 | Compromised Node | **No** | Peer values are shape-validated and the generated scripts have no shell-expansion context at all. |
 | Remote unauthenticated attacker | **No, for VibeSSH-managed ports** | Non-public ports bind the mesh address, so the kernel refuses them; `DOCKER-USER` rules add filter-level defence. A port published out of band is still the operator's own business. |
-| On-path network attacker | **No** | TOFU pinning on both SSH and Agent transports. |
+| On-path network attacker | **No, after the first connection** | TOFU pinning on both SSH and Agent transports, which detects a key that changes and cannot detect one that was wrong to begin with. Somebody positioned on the path during the very first connection to a Node is trusted at that moment and pinned thereafter. Closing that needs a fingerprint checked out of band, which the interface shows and does not require. |
 | Malicious archive | **No** | Zip-slip guarded, declared sizes capped, symlinks skipped. |
 | Malicious operator input → SQL | **No** | Backslash-aware escaping; generated identifiers are alphanumeric by construction. |
 
@@ -138,6 +138,15 @@ breaks the model.
 4. **`/run` is `tmpfs`.** Nothing VibeSSH stages there is expected to
    survive a reboot, and nothing should be written there that needs to.
 
+## What this table is for
+
+It records what has been checked, and it is only worth having if a row goes
+back to **Yes** the moment something is found. One row here claimed a class
+of local-user attack was closed while an installer was still downloading to a
+fixed path in `/tmp`; the claim was written when the other instances were
+fixed and was never revisited for that one. A row that is aspirational is
+worse than a missing row, because it stops the next person looking.
+
 ## Open questions
 
 - **The host's database port across `docker0`.** Closing S-018 removed
@@ -149,6 +158,13 @@ breaks the model.
   rather than a network one, and narrowing it further means either
   per-Application source CIDRs in the grants or a proxy — neither designed
   yet.
+- **Authentication rate limiting is per process.** `/auth/login` and
+  `/auth/register` are metered per account and per source address, which
+  contains both credential stuffing and the cheap denial of service that an
+  unmetered Argon2 endpoint offers. The window lives in the backend process,
+  so it resets on restart and is not shared between instances - correct for
+  the single instance that runs today, and the piece that has to move first
+  if this is ever load-balanced.
 - **Release signing** (`security-review.md` finding 5). `install.sh`
   verifies a checksum fetched from the same host as the binary, which
   protects against corruption and not against a compromised release host.
