@@ -10,21 +10,29 @@ use serde::{Deserialize, Serialize};
 use crate::errors::{AppError, AppResult};
 
 const CONFIG_FILE_NAME: &str = "cloud_config.json";
-/// This machine's own dev instance (see backend/.env.example) - a
-/// reasonable default for local development, not a real hosted service.
-/// Anyone else running this needs to point it at their own backend via
-/// settings.
-pub const DEFAULT_BACKEND_URL: &str = "http://localhost:8787";
+/// The hosted VibeSSH backend. This is a real service now, so a fresh
+/// install has working accounts without anybody typing an address; a
+/// self-hoster still points this at their own instance via settings.
+pub const DEFAULT_BACKEND_URL: &str = "https://api.vibessh.dev";
 
-/// Whether an address is a real choice rather than the untouched default.
+/// What the default used to be, while there was no hosted backend to point
+/// at. Kept because the config file of an existing install still says it -
+/// nobody chose it, it was simply the default at the time - and reading it
+/// as a deliberate self-hosting choice would leave those installs talking to
+/// a `localhost` that has nothing on it.
+const LEGACY_LOCAL_DEFAULT: &str = "http://localhost:8787";
+
+/// Whether this install has a backend worth talking to.
 ///
 /// Asked by the interface so it can say "accounts are off" instead of
-/// showing a failed request, and kept here so there is one literal rather
-/// than a copy of it in TypeScript that would drift silently the day this
-/// becomes a hosted address.
+/// showing a failed request. This used to mean "not the default", because
+/// the default was a `localhost` address that only ever existed on the
+/// developer's own machine. Now the default is the hosted service, so the
+/// test is the other way round: anything except the old local default
+/// counts, including the new default itself.
 pub fn is_configured(backend_url: &str) -> bool {
-    let trimmed = backend_url.trim();
-    !trimmed.is_empty() && trimmed.trim_end_matches('/') != DEFAULT_BACKEND_URL
+    let trimmed = backend_url.trim().trim_end_matches('/');
+    !trimmed.is_empty() && trimmed != LEGACY_LOCAL_DEFAULT
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,23 +66,31 @@ pub fn save_backend_url(config_dir: &Path, backend_url: &str) -> AppResult<()> {
 mod tests {
     use super::*;
 
-    /// The default is "accounts are off", not "accounts are broken" - the
-    /// interface says so on the strength of this rather than by comparing
-    /// against a literal of its own.
+    /// An install that never touched the setting, from back when the default
+    /// was `localhost`, is "accounts are off" rather than "accounts are
+    /// broken" - the interface says so on the strength of this rather than
+    /// by comparing against a literal of its own.
     #[test]
-    fn the_untouched_default_does_not_count_as_configured() {
-        assert!(!is_configured(DEFAULT_BACKEND_URL));
+    fn the_old_local_default_does_not_count_as_configured() {
+        assert!(!is_configured(LEGACY_LOCAL_DEFAULT));
         // A trailing slash is the same address, and somebody will type one.
         assert!(!is_configured("http://localhost:8787/"));
         assert!(!is_configured("  http://localhost:8787  "));
         assert!(!is_configured(""));
     }
 
+    /// The point of the change: a fresh install has working accounts without
+    /// anybody typing anything.
+    #[test]
+    fn the_current_default_counts_as_configured() {
+        assert!(is_configured(DEFAULT_BACKEND_URL));
+    }
+
     #[test]
     fn a_real_address_counts() {
         assert!(is_configured("https://konta.example.com"));
         // Somebody self-hosting on their own machine on a different port has
-        // made a choice, and it is not the default.
+        // made a choice, and it is not the old default.
         assert!(is_configured("http://localhost:9000"));
     }
 

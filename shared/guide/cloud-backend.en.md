@@ -10,11 +10,17 @@ Accounts, teams and shared servers need a backend - a separate program that
 holds users and permissions. Everything else in VibeSSH works without it:
 nodes, applications, files, the terminal, the firewall.
 
-**VibeSSH does not host this for you.** You run the backend yourself and tell
-the app its address. Until you do, registering and signing in fail with
-"couldn't reach the VibeSSH cloud backend" and the address
-`http://localhost:8787` - which is the default, meaning a server on your own
-computer that is not there.
+**VibeSSH hosts one, and a fresh install already points at it** — the address
+in **Settings** reads `https://api.vibessh.dev` and registering works without
+you doing anything. The rest of this page is for the other case: running the
+backend yourself, so that your accounts and your teams sit on a server you
+own.
+
+If you installed VibeSSH before there was a hosted backend, the setting on
+your machine still says `http://localhost:8787` — the old default, meaning a
+server on your own computer that is not there. Registering then fails with
+"couldn't reach the VibeSSH cloud backend". Replace it with the address above,
+or with your own.
 
 ## When you actually need it
 

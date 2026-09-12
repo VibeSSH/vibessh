@@ -8,7 +8,9 @@ order: 155
 
 Konta, zespoły i współdzielone serwery potrzebują backendu — osobnego programu, który trzyma użytkowników i uprawnienia. Cała reszta VibeSSH działa bez niego: Node'y, aplikacje, pliki, terminal, firewall.
 
-**VibeSSH nie hostuje tego za Ciebie.** Backend uruchamiasz sam, a w aplikacji wskazujesz jego adres. Dopóki tego nie zrobisz, rejestracja i logowanie kończą się błędem „couldn't reach the VibeSSH cloud backend" z adresem `http://localhost:8787` — to adres domyślny, czyli serwer na Twoim własnym komputerze, którego tam nie ma.
+**VibeSSH utrzymuje taki backend, a świeża instalacja od razu na niego wskazuje** — w **Ustawieniach** widnieje adres `https://api.vibessh.dev` i rejestracja działa bez Twojego udziału. Reszta tej strony jest o drugim przypadku: uruchomieniu backendu samodzielnie, żeby Twoje konta i zespoły stały na serwerze, który należy do Ciebie.
+
+Jeśli instalowałeś VibeSSH, zanim hostowany backend powstał, ustawienie na Twojej maszynie dalej mówi `http://localhost:8787` — to stary adres domyślny, czyli serwer na Twoim własnym komputerze, którego tam nie ma. Rejestracja kończy się wtedy błędem „couldn't reach the VibeSSH cloud backend". Wpisz w to miejsce adres powyżej albo swój własny.
 
 ## Kiedy w ogóle tego potrzebujesz
 
