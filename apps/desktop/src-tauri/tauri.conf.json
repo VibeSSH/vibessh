@@ -37,7 +37,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "licenseFile": "../LICENSE.txt",
+    "licenseFile": "../../../LICENSE.txt",
     "windows": {
       "nsis": {
         "headerImage": "../installer/header.bmp",
