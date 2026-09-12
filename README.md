@@ -14,7 +14,7 @@ on the server to get started.
 
 [English](README.md) · [Polski](README.pl.md)
 
-![The VibeSSH dashboard: servers with their status, CPU, memory and disk usage](shared/guide/images/dashboard.png)
+![The VibeSSH dashboard: two nodes online with live CPU and memory, and the applications running on them](shared/guide/images/dashboard.en.png)
 
 </div>
 
@@ -49,14 +49,6 @@ same interface on the Rust side.
 | **Vibe Network** | A WireGuard mesh between your servers, with private DNS, so they reach each other without going over the public internet |
 | **Vibe Firewall** | Rules derived from what you actually published, with SSH always kept reachable |
 | **Accounts and teams** | Optional: shared servers, roles and permissions, and an audit trail |
-
-<div align="center">
-
-![An application's Ports tab, showing which ports are protected and which are public](shared/guide/images/ports-tab.png)
-
-*Every port says whether it is really protected, rather than only what you asked for.*
-
-</div>
 
 ## Getting started
 
