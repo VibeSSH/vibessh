@@ -25,6 +25,8 @@ The first connection shows the host key's fingerprint and asks whether to
 accept it. That is normal — VibeSSH remembers it and will warn you if it ever
 changes.
 
+![The server list with the Add server button, an Online status and resource usage](images/scenario-servers.png)
+
 > **What you should see:** the server appears in the list with a green dot and
 > **Online**. If it says **Offline**, check the SSH port and the firewall —
 > reachability is a TCP connection, not a ping.
@@ -47,6 +49,8 @@ second `10.77.0.2`.
 Then press **Sync network**. That is the moment the servers learn about each
 other.
 
+![Vibe Network with two Nodes, both Online, showing the time of the last handshake](images/scenario-network.png)
+
 > **What you should see:** a `10.77.0.x` address on both, and a **last
 > handshake** from a few seconds ago. The handshake is the proof that the
 > tunnel is actually up; an assigned address on its own proves nothing.
@@ -64,6 +68,8 @@ The template fills in the variables the MariaDB image refuses to start
 without. Without it the container is created and stops immediately, which was
 the single most reported problem.
 
+![The application overview reading Running, with Stop, Restart and Recreate Container](images/scenario-application.png)
+
 > **What you should see:** the application reads **Running**. If it says
 > **Stopped**, open **Logs** — MariaDB says plainly what it is missing.
 
@@ -74,6 +80,8 @@ TCP, and for visibility choose **Vibe Network only**.
 
 This is the step the safety of the whole arrangement rests on. **Public**
 means the entire internet.
+
+![The Ports tab: the public port with no protection badge, the Vibe Network and localhost ports with a green Protected](images/scenario-ports.png)
 
 > **What you should see:** two badges on the port — **Vibe Network only** and
 > a green **Protected**. Green means this server has a firewall, it is
@@ -92,6 +100,8 @@ database**. The name, user and password are generated for you.
 Press the eye icon for the connection details. There are three separate
 fields — **Host**, **Port** and **Address (host and port together)** —
 because some configuration wants them apart and some wants them joined.
+
+![The Databases tab with a created database, its user and the address as seen from inside the container](images/scenario-databases.png)
 
 > **What you should see:** a row with the database name and its user. The
 > password is shown on request and is not kept in the app's ordinary

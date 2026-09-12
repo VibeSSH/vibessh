@@ -18,6 +18,8 @@ Zajmuje około dwudziestu minut. Potrzebujesz dwóch serwerów z Linuksem i dost
 
 Przy pierwszym łączeniu zobaczysz odcisk palca klucza hosta i pytanie, czy go zaakceptować. To normalne — VibeSSH zapamiętuje go i od tej pory ostrzeże, jeśli się zmieni.
 
+![Lista serwerów z przyciskiem Dodaj serwer, statusem Online i zużyciem zasobów](images/scenario-servers.png)
+
 > **Co masz zobaczyć:** na liście pojawia się serwer, a przy nim zielona kropka i status **Online**. Jeśli jest **Offline**, sprawdź port SSH i firewall — osiągalność sprawdzana jest połączeniem TCP, nie pingiem.
 
 ## Krok 2. Dodaj drugi serwer
@@ -34,6 +36,8 @@ VibeSSH zainstaluje WireGuard, jeśli go nie ma, wygeneruje klucze i przydzieli 
 
 Potem kliknij **Synchronizuj sieć**. To jest moment, w którym serwery dowiadują się o sobie nawzajem.
 
+![Vibe Network z dwoma Node'ami, oba Online, z czasem ostatniego handshake'u](images/scenario-network.png)
+
 > **Co masz zobaczyć:** przy obu serwerach adres `10.77.0.x` i **ostatni handshake** sprzed kilku sekund. Handshake to dowód, że tunel naprawdę stoi — sam przydzielony adres jeszcze o niczym nie świadczy.
 
 **Jeśli handshake się nie pojawia:** synchronizacja pokazuje wynik osobno dla każdego serwera, więc zobaczysz, który z nich zawiódł. Najczęstsza przyczyna to zablokowany port UDP WireGuarda — sprawdź, czy dostawca VPS-a nie filtruje ruchu UDP.
@@ -44,6 +48,8 @@ Potem kliknij **Synchronizuj sieć**. To jest moment, w którym serwery dowiaduj
 
 Szablon wypełnia zmienne, bez których obraz MariaDB nie wstanie. Bez niego kontener powstanie i od razu się zatrzyma — to była najczęstsza przyczyna zgłoszeń.
 
+![Przegląd aplikacji ze statusem Działa i przyciskami Zatrzymaj, Uruchom ponownie, Odtwórz kontener](images/scenario-application.png)
+
 > **Co masz zobaczyć:** aplikacja ze statusem **Działa**. Jeśli **Zatrzymana**, zajrzyj w **Logi** — MariaDB pisze tam wprost, czego jej brakuje.
 
 ## Krok 5. Otwórz port bazy tylko dla prywatnej sieci
@@ -51,6 +57,8 @@ Szablon wypełnia zmienne, bez których obraz MariaDB nie wstanie. Bez niego kon
 W aplikacji bazy: zakładka **Porty** → **Dodaj port**. Port `3306`, protokół TCP, a jako widoczność wybierz **Tylko Vibe Network**.
 
 To jest krok, w którym decyduje się bezpieczeństwo całego układu. **Publiczny** znaczy „cały internet".
+
+![Zakładka Porty: port publiczny bez odznaki ochrony, a porty Vibe Network i localhost z zielonym Chroniony](images/scenario-ports.png)
 
 > **Co masz zobaczyć:** przy porcie dwie odznaki — **Tylko Vibe Network** i zielone **Chroniony**. Zielone „Chroniony" znaczy, że na tym serwerze działa firewall i reguła dla tego portu naprawdę jest zastosowana.
 
@@ -61,6 +69,8 @@ To jest krok, w którym decyduje się bezpieczeństwo całego układu. **Publicz
 Zakładka **Bazy danych** w aplikacji, która ma z niej korzystać → **Utwórz bazę**. Nazwa, login i hasło generują się same.
 
 Kliknij ikonę oka, żeby zobaczyć dane połączenia. Znajdziesz tam trzy pola osobno: **Host**, **Port** i **Adres (host i port razem)** — bo część konfiguracji chce ich rozdzielonych, a część sklejonych.
+
+![Zakładka Bazy danych z utworzoną bazą, jej loginem i adresem widocznym z wnętrza kontenera](images/scenario-databases.png)
 
 > **Co masz zobaczyć:** wiersz z nazwą bazy i loginem. Hasło pokazuje się na żądanie i nie jest trzymane w zwykłej bazie aplikacji.
 
