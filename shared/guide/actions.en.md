@@ -8,7 +8,7 @@ order: 120
 
 Actions lets you manage a server's system services and containers - the ones you did not create as applications in VibeSSH.
 
-![systemd services and Docker containers on a Node](images/actions.png)
+![systemd services and Docker containers on a Node](images/actions.en.png)
 
 ## How to open it
 

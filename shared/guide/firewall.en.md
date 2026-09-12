@@ -8,7 +8,7 @@ order: 80
 
 The firewall controls which of a Node's ports are reachable from the internet.
 
-![A Node's firewall: the ufw backend, enforcement active, and four rules](images/firewall.png)
+![A Node's firewall: the ufw backend, enforcement active, and four rules](images/firewall.en.png)
 
 ## How to turn the firewall on
 

@@ -8,7 +8,7 @@ order: 10
 
 A Node is a server or VPS added to VibeSSH.
 
-![The server list with addresses and status](images/servers-list.png)
+![The server list with addresses and status](images/servers-list.en.png)
 
 ## How to add a Node
 

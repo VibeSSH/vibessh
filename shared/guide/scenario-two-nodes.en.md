@@ -25,7 +25,7 @@ The first connection shows the host key's fingerprint and asks whether to
 accept it. That is normal — VibeSSH remembers it and will warn you if it ever
 changes.
 
-![The server list with the Add server button, an Online status and resource usage](images/scenario-servers.png)
+![The server list with the Add server button, each server Online with its latency](images/servers-list.en.png)
 
 > **What you should see:** the server appears in the list with a green dot and
 > **Online**. If it says **Offline**, check the SSH port and the firewall —
@@ -68,7 +68,7 @@ The template fills in the variables the MariaDB image refuses to start
 without. Without it the container is created and stops immediately, which was
 the single most reported problem.
 
-![The application overview reading Running, with Stop, Restart and Recreate Container](images/scenario-application.png)
+![The application overview reading Running, with Stop, Restart and Recreate Container](images/app-overview.en.png)
 
 > **What you should see:** the application reads **Running**. If it says
 > **Stopped**, open **Logs** — MariaDB says plainly what it is missing.
@@ -81,7 +81,7 @@ TCP, and for visibility choose **Vibe Network only**.
 This is the step the safety of the whole arrangement rests on. **Public**
 means the entire internet.
 
-![The Ports tab: the public port with no protection badge, the Vibe Network and localhost ports with a green Protected](images/scenario-ports.png)
+![The Ports tab: the public port with no protection badge, the Vibe Network and localhost ports with a green Protected](images/ports-tab.en.png)
 
 > **What you should see:** two badges on the port — **Vibe Network only** and
 > a green **Protected**. Green means this server has a firewall, it is
@@ -101,7 +101,7 @@ Press the eye icon for the connection details. There are three separate
 fields — **Host**, **Port** and **Address (host and port together)** —
 because some configuration wants them apart and some wants them joined.
 
-![The Databases tab with a created database, its user and the address as seen from inside the container](images/scenario-databases.png)
+![The Databases tab with a created database, its user and the address as seen from inside the container](images/databases-tab.en.png)
 
 > **What you should see:** a row with the database name and its user. The
 > password is shown on request and is not kept in the app's ordinary

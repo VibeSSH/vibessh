@@ -8,7 +8,7 @@ order: 20
 
 An application is one thing running on a Node: a Minecraft server, a proxy, a bot, a database.
 
-![An application's Overview: the console with severity-coloured lines, and resource usage beside it](images/app-overview.png)
+![An application's Overview: the console with severity-coloured lines, and resource usage beside it](images/app-overview.en.png)
 
 ## How to create an application
 

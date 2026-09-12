@@ -8,7 +8,7 @@ order: 60
 
 VibeSSH creates MySQL/MariaDB databases for applications and looks after their credentials.
 
-![A database created for an application, with its generated name and user](images/databases-tab.png)
+![A database created for an application, with its generated name and user](images/databases-tab.en.png)
 
 ## How to add a database host
 

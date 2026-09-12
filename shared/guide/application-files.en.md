@@ -8,7 +8,7 @@ order: 40
 
 The **Files** tab shows an application's files: configuration, plugins, the world.
 
-![The application file browser, with directories and configuration files](images/application-files.png)
+![The application file browser, with directories and configuration files](images/application-files.en.png)
 
 ## How to browse
 

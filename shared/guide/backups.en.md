@@ -8,7 +8,7 @@ order: 50
 
 A backup is a copy of an application's files: the world, the configuration and the plugins.
 
-![The backup list: scheduled and manual, with sizes and the S3 upload marker](images/backups-tab.png)
+![The backup list: scheduled and manual, with sizes and the S3 upload marker](images/backups-tab.en.png)
 
 ## How to make a backup
 

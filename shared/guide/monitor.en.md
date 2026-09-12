@@ -8,7 +8,7 @@ order: 110
 
 Monitor shows how loaded a server is and what is running on it.
 
-![Monitor: resources, the history charts, and the process list sorted by memory](images/monitor.png)
+![Monitor: resources, the history charts, and the process list sorted by memory](images/monitor.en.png)
 
 ## How to open it
 

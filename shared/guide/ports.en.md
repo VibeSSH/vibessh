@@ -8,7 +8,7 @@ order: 30
 
 A port makes a service reachable - a Minecraft server to its players, for instance.
 
-![The Ports tab: three ports with their access badges, and the firewall sync at the foot of the card](images/ports-tab.png)
+![The Ports tab: three ports with their access badges, and the firewall sync at the foot of the card](images/ports-tab.en.png)
 
 ## How to add a port
 

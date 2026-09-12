@@ -8,7 +8,7 @@ order: 5
 
 The dashboard shows the state of every server and application in one place.
 
-![The dashboard: overall state, Node tiles and alerts](images/dashboard.png)
+![The dashboard: overall state, Node tiles and alerts](images/dashboard.en.png)
 
 ## What is on it
 
