@@ -38,7 +38,7 @@ Potem kliknij **Synchronizuj sieć**. To jest moment, w którym serwery dowiaduj
 
 ![Vibe Network z dwoma Node'ami, oba Online, z czasem ostatniego handshake'u](images/scenario-network.png)
 
-> **Co masz zobaczyć:** przy obu serwerach adres `10.77.0.x` i **ostatni handshake** sprzed kilku sekund. Handshake to dowód, że tunel naprawdę stoi — sam przydzielony adres jeszcze o niczym nie świadczy.
+> **Co masz zobaczyć:** przy obu serwerach adres `10.77.0.x` i **ostatni handshake** sprzed kilku sekund. Świeży handshake znaczy, że obie strony wymieniły ruch, czego sam przydzielony adres nie mówi. Nie jest to sprawdzenie DNS-u ani konkretnego portu — te sprawdza krok 7.
 
 **Jeśli handshake się nie pojawia:** synchronizacja pokazuje wynik osobno dla każdego serwera, więc zobaczysz, który z nich zawiódł. Najczęstsza przyczyna to zablokowany port UDP WireGuarda — sprawdź, czy dostawca VPS-a nie filtruje ruchu UDP.
 

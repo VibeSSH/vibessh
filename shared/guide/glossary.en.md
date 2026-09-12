@@ -57,8 +57,10 @@ the tunnel, and `10.77.0.x` is an address *inside* it.
 ## Handshake
 
 The exchange that confirms two peers have actually agreed with each other.
-**It is the only proof that a tunnel works** — an assigned address and a
-saved configuration mean nothing without one.
+**A recent one confirms the two peers have exchanged traffic lately** — which
+an assigned address and a saved configuration cannot tell you on their own.
+It says nothing about what runs over the tunnel, so whether a name resolves
+or a port accepts you are separate checks.
 
 WireGuard renews it periodically, so a "last handshake" from a minute ago is
 the normal state rather than a problem.

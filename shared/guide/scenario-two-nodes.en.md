@@ -52,8 +52,9 @@ other.
 ![Vibe Network with two Nodes, both Online, showing the time of the last handshake](images/scenario-network.png)
 
 > **What you should see:** a `10.77.0.x` address on both, and a **last
-> handshake** from a few seconds ago. The handshake is the proof that the
-> tunnel is actually up; an assigned address on its own proves nothing.
+> handshake** from a few seconds ago. A recent handshake means the two ends
+> have exchanged traffic, which an assigned address on its own does not. It
+> is not a test of DNS or of a particular port - step 7 checks those.
 
 **If no handshake appears:** the sync reports a result per server, so you can
 see which one failed. The usual cause is a blocked UDP port — check whether

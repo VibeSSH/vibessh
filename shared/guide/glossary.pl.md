@@ -38,7 +38,7 @@ Nie myl go z adresem `10.77.0.x`: endpoint to droga *do* tunelu, a `10.77.0.x` t
 
 ## Handshake
 
-Wymiana potwierdzająca, że dwa peery naprawdę się dogadały. **To jest jedyny dowód, że tunel działa** — przydzielony adres i zapisana konfiguracja nic nie znaczą, dopóki nie ma handshake'u.
+Wymiana potwierdzająca, że dwa peery naprawdę się dogadały. **Świeży handshake potwierdza, że oba peery niedawno wymieniły ruch** — czego sam przydzielony adres i zapisana konfiguracja nie mówią. Nie świadczy natomiast o niczym powyżej tunelu: czy nazwa się rozwiązuje i czy port wpuszcza, sprawdza się osobno.
 
 WireGuard odnawia go co jakiś czas, więc „ostatni handshake" sprzed kilkudziesięciu sekund to stan normalny, a nie problem.
 
