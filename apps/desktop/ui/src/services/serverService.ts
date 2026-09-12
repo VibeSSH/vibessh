@@ -94,6 +94,23 @@ export interface NodeFirewallOverview {
   backend: string | null;
   active: boolean;
   rules: FirewallRuleView[];
+  container: ContainerFirewallState;
+}
+
+/**
+ * Mirrors the Rust `ContainerFirewallState` - what the Node's `DOCKER-USER`
+ * chain is really carrying, read back from the Node.
+ *
+ * A published Docker port goes around ufw, so for those the ufw rule list
+ * says nothing about whether anything restricts them. `applicable: false`
+ * means this Node has no Docker and ufw's answer stands alone; an `error`
+ * means the chain could not be read, which is "unknown" and must never be
+ * reported as protected.
+ */
+export interface ContainerFirewallState {
+  applicable: boolean;
+  restrictedPorts: number[];
+  error: string | null;
 }
 
 export function getNodeFirewallOverview(id: string): Promise<NodeFirewallOverview> {

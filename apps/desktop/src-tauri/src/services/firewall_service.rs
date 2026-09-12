@@ -65,6 +65,32 @@ pub struct NodeFirewallOverview {
     pub backend: Option<String>,
     pub active: bool,
     pub rules: Vec<FirewallRuleView>,
+    pub container: ContainerFirewallState,
+}
+
+/// What the Node's `DOCKER-USER` chain is actually doing right now.
+///
+/// A published Docker port bypasses ufw entirely (see
+/// `firewall::docker_user`), so for those ports the ufw rule set says
+/// nothing about whether anything is restricted. The Firewall page used to
+/// answer "protected" from the desired ufw rules alone, which is an
+/// intention rather than a fact: a reconcile that failed, a chain someone
+/// flushed, or a Docker version without the chain all leave the intention
+/// untouched and the port open.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerFirewallState {
+    /// `false` when this Node has no Docker with a `DOCKER-USER` chain -
+    /// there is nothing for container rules to restrict and ufw's answer
+    /// stands on its own.
+    pub applicable: bool,
+    /// Ports carrying a VibeSSH restriction in the chain at this moment,
+    /// read back from the Node. Both the container's own port and the
+    /// published one appear when they differ.
+    pub restricted_ports: Vec<u16>,
+    /// Why the above could not be established. Set means "unknown", and
+    /// anything reporting protection must treat unknown as not protected.
+    pub error: Option<String>,
 }
 
 /// `Serialize` so a Tauri command can hand this straight to the frontend -
@@ -96,6 +122,11 @@ pub struct FirewallSyncResult {
     /// enforcing your rules", so it gets an explicit flag rather than every
     /// call site having to infer it from `backend.is_none() || !active`.
     pub unenforced: bool,
+    /// Set when the `DOCKER-USER` reconcile failed. The ufw part still
+    /// succeeded, which is why this is not an error - but a published
+    /// Docker port whose container restriction did not land is open, and
+    /// the interface needs to be told rather than the log.
+    pub container_error: Option<String>,
 }
 
 impl FirewallSyncResult {
@@ -103,7 +134,7 @@ impl FirewallSyncResult {
     /// not a `Default` impl - constructing one should always be a conscious
     /// choice, never what you get by forgetting a field.
     fn unenforced() -> Self {
-        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true }
+        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true, container_error: None }
     }
 }
 
@@ -167,6 +198,41 @@ pub fn desired_rules_with_origin(
     Ok(views)
 }
 
+/// The `DOCKER-USER` restrictions this Node should be carrying.
+///
+/// Built here rather than derived from `desired_rules`, because the two
+/// need different numbers: ufw is told the published port, and after DNAT
+/// iptables sees the container's own. `FirewallRule` only carries the
+/// former, which is why rules written from it silently matched nothing on
+/// any Application whose internal and external ports differ.
+pub fn desired_container_rules(
+    app_repo: &ApplicationRepository,
+    network_repo: &NodeNetworkRepository,
+    server_id: Uuid,
+) -> AppResult<Vec<firewall::docker_user::ContainerRule>> {
+    let mut rules = Vec::new();
+    if network_repo.get(server_id)?.is_none() {
+        // Only mesh-scoped ports produce a source restriction today, and a
+        // Node outside the mesh has none of those.
+        return Ok(rules);
+    }
+    for application in app_repo.list_by_server(server_id)? {
+        for port in app_repo.list_ports(application.id)? {
+            let Some(external_port) = port.external_port else { continue };
+            if port.visibility != PortVisibility::VibeNetwork {
+                continue;
+            }
+            rules.extend(firewall::docker_user::rules_for_published_port(
+                port.internal_port,
+                external_port,
+                port.protocol,
+                NodeNetworkRepository::MESH_CIDR,
+            ));
+        }
+    }
+    Ok(rules)
+}
+
 /// The bare rule list `FirewallProvider::apply_rules`/`enable` actually
 /// need - every reconcile path goes through this, not
 /// `desired_rules_with_origin` directly, so a backend impl never has to
@@ -195,8 +261,15 @@ pub async fn reconcile_node(
     server_id: Uuid,
 ) -> AppResult<FirewallSyncResult> {
     let rules = desired_rules(app_repo, server_repo, network_repo, firewall_rule_repo, server_id)?;
+    let container_rules = desired_container_rules(app_repo, network_repo, server_id)?;
 
-    async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
+    async fn attempt(
+        server_repo: &ServerRepository,
+        sessions: &SshSessionManager,
+        server_id: Uuid,
+        rules: &[FirewallRule],
+        container_rules: &[firewall::docker_user::ContainerRule],
+    ) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
             return Ok(FirewallSyncResult::unenforced());
@@ -213,14 +286,29 @@ pub async fn reconcile_node(
         // Best-effort: a Node with no Docker has nothing to reconcile, and
         // an iptables failure must not make an otherwise-successful ufw
         // sync look like a total failure.
-        if let Err(err) = firewall::docker_user::reconcile(&connection, rules).await {
-            log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
-        }
+        let container_error = match firewall::docker_user::reconcile(&connection, container_rules).await {
+            Ok(_) => None,
+            // Still not fatal to the ufw sync, which did succeed - but it
+            // is carried out rather than logged, because a port whose
+            // container restriction did not land is not protected, and the
+            // interface has to be able to say so.
+            Err(err) => {
+                log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
+                Some(err.to_string())
+            }
+        };
         let active = provider.is_active(&connection).await?;
         // A backend that exists but is switched off enforces nothing
         // either: the rules are recorded and take effect the moment it
         // is enabled, but right now the ports are open.
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
+        Ok(FirewallSyncResult {
+            backend: Some(provider.name().to_string()),
+            active,
+            rules_applied: rules.len(),
+            rules_removed,
+            unenforced: !active,
+            container_error,
+        })
     }
 
     // This runs several sequential SSH round-trips against one connection,
@@ -229,7 +317,7 @@ pub async fn reconcile_node(
     // drop-and-retry-once recovery `ssh_service::execute_command` gives a
     // single command. Through the shared helper rather than a local copy:
     // the copy retried on *every* error and threw away the second one.
-    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules, &container_rules)).await
 }
 
 /// Turns firewall *enforcement* on for a Node - the explicit, user-triggered
@@ -258,7 +346,7 @@ pub async fn enable_node_firewall(
         provider.enable(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active })
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active, container_error: None })
     }
 
     // Same recovery `reconcile_node` uses, and for the same reason.
@@ -508,7 +596,29 @@ pub async fn node_firewall_overview(
         },
         Err(_) => (None, false),
     };
-    Ok(NodeFirewallOverview { backend, active, rules })
+    // Read back rather than assumed. What the chain contains is the only
+    // thing that answers "is this port actually restricted"; the rule list
+    // above is what VibeSSH intends, which is a different question and the
+    // one the Ports tab used to answer by mistake.
+    let container = match get_or_connect(server_repo, sessions, server_id).await {
+        Ok(connection) => match firewall::docker_user::detect(&connection).await {
+            Ok(false) => ContainerFirewallState { applicable: false, restricted_ports: Vec::new(), error: None },
+            Ok(true) => match firewall::docker_user::read_owned(&connection).await {
+                Ok(owned) => ContainerFirewallState {
+                    applicable: true,
+                    restricted_ports: owned.iter().map(|rule| rule.port).collect(),
+                    error: None,
+                },
+                Err(err) => ContainerFirewallState { applicable: true, restricted_ports: Vec::new(), error: Some(err.to_string()) },
+            },
+            Err(err) => ContainerFirewallState { applicable: true, restricted_ports: Vec::new(), error: Some(err.to_string()) },
+        },
+        // Unreachable Node: `backend`/`active` already degraded to
+        // "nothing known", and this degrades the same way. Unknown, not
+        // protected.
+        Err(err) => ContainerFirewallState { applicable: true, restricted_ports: Vec::new(), error: Some(err.to_string()) },
+    };
+    Ok(NodeFirewallOverview { backend, active, rules, container })
 }
 
 #[cfg(test)]

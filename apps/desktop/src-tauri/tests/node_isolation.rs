@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 use vibessh_lib::firewall::docker_user;
-use vibessh_lib::firewall::FirewallRule;
 use vibessh_lib::models::PortProtocol;
 use vibessh_lib::ssh::{connect, SshAuth, SshCredentials, SshSession};
 
@@ -156,7 +155,7 @@ async fn a_docker_user_rule_reaches_the_kernel_and_can_be_revoked() {
     assert!(docker_user::detect(&session).await.expect("detect should run"), "the test host is known to have iptables and Docker");
 
     // A port nothing on this host uses, restricted to the mesh range.
-    let rule = FirewallRule { port: 59117, protocol: PortProtocol::Tcp, source_cidr: Some("10.77.0.0/16".to_string()) };
+    let rule = docker_user::ContainerRule { port: 59117, protocol: PortProtocol::Tcp, source_cidr: "10.77.0.0/16".to_string() };
 
     let before = run(&session, "iptables -S DOCKER-USER").await;
     assert!(!before.contains("59117"), "the test port is already in the chain - a previous run left state behind");

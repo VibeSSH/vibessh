@@ -39,7 +39,41 @@ export function portProtection(port: ApplicationPort, overview: NodeFirewallOver
   if (!overview.backend || !overview.active) return "unprotected";
 
   const covered = overview.rules.some((rule) => rule.port === effectivePort(port) && rule.protocol === port.protocol);
-  return covered ? "protected" : "unprotected";
+  if (!covered) return "unprotected";
+
+  return containerProtection(port, overview);
+}
+
+/**
+ * The second half of the answer, for a port Docker published.
+ *
+ * A ufw rule is not enough on its own. Docker writes its own DNAT and
+ * ACCEPT ahead of ufw's chains, so a published port stays reachable however
+ * correct `ufw status` looks - which is the whole reason
+ * `firewall::docker_user` exists. Deciding "protected" from the ufw rule
+ * alone told the user their database was closed while it was answering the
+ * internet.
+ *
+ * Reading the chain can also simply fail, and that answer is `unknown`
+ * rather than `protected`. The two are not close: one sends somebody to
+ * look, the other sends them away satisfied.
+ */
+function containerProtection(port: ApplicationPort, overview: NodeFirewallOverview): PortProtection {
+  const container = overview.container;
+  // The Node runs no Docker, so nothing bypasses ufw here and its rule is
+  // the whole story.
+  if (!container?.applicable) return "protected";
+  // Not published outside its container at all - there is no host port for
+  // anyone to reach, restricted or otherwise.
+  if (port.externalPort === null || port.externalPort === undefined) return "protected";
+  if (container.error) return "unknown";
+
+  // Either number is a real answer: after DNAT the chain sees the
+  // container's own port, and a container that is not DNAT-ed (host
+  // networking, or a port published out of band) is seen on the published
+  // one. `docker_user` writes both for exactly this reason.
+  const restricted = container.restrictedPorts.includes(port.internalPort) || container.restrictedPorts.includes(port.externalPort);
+  return restricted ? "protected" : "unprotected";
 }
 
 /**
