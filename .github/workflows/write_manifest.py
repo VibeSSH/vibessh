@@ -24,7 +24,7 @@ WANTED = {
 }
 
 root = pathlib.Path("dist-release")
-version = json.loads(pathlib.Path("src-tauri/tauri.conf.json").read_text(encoding="utf8"))["version"]
+version = json.loads(pathlib.Path("apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf8"))["version"]
 tag = "v" + version
 
 platforms = {}

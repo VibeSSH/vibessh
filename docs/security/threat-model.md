@@ -22,7 +22,7 @@ boundary**, not afterwards.
 | Backup archives and S3 credentials | The Node, plus the configured bucket | HTTPS enforced for non-loopback endpoints. |
 | Registry tokens | OS keyring | Reach the Node through a mode-0600 file, never a command line. |
 | Docker daemon control | The Node | `sudo docker` as the connecting admin. **Root-equivalent** — see `agent-privileges.md`. |
-| Cloud backend JWT secret | `backend/.env` | Minimum length enforced at startup. |
+| Cloud backend JWT secret | `apps/backend/.env` | Minimum length enforced at startup. |
 
 ## Trust boundaries
 

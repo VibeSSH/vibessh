@@ -18,9 +18,9 @@ Nie potrzebujesz, jeśli używasz VibeSSH sam. Dodawanie Node'ów, stawianie apl
 
 ## Jak postawić własny backend
 
-Backend jest w katalogu `backend/` w źródłach VibeSSH. Najprościej uruchomić go Dockerem — na tym samym serwerze, na którym trzymasz Node'y, albo na dowolnym innym.
+Backend jest w katalogu `apps/backend/` w źródłach VibeSSH. Najprościej uruchomić go Dockerem — na tym samym serwerze, na którym trzymasz Node'y, albo na dowolnym innym.
 
-1. Skopiuj katalog `backend/` na serwer.
+1. Skopiuj katalog `apps/backend/` na serwer.
 2. Skopiuj `.env.example` do `.env` i uzupełnij **dwie rzeczy**, bez których nic nie wstanie:
    - **POSTGRES_PASSWORD** — hasło do bazy, dowolne długie.
    - **JWT_SECRET** — sekret podpisujący tokeny logowania. Wygeneruj prawdziwy, na przykład `openssl rand -base64 48`. Zostawienie tam tekstu z przykładu oznacza sekret, który zna każdy, kto widział te źródła.

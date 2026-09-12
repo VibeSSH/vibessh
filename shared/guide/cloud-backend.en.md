@@ -26,11 +26,11 @@ applications, files and the terminal all work with no backend and no sign-in.
 
 ## Running your own
 
-The backend lives in the `backend/` directory of the VibeSSH source. The
+The backend lives in the `apps/backend/` directory of the VibeSSH source. The
 simplest way to run it is Docker - on the same server as your nodes, or on any
 other machine.
 
-1. Copy the `backend/` directory onto the server.
+1. Copy the `apps/backend/` directory onto the server.
 2. Copy `.env.example` to `.env` and fill in the **two things** without which
    nothing will start:
    - **POSTGRES_PASSWORD** - the database password, anything long.

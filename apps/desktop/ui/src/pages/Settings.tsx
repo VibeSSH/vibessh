@@ -464,7 +464,7 @@ function BackupDestinationCard() {
  * Which backend the account and team features talk to.
  *
  * **Why this had to exist.** The address has always been a per-install
- * setting - VibeSSH ships a backend you run yourself, under `backend/` - and
+ * setting - VibeSSH ships a backend you run yourself, under `apps/backend/` - and
  * it defaults to `http://localhost:8787`, this machine's own dev instance.
  * The command to change it existed, and the service wrapper existed, and
  * nothing in the interface ever called either. So every install kept the

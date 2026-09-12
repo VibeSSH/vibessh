@@ -1425,7 +1425,7 @@
     "cloudBackendTitle": "Account backend",
     "cloudBackendSubtitle": "Where accounts, teams and shared servers live. Everything else in VibeSSH works without it.",
     "cloudBackendLabel": "Backend address",
-    "cloudBackendNote": "VibeSSH does not host this for you - you run it yourself from the `backend/` directory of the source, and point this at it. Signing in, registering and teams all go here.",
+    "cloudBackendNote": "VibeSSH does not host this for you - you run it yourself from the `apps/backend/` directory of the source, and point this at it. Signing in, registering and teams all go here.",
     "cloudBackendSavedToast": "Backend address saved",
     "cloudBackendGuide": "How to run your own backend, step by step.",
     "cloudBackendUnset": "No backend is set, so accounts and teams are off. Everything else - nodes, applications, files, the terminal - works without one."

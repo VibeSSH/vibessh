@@ -1433,7 +1433,7 @@
     "cloudBackendTitle": "Backend kont",
     "cloudBackendSubtitle": "Tu żyją konta, zespoły i współdzielone serwery. Cała reszta VibeSSH działa bez tego.",
     "cloudBackendLabel": "Adres backendu",
-    "cloudBackendNote": "VibeSSH nie hostuje tego za Ciebie - uruchamiasz go sam z katalogu `backend/` w źródłach i wskazujesz tutaj jego adres. Logowanie, rejestracja i zespoły idą właśnie tam.",
+    "cloudBackendNote": "VibeSSH nie hostuje tego za Ciebie - uruchamiasz go sam z katalogu `apps/backend/` w źródłach i wskazujesz tutaj jego adres. Logowanie, rejestracja i zespoły idą właśnie tam.",
     "cloudBackendSavedToast": "Adres backendu zapisany",
     "cloudBackendGuide": "Jak postawić własny backend, krok po kroku.",
     "cloudBackendUnset": "Nie ustawiono backendu, więc konta i zespoły są wyłączone. Cała reszta - Node'y, aplikacje, pliki, terminal - działa bez niego."
