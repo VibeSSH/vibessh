@@ -1,4 +1,4 @@
-# Built from the repo root (see docker-compose.yml's `context: ..`) since
+# Built from the repo root (see docker-compose.yml's `context: ../..`) since
 # this is a workspace member and needs the workspace root Cargo.toml/lock.
 # Not exercised in this dev environment (no Docker available here) - treat
 # the first real build as the actual verification.

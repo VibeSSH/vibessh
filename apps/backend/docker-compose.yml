@@ -21,8 +21,12 @@ services:
 
   backend:
     build:
-      context: ..
-      dockerfile: backend/Dockerfile
+      # The repository root, two levels up - the crate is a workspace member
+      # and the build needs the workspace Cargo.toml and Cargo.lock. This was
+      # `..` while the crate lived at `backend/`; after the move to
+      # `apps/backend/` that pointed at `apps/`, which has neither.
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
