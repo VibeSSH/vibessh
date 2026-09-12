@@ -17,7 +17,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::permissions;
 
 pub async fn authorize(db: &PgPool, team_id: Uuid, user_id: Uuid, permission: &str) -> ApiResult<()> {
@@ -40,7 +40,7 @@ pub async fn authorize(db: &PgPool, team_id: Uuid, user_id: Uuid, permission: &s
     .await?;
 
     if !granted {
-        return Err(ApiError::Forbidden(format!("missing permission: {permission}")));
+        return Err(ApiError::Forbidden(Detail::new("missing_permission", format!("missing permission: {permission}")).with("permission", permission)));
     }
     Ok(())
 }
@@ -78,7 +78,7 @@ pub async fn authorize_any(db: &PgPool, team_id: Uuid, user_id: Uuid, permission
     if !granted {
         // Named in full: "missing permission: a" would be a lie when any of
         // several would have done.
-        return Err(ApiError::Forbidden(format!("missing permission: one of {}", keys.join(", "))));
+        return Err(ApiError::Forbidden(Detail::new("missing_one_of_permissions", format!("missing permission: one of {}", keys.join(", "))).with("permissions", keys.join(", "))));
     }
     Ok(())
 }
@@ -117,7 +117,7 @@ pub async fn ensure_can_grant(db: &PgPool, team_id: Uuid, actor_id: Uuid, desire
     let held = effective_permissions(db, team_id, actor_id).await?;
     let held: std::collections::HashSet<&str> = held.iter().map(String::as_str).collect();
     if let Some(missing) = desired.iter().find(|permission| !held.contains(permission.as_str())) {
-        return Err(ApiError::Forbidden(format!("you can't grant a permission you don't have: {missing}")));
+        return Err(ApiError::Forbidden(Detail::new("cannot_grant_unheld_permission", format!("you can't grant a permission you don't have: {missing}")).with("permission", missing.clone())));
     }
     Ok(())
 }

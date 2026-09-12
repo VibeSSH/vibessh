@@ -152,6 +152,17 @@ export function errorMessage(error: unknown, t: (key: string, options?: Record<s
     // different sentences in every language, and gluing the second half on
     // in code is exactly what makes copy untranslatable.
     const context = typeof error.params.owner === "string" ? "owned" : undefined;
+    // The cloud backend names its own refusals, and its name for one is more
+    // specific than the coarse code it also maps to: "invalid_credentials"
+    // rather than "unauthorized". Tried first so the user reads one sentence
+    // in their own language instead of a translated frame around English
+    // prose - which is what "Brak uprawnien: invalid email or password" was.
+    // Unknown to this build (a newer backend) falls straight through.
+    const backendCode = error.params.backendCode;
+    if (typeof backendCode === "string") {
+      const fromBackend = t(`cloudErrors.${backendCode}`, { ...error.params, defaultValue: "" });
+      if (fromBackend) return fromBackend;
+    }
     const translated = t(`errors.${error.code}`, { ...error.params, context, defaultValue: "" });
     if (translated) return translated;
   }

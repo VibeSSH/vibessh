@@ -15,7 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::tokens;
 
 pub const REFRESH_TOKEN_TTL_DAYS: i64 = 30;
@@ -63,13 +63,13 @@ pub async fn verify_and_rotate(db: &PgPool, raw_token: &str) -> ApiResult<(Uuid,
     .await?;
 
     let Some((token_id, user_id, expires_at, revoked_at)) = row else {
-        return Err(ApiError::Unauthorized("refresh token is invalid".to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("refresh_token_invalid", "refresh token is invalid")));
     };
     if revoked_at.is_some() {
-        return Err(ApiError::Unauthorized("refresh token has already been used or revoked".to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("refresh_token_used", "refresh token has already been used or revoked")));
     }
     if expires_at < Utc::now() {
-        return Err(ApiError::Unauthorized("refresh token has expired".to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("refresh_token_expired", "refresh token has expired")));
     }
 
     sqlx::query("UPDATE refresh_tokens SET revoked_at = $1 WHERE id = $2")

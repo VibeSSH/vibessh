@@ -20,7 +20,7 @@ use serde_json::json;
 use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::{authorize, ensure_can_grant};
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::models::{AddMemberRequest, CreateTeamRequest, ProvisionMemberRequest, ProvisionedMember, Team, TeamMember};
 use crate::{permissions, AppState};
 
@@ -38,7 +38,7 @@ pub(crate) async fn team_for_member(db: &PgPool, team_id: Uuid, user_id: Uuid) -
     .bind(user_id)
     .fetch_optional(db)
     .await?;
-    team.ok_or_else(|| ApiError::NotFound("team not found".to_string()))
+    team.ok_or_else(|| ApiError::NotFound(Detail::new("team_not_found", "team not found")))
 }
 
 pub async fn create_team(
@@ -48,10 +48,10 @@ pub async fn create_team(
 ) -> ApiResult<impl IntoResponse> {
     let name = body.name.trim();
     if name.is_empty() {
-        return Err(ApiError::InvalidInput("team name cannot be empty".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("team_name_empty", "team name cannot be empty")));
     }
     if name.chars().count() > MAX_TEAM_NAME_LEN {
-        return Err(ApiError::InvalidInput(format!("team name must be at most {MAX_TEAM_NAME_LEN} characters")));
+        return Err(ApiError::InvalidInput(Detail::new("team_name_too_long", format!("team name must be at most {MAX_TEAM_NAME_LEN} characters")).with("max", MAX_TEAM_NAME_LEN)));
     }
 
     let team_id = Uuid::new_v4();
@@ -174,7 +174,7 @@ pub async fn add_member(
         .bind(&email)
         .fetch_optional(&state.db)
         .await?;
-    let target_user_id = target_user_id.ok_or_else(|| ApiError::NotFound("no account with that email".to_string()))?;
+    let target_user_id = target_user_id.ok_or_else(|| ApiError::NotFound(Detail::new("no_account_with_email", "no account with that email")))?;
 
     let mut tx = state.db.begin().await?;
     let insert = sqlx::query("INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, $3)")
@@ -186,7 +186,7 @@ pub async fn add_member(
 
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
-            return Err(ApiError::Conflict("this user is already a member of the team".to_string()));
+            return Err(ApiError::Conflict(Detail::new("already_a_team_member", "this user is already a member of the team")));
         }
     }
     insert?;
@@ -239,7 +239,7 @@ pub async fn provision_member(
     // person already has an account - is reported as itself.
     let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE email = $1").bind(&email).fetch_optional(&state.db).await?;
     if existing.is_some() {
-        return Err(ApiError::Conflict("an account with this email already exists - add them as a member instead".to_string()));
+        return Err(ApiError::Conflict(Detail::new("email_taken_add_as_member", "an account with this email already exists - add them as a member instead")));
     }
 
     // A role is granted here, so the same rule applies as anywhere else:
@@ -275,7 +275,7 @@ pub async fn provision_member(
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
             // Somebody registered between the check above and this insert.
-            return Err(ApiError::Conflict("an account with this email already exists - add them as a member instead".to_string()));
+            return Err(ApiError::Conflict(Detail::new("email_taken_add_as_member", "an account with this email already exists - add them as a member instead")));
         }
     }
     insert?;
@@ -292,7 +292,7 @@ pub async fn provision_member(
         let belongs: Option<Uuid> =
             sqlx::query_scalar("SELECT id FROM roles WHERE id = $1 AND team_id = $2").bind(role_id).bind(team_id).fetch_optional(&mut *tx).await?;
         if belongs.is_none() {
-            return Err(ApiError::NotFound("role not found".to_string()));
+            return Err(ApiError::NotFound(Detail::new("role_not_found", "role not found")));
         }
         sqlx::query("INSERT INTO member_roles (team_id, user_id, role_id) VALUES ($1, $2, $3)")
             .bind(team_id)
@@ -341,7 +341,7 @@ pub async fn remove_member(
     // (making someone else owner first) is future work; for now this is a
     // hard rule, not a soft warning.
     if target_user_id == team.owner_id {
-        return Err(ApiError::Conflict("the team owner can't be removed - transfer ownership first".to_string()));
+        return Err(ApiError::Conflict(Detail::new("owner_cannot_be_removed", "the team owner can't be removed - transfer ownership first")));
     }
 
     let mut tx = state.db.begin().await?;
@@ -352,7 +352,7 @@ pub async fn remove_member(
         .await?
         .rows_affected();
     if affected == 0 {
-        return Err(ApiError::NotFound("that user isn't a member of this team".to_string()));
+        return Err(ApiError::NotFound(Detail::new("not_a_team_member", "that user isn't a member of this team")));
     }
 
     audit::record(&mut tx, team_id, user_id, audit::MEMBER_REMOVED, "user", Some(target_user_id), json!({})).await?;

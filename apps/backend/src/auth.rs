@@ -11,7 +11,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use uuid::Uuid;
 
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::models::{AuthResponse, ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, User, UserProfile};
 use crate::{jwt, password, refresh_token, AppState};
 
@@ -23,20 +23,20 @@ pub(crate) fn normalize_email(email: &str) -> String {
 
 pub(crate) fn validate_email(email: &str) -> ApiResult<()> {
     let Some((local, domain)) = email.split_once('@') else {
-        return Err(ApiError::InvalidInput("email must contain @".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("email_missing_at", "email must contain @")));
     };
     if local.is_empty() || domain.is_empty() || !domain.contains('.') || email.contains(char::is_whitespace) {
-        return Err(ApiError::InvalidInput("email is not a valid address".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("email_invalid", "email is not a valid address")));
     }
     Ok(())
 }
 
 fn validate_password(password: &str) -> ApiResult<()> {
     if password.chars().count() < password::MIN_PASSWORD_LEN {
-        return Err(ApiError::InvalidInput(format!("password must be at least {} characters", password::MIN_PASSWORD_LEN)));
+        return Err(ApiError::InvalidInput(Detail::new("password_too_short", format!("password must be at least {} characters", password::MIN_PASSWORD_LEN)).with("min", password::MIN_PASSWORD_LEN)));
     }
     if password.len() > password::MAX_PASSWORD_LEN {
-        return Err(ApiError::InvalidInput(format!("password must be at most {} characters", password::MAX_PASSWORD_LEN)));
+        return Err(ApiError::InvalidInput(Detail::new("password_too_long", format!("password must be at most {} characters", password::MAX_PASSWORD_LEN)).with("max", password::MAX_PASSWORD_LEN)));
     }
     Ok(())
 }
@@ -44,10 +44,10 @@ fn validate_password(password: &str) -> ApiResult<()> {
 pub(crate) fn validate_display_name(name: &str) -> ApiResult<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(ApiError::InvalidInput("display name cannot be empty".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("display_name_empty", "display name cannot be empty")));
     }
     if trimmed.chars().count() > MAX_DISPLAY_NAME_LEN {
-        return Err(ApiError::InvalidInput(format!("display name must be at most {MAX_DISPLAY_NAME_LEN} characters")));
+        return Err(ApiError::InvalidInput(Detail::new("display_name_too_long", format!("display name must be at most {MAX_DISPLAY_NAME_LEN} characters")).with("max", MAX_DISPLAY_NAME_LEN)));
     }
     Ok(trimmed.to_string())
 }
@@ -87,7 +87,7 @@ pub async fn register(State(state): State<AppState>, Json(body): Json<RegisterRe
 
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
-            return Err(ApiError::Conflict("an account with this email already exists".to_string()));
+            return Err(ApiError::Conflict(Detail::new("email_taken", "an account with this email already exists")));
         }
     }
     insert?;
@@ -116,7 +116,7 @@ pub async fn login(State(state): State<AppState>, Json(body): Json<LoginRequest>
     // spending an Argon2 computation on it, the same DoS concern
     // MAX_PASSWORD_LEN exists for on the register path.
     if body.password.len() > password::MAX_PASSWORD_LEN {
-        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     }
 
     let user: Option<User> = sqlx::query_as(
@@ -131,11 +131,11 @@ pub async fn login(State(state): State<AppState>, Json(body): Json<LoginRequest>
         // nonexistent email doesn't respond measurably faster than a wrong
         // password for a real one.
         password::verify_password(&body.password, dummy_hash_for_timing_safety());
-        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     };
 
     if !password::verify_password(&body.password, &user.password_hash) {
-        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     }
 
     Ok(Json(issue_auth_response(&state, &user).await?))
@@ -148,7 +148,7 @@ pub async fn refresh(State(state): State<AppState>, Json(body): Json<RefreshRequ
         .bind(user_id)
         .fetch_optional(&state.db)
         .await?;
-    let user = user.ok_or_else(|| ApiError::Unauthorized("account no longer exists".to_string()))?;
+    let user = user.ok_or_else(|| ApiError::Unauthorized(Detail::new("account_gone", "account no longer exists")))?;
 
     let (access_token, access_token_expires_at) =
         jwt::issue_access_token(user.id, &state.jwt_secret).map_err(ApiError::Internal)?;
@@ -190,11 +190,15 @@ fn user_id_from_parts(parts: &Parts, state: &AppState) -> Result<Uuid, ApiError>
         .headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| ApiError::Unauthorized("missing Authorization header".to_string()))?;
+        .ok_or_else(|| ApiError::Unauthorized(Detail::new("missing_authorization_header", "missing Authorization header")))?;
     let token = header
         .strip_prefix("Bearer ")
-        .ok_or_else(|| ApiError::Unauthorized("Authorization header must be a Bearer token".to_string()))?;
-    let claims = jwt::verify_access_token(token, &state.jwt_secret).map_err(ApiError::Unauthorized)?;
+        .ok_or_else(|| ApiError::Unauthorized(Detail::new("malformed_authorization_header", "Authorization header must be a Bearer token")))?;
+    // One code for every way a token fails to verify - expired, tampered
+    // with, signed with a rotated secret. The client's response is the same
+    // in all three: authenticate again.
+    let claims = jwt::verify_access_token(token, &state.jwt_secret)
+        .map_err(|reason| ApiError::Unauthorized(Detail::new("access_token_invalid", reason)))?;
     Ok(claims.sub)
 }
 
@@ -227,10 +231,11 @@ impl FromRequestParts<AppState> for AuthUser {
 
         match must_change {
             // A token for an account that no longer exists.
-            None => Err(ApiError::Unauthorized("account no longer exists".to_string())),
-            Some(true) => Err(ApiError::PasswordChangeRequired(
-                "set a new password before using this account - the one it has was set by somebody else".to_string(),
-            )),
+            None => Err(ApiError::Unauthorized(Detail::new("account_gone", "account no longer exists"))),
+            Some(true) => Err(ApiError::PasswordChangeRequired(Detail::new(
+                "password_change_required",
+                "set a new password before using this account - the one it has was set by somebody else",
+            ))),
             Some(false) => Ok(AuthUser(user_id)),
         }
     }
@@ -252,7 +257,7 @@ pub async fn change_password(
     Json(body): Json<ChangePasswordRequest>,
 ) -> ApiResult<Json<AuthResponse>> {
     if body.current_password.len() > password::MAX_PASSWORD_LEN {
-        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     }
     validate_password(&body.new_password)?;
 
@@ -261,16 +266,16 @@ pub async fn change_password(
             .bind(user_id)
             .fetch_optional(&state.db)
             .await?;
-    let user = user.ok_or_else(|| ApiError::NotFound("account no longer exists".to_string()))?;
+    let user = user.ok_or_else(|| ApiError::NotFound(Detail::new("account_gone", "account no longer exists")))?;
 
     if !password::verify_password(&body.current_password, &user.password_hash) {
-        return Err(ApiError::Unauthorized(INVALID_CREDENTIALS.to_string()));
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     }
     // Refusing this is not pedantry: a provisioned account whose owner
     // "changes" the password to the one they were given has changed nothing,
     // and the person who issued it still knows it.
     if password::verify_password(&body.new_password, &user.password_hash) {
-        return Err(ApiError::InvalidInput("the new password must be different from the current one".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("password_unchanged", "the new password must be different from the current one")));
     }
 
     let new_hash = password::hash_password(&body.new_password).map_err(ApiError::Internal)?;
@@ -292,6 +297,6 @@ pub async fn me(State(state): State<AppState>, AuthUser(user_id): AuthUser) -> A
         .bind(user_id)
         .fetch_optional(&state.db)
         .await?;
-    let user = user.ok_or_else(|| ApiError::NotFound("account no longer exists".to_string()))?;
+    let user = user.ok_or_else(|| ApiError::NotFound(Detail::new("account_gone", "account no longer exists")))?;
     Ok(Json(UserProfile::from(&user)))
 }

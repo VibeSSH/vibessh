@@ -92,26 +92,46 @@ impl CloudClient {
         Err(Self::error_for(status, String::from_utf8_lossy(&bytes).into_owned()))
     }
 
-    /// Best-effort: the backend always returns `{ kind, message }` on error
-    /// (see apps/backend/src/errors.rs), but this falls back to the raw body if
-    /// something ahead of it (a proxy, a network edge case) ever returns
-    /// something else - never panics on an unexpected error shape.
+    /// Best-effort: the backend always returns `{ kind, code, message, params }`
+    /// on error (see apps/backend/src/errors.rs), but this falls back to the raw
+    /// body if something ahead of it (a proxy, a network edge case) ever
+    /// returns something else - never panics on an unexpected error shape.
+    ///
+    /// The `code` is what matters to the user: it is what the interface
+    /// translates by. Before it existed, the backend's English `message` was
+    /// dropped into a translated frame, so a Polish interface said "Brak
+    /// uprawnien: invalid email or password". The `kind` is kept separately
+    /// because behaviour hangs off it - a 401 has to keep looking like one.
     fn error_for(status: StatusCode, body: String) -> AppError {
-        let message = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|value| value.get("message").and_then(|m| m.as_str()).map(str::to_string))
-            .unwrap_or(body);
-        match status {
-            StatusCode::UNAUTHORIZED => AppError::Unauthorized(message),
-            StatusCode::FORBIDDEN => AppError::Unauthorized(message),
-            StatusCode::NOT_FOUND => AppError::NotFound(message),
-            StatusCode::BAD_REQUEST | StatusCode::CONFLICT => AppError::InvalidInput(message),
-            // The hosted AI assistant's daily allowance. Mapped to its own
-            // code rather than a generic failure because the UI says
-            // something specific about it - when it resets, and that a
-            // personal API key is the way around it.
-            StatusCode::TOO_MANY_REQUESTS => AppError::AiQuotaExhausted,
-            _ => AppError::Internal(format!("cloud backend returned {status}: {message}")),
+        let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+        let field = |name: &str| {
+            parsed.as_ref().and_then(|value| value.get(name)).and_then(|v| v.as_str()).map(str::to_string)
+        };
+        let message = field("message").unwrap_or(body);
+        let params = parsed
+            .as_ref()
+            .and_then(|value| value.get("params"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        // Its own variant, not a generic failure: the UI says something
+        // specific about the daily allowance - when it resets, and that a
+        // personal API key is the way around it.
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return AppError::AiQuotaExhausted;
+        }
+
+        match (field("kind"), field("code")) {
+            (Some(kind), Some(code)) => AppError::Cloud { kind, code, params, message },
+            // No code in the body: an older backend, or something between us
+            // and it. Fall back to classifying by status, which is all there
+            // was before.
+            _ => match status {
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => AppError::Unauthorized(message),
+                StatusCode::NOT_FOUND => AppError::NotFound(message),
+                StatusCode::BAD_REQUEST | StatusCode::CONFLICT => AppError::InvalidInput(message),
+                _ => AppError::Internal(format!("cloud backend returned {status}: {message}")),
+            },
         }
     }
 

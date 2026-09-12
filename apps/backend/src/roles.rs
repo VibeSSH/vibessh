@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::{authorize, authorize_any, effective_permissions, ensure_can_grant};
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::models::{AssignRoleRequest, CreateRoleRequest, Role, RoleWithPermissions, UpdateRoleRequest};
 use crate::permissions;
 use crate::teams::{team_for_member, OWNER_ROLE_NAME};
@@ -31,7 +31,7 @@ async fn role_for_team(db: &PgPool, team_id: Uuid, role_id: Uuid) -> ApiResult<R
     .bind(team_id)
     .fetch_optional(db)
     .await?;
-    role.ok_or_else(|| ApiError::NotFound("role not found".to_string()))
+    role.ok_or_else(|| ApiError::NotFound(Detail::new("role_not_found", "role not found")))
 }
 
 async fn with_permissions(db: &PgPool, role: Role) -> ApiResult<RoleWithPermissions> {
@@ -46,13 +46,13 @@ async fn with_permissions(db: &PgPool, role: Role) -> ApiResult<RoleWithPermissi
 fn validate_role_name(name: &str) -> ApiResult<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(ApiError::InvalidInput("role name cannot be empty".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("role_name_empty", "role name cannot be empty")));
     }
     if trimmed.chars().count() > MAX_ROLE_NAME_LEN {
-        return Err(ApiError::InvalidInput(format!("role name must be at most {MAX_ROLE_NAME_LEN} characters")));
+        return Err(ApiError::InvalidInput(Detail::new("role_name_too_long", format!("role name must be at most {MAX_ROLE_NAME_LEN} characters")).with("max", MAX_ROLE_NAME_LEN)));
     }
     if trimmed.eq_ignore_ascii_case(OWNER_ROLE_NAME) {
-        return Err(ApiError::InvalidInput(format!("\"{OWNER_ROLE_NAME}\" is reserved for the built-in owner role")));
+        return Err(ApiError::InvalidInput(Detail::new("role_name_reserved", format!("\"{OWNER_ROLE_NAME}\" is reserved for the built-in owner role")).with("name", OWNER_ROLE_NAME)));
     }
     Ok(trimmed.to_string())
 }
@@ -60,7 +60,7 @@ fn validate_role_name(name: &str) -> ApiResult<String> {
 fn validate_permission_keys(keys: &[String]) -> ApiResult<()> {
     for key in keys {
         if !permissions::is_known_permission(key) {
-            return Err(ApiError::InvalidInput(format!("unknown permission: {key}")));
+            return Err(ApiError::InvalidInput(Detail::new("unknown_permission", format!("unknown permission: {key}")).with("permission", key.clone())));
         }
     }
     Ok(())
@@ -171,7 +171,7 @@ pub async fn create_role(
 
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
-            return Err(ApiError::Conflict("a role with this name already exists on this team".to_string()));
+            return Err(ApiError::Conflict(Detail::new("role_name_taken", "a role with this name already exists on this team")));
         }
     }
     insert?;
@@ -240,7 +240,7 @@ pub async fn update_role(
     authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system {
-        return Err(ApiError::Forbidden("the built-in owner role cannot be modified".to_string()));
+        return Err(ApiError::Forbidden(Detail::new("owner_role_immutable", "the built-in owner role cannot be modified")));
     }
 
     let name = validate_role_name(&body.name)?;
@@ -259,7 +259,7 @@ pub async fn update_role(
         .await;
     if let Err(sqlx::Error::Database(db_err)) = &update {
         if db_err.is_unique_violation() {
-            return Err(ApiError::Conflict("a role with this name already exists on this team".to_string()));
+            return Err(ApiError::Conflict(Detail::new("role_name_taken", "a role with this name already exists on this team")));
         }
     }
     update?;
@@ -290,7 +290,7 @@ pub async fn delete_role(
     authorize(&state.db, team_id, user_id, permissions::TEAM_ROLES_MANAGE).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system {
-        return Err(ApiError::Forbidden("the built-in owner role cannot be deleted".to_string()));
+        return Err(ApiError::Forbidden(Detail::new("owner_role_undeletable", "the built-in owner role cannot be deleted")));
     }
 
     let mut tx = state.db.begin().await?;
@@ -342,7 +342,7 @@ pub async fn assign_role(
         .fetch_one(&state.db)
         .await?;
     if !target_is_member {
-        return Err(ApiError::NotFound("that user isn't a member of this team".to_string()));
+        return Err(ApiError::NotFound(Detail::new("not_a_team_member", "that user isn't a member of this team")));
     }
 
     let mut tx = state.db.begin().await?;
@@ -354,7 +354,7 @@ pub async fn assign_role(
         .await;
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
-            return Err(ApiError::Conflict("this member already has that role".to_string()));
+            return Err(ApiError::Conflict(Detail::new("role_already_assigned", "this member already has that role")));
         }
     }
     insert?;
@@ -374,7 +374,7 @@ pub async fn unassign_role(
     authorize_any(&state.db, team_id, user_id, &[permissions::TEAM_ROLES_MANAGE, permissions::TEAM_ROLES_ASSIGN]).await?;
     let role = role_for_team(&state.db, team_id, role_id).await?;
     if role.is_system && target_user_id == team.owner_id {
-        return Err(ApiError::Conflict("the owner's built-in role can't be unassigned".to_string()));
+        return Err(ApiError::Conflict(Detail::new("owner_role_unassignable", "the owner's built-in role can't be unassigned")));
     }
 
     let mut tx = state.db.begin().await?;
@@ -386,7 +386,7 @@ pub async fn unassign_role(
         .await?
         .rows_affected();
     if affected == 0 {
-        return Err(ApiError::NotFound("that member doesn't have that role".to_string()));
+        return Err(ApiError::NotFound(Detail::new("role_not_assigned", "that member doesn't have that role")));
     }
 
     audit::record(&mut tx, team_id, user_id, audit::ROLE_UNASSIGNED, "user", Some(target_user_id), json!({ "roleId": role_id })).await?;

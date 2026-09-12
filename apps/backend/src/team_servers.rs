@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::authorize;
-use crate::errors::{ApiError, ApiResult};
+use crate::errors::{ApiError, ApiResult, Detail};
 use crate::models::{CreateTeamServerRequest, TeamServer};
 use crate::teams::team_for_member;
 use crate::{permissions, AppState};
@@ -48,21 +48,21 @@ pub async fn create_server(
 
     let name = body.name.trim();
     if name.is_empty() {
-        return Err(ApiError::InvalidInput("server name cannot be empty".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("server_name_empty", "server name cannot be empty")));
     }
     if name.chars().count() > MAX_NAME_LEN {
-        return Err(ApiError::InvalidInput(format!("server name must be at most {MAX_NAME_LEN} characters")));
+        return Err(ApiError::InvalidInput(Detail::new("server_name_too_long", format!("server name must be at most {MAX_NAME_LEN} characters")).with("max", MAX_NAME_LEN)));
     }
     let host = body.host.trim();
     if host.is_empty() {
-        return Err(ApiError::InvalidInput("host cannot be empty".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("host_empty", "host cannot be empty")));
     }
     if host.chars().count() > MAX_HOST_LEN {
-        return Err(ApiError::InvalidInput(format!("host must be at most {MAX_HOST_LEN} characters")));
+        return Err(ApiError::InvalidInput(Detail::new("host_too_long", format!("host must be at most {MAX_HOST_LEN} characters")).with("max", MAX_HOST_LEN)));
     }
     let ssh_port = body.ssh_port.unwrap_or(22);
     if !(1..=65535).contains(&ssh_port) {
-        return Err(ApiError::InvalidInput("ssh port must be between 1 and 65535".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("ssh_port_out_of_range", "ssh port must be between 1 and 65535")));
     }
 
     let server_id = Uuid::new_v4();
@@ -107,7 +107,7 @@ pub async fn delete_server(
         .await?
         .rows_affected();
     if affected == 0 {
-        return Err(ApiError::NotFound("server not found".to_string()));
+        return Err(ApiError::NotFound(Detail::new("server_not_found", "server not found")));
     }
 
     audit::record(&mut tx, team_id, user_id, audit::SERVER_REMOVED, "server", Some(server_id), json!({})).await?;

@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::auth::AuthUser;
-use crate::errors::ApiError;
+use crate::errors::{ApiError, Detail};
 use crate::AppState;
 
 /// How many questions an account may ask per UTC day when the deployment
@@ -141,7 +141,7 @@ fn next_midnight_utc() -> chrono::DateTime<chrono::Utc> {
 /// The account's usage today, without spending any of it.
 pub async fn quota(State(state): State<AppState>, AuthUser(user_id): AuthUser) -> Result<Json<QuotaView>, ApiError> {
     let Some(upstream) = Upstream::from_env() else {
-        return Err(ApiError::NotFound("this VibeSSH backend does not offer a hosted AI model".to_string()));
+        return Err(ApiError::NotFound(Detail::new("ai_not_hosted", "this VibeSSH backend does not offer a hosted AI model")));
     };
     let row: Option<(i32, i64)> =
         sqlx::query_as("SELECT question_count, prompt_chars FROM ai_usage WHERE user_id = $1 AND usage_date = CURRENT_DATE")
@@ -182,7 +182,7 @@ async fn reserve_question(state: &AppState, user_id: uuid::Uuid, limit: i32, pro
     .await
     .map_err(|err| ApiError::Internal(format!("failed to record AI usage: {err}")))?;
 
-    used.ok_or(ApiError::TooManyRequests(format!("the daily limit of {limit} questions has been used")))
+    used.ok_or(ApiError::TooManyRequests(Detail::new("ai_daily_limit_used", format!("the daily limit of {limit} questions has been used")).with("limit", limit)))
 }
 
 /// Gives a reserved question back after the upstream call failed.
@@ -215,17 +215,22 @@ pub async fn chat(
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ApiError> {
     let Some(upstream) = Upstream::from_env() else {
-        return Err(ApiError::NotFound("this VibeSSH backend does not offer a hosted AI model".to_string()));
+        return Err(ApiError::NotFound(Detail::new("ai_not_hosted", "this VibeSSH backend does not offer a hosted AI model")));
     };
 
     if request.messages.is_empty() {
-        return Err(ApiError::InvalidInput("there is nothing to ask".to_string()));
+        return Err(ApiError::InvalidInput(Detail::new("ai_empty_question", "there is nothing to ask")));
     }
     let prompt_chars: usize = request.messages.iter().map(|message| message.content.chars().count()).sum();
     if prompt_chars > MAX_PROMPT_CHARS {
-        return Err(ApiError::InvalidInput(format!(
-            "the question is too large for the included model ({prompt_chars} characters, limit {MAX_PROMPT_CHARS})"
-        )));
+        return Err(ApiError::InvalidInput(
+            Detail::new(
+                "ai_question_too_large",
+                format!("the question is too large for the included model ({prompt_chars} characters, limit {MAX_PROMPT_CHARS})"),
+            )
+            .with("characters", prompt_chars)
+            .with("limit", MAX_PROMPT_CHARS),
+        ));
     }
 
     let used = reserve_question(&state, user_id, upstream.daily_limit, prompt_chars as i64).await?;

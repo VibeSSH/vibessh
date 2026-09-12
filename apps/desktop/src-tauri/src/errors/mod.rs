@@ -219,6 +219,23 @@ pub enum AppError {
     #[error("today's allowance for the included AI model is used up")]
     AiQuotaExhausted,
 
+    /// A refusal the cloud backend described in its own terms.
+    ///
+    /// `kind` is the backend's coarse class, which decides this error's
+    /// `ErrorCode` and therefore how the app behaves - a `401` must still
+    /// look like `Unauthorized` to the token-refresh logic. `code` is the
+    /// backend's specific identifier, which decides only what sentence the
+    /// user reads. `params` fill that sentence, and `message` is the
+    /// backend's English prose, kept as the fallback for a code this build
+    /// has no translation for.
+    ///
+    /// One variant rather than forty: the backend already publishes a stable
+    /// code per refusal, and copying that list into this enum would mean a
+    /// desktop release before any new backend error could be shown in the
+    /// user's language.
+    #[error("{message}")]
+    Cloud { kind: String, code: String, params: serde_json::Value, message: String },
+
     /// `user` is the account as MySQL named it, e.g. `root@localhost`.
     #[error("{user} authenticates through the local socket and cannot be used with a password")]
     DatabaseSocketAuthOnly { user: String },
@@ -264,6 +281,17 @@ impl AppError {
             AppError::AiHostedUnavailable => ErrorCode::AiHostedUnavailable,
             AppError::AiHostedFailed => ErrorCode::AiHostedFailed,
             AppError::AiQuotaExhausted => ErrorCode::AiQuotaExhausted,
+            // The backend's coarse class, mapped to the same codes a local
+            // failure of that class would produce. Anything the desktop
+            // branches on - forgetting a dead token, telling the user to
+            // sign in - keeps working without knowing the backend's
+            // vocabulary.
+            AppError::Cloud { kind, .. } => match kind.as_str() {
+                "unauthorized" | "password_change_required" | "forbidden" => ErrorCode::Unauthorized,
+                "not_found" => ErrorCode::NotFound,
+                "invalid_input" | "conflict" => ErrorCode::InvalidInput,
+                _ => ErrorCode::Internal,
+            },
         }
     }
 
@@ -292,6 +320,14 @@ impl AppError {
             // reported. A translated frame around the detail is not a full
             // translation of the detail, but it is the difference between an
             // interface that speaks their language and one that does not.
+            // The backend's own params, plus the code the interface picks
+            // its sentence by and the English text to fall back on.
+            AppError::Cloud { code, params, message, .. } => {
+                let mut object = params.as_object().cloned().unwrap_or_default();
+                object.insert("backendCode".to_string(), serde_json::Value::String(code.clone()));
+                object.insert("message".to_string(), serde_json::Value::String(message.clone()));
+                serde_json::Value::Object(object)
+            }
             AppError::NotFound(message)
             | AppError::InvalidInput(message)
             | AppError::Storage(message)

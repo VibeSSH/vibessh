@@ -56,6 +56,20 @@ pub async fn session_info(state: &CloudState) -> Option<CloudSessionInfo> {
     state.session_info().await
 }
 
+/// Whether a failed refresh means the stored credential is genuinely dead.
+///
+/// A refusal from the backend arrives as `AppError::Cloud` once the backend
+/// names its own error codes, so matching only on `Unauthorized` would have
+/// stopped recognising a revoked token - the credential would have been kept
+/// for ever and every start would have failed the same way.
+fn refresh_was_rejected(err: &AppError) -> bool {
+    match err {
+        AppError::Unauthorized(_) => true,
+        AppError::Cloud { kind, .. } => kind == "unauthorized",
+        _ => false,
+    }
+}
+
 /// Returns a definitely-not-expired access token, refreshing it first if
 /// necessary - every authenticated call below goes through this rather
 /// than reading `session.access_token` directly.
@@ -79,7 +93,7 @@ async fn ensure_valid_access_token(state: &CloudState) -> AppResult<String> {
         // perfectly valid credential, and the user has to log in again with
         // no idea why. That is exactly what happened every time the backend
         // was restarted while the app was starting.
-        if matches!(err, AppError::Unauthorized(_)) {
+        if refresh_was_rejected(err) {
             let _ = credentials::delete_cloud_refresh_token();
         }
     })?;
@@ -296,6 +310,7 @@ pub async fn list_audit_events(state: &CloudState, team_id: Uuid, limit: i64, of
 
 #[cfg(test)]
 mod session_persistence_tests {
+    use super::refresh_was_rejected;
     use crate::errors::AppError;
 
     /// Which refresh failures are allowed to destroy the stored credential.
@@ -306,12 +321,27 @@ mod session_persistence_tests {
     /// somebody out for good - is invisible until it happens to a user, and
     /// it happened repeatedly while the backend was being restarted.
     fn should_forget_token(err: &AppError) -> bool {
-        matches!(err, AppError::Unauthorized(_))
+        refresh_was_rejected(err)
     }
 
     #[test]
     fn a_rejected_token_is_forgotten() {
         assert!(should_forget_token(&AppError::Unauthorized("refresh token revoked".into())));
+        // The shape a real rejection now arrives in, since the backend
+        // names its own codes.
+        assert!(should_forget_token(&AppError::Cloud {
+            kind: "unauthorized".into(),
+            code: "refresh_token_used".into(),
+            params: serde_json::Value::Null,
+            message: "refresh token has already been used or revoked".into(),
+        }));
+        // A refusal that re-authenticating cannot lift is not a dead token.
+        assert!(!should_forget_token(&AppError::Cloud {
+            kind: "invalid_input".into(),
+            code: "password_unchanged".into(),
+            params: serde_json::Value::Null,
+            message: "the new password must be different from the current one".into(),
+        }));
     }
 
     #[test]
