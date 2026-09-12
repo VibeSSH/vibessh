@@ -117,7 +117,13 @@ impl CloudClient {
         // Its own variant, not a generic failure: the UI says something
         // specific about the daily allowance - when it resets, and that a
         // personal API key is the way around it.
-        if status == StatusCode::TOO_MANY_REQUESTS {
+        //
+        // Matched on the backend's code rather than on the status, because
+        // 429 is no longer only the AI allowance: the sign-in rate limit
+        // returns it too, and reporting "today's AI allowance is used up" to
+        // somebody who mistyped their password five times is a message about
+        // a feature they were not using.
+        if field("code").as_deref() == Some("ai_daily_limit_used") {
             return AppError::AiQuotaExhausted;
         }
 

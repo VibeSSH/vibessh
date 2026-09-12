@@ -822,6 +822,7 @@
     "team_name_empty": "The team name cannot be empty.",
     "team_name_too_long": "The team name must be at most {{max}} characters.",
     "team_not_found": "That team no longer exists.",
+    "too_many_attempts": "Too many attempts. Wait {{seconds}} seconds and try again.",
     "unknown_permission": "There is no such permission: {{permission}}."
   },
   "fileEditor": {

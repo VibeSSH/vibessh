@@ -39,6 +39,12 @@ services:
     environment:
       DATABASE_URL: postgres://vibessh_app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/vibessh
       VIBESSH_BACKEND_BIND: 0.0.0.0:8787
+      # The deployment puts a tunnel in front, so every request arrives from
+      # the proxy and the caller's real address is in a header. Only set this
+      # where something in front actually overwrites that header - a service
+      # reachable directly would let an attacker set it per request and walk
+      # straight past the per-address rate limit.
+      TRUST_FORWARDED_FOR: ${TRUST_FORWARDED_FOR:-}
       # Missing here until the first real deployment, which is exactly the
       # kind of thing the note at the top of this file warns about: the
       # process refuses to start without it (main.rs), so the container

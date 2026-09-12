@@ -30,6 +30,7 @@ pub mod jwt;
 pub mod models;
 pub mod password;
 pub mod permissions;
+pub mod rate_limit;
 pub mod refresh_token;
 pub mod roles;
 pub mod team_servers;
@@ -39,6 +40,9 @@ pub mod tokens;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    /// Shared across every request, because a limit that each request kept
+    /// its own copy of would not be a limit.
+    pub rate_limiter: Arc<rate_limit::RateLimiter>,
     /// Shared, not copied, per request - the secret itself never changes
     /// after startup.
     pub jwt_secret: Arc<[u8]>,
@@ -63,7 +67,7 @@ pub async fn connect_and_migrate(database_url: &str) -> Result<PgPool, String> {
 }
 
 pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
-    let state = AppState { db, jwt_secret };
+    let state = AppState { db, jwt_secret, rate_limiter: Arc::new(rate_limit::RateLimiter::new()) };
     Router::new()
         .route("/health", get(health))
         .route("/auth/register", post(auth::register))

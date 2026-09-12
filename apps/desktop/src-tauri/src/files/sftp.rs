@@ -92,6 +92,14 @@ impl SftpApplicationFileProvider {
     fn copy_resolved<'a>(&'a self, from: &'a str, to: &'a str) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let stat = self.connection.symlink_metadata(from).await?;
+            // Same reasoning as `LocalApplicationFileProvider`: `read_file`
+            // follows a symlink, so copying one would pull whatever it
+            // points at - possibly outside the Application's directory -
+            // into the copy as a real file. Skipped rather than recreated.
+            if stat.is_symlink {
+                log::warn!("skipping the symlink {from} while copying - a copy must not reach outside its source");
+                return Ok(());
+            }
             if stat.is_dir {
                 self.connection.create_directory(to).await?;
                 for entry in self.connection.list_directory(from).await? {

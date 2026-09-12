@@ -64,8 +64,35 @@ async fn issue_auth_response(state: &AppState, user: &User) -> ApiResult<AuthRes
     })
 }
 
-pub async fn register(State(state): State<AppState>, Json(body): Json<RegisterRequest>) -> ApiResult<impl IntoResponse> {
+
+/// Refuses a caller who has tried too often, before any expensive work.
+///
+/// Both keys are checked and both are counted. The account key catches a
+/// password list aimed at one email; the address key catches one password
+/// tried against many emails, which no per-account counter would see. See
+/// `rate_limit` for why the address key is derived the way it is.
+fn check_rate_limit(state: &AppState, headers: &axum::http::HeaderMap, peer: Option<std::net::SocketAddr>, email: &str) -> ApiResult<()> {
+    let forwarded = headers.get("cf-connecting-ip").or_else(|| headers.get("x-forwarded-for")).and_then(|value| value.to_str().ok());
+    let address_key = crate::rate_limit::client_key(forwarded, peer.map(|socket| socket.ip()));
+    let account_key = format!("account:{email}");
+    for key in [address_key, account_key] {
+        if let crate::rate_limit::Decision::RetryAfter(seconds) = state.rate_limiter.check(&key) {
+            return Err(ApiError::TooManyRequests(
+                Detail::new("too_many_attempts", format!("too many attempts - try again in {seconds} seconds")).with("seconds", seconds),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub async fn register(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
+    Json(body): Json<RegisterRequest>,
+) -> ApiResult<impl IntoResponse> {
     let email = normalize_email(&body.email);
+    check_rate_limit(&state, &headers, peer.map(|info| info.0), &email)?;
     validate_email(&email)?;
     validate_password(&body.password)?;
     let display_name = validate_display_name(&body.display_name)?;
@@ -109,8 +136,16 @@ fn dummy_hash_for_timing_safety() -> &'static str {
     DUMMY.get_or_init(|| password::hash_password("vibessh-timing-safety-dummy").expect("hashing a fixed string never fails"))
 }
 
-pub async fn login(State(state): State<AppState>, Json(body): Json<LoginRequest>) -> ApiResult<Json<AuthResponse>> {
+pub async fn login(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
+    Json(body): Json<LoginRequest>,
+) -> ApiResult<Json<AuthResponse>> {
     let email = normalize_email(&body.email);
+    // Before the Argon2 verification below, which is the expensive thing
+    // this is protecting as much as the account is.
+    check_rate_limit(&state, &headers, peer.map(|info| info.0), &email)?;
 
     // A real password is never anywhere near this long - reject before
     // spending an Argon2 computation on it, the same DoS concern

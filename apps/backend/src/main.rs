@@ -86,7 +86,11 @@ async fn run() -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
         .map_err(|err| format!("failed to bind {bind_addr}: {err}"))?;
-    axum::serve(listener, app)
+    // `into_make_service_with_connect_info` rather than plain `app`: without
+    // it the `ConnectInfo` extractor yields nothing, every caller shares one
+    // rate-limit key, and ten attempts from anyone would lock out everyone.
+    // A limiter that turns into a denial of service is worse than none.
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|err| format!("server error: {err}"))?;

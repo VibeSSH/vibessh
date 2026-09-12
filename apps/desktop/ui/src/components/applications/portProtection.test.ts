@@ -8,7 +8,16 @@ function port(overrides: Partial<ApplicationPort>): ApplicationPort {
 }
 
 function overview(overrides: Partial<NodeFirewallOverview>): NodeFirewallOverview {
-  return { backend: "ufw", active: true, rules: [], ...overrides } as NodeFirewallOverview;
+  return {
+    backend: "ufw",
+    active: true,
+    rules: [],
+    // A Node with no Docker by default: then the ufw rule is the whole
+    // story, which is what the cases below that predate container rules
+    // assume.
+    container: { applicable: false, restrictedPorts: [], error: null },
+    ...overrides,
+  } as NodeFirewallOverview;
 }
 
 const RULE = { port: 25565, protocol: "tcp" as const, origin: { kind: "application" as const, applicationId: "a", applicationName: "paper", portName: "game" } };
@@ -75,5 +84,59 @@ describe("portProtection", () => {
 
   it("does not confuse udp with tcp on the same number", () => {
     expect(portProtection(port({ protocol: "udp" }), overview({ rules: [RULE] }))).toBe("unprotected");
+  });
+});
+
+describe("a published Docker port", () => {
+  const published = () => port({ externalPort: 25565 });
+
+  /// The fault this exists to stop. Docker writes its own DNAT and ACCEPT
+  /// ahead of ufw's chains, so a published port stays reachable however
+  /// correct `ufw status` looks - and the badge used to be decided from the
+  /// ufw rule alone, telling somebody their database was closed while it was
+  /// answering the internet.
+  it("is not protected by a ufw rule alone", () => {
+    const state = portProtection(
+      published(),
+      overview({ rules: [RULE], container: { applicable: true, restrictedPorts: [], error: null } }),
+    );
+    expect(state).toBe("unprotected");
+  });
+
+  it("is protected once the container chain really restricts it", () => {
+    const state = portProtection(
+      published(),
+      overview({ rules: [RULE], container: { applicable: true, restrictedPorts: [25565], error: null } }),
+    );
+    expect(state).toBe("protected");
+  });
+
+  /// After DNAT the chain sees the container's own port, so a rule on that
+  /// number is the one that counts for a remapped port.
+  it("counts a restriction on the container's own port when the two differ", () => {
+    const remapped = port({ internalPort: 80, externalPort: 8080 });
+    const rule = { ...RULE, port: 8080 };
+    const state = portProtection(
+      remapped,
+      overview({ rules: [rule], container: { applicable: true, restrictedPorts: [80], error: null } }),
+    );
+    expect(state).toBe("protected");
+  });
+
+  /// Unknown is not protected. One sends somebody to look; the other sends
+  /// them away satisfied.
+  it("is unknown, not protected, when the chain could not be read", () => {
+    const state = portProtection(
+      published(),
+      overview({ rules: [RULE], container: { applicable: true, restrictedPorts: [], error: "couldn't read the DOCKER-USER chain" } }),
+    );
+    expect(state).toBe("unknown");
+  });
+
+  /// A Node with no Docker has nothing bypassing ufw, so the ufw answer
+  /// stands on its own and this must not start reporting false alarms.
+  it("is protected on a Node with no Docker at all", () => {
+    const state = portProtection(published(), overview({ rules: [RULE] }));
+    expect(state).toBe("protected");
   });
 });

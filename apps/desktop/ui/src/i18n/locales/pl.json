@@ -828,6 +828,7 @@
     "team_name_empty": "Nazwa zespołu nie może być pusta.",
     "team_name_too_long": "Nazwa zespołu może mieć najwyżej {{max}} znaków.",
     "team_not_found": "Ten zespół już nie istnieje.",
+    "too_many_attempts": "Zbyt wiele prób. Odczekaj {{seconds}} sekund i spróbuj ponownie.",
     "unknown_permission": "Nie ma takiego uprawnienia: {{permission}}."
   },
   "fileEditor": {

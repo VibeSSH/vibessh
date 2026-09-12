@@ -179,11 +179,44 @@ impl ScratchFile {
     fn new(label: &str) -> Self {
         Self { path: std::env::temp_dir().join(format!("vibessh-{label}-{}.zip", uuid::Uuid::new_v4())) }
     }
+
+    /// Creates the file so that only this account can read it.
+    ///
+    /// An archive staged here holds whatever the Application's directory
+    /// holds - configuration files with database passwords and API tokens
+    /// among them - and `File::create` leaves it at the process umask,
+    /// which is 0644 on most systems. Every other account on the machine
+    /// could read the backup while it was being built.
+    ///
+    /// The mode goes on at creation rather than after, because a `chmod`
+    /// following an ordinary create leaves a window in which the file is
+    /// readable, and a secret readable for an instant is readable.
+    fn create(&self) -> AppResult<std::fs::File> {
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).truncate(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options
+            .open(&self.path)
+            .map_err(|err| AppError::Internal(format!("couldn't create a scratch file for the archive: {err}")))
+    }
 }
 
 impl Drop for ScratchFile {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        // Said out loud rather than swallowed. A scratch file that survives
+        // holds the contents of somebody's Application directory in a
+        // world-writable temp directory, so "it did not delete" is worth
+        // knowing about even though there is nothing useful to do here -
+        // `Drop` cannot fail, and the operation it belongs to has finished.
+        if let Err(err) = std::fs::remove_file(&self.path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("couldn't remove the scratch archive {}: {err}", self.path.display());
+            }
+        }
     }
 }
 
@@ -213,8 +246,7 @@ impl Drop for ScratchFile {
 pub async fn create_zip(provider: &dyn ApplicationFileProvider, paths: &[String], destination_path: &str) -> AppResult<()> {
     let scratch = ScratchFile::new("archive");
     {
-        let file = std::fs::File::create(&scratch.path)
-            .map_err(|err| AppError::Internal(format!("couldn't create a scratch file for the archive: {err}")))?;
+        let file = scratch.create()?;
         let mut writer = zip::ZipWriter::new(std::io::BufWriter::new(file));
         for path in paths {
             let name = path.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or(path).to_string();

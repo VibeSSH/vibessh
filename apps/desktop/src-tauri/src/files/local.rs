@@ -102,11 +102,28 @@ async fn entry_to_remote_file_entry(entry: &tokio::fs::DirEntry, canonical_root:
     }
 }
 
+/// Copies a tree, refusing to follow a symlink out of it.
+///
+/// `symlink_metadata` keeps this from *descending* into a symlinked
+/// directory, which looks like the whole answer and is not: the file branch
+/// then called `tokio::fs::copy`, which follows the link and copies whatever
+/// it points at. A link named `notes.txt` pointing at `/etc/shadow` produced
+/// a real `notes.txt` full of `/etc/shadow` inside the destination - a file
+/// from outside the Application's directory, now inside it, where the file
+/// browser will happily show it.
+///
+/// Links are skipped rather than recreated. Recreating them would carry the
+/// escape into the copy, and a relative link that resolves inside the tree
+/// is not worth the machinery to tell apart from one that does not.
 fn copy_recursive<'a>(from: &'a Path, to: &'a Path) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
     Box::pin(async move {
         let metadata = tokio::fs::symlink_metadata(from)
             .await
             .map_err(|err| AppError::Internal(format!("couldn't stat {}: {err}", from.display())))?;
+        if metadata.file_type().is_symlink() {
+            log::warn!("skipping the symlink {} while copying - a copy must not reach outside its source", from.display());
+            return Ok(());
+        }
         if metadata.is_dir() {
             tokio::fs::create_dir_all(to)
                 .await
@@ -287,6 +304,36 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vibessh-local-file-provider-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// A copy must not reach outside the directory it is copying.
+    ///
+    /// `symlink_metadata` stops the walk descending *into* a symlinked
+    /// directory, which reads like the whole defence and is not: the file
+    /// branch used `tokio::fs::copy`, which follows the link and writes the
+    /// target's contents into the destination as a real file. A link named
+    /// innocuously and pointing at something outside the Application's
+    /// directory therefore smuggled that file's contents in.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn copying_does_not_follow_a_symlink_out_of_the_tree() {
+        let root = temp_root();
+        let outside = root.join("outside-secret");
+        std::fs::write(&outside, b"a file the copy has no business touching").unwrap();
+
+        let source = root.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("real.txt"), b"ordinary").unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("notes.txt")).unwrap();
+
+        let destination = root.join("copy");
+        copy_recursive(&source, &destination).await.unwrap();
+
+        assert!(destination.join("real.txt").exists(), "ordinary files still copy");
+        assert!(
+            !destination.join("notes.txt").exists(),
+            "the symlink was followed and its target copied in - that is the escape this guards against"
+        );
     }
 
     #[tokio::test]
