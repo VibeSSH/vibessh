@@ -6,6 +6,49 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.10
+
+### New
+
+- **Every port says whether it is actually protected.** A published Docker
+  port is bound widely and only the node's firewall narrows it, so a port
+  marked "Vibe Network only" that nothing is enforcing is open to the
+  internet. The app knew this and would tell you - as a summary, after you
+  pressed Sync Firewall, once for the whole tab. Each port now carries its own
+  **Protected** or **Unprotected** badge, read when the tab opens. A public
+  port gets no badge at all, because it is meant to be reachable and a red
+  mark on every correct port is how people learn to ignore red marks.
+- **The arrow keys walk back through commands already sent**, in an
+  application's console. Up for older, down for newer, and down past the
+  newest gives back whatever you had half-typed. Remembered per application,
+  so it survives a trip to the Logs tab and back.
+- **A walkthrough from beginning to end**: two servers, a private network
+  between them, and a database only they can reach. Seven steps, each with a
+  screenshot and what you should see before moving on, and a table for when
+  half of it works - the network up but the firewall not, or the other way
+  round.
+- **A glossary** of the words the interface uses without explaining them:
+  endpoint, peer, bind address, reconcile, handshake, source CIDR, and the
+  difference between an internal and an external port.
+
+### Fixed
+
+- **The Security page no longer contradicts the Agent page.** One said the
+  public agent release did not exist yet; the other gave a working install
+  command. The agent is released, and what that page says now is the thing it
+  was reaching for: the installer checks a checksum fetched from the same host
+  as the binary, which catches a corrupted download and not a compromised
+  release host.
+
+### Under the hood
+
+- The repository is a set of modules rather than a frontend with some other
+  things beside it: `apps/desktop/{ui,src-tauri}`, `apps/agent`,
+  `apps/backend`, `crates/protocol`, and `shared/guide` for the corpus that is
+  compiled into both halves. Contributors should read
+  `docs/repository-structure.md` before moving anything - it lists the
+  compile-time couplings that a rename breaks.
+
 ## 0.1.0-beta.9
 
 ### Fixed
