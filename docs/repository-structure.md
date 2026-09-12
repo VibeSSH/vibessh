@@ -199,6 +199,12 @@ relative position, so step 5 carries it along for free.
 repository root. `docs/guide/` is untouched, and `repository-structure.md`
 stays at the top of `docs/` as the map of the rest.
 
+A fourth folder has since joined them: `operations/`, for how the things we
+actually run are deployed, starting with `hosted-backend.md`. It earns its
+own heading rather than sitting under `architecture/` because it describes
+one particular machine's state, which goes stale in a way a design document
+does not.
+
 The move itself was free; carrying its references was not, and this is the
 part the plan underestimated by calling it "the cheapest step". These
 documents are cited **193 times** across the codebase, nearly all from Rust
