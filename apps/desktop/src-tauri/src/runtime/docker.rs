@@ -82,7 +82,7 @@ use crate::dedicated_user;
 use crate::errors::{AppError, AppResult};
 use crate::models::{Application, ApplicationStatus, EnvironmentVariable, PortProtocol};
 use crate::ssh::docker::validate_container_ref;
-use super::docker_command::{DockerCommandRunner, LocalDocker};
+use super::docker_command::{DockerCommandRunner, LocalDocker, PrivateFile};
 use crate::ssh::SshSession;
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
@@ -598,7 +598,7 @@ async fn container_exists(runner: &dyn DockerCommandRunner, name: &str) -> AppRe
 /// Arguments rather than a command line: the local runner hands these to the
 /// process directly, and quoting for a shell that is not there is how a
 /// working directory with a space in it becomes two arguments.
-fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str, user_flag: Option<&str>) -> AppResult<Vec<String>> {
+fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str, user_flag: Option<&str>, env_file: Option<&str>) -> AppResult<Vec<String>> {
     validate_container_ref(name)?;
     reject_newlines(&config.image, "the image")?;
     for arg in &config.command {
@@ -690,11 +690,17 @@ fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str
         args.push("-p".into());
         args.push(format!("{}:{external_port}:{}/{proto}", port.bind_address, port.internal_port));
     }
-    for env in ctx.environment {
-        args.push("-e".into());
-        // One argument, so a value with spaces or quotes in it stays a value
-        // instead of becoming more flags.
-        args.push(format!("{}={}", env.key, env.value));
+    // `--env-file`, never `-e KEY=VALUE`.
+    //
+    // A value passed as an argument ends up in the container process's argv,
+    // and on Linux `/proc/<pid>/cmdline` is world-readable: any local account
+    // could have read a database password out of `ps` while the container
+    // was being created, and a process-accounting or audit daemon would have
+    // written it to disk. The file this points at is mode 0600 in a 0700
+    // directory and is deleted straight after - see `write_private_file`.
+    if let Some(path) = env_file {
+        args.push("--env-file".into());
+        args.push(path.to_string());
     }
     args.push(config.image.clone());
     for arg in &config.command {
@@ -736,9 +742,48 @@ async fn create_container(runner: &dyn DockerCommandRunner, ctx: &RuntimeContext
     } else {
         None
     };
-    let args = build_create_args(ctx, config, name, user_flag.as_deref())?;
+    // Written before the arguments are built, because the path is one of
+    // them - and removed whatever the outcome, including the failure paths,
+    // which is why the result is held rather than returned with `?`.
+    let env_file = if ctx.environment.is_empty() { None } else { Some(runner.write_private_file(&env_file_contents(ctx.environment)).await?) };
+
+    let args = build_create_args(ctx, config, name, user_flag.as_deref(), env_file.as_ref().map(|file| file.path.as_str()))?;
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    expect_success(runner.docker(&borrowed).await?, "create the container")
+    let outcome = runner.docker(&borrowed).await;
+
+    if let Some(file) = env_file {
+        // Best effort: the container has already been created either way,
+        // and failing the operation because a temporary file survived would
+        // trade a real success for a cosmetic failure. It is still worth
+        // saying, because what is left behind holds secrets.
+        if let Err(err) = remove_private_file(runner, &file).await {
+            log::warn!("couldn't remove the temporary environment file {}: {err}", file.path);
+        }
+    }
+
+    expect_success(outcome?, "create the container")
+}
+
+/// The `KEY=VALUE` lines `--env-file` expects.
+///
+/// No quoting, deliberately: Docker reads the whole of the rest of the line
+/// as the value, so a quote here would end up *in* the value. Newlines are
+/// the one thing that would break the format, and `validate_environment`
+/// rejects them before anything gets this far.
+fn env_file_contents(environment: &[EnvironmentVariable]) -> String {
+    let mut out = String::new();
+    for env in environment {
+        out.push_str(&env.key);
+        out.push('=');
+        out.push_str(&env.value);
+        out.push('\n');
+    }
+    out
+}
+
+/// Removes the directory `write_private_file` made, and the file in it.
+async fn remove_private_file(runner: &dyn DockerCommandRunner, file: &PrivateFile) -> AppResult<()> {
+    runner.remove_private_directory(&file.directory).await
 }
 
 /// Feeds `docker attach`'s stdin from a host-side named pipe, so
@@ -1598,7 +1643,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "--network"), Some(app_network_name(id).as_str()), "{args:?}");
         assert_eq!(flag_value(&args, "--network-alias"), Some("my-app"), "{args:?}");
         // The whole point of S-018: nothing is created on the shared network
@@ -1673,7 +1718,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "--memory"), Some("512m"), "{args:?}");
         assert_eq!(flag_value(&args, "--cpus"), Some("1.5"), "{args:?}");
         assert!(index_of(&args, "--memory") < index_of(&args, "alpine:latest"), "{args:?}");
@@ -1686,7 +1731,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", Some("1000:1000")).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", Some("1000:1000"), None).unwrap();
         assert_eq!(flag_value(&args, "--user"), Some("1000:1000"), "{args:?}");
         assert!(index_of(&args, "--user") < index_of(&args, "alpine:latest"), "{args:?}");
     }
@@ -1698,7 +1743,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert!(index_of(&args, "--user").is_none(), "{args:?}");
     }
 
@@ -1709,7 +1754,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(args.first().map(String::as_str), Some("create"), "{args:?}");
         assert!(index_of(&args, "-i") < index_of(&args, "alpine:latest"), "{args:?}");
     }
@@ -1785,7 +1830,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "-v"), Some("/srv/my-app:/srv/my-app"), "{args:?}");
         assert_eq!(flag_value(&args, "-w"), Some("/srv/my-app"), "{args:?}");
         assert!(index_of(&args, "-v") < index_of(&args, "alpine:latest"), "{args:?}");
@@ -1798,7 +1843,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "--restart"), Some("unless-stopped"), "{args:?}");
     }
 
@@ -1809,11 +1854,11 @@ second
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let always = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("always".into()), run_as_dedicated_user: false };
-        let args = build_create_args(&ctx, &always, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &always, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "--restart"), Some("always"), "{args:?}");
 
         let bogus = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: Some("whenever".into()), run_as_dedicated_user: false };
-        assert!(build_create_args(&ctx, &bogus, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &bogus, "vibessh-app-test", None, None).is_err());
     }
 
     fn stub_port(protocol: PortProtocol, bind_address: &str, internal_port: u16, external_port: Option<u16>) -> ApplicationPort {
@@ -1844,7 +1889,7 @@ second
         ];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert!(args.iter().any(|arg| arg == "0.0.0.0:25565:25565/tcp"), "{args:?}");
         assert!(args.iter().any(|arg| arg == "0.0.0.0:24454:24454/udp"), "{args:?}");
         // The port with no external_port must not be published at all.
@@ -1859,7 +1904,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert!(index_of(&args, "-p").is_none(), "{args:?}");
     }
 
@@ -1871,7 +1916,7 @@ second
         let ports = vec![stub_port(PortProtocol::Tcp, "0.0.0.0\nrm -rf /", 25565, Some(25565))];
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &ports, links: &[], connection: None };
 
-        assert!(build_create_args(&ctx, &config, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &config, "vibessh-app-test", None, None).is_err());
     }
 
     #[test]
@@ -1881,7 +1926,7 @@ second
         let runtime_config = serde_json::json!({});
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert!(index_of(&args, "--memory").is_none(), "{args:?}");
         assert!(index_of(&args, "--cpus").is_none(), "{args:?}");
     }
@@ -1893,10 +1938,10 @@ second
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
         let zero_memory = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: Some(0), cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
-        assert!(build_create_args(&ctx, &zero_memory, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &zero_memory, "vibessh-app-test", None, None).is_err());
 
         let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None, run_as_dedicated_user: false };
-        assert!(build_create_args(&ctx, &negative_cpu, "vibessh-app-test", None).is_err());
+        assert!(build_create_args(&ctx, &negative_cpu, "vibessh-app-test", None, None).is_err());
     }
 
     /// This used to assert the opposite - that every one of these failed
@@ -1933,7 +1978,7 @@ second
         let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
         let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
 
-        let args = build_create_args(&ctx, &config, "vibessh-app-test", None).unwrap();
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
 
         assert!(index_of(&args, "--user").is_none(), "{args:?}");
     }

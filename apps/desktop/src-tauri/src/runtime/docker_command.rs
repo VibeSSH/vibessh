@@ -37,6 +37,30 @@ pub trait DockerCommandRunner: Send + Sync {
     /// the feature is unavailable - not that it quietly did nothing, which
     /// would leave an Application claiming an isolation it does not have.
     fn supports_dedicated_user(&self) -> bool;
+
+    /// Writes `contents` somewhere only this account can read, and returns
+    /// the path, **without the contents ever appearing in a command line**.
+    ///
+    /// This exists for one reason. `docker run -e KEY=VALUE` puts the value
+    /// in argv, and argv is world-readable on Linux through
+    /// `/proc/<pid>/cmdline`: any local account could read a database
+    /// password out of `ps` while the container was being created, and a
+    /// process-accounting or audit daemon would write it to disk. Passing
+    /// the same values through `--env-file` keeps them out of both.
+    async fn write_private_file(&self, contents: &str) -> AppResult<PrivateFile>;
+
+    /// Removes what `write_private_file` made, directory and all.
+    async fn remove_private_directory(&self, directory: &str) -> AppResult<()>;
+}
+
+/// A file written by `write_private_file`, and the directory holding it.
+///
+/// Both are returned because removing the file is not enough: the directory
+/// is created per call, and leaving thousands of empty ones behind on a
+/// long-lived Node is its own small fault.
+pub struct PrivateFile {
+    pub path: String,
+    pub directory: String,
 }
 
 #[async_trait::async_trait]
@@ -55,6 +79,44 @@ impl DockerCommandRunner for SshSession {
 
     fn supports_dedicated_user(&self) -> bool {
         true
+    }
+
+    async fn write_private_file(&self, contents: &str) -> AppResult<PrivateFile> {
+        // `mktemp -d` in one step: an unguessable name, mode 0700, and the
+        // creation is atomic. A fixed path under /tmp would let any local
+        // account pre-create it, or plant a symlink at it and have the write
+        // land somewhere else entirely. Because the directory itself is
+        // private and already ours, nothing can be planted inside it
+        // afterwards either.
+        let output = self.execute_command("mktemp -d /tmp/vibessh.XXXXXXXXXX").await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(format!("couldn't create a private directory on the Node: {}", output.stderr.trim())));
+        }
+        let directory = output.stdout.trim().to_string();
+        if directory.is_empty() {
+            return Err(AppError::Connection("mktemp returned no path".into()));
+        }
+        let path = format!("{directory}/env");
+        // Created with its mode already set rather than chmod-ed afterwards:
+        // the gap between the two is a window in which the file exists
+        // readable, and the whole point is that it never is.
+        let prepare = format!("install -T -m 600 /dev/null {}", shell_quote(&path));
+        let output = self.execute_command(&prepare).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(format!("couldn't create a private file on the Node: {}", output.stderr.trim())));
+        }
+        // Over SFTP, so the contents travel as file data rather than as part
+        // of a command line. Writing to the existing file keeps its mode.
+        self.write_file(&path, contents.as_bytes()).await?;
+        Ok(PrivateFile { path, directory })
+    }
+
+    async fn remove_private_directory(&self, directory: &str) -> AppResult<()> {
+        let output = self.execute_command(&format!("rm -rf {}", shell_quote(directory))).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(format!("couldn't remove {directory}: {}", output.stderr.trim())));
+        }
+        Ok(())
     }
 }
 
@@ -171,6 +233,31 @@ impl DockerCommandRunner for LocalDocker {
         // docker, and that path is SSH-only. Claiming support without it would
         // be the silent no-op this exists to avoid.
         false
+    }
+
+    async fn write_private_file(&self, contents: &str) -> AppResult<PrivateFile> {
+        // The user's own temp directory, which on Windows is already
+        // per-account, plus a random name. The argv exposure this avoids is
+        // a Linux `/proc` one and does not exist here, but the two runtimes
+        // taking different paths through the same code is how one of them
+        // ends up untested - and a local daemon on Linux has exactly the
+        // same `/proc` to read.
+        let directory = std::env::temp_dir().join(format!("vibessh-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&directory)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't create a private directory: {err}")))?;
+        let path = directory.join("env");
+        write_owner_only(&path, contents).await?;
+        Ok(PrivateFile {
+            path: path.to_string_lossy().into_owned(),
+            directory: directory.to_string_lossy().into_owned(),
+        })
+    }
+
+    async fn remove_private_directory(&self, directory: &str) -> AppResult<()> {
+        tokio::fs::remove_dir_all(directory)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't remove {directory}: {err}")))
     }
 }
 
@@ -296,4 +383,25 @@ mod tests {
 
         assert_eq!(structural.matches(QUOTE).count() % 2, 0, "unbalanced quoting: {rendered}");
     }
+}
+
+/// Writes a file the rest of the machine cannot read.
+///
+/// On Unix the mode goes on at creation rather than afterwards: a `chmod`
+/// following an ordinary create leaves the file briefly world-readable, and
+/// a secret that is readable for an instant is readable. Windows has no
+/// mode; a file in the user's own temp directory is already confined to that
+/// account by the directory's ACL.
+async fn write_owner_only(path: &std::path::Path, contents: &str) -> AppResult<()> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).await.map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", path.display())))?;
+    tokio::io::AsyncWriteExt::write_all(&mut file, contents.as_bytes())
+        .await
+        .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", path.display())))
 }

@@ -118,14 +118,27 @@ pub async fn probe_node_capabilities(repo: &ServerRepository, sessions: &SshSess
 /// isn't already root. Downloaded to a temp file and run from there (not
 /// piped straight from curl into sh) so a truncated download can't ever
 /// execute a half-written script, and the temp file is removed either way.
+///
+/// **The temp file has an unguessable name in a private directory.** It used
+/// to be a fixed `/tmp/vibessh-get-docker.sh`, which any local account could
+/// create first - as a symlink, so the download lands somewhere else, or as
+/// their own script, swapped in between the download finishing and `sh`
+/// starting. Either way something they wrote runs as root. `mktemp -d` gives
+/// a 0700 directory with a random name, created atomically, and nothing can
+/// be planted inside one that already belongs to us. The `trap` removes it
+/// on every exit path, which the old `rm` after a `;` did not manage for a
+/// script killed part-way.
+///
 /// Always re-probes and persists capabilities afterward rather than trusting
 /// the script's own exit code alone - the same "actually check" stance
 /// `probe_node_capabilities` itself takes, since a script can exit 0 having
 /// silently skipped the actual install step on an unrecognized distro.
 pub async fn install_docker(repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) -> AppResult<NodeCapabilities> {
     let connection = get_or_connect(repo, sessions, server_id).await?;
-    let script = "curl -fsSL https://get.docker.com -o /tmp/vibessh-get-docker.sh \
-        && sh /tmp/vibessh-get-docker.sh; rc=$?; rm -f /tmp/vibessh-get-docker.sh; exit $rc";
+    let script = "set -e; d=$(mktemp -d /tmp/vibessh-docker.XXXXXXXXXX); \
+        trap 'rm -rf \"$d\"' EXIT; \
+        curl -fsSL https://get.docker.com -o \"$d/get-docker.sh\"; \
+        sh \"$d/get-docker.sh\"";
     let output = connection.execute_command(script).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();

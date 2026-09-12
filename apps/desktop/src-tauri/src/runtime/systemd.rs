@@ -78,8 +78,21 @@ fn unit_name(application_id: Uuid) -> String {
 
 const UNIT_PATH_PREFIX: &str = "/etc/systemd/system/";
 
+/// Where an Application's environment goes instead of into its unit file.
+///
+/// A unit file in `/etc/systemd/system` is world-readable by convention and
+/// by default, and `systemctl cat` prints it for anyone who asks. A database
+/// password on an `Environment=` line there is published to every account on
+/// the Node. `EnvironmentFile=` points here instead: a 0700 directory whose
+/// files are 0600.
+const ENV_DIR: &str = "/etc/vibessh/env";
+
 fn unit_path(unit: &str) -> String {
     format!("{UNIT_PATH_PREFIX}{unit}")
+}
+
+fn env_path(unit: &str) -> String {
+    format!("{ENV_DIR}/{unit}.env")
 }
 
 fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a SshSession> {
@@ -169,14 +182,23 @@ fn render_unit_file(ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResu
         exec_start.push_str(&quote_unit_value(arg));
     }
 
-    let mut environment_lines = String::new();
+    // `EnvironmentFile=`, not `Environment=`.
+    //
+    // The values still have to be validated here - a bad key or an embedded
+    // newline would corrupt the environment file just as it would have
+    // corrupted the unit - but they are written to a 0600 file rather than
+    // into a unit every account on the Node can read.
     for env in ctx.environment {
         if !is_valid_env_key(&env.key) {
             return Err(AppError::InvalidInput(format!("'{}' isn't a valid environment variable name", env.key)));
         }
         reject_newlines(&env.value, &format!("the '{}' environment variable", env.key))?;
-        environment_lines.push_str(&format!("Environment={}\n", quote_unit_value(&format!("{}={}", env.key, env.value))));
     }
+    let environment_lines = if ctx.environment.is_empty() {
+        String::new()
+    } else {
+        format!("EnvironmentFile={}\n", escape_specifiers(&env_path(&unit_name(ctx.application.id))))
+    };
 
     let resource_lines = resource_limit_lines(config)?;
 
@@ -192,10 +214,49 @@ fn render_unit_file(ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResu
     ))
 }
 
+/// Writes the Application's environment where only root can read it.
+///
+/// The mode goes on as the file is created rather than after it: a `chmod`
+/// following an ordinary create leaves the file briefly world-readable, and
+/// for a file whose whole purpose is holding a password that window is not
+/// small enough to ignore. The contents then travel over SFTP, so they never
+/// appear in a command line either - `/proc/<pid>/cmdline` is world-readable
+/// on Linux and `ps` is how somebody would look.
+async fn write_environment_file(connection: &SshSession, unit: &str, environment: &[crate::models::EnvironmentVariable]) -> AppResult<()> {
+    let path = env_path(unit);
+    let prepare = format!(
+        "sudo install -d -m 700 {dir} && sudo install -T -m 600 /dev/null {path}",
+        dir = crate::ssh::command::quote(ENV_DIR),
+        path = crate::ssh::command::quote(&path),
+    );
+    let output = connection.execute_command(&prepare).await?;
+    if output.exit_code != 0 {
+        return Err(AppError::Connection(format!("couldn't create the environment file: {}", output.stderr.trim())));
+    }
+
+    // No quoting: systemd reads the rest of the line as the value, so a
+    // quote added here would end up inside it. Newlines are the one thing
+    // that would break the format and `reject_newlines` has already refused
+    // them.
+    let mut contents = String::new();
+    for env in environment {
+        contents.push_str(&env.key);
+        contents.push('=');
+        contents.push_str(&env.value);
+        contents.push('\n');
+    }
+    connection.write_file(&path, contents.as_bytes()).await
+}
+
 async fn write_unit(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResult<String> {
     let unit = unit_name(ctx.application.id);
     validate_unit_name(&unit)?;
     let unit_file = render_unit_file(ctx, config)?;
+    // Before the unit, so that a unit naming an EnvironmentFile never exists
+    // without the file it names - systemd refuses to start such a service.
+    if !ctx.environment.is_empty() {
+        write_environment_file(connection, &unit, ctx.environment).await?;
+    }
     connection.write_file(&unit_path(&unit), unit_file.as_bytes()).await?;
     run_daemon_reload(connection).await?;
     Ok(unit)
@@ -436,8 +497,28 @@ mod tests {
         assert!(unit_file.contains("[Install]\n"));
         assert!(unit_file.contains("WorkingDirectory=/srv/my-app\n"));
         assert!(unit_file.contains(r#"ExecStart="/usr/bin/java" "-jar" "server.jar""#));
-        assert!(unit_file.contains(r#"Environment="PORT=25565""#));
+        // The environment is referenced, never inlined. A unit file in
+        // /etc/systemd/system is world-readable and `systemctl cat` prints
+        // it on request, so an `Environment=` line holding a database
+        // password publishes it to every account on the Node.
+        assert!(unit_file.contains("EnvironmentFile=/etc/vibessh/env/"), "{unit_file}");
+        assert!(!unit_file.contains("PORT=25565"), "the value itself must not be in the unit: {unit_file}");
         assert!(unit_file.contains("WantedBy=multi-user.target"));
+    }
+
+    /// An Application with nothing to configure should not gain a reference
+    /// to a file that was never written - systemd refuses to start a service
+    /// whose `EnvironmentFile=` is missing.
+    #[test]
+    fn render_unit_file_names_no_environment_file_when_there_is_no_environment() {
+        let application = stub_application(Uuid::new_v4());
+        let config = SystemdConfig { command: "/usr/bin/java".into(), args: vec![], memory_limit_mb: None, cpu_limit_cores: None };
+        let config_value = serde_json::to_value(&config).unwrap();
+        let ctx = RuntimeContext { application: &application, runtime_config: &config_value, environment: &[], ports: &[], links: &[], connection: None };
+
+        let unit_file = render_unit_file(&ctx, &config).unwrap();
+
+        assert!(!unit_file.contains("EnvironmentFile"), "{unit_file}");
     }
 
     #[test]
