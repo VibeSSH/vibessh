@@ -41,13 +41,19 @@ env:
 jobs:
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, vibessh-linux]
     steps:
       - uses: actions/checkout@v4
 
       # Tauri's own Linux build dependencies. Needed even for `cargo test`,
       # because the `vibessh` crate links against webkit2gtk.
+      #
+      # Only on a GitHub-hosted runner. The self-hosted one has these already
+      # and its account has no sudo on purpose: a runner executes whatever a
+      # workflow tells it to, so the blast radius stops at its own home
+      # directory. See the runner's setup script for what is preinstalled.
       - name: Install Tauri system dependencies
+        if: runner.environment == 'github-hosted'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
@@ -93,7 +99,7 @@ jobs:
 
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, vibessh-linux]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -120,7 +126,7 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, vibessh-linux]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
