@@ -3,6 +3,11 @@
 # and tested this session against a locally installed Postgres instead, see
 # .env.example). Structurally standard, but treat the first real run as the
 # actual verification, the same as any other untested-here config.
+# Without this the project is named after the directory it sits in, which is
+# `backend` - so the containers, network and data volume all end up called
+# `backend-*` on a host that may well run other things.
+name: vibessh
+
 services:
   postgres:
     image: postgres:17
@@ -47,7 +52,13 @@ services:
       AI_UPSTREAM_MODEL: ${AI_UPSTREAM_MODEL:-}
       AI_DAILY_QUESTION_LIMIT: ${AI_DAILY_QUESTION_LIMIT:-}
     ports:
-      - "8787:8787"
+      # Loopback, not every interface. This service carries account passwords
+      # and issues the tokens that stand in for them, so it has no business
+      # being reachable over plain HTTP - put a TLS terminator in front of it
+      # (Caddy, nginx, Traefik) and let that hold the certificate. Publishing
+      # on `8787:8787` would also sidestep ufw, because Docker writes its own
+      # forwarding rules ahead of it.
+      - "127.0.0.1:8787:8787"
 
 volumes:
   vibessh-postgres-data:
