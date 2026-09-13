@@ -217,8 +217,12 @@ async fn a_failed_upstream_call_refunds_the_question() {
     let (email, token) = common::register_user().await;
     let router = common::test_router().await;
 
+    // 502, not 500. The provider failed, not this service, and `ApiError::
+    // UpstreamFailure` says so deliberately - see its arm in errors.rs. This
+    // assertion said 500 from the day it was written and nobody found out,
+    // because nothing had ever run it.
     let (status, _body) = common::post_with_bearer(router, "/ai/chat", &token, a_question()).await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
     assert_eq!(stored_count(&email).await, 0, "a failed upstream call must give the question back");
 }
 
