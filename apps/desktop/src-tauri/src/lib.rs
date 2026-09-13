@@ -25,6 +25,7 @@ mod commands;
 // helper's install/provisioning logic (`files::sudo_user`) needs this, and a
 // future real-server integration test would too.
 pub mod dedicated_user;
+pub mod device_key;
 pub mod member_account;
 // `pub` for the integration tests: `tests/concurrency.rs` asserts that a
 // loser in a port race gets `PortInUse` naming the winner rather than a bare

@@ -107,6 +107,14 @@ tauri-plugin-process = "2.3.1"
 # the child was spawned with CREATE_NEW_PROCESS_GROUP (see
 # runtime::local_process) so the event targets the child's own process group
 # instead of also hitting VibeSSH.
+
+# `device_key` generates this device's Ed25519 keypair, and
+# `PrivateKey::random` wants a rand 0.10-shaped RNG. Renamed via `package =`
+# because the workspace's rand 0.8 is a dependency here too - two
+# same-named crates at different versions in one build is a hard
+# "multiple candidates" error rather than a style question. The
+# dev-dependencies section carries the same entry for the same reason.
+rand010 = { package = "rand", version = "0.10" }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
 
