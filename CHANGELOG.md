@@ -6,6 +6,77 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.12
+
+### New
+
+- **A teammate can be given their own account on your server.** Add them to a
+  team, press **Sync access** on the server, and VibeSSH creates a Linux
+  account for them on that machine and installs the key their own copy of the
+  app published. Nothing secret passes between you - only public keys, the
+  same kind of line every `authorized_keys` file in the world holds in plain
+  text. The server's log then names a person rather than "whoever had the
+  key", and taking one person's access away no longer means rotating a key
+  and handing the new one to everybody who stays.
+- **What that account may do comes from their role.** A role that grants
+  nothing privileged leaves an account that cannot use `sudo` on that machine
+  at all - the first time "view only" means something a person cannot talk
+  their way around rather than a button the app declines to show. Viewing and
+  starting or stopping applications become a short list of allowed commands,
+  scoped to VibeSSH's own containers. Some permissions cannot be narrowed and
+  the app says so instead of pretending: a terminal, installing packages or
+  creating applications are root on that machine whatever the role is called.
+  A role change reaches the server at the next access sync.
+- **Removing somebody from a team now reaches the machines they were on.**
+  It used to change only the team list, leaving their account, their key and
+  their `sudo` rule exactly where they were while the screen reported the
+  removal as done. What is still owed is now recorded and shown as
+  **pending**, naming the person, the account and which server still has it,
+  until an installation that can reach that machine carries it out. Access
+  removed on a machine nobody can reach is now visible rather than silent.
+- **Applications a team can see.** Share an application and everybody in the
+  team sees it with its ports and settings. Values marked secret stay on the
+  server - the team sees that a secret is set, never what it is.
+- **PostgreSQL.** A database server of its own, in the same shape as MariaDB
+  and MongoDB, with a built-in template, a `psql` console for asking it
+  questions, and a step-by-step page in the guide. The template fills in the
+  data directory, which is the setting that otherwise loses the whole
+  database the first time the container is recreated.
+
+### Fixed
+
+- **A port is no longer called protected when it is not.** The Ports tab read
+  a badge from what the firewall was *meant* to say; it now reads the
+  machine's own rules, and says **unknown** when it cannot read them rather
+  than guessing in the reassuring direction.
+- **Passwords and tokens stop travelling where anyone on the server can see
+  them.** Secrets no longer appear in command arguments, which every account
+  on the machine can list, and service files that carry them are no longer
+  world-readable. Copy and restore operations stay inside the application's
+  own directory, and archives written while working are private to it.
+- **Repeated sign-in attempts are limited.** Ten failures from one address,
+  then a refusal, rather than an unlimited supply of guesses.
+- **Vibe AI says what actually went wrong.** "The backend has no model
+  configured" and "the provider returned nothing" used to arrive as "try
+  again later", which is advice that could not work.
+- **The guide shows the app in the language you are reading it in.** The
+  English pages had Polish screenshots.
+- **The handshake claim in the Vibe Network guide was too strong.** A
+  handshake is evidence the tunnel works, not proof, and the page now says
+  which parts it does not cover.
+
+## 0.1.0-beta.11
+
+### New
+
+- **There is a hosted account backend, and the app points at it by default.**
+  Teams, roles and the shared parts of VibeSSH no longer need anything set up
+  by hand.
+- **Refusals from the account backend arrive in your own language.** A Polish
+  interface showed English sentences from the server inside Polish ones -
+  "Brak uprawnien: invalid email or password" on the sign-in screen, among
+  others.
+
 ## 0.1.0-beta.10
 
 ### New
