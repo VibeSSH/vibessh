@@ -39,6 +39,7 @@ mod mongodb;
 mod nodejs_bot;
 mod paper;
 mod phpmyadmin;
+mod postgres;
 mod purpur;
 mod python_bot;
 mod nats;
@@ -51,6 +52,7 @@ pub use generic_docker::GenericDockerBlueprint;
 pub use generic_java::GenericJavaBlueprint;
 pub use mariadb::MariaDbBlueprint;
 pub use mongodb::MongoDbBlueprint;
+pub use postgres::PostgresBlueprint;
 pub use nodejs_bot::NodejsBotBlueprint;
 pub use paper::PaperBlueprint;
 pub use phpmyadmin::PhpMyAdminBlueprint;
@@ -342,6 +344,8 @@ impl BlueprintRegistry {
         handlers.insert(mariadb.blueprint().id.clone(), Box::new(mariadb));
         let mongodb = MongoDbBlueprint::new();
         handlers.insert(mongodb.blueprint().id.clone(), Box::new(mongodb));
+        let postgres = PostgresBlueprint::new();
+        handlers.insert(postgres.blueprint().id.clone(), Box::new(postgres));
         let redis = RedisBlueprint::new();
         handlers.insert(redis.blueprint().id.clone(), Box::new(redis));
         let nats = NatsBlueprint::new();
@@ -521,6 +525,7 @@ mod tests {
                 "nodejs-bot",
                 "paper",
                 "phpmyadmin",
+                "postgres",
                 "purpur",
                 "python-bot",
                 "redis",

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useBlueprintText } from "./blueprintText";
 import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
 import { deleteApplicationTemplate, listApplicationTemplates, saveApplicationTemplate } from "@/services/applicationTemplateService";
@@ -157,6 +158,7 @@ export function formatFieldValueForReview(field: BlueprintField, value: unknown,
 
 export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicationWizardProps) {
   const { t, i18n } = useTranslation();
+  const blueprintText = useBlueprintText();
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -650,7 +652,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                       <button
                         key={blueprint.id}
                         type="button"
-                        title={blueprint.description}
+                        title={blueprintText.description(blueprint)}
                         aria-pressed={blueprintId === blueprint.id}
                         className={`wizard-blueprint-tile ${blueprintId === blueprint.id ? "wizard-blueprint-tile-active" : ""}`}
                         onClick={() => {
@@ -663,11 +665,11 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                         <span className="wizard-blueprint-tile-icon">
                           <BlueprintIcon blueprintId={blueprint.id} size={20} />
                         </span>
-                        <span className="wizard-blueprint-tile-name">{blueprint.name}</span>
+                        <span className="wizard-blueprint-tile-name">{blueprintText.name(blueprint)}</span>
                       </button>
                     ))}
                   </div>
-                  {selectedBlueprint && <p className="wizard-blueprint-description">{selectedBlueprint.description}</p>}
+                  {selectedBlueprint && <p className="wizard-blueprint-description">{blueprintText.description(selectedBlueprint)}</p>}
                 </label>
 
                 {selectedBlueprint && availableRuntimeTypes.length > 1 && (
@@ -855,7 +857,7 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                   {isLocal ? t("createApplicationWizard.locationLocal") : servers.find((s) => s.id === serverId)?.name ?? serverId}
                 </span>
                 <span className="wizard-review-label">{t("createApplicationWizard.blueprint")}</span>
-                <span className="wizard-review-value">{selectedBlueprint.name}</span>
+                <span className="wizard-review-value">{blueprintText.name(selectedBlueprint)}</span>
                 <span className="wizard-review-label">{t("createApplicationWizard.runtimeType")}</span>
                 <span className="wizard-review-value">{t(`createApplicationWizard.runtimeTypeOption.${runtimeType}`)}</span>
                 <span className="wizard-review-label">{t("createApplicationWizard.workingDirectory")}</span>

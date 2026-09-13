@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useBlueprintText } from "./blueprintText";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -36,6 +37,7 @@ interface BlueprintSwitchCardProps {
  */
 export function BlueprintSwitchCard({ applicationId, application, current, onChanged }: BlueprintSwitchCardProps) {
   const { t } = useTranslation();
+  const blueprintText = useBlueprintText();
   const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
   const [targetId, setTargetId] = useState("");
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -106,7 +108,7 @@ export function BlueprintSwitchCard({ applicationId, application, current, onCha
             value={targetId}
             onChange={pick}
             placeholder={t("blueprintSwitch.pick")}
-            items={options.map((blueprint) => ({ value: blueprint.id, label: blueprint.name }))}
+            items={options.map((blueprint) => ({ value: blueprint.id, label: blueprintText.name(blueprint) }))}
           />
         </label>
 

@@ -1,5 +1,6 @@
 import { Fragment, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { useBlueprintText } from "./blueprintText";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -39,6 +40,7 @@ function storedBlueprintInputs(application: ApplicationDetail): Record<string, u
  */
 export function ApplicationConfigCard({ applicationId, application, blueprint, onSaved }: ApplicationConfigCardProps) {
   const { t } = useTranslation();
+  const blueprintText = useBlueprintText();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
@@ -113,7 +115,7 @@ export function ApplicationConfigCard({ applicationId, application, blueprint, o
   return (
     <Card title={t("applicationConfig.title")}>
       {runtimeTypeUnsupported ? (
-        <p className="form-note">{t("applicationConfig.runtimeTypeUnsupportedNote", { blueprint: blueprint.name })}</p>
+        <p className="form-note">{t("applicationConfig.runtimeTypeUnsupportedNote", { blueprint: blueprintText.name(blueprint) })}</p>
       ) : (
         isLegacy && !editing && <p className="form-note">{t("applicationConfig.legacyNote")}</p>
       )}
