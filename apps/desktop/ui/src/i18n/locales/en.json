@@ -1930,57 +1930,5 @@
     "unshareAria": "Stop sharing {{name}} - it keeps running and this computer keeps its own copy",
     "unsharedToast": "{{name}} is no longer shared.",
     "updatedAt": "Snapshot taken {{when}}"
-  },
-  "blueprints": {
-    "generic": {
-      "description": "Runs any command you give it.",
-      "name": "Generic Application"
-    },
-    "generic-docker": {
-      "description": "Runs any Docker image, optionally overriding its command.",
-      "name": "Generic Docker Container"
-    },
-    "generic-java": {
-      "description": "Runs a .jar file with a JVM.",
-      "name": "Generic Java Application"
-    },
-    "mariadb": {
-      "description": "A self-hosted MariaDB database server - data is stored in this Application's own working directory. Set MYSQL_ROOT_PASSWORD (and any MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD you want pre-created) in the Environment tab before starting it."
-    },
-    "mongodb": {
-      "description": "A self-hosted MongoDB document database - data is stored in this Application's own working directory. Set MONGO_INITDB_ROOT_USERNAME and MONGO_INITDB_ROOT_PASSWORD in the Environment tab before starting it: together they create the administrator account and turn authentication on."
-    },
-    "nats": {
-      "description": "A self-hosted NATS server - a lightweight message broker for pub/sub, request/reply and work queues between Applications. Enable JetStream for persistence; data is stored in this Application's own working directory."
-    },
-    "nodejs-bot": {
-      "description": "Runs a Node.js script or bot - installs npm dependencies from package.json (if present) before every start.",
-      "name": "Node.js Bot"
-    },
-    "paper": {
-      "description": "A high-performance Minecraft server - the server jar is downloaded and kept up to date automatically."
-    },
-    "phpmyadmin": {
-      "description": "A web UI for managing a MySQL/MariaDB server. Pick the MariaDB Application it should manage and VibeSSH sets PMA_HOST/PMA_PORT and grants the connection between them; to reach a server VibeSSH does not manage, leave that empty and set PMA_HOST yourself on the Environment tab."
-    },
-    "postgres": {
-      "description": "A self-hosted PostgreSQL database server - data is stored in this Application's own working directory. Set POSTGRES_PASSWORD and PGDATA=. (a single dot, meaning this Application's own directory) in the Environment tab before starting it: without PGDATA the database is created inside the container instead, and recreating the container loses it."
-    },
-    "purpur": {
-      "description": "A Paper fork with extra performance and gameplay options - the server jar is downloaded and kept up to date automatically."
-    },
-    "python-bot": {
-      "description": "Runs a Python script or bot - installs pip dependencies from requirements.txt (if present) before every start.",
-      "name": "Python Bot"
-    },
-    "redis": {
-      "description": "A self-hosted Redis instance with append-only persistence - data is stored in this Application's own working directory."
-    },
-    "velocity": {
-      "description": "A Minecraft proxy - the jar is downloaded and kept up to date automatically."
-    },
-    "waterfall": {
-      "description": "A BungeeCord-based Minecraft proxy - the jar is downloaded and kept up to date automatically."
-    }
   }
 }

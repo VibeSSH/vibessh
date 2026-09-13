@@ -1946,57 +1946,5 @@
     "unshareAria": "Przestań udostępniać {{name}} — aplikacja działa dalej, a ten komputer zachowuje własny zapis",
     "unsharedToast": "{{name}} nie jest już współdzielona.",
     "updatedAt": "Migawka z {{when}}"
-  },
-  "blueprints": {
-    "generic": {
-      "description": "Uruchamia dowolne polecenie, które podasz.",
-      "name": "Zwykła aplikacja"
-    },
-    "generic-docker": {
-      "description": "Uruchamia dowolny obraz Dockera, opcjonalnie nadpisując jego polecenie startowe.",
-      "name": "Kontener Docker"
-    },
-    "generic-java": {
-      "description": "Uruchamia plik .jar na maszynie wirtualnej Javy.",
-      "name": "Aplikacja Java"
-    },
-    "mariadb": {
-      "description": "Serwer bazy danych MariaDB — dane leżą w katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw w zakładce Środowisko zmienną MYSQL_ROOT_PASSWORD (oraz MYSQL_DATABASE/MYSQL_USER/MYSQL_PASSWORD, jeśli chcesz mieć od razu założoną bazę i konto)."
-    },
-    "mongodb": {
-      "description": "Dokumentowa baza danych MongoDB — dane leżą w katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw w zakładce Środowisko zmienne MONGO_INITDB_ROOT_USERNAME i MONGO_INITDB_ROOT_PASSWORD: razem tworzą konto administratora i włączają uwierzytelnianie."
-    },
-    "nats": {
-      "description": "Serwer NATS — lekki broker wiadomości do pub/sub, request/reply i kolejek zadań między aplikacjami. Włącz JetStream, jeśli wiadomości mają przetrwać restart; dane leżą w katalogu roboczym tej aplikacji."
-    },
-    "nodejs-bot": {
-      "description": "Uruchamia skrypt lub bota w Node.js — przed każdym startem instaluje zależności npm z pliku package.json, jeśli istnieje.",
-      "name": "Bot Node.js"
-    },
-    "paper": {
-      "description": "Wydajny serwer Minecraft — plik jar jest pobierany i aktualizowany automatycznie."
-    },
-    "phpmyadmin": {
-      "description": "Panel WWW do zarządzania serwerem MySQL/MariaDB. Wskaż aplikację MariaDB, którą ma obsługiwać, a VibeSSH ustawi PMA_HOST/PMA_PORT i zezwoli na połączenie między nimi. Żeby połączyć się z serwerem spoza VibeSSH, zostaw to pole puste i ustaw PMA_HOST samodzielnie w zakładce Środowisko."
-    },
-    "postgres": {
-      "description": "Serwer bazy danych PostgreSQL — dane leżą w katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw w zakładce Środowisko zmienne POSTGRES_PASSWORD oraz PGDATA=. (sama kropka, czyli katalog tej aplikacji). Bez PGDATA baza powstanie wewnątrz kontenera, a ponowne utworzenie kontenera ją skasuje."
-    },
-    "purpur": {
-      "description": "Fork Papera z dodatkowymi opcjami wydajności i rozgrywki — plik jar jest pobierany i aktualizowany automatycznie."
-    },
-    "python-bot": {
-      "description": "Uruchamia skrypt lub bota w Pythonie — przed każdym startem instaluje zależności pip z pliku requirements.txt, jeśli istnieje.",
-      "name": "Bot Python"
-    },
-    "redis": {
-      "description": "Redis z zapisem append-only — dane leżą w katalogu roboczym tej aplikacji."
-    },
-    "velocity": {
-      "description": "Proxy do Minecrafta — plik jar jest pobierany i aktualizowany automatycznie."
-    },
-    "waterfall": {
-      "description": "Proxy do Minecrafta oparte na BungeeCordzie — plik jar jest pobierany i aktualizowany automatycznie."
-    }
   }
 }

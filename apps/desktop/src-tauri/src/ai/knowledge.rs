@@ -227,6 +227,8 @@ impl KeywordKnowledgeService {
             ("Poradnik - Aplikacja ogolna", include_str!("../../../../../shared/guide/app-generic.pl.md")),
             ("Guide - MariaDB", include_str!("../../../../../shared/guide/app-mariadb.en.md")),
             ("Poradnik - MariaDB", include_str!("../../../../../shared/guide/app-mariadb.pl.md")),
+            ("Guide - PostgreSQL", include_str!("../../../../../shared/guide/app-postgres.en.md")),
+            ("Poradnik - PostgreSQL", include_str!("../../../../../shared/guide/app-postgres.pl.md")),
             ("Guide - MongoDB", include_str!("../../../../../shared/guide/app-mongodb.en.md")),
             ("Poradnik - MongoDB", include_str!("../../../../../shared/guide/app-mongodb.pl.md")),
             ("Guide - phpMyAdmin", include_str!("../../../../../shared/guide/app-phpmyadmin.en.md")),

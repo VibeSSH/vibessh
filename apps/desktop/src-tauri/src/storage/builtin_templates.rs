@@ -29,6 +29,7 @@ const MARIADB_ID: Uuid = Uuid::from_u128(0x7b1d_0001_0000_4000_8000_5642_4942_45
 const PHPMYADMIN_ID: Uuid = Uuid::from_u128(0x7b1d_0002_0000_4000_8000_5642_4942_4553);
 const MONGODB_ID: Uuid = Uuid::from_u128(0x7b1d_0004_0000_4000_8000_5642_4942_4553);
 const PHPMYADMIN_ARBITRARY_ID: Uuid = Uuid::from_u128(0x7b1d_0003_0000_4000_8000_5642_4942_4553);
+const POSTGRES_ID: Uuid = Uuid::from_u128(0x7b1d_0005_0000_4000_8000_5642_4942_4553);
 
 fn plain(key: &str, value: &str) -> TemplateEnvironmentVariable {
     TemplateEnvironmentVariable { key: key.to_string(), value: value.to_string(), is_secret: false }
@@ -80,6 +81,27 @@ pub fn builtin_templates() -> Vec<ApplicationTemplate> {
             // resolvable. The port is here because it is the one half that is
             // the same everywhere and worth seeing before creating anything.
             environment: vec![plain("PMA_PORT", "3306")],
+            created_at: epoch,
+            is_builtin: true,
+        },
+        ApplicationTemplate {
+            id: POSTGRES_ID,
+            name: "PostgreSQL with a password and a data directory".to_string(),
+            blueprint_id: "postgres".to_string(),
+            runtime_type: RuntimeType::Docker,
+            field_values: serde_json::json!({ "postgresVersion": "17" }),
+            // `PGDATA` is the reason this template is worth more than the
+            // other three. The blueprint cannot set it - it is an environment
+            // variable and a blueprint renders only image and command - and
+            // without it the database initialises inside the container,
+            // works, and disappears the next time the container is recreated.
+            // A template can set it, so somebody who starts here never has to
+            // know that. `.` and not `./pgdata`: the image's entrypoint has
+            // already dropped to the `postgres` user by the time it would
+            // create a subdirectory, and an Application's working directory
+            // does not belong to that account. Checked against a real
+            // container, both ways.
+            environment: vec![secret("POSTGRES_PASSWORD"), plain("POSTGRES_DB", "app"), plain("PGDATA", ".")],
             created_at: epoch,
             is_builtin: true,
         },
@@ -174,6 +196,7 @@ mod tests {
             vec![
                 "7b1d0001-0000-4000-8000-564249424553",
                 "7b1d0002-0000-4000-8000-564249424553",
+                "7b1d0005-0000-4000-8000-564249424553",
                 "7b1d0004-0000-4000-8000-564249424553",
                 "7b1d0003-0000-4000-8000-564249424553",
             ]
@@ -184,5 +207,22 @@ mod tests {
     fn a_saved_templates_id_is_not_mistaken_for_a_builtin() {
         assert!(!is_builtin_id(Uuid::new_v4()));
         assert!(is_builtin_id(builtin_templates()[0].id));
+    }
+
+    /// The one setting somebody starting from a template should never have
+    /// to know about. Without it the database is created inside the
+    /// container and lost the next time the container is recreated, and the
+    /// blueprint cannot set it because it is an environment variable.
+    #[test]
+    fn the_postgres_template_fills_in_the_data_directory_that_would_otherwise_be_missed() {
+        let templates = builtin_templates();
+        let postgres = templates.iter().find(|template| template.blueprint_id == "postgres").expect("a PostgreSQL built-in");
+        let pgdata = postgres.environment.iter().find(|variable| variable.key == "PGDATA").expect("PGDATA should be filled in");
+        assert_eq!(pgdata.value, ".", "a subdirectory fails: the image cannot create one in a directory it does not own");
+        assert!(!pgdata.is_secret, "a data directory is not a secret");
+
+        let password = postgres.environment.iter().find(|variable| variable.key == "POSTGRES_PASSWORD").expect("the image needs one");
+        assert!(password.is_secret, "a database password belongs in the keyring, not in the template");
+        assert!(password.value.is_empty(), "a template must not ship a password anybody could guess from the source");
     }
 }

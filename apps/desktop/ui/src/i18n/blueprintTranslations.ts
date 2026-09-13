@@ -108,6 +108,14 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       mariadbVersion: { label: "Wersja MariaDB", helpText: "Tag z Docker Huba, np. 11, 10.11, 10.6 albo lts." },
     },
   },
+  postgres: {
+    // The name stays: "PostgreSQL" is what it is called in Polish too.
+    description:
+      "Serwer bazy danych PostgreSQL â dane leÅ¼Ä w katalogu roboczym tej aplikacji. Zanim jÄ uruchomisz, ustaw w zakÅadce Årodowisko zmienne POSTGRES_PASSWORD oraz PGDATA=. (sama kropka, czyli katalog tej aplikacji). Bez PGDATA baza powstanie wewnÄtrz kontenera, a ponowne utworzenie kontenera jÄ skasuje.",
+    fields: {
+      postgresVersion: { label: "Wersja PostgreSQL", helpText: "Tag z Docker Hub, np. 17, 16, 15 albo 17-alpine." },
+    },
+  },
   mongodb: {
     name: "MongoDB",
     description:
@@ -220,6 +228,7 @@ const PL_BUILTIN_TEMPLATE_NAMES: Record<string, string> = {
   "7b1d0002-0000-4000-8000-564249424553": "phpMyAdmin do aplikacji MariaDB",
   "7b1d0003-0000-4000-8000-564249424553": "phpMyAdmin do dowolnego serwera",
   "7b1d0004-0000-4000-8000-564249424553": "MongoDB z kontem administratora",
+  "7b1d0005-0000-4000-8000-564249424553": "PostgreSQL z hasłem i katalogiem danych",
 };
 
 /** The name to show for a template - translated only for a built-in. */
