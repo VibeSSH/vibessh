@@ -63,7 +63,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      # What the cached binaries were built against, as part of the cache key.
+      #
+      # This is the failure it exists to prevent, because it already
+      # happened. The three Linux jobs used to run on a self-hosted machine
+      # (Ubuntu 24.04, glibc 2.39) and saved `target/` and `~/.cargo/bin`
+      # into the Actions cache from there. When they moved back to GitHub's
+      # `ubuntu-22.04` (glibc 2.35) the same cache was restored, and every
+      # build script and every cached binary died on the dynamic linker
+      # before compiling a line of this repository:
+      #
+      #     libc.so.6: version `GLIBC_2.39' not found
+      #
+      # `Swatinem/rust-cache` keys on `runner.os`, the compiler version and
+      # the job - all of which matched, because "Linux" is the same string on
+      # both machines. What actually has to match is the C library the
+      # binaries were linked against, so that is what goes in the key,
+      # alongside the distribution release. A cache from an incompatible
+      # machine is then never restored rather than restored and fatal.
+      - name: Identify the runner's C library
+        id: libc
+        run: echo "id=$(. /etc/os-release && echo "$ID$VERSION_ID")-glibc$(ldd --version | head -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ steps.libc.outputs.id }}
 
       # Warnings are denied rather than merely reported. The audit found 72
       # standing warnings, including a `MutexGuard` held across four await
@@ -146,9 +171,26 @@ jobs:
         run: bun audit --audit-level=moderate
 
       - uses: dtolnay/rust-toolchain@stable
+
+      # Same reason as the Rust job - see the long note there. This job felt
+      # it through `cargo-audit` itself, which is cached as a binary and so
+      # could not start at all.
+      - name: Identify the runner's C library
+        id: libc
+        run: echo "id=$(. /etc/os-release && echo "$ID$VERSION_ID")-glibc$(ldd --version | head -1 | awk '{print $NF}')" >> "$GITHUB_OUTPUT"
+
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ steps.libc.outputs.id }}
+
+      # `cargo install` is a no-op when the binary is already in the restored
+      # cache, so the version check is what proves the restored one actually
+      # runs here rather than failing later inside the audit, where a linker
+      # error reads like a security finding.
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --version
 
       # One advisory is ignored, and this is the whole justification for it.
       #
