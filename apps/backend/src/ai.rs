@@ -288,15 +288,66 @@ async fn call_upstream(upstream: &Upstream, messages: &[ChatMessage]) -> Result<
 
     let parsed: serde_json::Value =
         serde_json::from_str(&text).map_err(|err| ApiError::UpstreamFailure(format!("the AI provider's response didn't parse: {err}")))?;
-    parsed["choices"][0]["message"]["content"]
+    answer_from_response(&parsed)
+}
+
+/// The answer out of a chat-completions response, or why there isn't one.
+///
+/// Separate from the HTTP call so the awkward shapes can be tested without a
+/// server, which is the only way the empty-answer case below was ever going
+/// to be covered.
+fn answer_from_response(parsed: &serde_json::Value) -> Result<String, ApiError> {
+    let content = parsed["choices"][0]["message"]["content"]
         .as_str()
         .map(str::to_string)
-        .ok_or_else(|| ApiError::UpstreamFailure("the AI provider returned no answer".to_string()))
+        .ok_or_else(|| ApiError::UpstreamFailure("the AI provider returned no answer".to_string()))?;
+
+    // An empty string is not an answer, and `as_str()` returns one happily.
+    //
+    // A reasoning model makes this reachable rather than theoretical: it
+    // spends tokens on a `reasoning` field first, and when the budget runs
+    // out there the response is a well-formed success whose `content` is
+    // "". Passed through, that reaches the user as a blank panel, which
+    // reads as the app being broken and says nothing about why. An upstream
+    // failure at least names what happened.
+    if content.trim().is_empty() {
+        let finish = parsed["choices"][0]["finish_reason"].as_str().unwrap_or("unknown");
+        log::warn!("the AI provider returned an empty answer (finish_reason: {finish})");
+        return Err(ApiError::UpstreamFailure(format!("the AI provider returned an empty answer (finish_reason: {finish})")));
+    }
+    Ok(content)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_answer_is_returned_when_there_is_one() {
+        let parsed = serde_json::json!({ "choices": [ { "finish_reason": "stop", "message": { "content": "Brak MYSQL_ROOT_PASSWORD." } } ] });
+        assert_eq!(answer_from_response(&parsed).unwrap(), "Brak MYSQL_ROOT_PASSWORD.");
+    }
+
+    /// A reasoning model that spends its whole budget thinking returns a
+    /// well-formed success with nothing in it. Treating that as an answer
+    /// puts a blank panel in front of the user, which reads as the app being
+    /// broken and explains nothing.
+    #[test]
+    fn an_empty_answer_is_a_failure_rather_than_an_empty_answer() {
+        let parsed = serde_json::json!({ "choices": [ { "finish_reason": "length", "message": { "content": "", "reasoning": "thinking..." } } ] });
+        let err = answer_from_response(&parsed).unwrap_err();
+        assert!(matches!(err, ApiError::UpstreamFailure(_)), "{err:?}");
+        // The reason is carried, because "it failed" alone sends an operator
+        // looking in the wrong place - the budget, not the provider.
+        assert!(format!("{err}").contains("length"), "{err}");
+    }
+
+    #[test]
+    fn whitespace_only_counts_as_empty() {
+        let parsed = serde_json::json!({ "choices": [ { "finish_reason": "stop", "message": { "content": "   
+  " } } ] });
+        assert!(answer_from_response(&parsed).is_err());
+    }
 
     #[test]
     fn the_endpoint_path_is_appended_once_however_the_base_was_configured() {
