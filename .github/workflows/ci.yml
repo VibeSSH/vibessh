@@ -42,6 +42,39 @@ jobs:
   rust:
     name: Rust
     runs-on: ubuntu-22.04
+
+    # A real Postgres, because the tests that need one have never run.
+    #
+    # `apps/backend/tests/` holds roughly sixty integration tests over the
+    # real endpoints - authorisation, privilege escalation, the AI
+    # allowance, revocations. Every one is `#[ignore]`, because a plain
+    # checkout has no database and cargo stops at the first failing test
+    # binary. That marker was the right call and it had a cost nobody was
+    # paying attention to: the tests compiled, so they looked maintained,
+    # and not one of them had ever been executed by anything.
+    #
+    # Pinned to the same major version the deployment runs. A test suite that
+    # proves a query works on 16 while production is on 17 is testing the
+    # wrong database, and this one leans on things that are version-specific
+    # - `gen_random_uuid()` in core, partial unique indexes, `RETURNING` on a
+    # conditional UPDATE.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vibessh_test
+        ports:
+          - 5432:5432
+        # The job's first query would otherwise race the container's own
+        # start-up, which fails as a connection error and reads like a bug in
+        # the code rather than a service that was not up yet.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +148,26 @@ jobs:
             echo "ci" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
             cargo test --workspace
           '
+
+      # The `#[ignore]` half, which is where the backend's real coverage is.
+      # Run separately rather than by dropping the marker: the marker is what
+      # keeps `cargo test` working in a checkout with no database, which is
+      # every developer machine.
+      #
+      # `--test-threads=1` is required by `tests/ai_quota.rs`, which reads
+      # process environment at request time to vary the daily limit -
+      # environment is per process, not per thread, so two of those tests in
+      # flight together read each other's settings. Serial across all of them
+      # is a few seconds on tests this small, and the alternative is a flake
+      # that only ever appears here.
+      #
+      # `DATABASE_URL` is set on this step alone. Job-wide it would also be
+      # visible to the run above, where nothing should be able to reach a
+      # database at all.
+      - name: Backend integration tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/vibessh_test
+        run: cargo test -p vibessh-backend -- --ignored --test-threads=1
 
   frontend:
     name: Frontend
