@@ -282,6 +282,62 @@ pub struct MemberAccess {
     pub public_keys: Vec<String>,
 }
 
+/// One port an Application projects to its team. A snapshot, not the record
+/// a runtime acts on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamApplicationPort {
+    pub name: String,
+    pub protocol: String,
+    pub internal_port: i32,
+    pub external_port: Option<i32>,
+    pub visibility: String,
+}
+
+/// One non-secret environment variable. Secret ones never reach here - they
+/// are on the Node already, which is where the process reads them from.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamApplicationEnvironment {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamApplication {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub team_server_id: Option<Uuid>,
+    /// The id the owning install knows it by, which is what makes a push
+    /// idempotent rather than duplicating.
+    pub local_id: Uuid,
+    pub name: String,
+    pub blueprint_id: String,
+    pub runtime_type: String,
+    pub working_directory: String,
+    pub ports: serde_json::Value,
+    pub environment: serde_json::Value,
+    /// When this projection was last refreshed. A three-week-old snapshot is
+    /// worth knowing about, and nothing else here would say so.
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushTeamApplicationRequest {
+    pub local_id: Uuid,
+    pub team_server_id: Option<Uuid>,
+    pub name: String,
+    pub blueprint_id: String,
+    pub runtime_type: String,
+    pub working_directory: String,
+    #[serde(default)]
+    pub ports: Vec<TeamApplicationPort>,
+    #[serde(default)]
+    pub environment: Vec<TeamApplicationEnvironment>,
+}
+
 /// Metadata only - no password/private-key-path/passphrase fields exist
 /// here or in the table behind it (see migrations/0006). Secrets stay in
 /// whichever device's OS keyring already has them.

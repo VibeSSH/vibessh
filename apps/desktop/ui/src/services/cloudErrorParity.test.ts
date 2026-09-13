@@ -36,6 +36,25 @@ function backendErrorCodes(): string[] {
   return [...codes].sort();
 }
 
+/**
+ * Every `Detail::new` whose code is not written out where it is built.
+ *
+ * The scan above reads literals, so a code handed to a helper is a code it
+ * cannot see - and four of them hid there once, reaching users untranslated
+ * while this file reported everything was covered. A guard that silently
+ * misses part of what it guards is worse than no guard, because it stops
+ * anybody looking. This makes that hole fail instead.
+ */
+function detailsWithoutALiteralCode(): string[] {
+  const offenders: string[] = [];
+  for (const [path, source] of Object.entries(backendSources)) {
+    for (const match of source.matchAll(/Detail::new\(\s*([^"\s)][^,)]*)/g)) {
+      offenders.push(`${path.split("/").pop()}: Detail::new(${match[1].trim()}`);
+    }
+  }
+  return offenders;
+}
+
 describe("cloud backend error codes", () => {
   const codes = backendErrorCodes();
 
@@ -46,6 +65,10 @@ describe("cloud backend error codes", () => {
     expect(Object.keys(backendSources).length).toBeGreaterThan(5);
     expect(codes.length).toBeGreaterThan(30);
     expect(codes).toContain("invalid_credentials");
+  });
+
+  it("builds every Detail with its code written out, so this file can see them all", () => {
+    expect(detailsWithoutALiteralCode()).toEqual([]);
   });
 
   it.each(codes)("%s has an English sentence", (code) => {

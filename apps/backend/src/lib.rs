@@ -34,6 +34,7 @@ pub mod permissions;
 pub mod rate_limit;
 pub mod refresh_token;
 pub mod roles;
+pub mod team_applications;
 pub mod team_servers;
 pub mod teams;
 pub mod tokens;
@@ -84,6 +85,10 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/devices", get(device_keys::list_mine).post(device_keys::publish))
         .route("/devices/:key_id", delete(device_keys::revoke))
         .route("/teams/:team_id/access", get(device_keys::list_team_access))
+        // Applications a team can see - a projection pushed by the install
+        // that owns each one, never the record a runtime acts on.
+        .route("/teams/:team_id/applications", get(team_applications::list_applications).post(team_applications::push_application))
+        .route("/teams/:team_id/applications/:application_id", delete(team_applications::remove_application))
         // The hosted Vibe AI assistant. Authenticated, because the
         // allowance it spends is per account and VibeSSH pays for it.
         .route("/ai/chat", post(ai::chat))
