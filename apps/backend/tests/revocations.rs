@@ -213,3 +213,42 @@ async fn an_outsider_cannot_read_what_a_team_is_owed() {
     let (status, _) = get_with_bearer(test_router().await, &format!("/teams/{team_id}/revocations"), &outsider_token).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+/// The provisioning install derives a member's sudo rules from this list, so
+/// an access response without permissions would silently hand everybody the
+/// narrowest possible account - or, before stage 3, the widest.
+#[tokio::test]
+#[ignore]
+async fn the_access_list_carries_each_members_effective_permissions() {
+    let (_, owner_token) = register_user().await;
+    let team_id = create_team(&owner_token, "Permissions travel").await["id"].as_str().unwrap().to_string();
+    let (member_id, member_email, _) = add_member(&owner_token, &team_id).await;
+
+    let (_, role) = post_with_bearer(
+        test_router().await,
+        &format!("/teams/{team_id}/roles"),
+        &owner_token,
+        json!({ "name": "Operator", "permissions": ["applications.view", "applications.lifecycle"] }),
+    )
+    .await;
+    post_with_bearer(
+        test_router().await,
+        &format!("/teams/{team_id}/members/{member_id}/roles"),
+        &owner_token,
+        json!({ "roleId": role["id"] }),
+    )
+    .await;
+
+    let (status, access) = get_with_bearer(test_router().await, &format!("/teams/{team_id}/access"), &owner_token).await;
+    assert_eq!(status, StatusCode::OK, "{access}");
+    let member = access.as_array().unwrap().iter().find(|entry| entry["email"] == member_email).expect("the member should be listed");
+    let mut held: Vec<&str> = member["permissions"].as_array().unwrap().iter().map(|key| key.as_str().unwrap()).collect();
+    held.sort_unstable();
+    assert_eq!(held, ["applications.lifecycle", "applications.view"]);
+
+    // And somebody with no role holds nothing, rather than the key being
+    // absent - an absent list and an empty one read the same to a caller
+    // only if the caller remembers to treat them the same.
+    let owner = access.as_array().unwrap().iter().find(|entry| entry["email"] != member_email).expect("the owner should be listed");
+    assert!(owner["permissions"].is_array(), "{owner}");
+}

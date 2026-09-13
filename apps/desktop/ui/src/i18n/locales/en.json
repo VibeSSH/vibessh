@@ -1542,7 +1542,7 @@
     "namePlaceholder": "Server name",
     "noSecretsNote": "This only stores the address, not a password or key - each teammate still connects with their own credentials.",
     "portPlaceholder": "Port",
-    "privilegeNote": "A member's account can do everything VibeSSH can do on that server. The account is theirs and the server's log names them, but it is not a narrower set of powers yet.",
+    "privilegeNote": "A member's account can do exactly what their role allows on this server - the sudo rules are derived from it. A role with nothing that needs root leaves an account that cannot use sudo at all. Some permissions cannot be narrowed: a terminal, installing packages and creating applications are root in practice, so a role granting those still means full privileges. A change to a role reaches the server at the next access sync.",
     "removeAria": "Remove {{name}}",
     "removedToast": "Removed {{name}}",
     "revocationFailed": "{{email}} - could not revoke access: {{error}}",

@@ -148,9 +148,25 @@ person no longer has access" and "we asked" is the entire point.
 2. **Applications shared to the team**, non-secret fields, reconciled against
    the Node. *Done.*
 3. **Role-derived sudoers**, which is where permissions stop being advisory.
-   *Not started.* Until it lands, a member's account can do everything the
-   app can do on that Node, and the interface says so where access is
-   granted.
+   *Done*, with the table above corrected by what a sudo rule can actually
+   hold. The mapping there assumed more of it could be narrowed than can be:
+   any rule reaching `docker run`, `docker exec`, `systemctl` over arbitrary
+   units, `apt-get`, `wg-quick` or a shell is root, whatever it looks like -
+   `docker run -v /:/host` is the host, and a `wg-quick` config carries
+   `PostUp` commands. So `member_sudoers` splits the catalog in two: the
+   permissions that genuinely narrow (`applications.view`,
+   `applications.lifecycle`, the file helper, `node.firewall`) get named
+   commands scoped to `vibessh-app-*`, and the rest are recorded as
+   root-equivalent and still get the blanket rule - with the deciding
+   permission written into the file as a comment, so somebody reading it on
+   the machine months later can see why.
+
+   Two consequences worth stating. A role earning nothing privileged now
+   leaves an account with **no sudoers file at all**, which is the first
+   time "view only" means anything on the Node rather than only in the app.
+   And a role change reaches a Node at the next access sync, not when it is
+   saved - the same reconcile shape as everything else here, and the
+   interface says so where roles are granted.
 4. **Revocation reconcile**, including the pending state. *Done* -
    `node_revocations` in the backend records what is owed the moment a member
    is removed, and one sync per Node applies the whole desired state: every
@@ -165,7 +181,8 @@ person no longer has access" and "we asked" is the entire point.
 Stage 1 without stage 3 must not describe roles as restrictions anywhere in
 the interface. That wording can only appear once the Node enforces them.
 
-What stages 1, 2 and 4 do **not** give you, stated once so nothing in the
-interface drifts into implying it: a member's account remains as privileged
-as the owner's. Revocation is now real and its pending state is visible, but
-what is being revoked is full access, not a narrow one.
+With stage 3 in, that constraint is met and the wording may change - but
+only as far as it has earned. A role that grants a terminal, package
+installation or the ability to create Applications is still root on that
+machine, and the interface has to keep saying so rather than presenting
+every role as a restriction.

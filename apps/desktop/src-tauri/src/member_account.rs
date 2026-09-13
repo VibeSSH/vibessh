@@ -7,14 +7,13 @@
 //! With an account each, the log names a person and revoking is one key on
 //! one Node. See `docs/planning/team-access-design.md`.
 //!
-//! **What this does not buy, stated here so nobody reads it as more.** The
-//! desktop's Node operations need `sudo` for `docker`, `ufw`, `iptables`,
-//! `wg`, `apt-get` and `systemctl`. An account that can do what the app does
-//! is root in all but name, so at this stage a member's account is *as
-//! privileged as the owner's*. What it adds is accountability and
-//! revocability. Narrowing the privilege to what a member's role allows is a
-//! later stage, and until it lands nothing in the interface may describe a
-//! role as a restriction.
+//! **How much privilege the account gets.** As much as the member's role
+//! earns and no more - see `member_sudoers`, which turns their effective
+//! permissions into the sudo rules written here. A role granting nothing
+//! privileged leaves an account that cannot run `sudo` at all; a role
+//! granting something that cannot be narrowed without lying about it
+//! (a shell, package installation, `docker run`) gets the blanket rule, and
+//! the interface is told which permission decided that.
 //!
 //! **Why the authorized_keys file is written whole.** Appending is how a
 //! revoked key survives: the next reconcile adds what should be there and
@@ -22,6 +21,7 @@
 //! time, which makes removing a key the same operation as adding one.
 
 use crate::errors::{AppError, AppResult};
+use crate::member_sudoers;
 use crate::ssh::command::{quote as shell_quote, validate_linux_username};
 use crate::ssh::SshSession;
 
@@ -30,7 +30,14 @@ use crate::ssh::SshSession;
 /// nobody can audit.
 const GROUP: &str = "vibessh-members";
 
-/// Where the blanket sudo rule goes. One file per member, named after the
+/// The group every per-Application account belongs to, and the helper the
+/// file rules run. Both are `files::sudo_user`'s, repeated here rather than
+/// imported so that this module builds a rule for the mechanism that exists
+/// instead of inventing a second one.
+const APPLICATION_GROUP: &str = "vibessh-apps";
+const FILE_HELPER_PATH: &str = "/usr/local/lib/vibessh/file-helper.sh";
+
+/// Where the member's sudo rules go. One file per member, named after the
 /// account, so removing a member is removing one file rather than editing a
 /// shared one - an edit that goes wrong takes `sudo` down for everybody.
 fn sudoers_path(username: &str) -> String {
@@ -92,27 +99,81 @@ pub fn authorized_keys_script(username: &str, keys: &[String]) -> AppResult<Stri
     ))
 }
 
-/// The blanket sudo rule for stage 1.
+/// The sudo rules this member's role earns them, written as one file.
 ///
 /// Installed through a temporary file that `visudo -c` checks before it is
 /// moved into place. A syntactically broken file in `/etc/sudoers.d` takes
 /// `sudo` down for every account on the machine, including the one that
 /// would have to fix it - which on a remote Node means somebody driving to
 /// it. The check is not optional politeness.
-pub fn sudoers_script(username: &str) -> AppResult<String> {
+///
+/// **A member who has earned nothing gets the file removed, not emptied.**
+/// An empty file is a file, and one left behind after a role is narrowed
+/// would be a rule nobody meant to keep. Removing it is also what makes the
+/// narrowing observable from the Node rather than only from the app.
+///
+/// **Command paths are resolved on the Node.** sudo will not match a rule
+/// whose command is not fully qualified, and `docker` is not in the same
+/// place on every distribution. So the script looks each one up with
+/// `command -v` and drops the rules for anything that is not installed -
+/// which is also how a Node without Docker avoids a rule naming a binary
+/// that is not there.
+pub fn sudoers_script(username: &str, permissions: &[String]) -> AppResult<String> {
     validate_linux_username(username, "the member's account name")?;
     let path = shell_quote(&sudoers_path(username));
     let temporary = shell_quote(&format!("{}.new", sudoers_path(username)));
-    // The account name goes into the rule unquoted, because sudoers is not a
+
+    let privilege = member_sudoers::privilege_for(permissions);
+    let helper = member_sudoers::may_use_the_file_helper(permissions);
+
+    // The account name goes into a rule unquoted, because sudoers is not a
     // shell and quotes would become part of the name. That is safe only
     // because `validate_linux_username` above has already restricted it to
     // lowercase letters, digits, underscore and hyphen.
-    let rule = shell_quote(&format!("{username} ALL=(ALL) NOPASSWD: ALL"));
+    let mut lines: Vec<String> = Vec::new();
+    match &privilege {
+        member_sudoers::Privilege::None => {}
+        member_sudoers::Privilege::Root { reason } => {
+            lines.push(format!("# {reason} cannot be narrowed - see member_sudoers.rs"));
+            lines.push(format!("{username} ALL=(ALL) NOPASSWD: ALL"));
+        }
+        member_sudoers::Privilege::Commands(_) => {}
+    }
+    if helper {
+        // Not root: the Application's own account, through the helper that
+        // `files::sudo_user` already installs.
+        lines.push(format!("{username} ALL=(%{group}) NOPASSWD: {helper_path}", group = APPLICATION_GROUP, helper_path = FILE_HELPER_PATH));
+    }
+
+    // Everything above is known here. The command rules are not, because
+    // their paths only exist on the far side, so they are appended by the
+    // script itself.
+    let mut resolvers = String::new();
+    if let member_sudoers::Privilege::Commands(commands) = &privilege {
+        for allowed in commands {
+            let arguments = if allowed.arguments.is_empty() { String::new() } else { format!(" {}", allowed.arguments) };
+            resolvers.push_str(&format!(
+                "p=$(command -v {binary} 2>/dev/null) && printf '%s ALL=(root) NOPASSWD: %s{arguments}\\n' {user} \"$p\" >> {temporary}; ",
+                binary = shell_quote(allowed.binary),
+                user = shell_quote(username),
+            ));
+        }
+    }
+
+    if lines.is_empty() && resolvers.is_empty() {
+        // Nothing earned: take away whatever was there.
+        return Ok(format!("set -e; sudo rm -f {path} {temporary}"));
+    }
+
+    let header = lines.iter().map(|line| format!("printf '%s\\n' {}", shell_quote(line))).collect::<Vec<_>>().join("; ");
+    let header = if header.is_empty() { "true".to_string() } else { header };
+
     Ok(format!(
         "set -e; \
-         printf '%s\\n' {rule} | sudo tee {temporary} >/dev/null; \
+         ({header}) | sudo tee {temporary} >/dev/null; \
+         {resolvers}\
          sudo chmod 440 {temporary}; \
-         sudo visudo -c -f {temporary} >/dev/null; \
+         sudo visudo -c -f {temporary} >/dev/null || {{ sudo rm -f {temporary}; exit 9; }}; \
          sudo mv {temporary} {path}"
     ))
 }
@@ -153,7 +214,7 @@ mod tests {
         for name in ["../root", "a b", "root; rm -rf /", "UPPER", ""] {
             assert!(provision_script(name).is_err(), "{name} was accepted");
             assert!(authorized_keys_script(name, &[]).is_err(), "{name} was accepted");
-            assert!(sudoers_script(name).is_err(), "{name} was accepted");
+            assert!(sudoers_script(name, &admin()).is_err(), "{name} was accepted");
         }
     }
 
@@ -190,16 +251,75 @@ mod tests {
         assert!(script.contains("/etc/sudoers.d/vibessh-m-0123456789ab"), "{script}");
     }
 
+    /// A role that cannot be narrowed, which is the case that still writes
+    /// the blanket rule.
+    fn admin() -> Vec<String> {
+        vec!["node.terminal".to_string()]
+    }
+
     /// A broken file in /etc/sudoers.d takes sudo down for every account on
     /// the machine - including the one that would have to repair it, which
     /// on a remote Node means physical access.
     #[test]
     fn the_sudoers_file_is_checked_before_it_is_installed() {
-        let script = sudoers_script("vibessh-m-0123456789ab").unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
         let check = script.find("visudo -c").expect("no syntax check at all");
         let install = script.rfind("mv").expect("nothing is moved into place");
         assert!(check < install, "the check has to happen before the move: {script}");
         assert!(script.contains("chmod 440"), "sudo refuses a file with looser permissions: {script}");
+    }
+
+    /// The point of stage 3, seen from the Node: a role that earns nothing
+    /// privileged does not leave a rule behind, it takes one away.
+    #[test]
+    fn a_role_earning_nothing_removes_the_file_rather_than_writing_an_empty_one() {
+        let script = sudoers_script("vibessh-m-0123456789ab", &["team.view".to_string()]).unwrap();
+        assert!(script.contains("rm -f"), "{script}");
+        assert!(!script.contains("NOPASSWD"), "nothing should be granted: {script}");
+    }
+
+    /// A narrow role writes named commands and never the blanket rule.
+    #[test]
+    fn a_narrow_role_writes_specific_commands_and_no_blanket_rule() {
+        let held = vec!["applications.view".to_string(), "applications.lifecycle".to_string()];
+        let script = sudoers_script("vibessh-m-0123456789ab", &held).unwrap();
+        assert!(!script.contains("NOPASSWD: ALL"), "a narrow role must not get the blanket rule: {script}");
+        // Resolved on the far side, because sudo needs a full path and
+        // `docker` is not in the same place on every distribution.
+        assert!(script.contains("command -v"), "{script}");
+        assert!(script.contains("start vibessh-app-*"), "{script}");
+        assert!(script.contains("visudo -c"), "still checked before it is installed: {script}");
+    }
+
+    /// The blanket rule is still written when the role has earned it, and it
+    /// says which permission decided so - the file is what somebody reads on
+    /// the machine, months later, wondering why this account is root.
+    #[test]
+    fn a_root_equivalent_role_writes_the_blanket_rule_and_names_the_reason() {
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
+        assert!(script.contains("NOPASSWD: ALL"), "{script}");
+        assert!(script.contains("node.terminal"), "the file should say what decided this: {script}");
+    }
+
+    /// File access is the one rule that is not root: it runs as the
+    /// Application's own account, through the helper that already exists.
+    #[test]
+    fn file_access_runs_as_the_applications_account_and_not_as_root() {
+        let script = sudoers_script("vibessh-m-0123456789ab", &["applications.files.write".to_string()]).unwrap();
+        assert!(script.contains("(%vibessh-apps)"), "{script}");
+        assert!(script.contains("/usr/local/lib/vibessh/file-helper.sh"), "{script}");
+        assert!(!script.contains("NOPASSWD: ALL"), "{script}");
+    }
+
+    /// A failed check must not leave the half-written file behind for the
+    /// next run to move into place.
+    #[test]
+    fn a_file_that_fails_its_check_is_removed_rather_than_left() {
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
+        let check = script.find("visudo -c").expect("no syntax check at all");
+        let cleanup = script[check..].find("rm -f").expect("nothing cleans up a rejected file");
+        let install = script[check..].find("mv").expect("nothing is moved into place");
+        assert!(cleanup < install, "the rejected file has to go before the move: {script}");
     }
 
     /// A key's comment field is free text and arrives from another person's

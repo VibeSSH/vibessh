@@ -6,10 +6,13 @@
 //! only public keys, which is the whole reason the design chose per-member
 //! accounts. See `docs/planning/team-access-design.md`.
 //!
-//! **What a member can do once this has run.** Everything the app can do on
-//! that Node. The account is theirs and the log names them, but until
-//! role-derived sudoers lands (stage 3) it is as privileged as the owner's.
-//! Anything in the interface that offers this has to say so.
+//! **What a member can do once this has run.** What their role says, and no
+//! more: `member_sudoers` turns their effective permissions into the sudo
+//! rules their account carries. A role granting nothing privileged leaves an
+//! account that cannot run `sudo` on that Node. A role granting something
+//! that cannot be narrowed without lying about it - a shell, package
+//! installation, creating containers - still gets the blanket rule, and the
+//! interface says which permission decided that.
 //!
 //! **Why one sync rather than a grant button and a revoke button.** What a
 //! Node should hold is stated entirely by the team: these members, with
@@ -191,7 +194,10 @@ async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAcce
         "install the member's keys",
     )
     .await?;
-    member_account::run(connection, &member_account::sudoers_script(username)?, "grant the member sudo").await
+    // Last, and derived from their role rather than blanket. A member whose
+    // role earns nothing privileged ends up with no sudoers file at all,
+    // which is the whole of stage 3 - see `member_sudoers`.
+    member_account::run(connection, &member_account::sudoers_script(username, &member.permissions)?, "set the member's sudo rules").await
 }
 
 /// Publishes this device's public key, so other installs can put it in the

@@ -1550,7 +1550,7 @@
     "namePlaceholder": "Nazwa serwera",
     "noSecretsNote": "To zapisuje tylko adres, nie hasło ani klucz - każdy członek zespołu nadal łączy się własnymi poświadczeniami.",
     "portPlaceholder": "Port",
-    "privilegeNote": "Konto członka może na tym serwerze wszystko to, co może VibeSSH. Konto jest jego i dziennik serwera wskazuje osobę, ale to jeszcze nie jest węższy zakres uprawnień.",
+    "privilegeNote": "Konto członka może na tym serwerze dokładnie tyle, ile pozwala jego rola — reguły sudo są z niej wyprowadzane. Rola bez uprawnień wymagających roota zostawia konto, które w ogóle nie może użyć sudo. Części uprawnień nie da się zawęzić: terminal, instalacja pakietów i tworzenie aplikacji dają w praktyce roota, więc taka rola nadal oznacza pełne uprawnienia. Zmiana roli trafia na serwer przy kolejnej synchronizacji dostępu.",
     "removeAria": "Usuń {{name}}",
     "removedToast": "Usunięto {{name}}",
     "revocationFailed": "{{email}} — nie udało się odebrać dostępu: {{error}}",

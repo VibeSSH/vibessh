@@ -27,6 +27,7 @@ mod commands;
 pub mod dedicated_user;
 pub mod device_key;
 pub mod member_account;
+pub mod member_sudoers;
 // `pub` for the integration tests: `tests/concurrency.rs` asserts that a
 // loser in a port race gets `PortInUse` naming the winner rather than a bare
 // storage error, and that distinction is the entire point of the transaction

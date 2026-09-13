@@ -79,6 +79,10 @@ pub struct CloudMemberAccess {
     pub display_name: String,
     pub node_username: String,
     pub public_keys: Vec<String>,
+    /// What this member's roles add up to. `member_sudoers` turns it into
+    /// the sudo rules their account gets - see stage 3 of the design.
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 /// Access taken away in the team that is still on a Node.

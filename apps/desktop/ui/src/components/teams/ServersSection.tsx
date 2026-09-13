@@ -149,10 +149,11 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     <Card title={t("teamServers.title")} subtitle={t("teamServers.subtitle")}>
       {error && <p className="page-error-note">{error}</p>}
 
-      {/* Said where the action is, not in a document nobody opens. A member's
-          account can do everything the app can do on that Node - the account
-          is theirs and the Node's log names them, but it is not a smaller
-          set of powers until role-derived sudo lands. */}
+      {/* Said where the action is, not in a document nobody opens. The sudo
+          rules on the Node are derived from the member's role now, so this
+          says what that does and does not buy - including that some
+          permissions cannot be narrowed, and that a role change only reaches
+          the machine when somebody syncs. */}
       {canManage && <p className="team-servers-privilege-note">{t("teamServers.privilegeNote")}</p>}
 
       {loading ? (

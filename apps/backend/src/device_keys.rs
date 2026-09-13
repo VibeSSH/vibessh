@@ -189,12 +189,14 @@ pub async fn revoke(State(state): State<AppState>, AuthUser(user_id): AuthUser, 
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Every member of a team, the account they get on a Node, and the keys that
-/// should be in it.
+/// Every member of a team, the account they get on a Node, the keys that
+/// should be in it, and what that account is allowed to do.
 ///
 /// Team membership is the only requirement to read this, because everything
 /// in it is public by nature and any member needs it to provision access on
-/// a Node they can already reach.
+/// a Node they can already reach. Permission *keys* are in the same
+/// category: a member can already read the team's roles, and what they say
+/// is the point of saying it.
 pub async fn list_team_access(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
@@ -214,6 +216,24 @@ pub async fn list_team_access(
     .fetch_all(&state.db)
     .await?;
 
+    // One query for every member's permissions rather than one per member -
+    // a team of thirty would otherwise be thirty round trips to build one
+    // list.
+    let permission_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT DISTINCT mr.user_id, rp.permission_key \
+         FROM member_roles mr \
+         JOIN role_permissions rp ON rp.role_id = mr.role_id \
+         WHERE mr.team_id = $1 \
+         ORDER BY mr.user_id, rp.permission_key",
+    )
+    .bind(team_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut permissions_by_user: std::collections::HashMap<Uuid, Vec<String>> = std::collections::HashMap::new();
+    for (user_id, key) in permission_rows {
+        permissions_by_user.entry(user_id).or_default().push(key);
+    }
+
     let mut members: Vec<MemberAccess> = Vec::new();
     for (id, email, display_name, public_key) in rows {
         // The join produces one row per key, and a member with no key at all
@@ -221,7 +241,14 @@ pub async fn list_team_access(
         // "what should this account hold" and the signal the interface needs
         // to say that person has not set up a device yet.
         if members.last().map(|member| member.user_id) != Some(id) {
-            members.push(MemberAccess { user_id: id, email, display_name, node_username: node_username(id), public_keys: Vec::new() });
+            members.push(MemberAccess {
+                user_id: id,
+                email,
+                display_name,
+                node_username: node_username(id),
+                public_keys: Vec::new(),
+                permissions: permissions_by_user.remove(&id).unwrap_or_default(),
+            });
         }
         if let Some(key) = public_key {
             if let Some(member) = members.last_mut() {

@@ -280,6 +280,11 @@ pub struct MemberAccess {
     /// account is - one fewer thing that can disagree with itself.
     pub node_username: String,
     pub public_keys: Vec<String>,
+    /// Every permission this member's roles add up to, which is what the
+    /// provisioning install turns into sudo rules on the Node. Sent with the
+    /// keys rather than fetched separately because the two are one decision:
+    /// who may log in, and what they may do once they have.
+    pub permissions: Vec<String>,
 }
 
 /// Access that has been taken away in the team but is still on a Node.
