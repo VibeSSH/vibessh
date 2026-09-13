@@ -244,6 +244,44 @@ pub struct AuditEvent {
     pub actor_display_name: Option<String>,
 }
 
+/// The public half of one device's SSH key.
+///
+/// Public by nature: this is the line an `authorized_keys` file holds in
+/// plain text. The private half never leaves the machine that made it, and
+/// this backend has no field for one - the same position
+/// `TeamServer` takes on passwords.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceKey {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub public_key: String,
+    pub label: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishDeviceKeyRequest {
+    pub public_key: String,
+    pub label: String,
+}
+
+/// One team member and the keys their devices have published, which is what
+/// an install needs to give them an account on a shared Node.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberAccess {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    /// The Linux account this member is given on a Node. Derived from the
+    /// user id rather than stored, the same way an Application's dedicated
+    /// account is - one fewer thing that can disagree with itself.
+    pub node_username: String,
+    pub public_keys: Vec<String>,
+}
+
 /// Metadata only - no password/private-key-path/passphrase fields exist
 /// here or in the table behind it (see migrations/0006). Secrets stay in
 /// whichever device's OS keyring already has them.

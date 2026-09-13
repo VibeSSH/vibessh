@@ -24,6 +24,7 @@ use sqlx::PgPool;
 pub mod ai;
 pub mod audit;
 pub mod auth;
+pub mod device_keys;
 pub mod authorize;
 pub mod errors;
 pub mod jwt;
@@ -78,6 +79,11 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        // A device's own public key, and which accounts a team's members get
+        // on a shared Node. Public values only - see device_keys' own doc.
+        .route("/devices", get(device_keys::list_mine).post(device_keys::publish))
+        .route("/devices/:key_id", delete(device_keys::revoke))
+        .route("/teams/:team_id/access", get(device_keys::list_team_access))
         // The hosted Vibe AI assistant. Authenticated, because the
         // allowance it spends is per account and VibeSSH pays for it.
         .route("/ai/chat", post(ai::chat))
