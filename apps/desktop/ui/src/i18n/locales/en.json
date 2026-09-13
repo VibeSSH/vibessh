@@ -1964,7 +1964,7 @@
       "description": "A web UI for managing a MySQL/MariaDB server. Pick the MariaDB Application it should manage and VibeSSH sets PMA_HOST/PMA_PORT and grants the connection between them; to reach a server VibeSSH does not manage, leave that empty and set PMA_HOST yourself on the Environment tab."
     },
     "postgres": {
-      "description": "A self-hosted PostgreSQL database server - data is stored in this Application's own working directory. Set POSTGRES_PASSWORD and PGDATA=./pgdata in the Environment tab before starting it: without PGDATA the database is created inside the container instead, and recreating the container loses it."
+      "description": "A self-hosted PostgreSQL database server - data is stored in this Application's own working directory. Set POSTGRES_PASSWORD and PGDATA=. (a single dot, meaning this Application's own directory) in the Environment tab before starting it: without PGDATA the database is created inside the container instead, and recreating the container loses it."
     },
     "purpur": {
       "description": "A Paper fork with extra performance and gameplay options - the server jar is downloaded and kept up to date automatically."

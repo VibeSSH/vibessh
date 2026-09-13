@@ -18,17 +18,37 @@ use super::{text_input, validate_inputs, BlueprintHandler};
 /// separate channels with no bridge between them (the same split
 /// `RedisBlueprint` documents from the other side).
 ///
-/// So the description asks for `PGDATA=./pgdata` explicitly, and says what
-/// happens without it, because the failure is silent and expensive: the
-/// database initialises inside the container instead, works perfectly, and
-/// is lost the next time the container is recreated - which an edit to the
-/// image or the command does on its own.
+/// So the description asks for `PGDATA=.` explicitly, and says what happens
+/// without it, because the failure is silent and expensive: the database
+/// initialises inside the container instead, works perfectly, and is lost
+/// the next time the container is recreated - which an edit to the image
+/// does on its own.
 ///
-/// `./pgdata` rather than `.`: `initdb` refuses a directory that is not
-/// empty, and the working directory of an Application generally is not. The
-/// relative path resolves because the Docker runtime mounts
+/// **`.` and not `./pgdata`, which is the opposite of what reading the
+/// entrypoint suggests.** This was written the other way round first and a
+/// real `postgres:17` container refused to start:
+///
+/// ```text
+/// mkdir: cannot create directory './pgdata': Permission denied
+/// ```
+///
+/// The entrypoint has already dropped from root to the `postgres` user by
+/// the time it creates the data directory, and an Application's working
+/// directory does not belong to that account - so it can write *into* the
+/// directory it was handed but cannot make a subdirectory in it. Pointing
+/// `PGDATA` at the mount point itself works, because the still-root phase of
+/// the entrypoint chowns that one before dropping privileges. Checked
+/// against a real container both ways, including destroying it and starting
+/// a new one over the same directory to see the data come back.
+///
+/// The relative path resolves because the Docker runtime mounts
 /// `working_directory` at the same path inside the container and makes it the
-/// container's cwd - the trick `MariaDbBlueprint` documents in full.
+/// container's cwd - the trick `MariaDbBlueprint` documents in full, and the
+/// same shape as its `--datadir=.`.
+///
+/// One consequence worth knowing: `initdb` refuses a directory that is not
+/// empty, so this works on a new Application and not on one whose directory
+/// already has files in it.
 ///
 /// No `default_ports`, for the reason `MariaDbBlueprint` gives: every entry
 /// there is published as `Public` on creation with no review step, which is
@@ -44,7 +64,7 @@ impl PostgresBlueprint {
             definition: Blueprint {
                 id: "postgres".to_string(),
                 name: "PostgreSQL".to_string(),
-                description: "A self-hosted PostgreSQL database server - data is stored in this Application's own working directory. Set POSTGRES_PASSWORD and PGDATA=./pgdata in the Environment tab before starting it: without PGDATA the database is created inside the container instead, and recreating the container loses it.".to_string(),
+                description: "A self-hosted PostgreSQL database server - data is stored in this Application's own working directory. Set POSTGRES_PASSWORD and PGDATA=. (a single dot, meaning this Application's own directory) in the Environment tab before starting it: without PGDATA the database is created inside the container instead, and recreating the container loses it.".to_string(),
                 schema_version: 1,
                 blueprint_version: 1,
                 supported_runtime_types: vec![RuntimeType::Docker],
@@ -134,7 +154,11 @@ mod tests {
     fn the_description_asks_for_the_data_directory_and_says_why() {
         let blueprint = PostgresBlueprint::new();
         let description = &blueprint.blueprint().description;
-        assert!(description.contains("PGDATA=./pgdata"), "{description}");
+        assert!(description.contains("PGDATA=."), "{description}");
+        // Specifically not `PGDATA=./pgdata`, which is what this said first
+        // and which a real container refuses to start with. A plain
+        // `contains("PGDATA=.")` would pass for that too.
+        assert!(!description.contains("PGDATA=./"), "{description}");
         assert!(description.contains("POSTGRES_PASSWORD"), "{description}");
         assert!(description.contains("recreating the container loses it"), "{description}");
     }

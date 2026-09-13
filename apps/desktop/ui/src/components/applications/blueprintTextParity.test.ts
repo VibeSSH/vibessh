@@ -80,7 +80,12 @@ describe("blueprint text", () => {
     for (const locale of [pl, en]) {
       const description = texts(locale).postgres?.description ?? "";
       expect(description).toContain("POSTGRES_PASSWORD");
-      expect(description).toContain("PGDATA=./pgdata");
+      expect(description).toContain("PGDATA=.");
+      // And not `PGDATA=./pgdata`: the image's entrypoint has already
+      // dropped to the `postgres` user by the time it creates the data
+      // directory, so it cannot make a subdirectory in a working directory
+      // that account does not own. Checked against a real container.
+      expect(description).not.toContain("PGDATA=./");
     }
   });
 });

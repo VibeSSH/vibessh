@@ -1980,7 +1980,7 @@
       "description": "Panel WWW do zarządzania serwerem MySQL/MariaDB. Wskaż aplikację MariaDB, którą ma obsługiwać, a VibeSSH ustawi PMA_HOST/PMA_PORT i zezwoli na połączenie między nimi. Żeby połączyć się z serwerem spoza VibeSSH, zostaw to pole puste i ustaw PMA_HOST samodzielnie w zakładce Środowisko."
     },
     "postgres": {
-      "description": "Serwer bazy danych PostgreSQL — dane leżą w katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw w zakładce Środowisko zmienne POSTGRES_PASSWORD oraz PGDATA=./pgdata. Bez PGDATA baza powstanie wewnątrz kontenera, a ponowne utworzenie kontenera ją skasuje."
+      "description": "Serwer bazy danych PostgreSQL — dane leżą w katalogu roboczym tej aplikacji. Zanim ją uruchomisz, ustaw w zakładce Środowisko zmienne POSTGRES_PASSWORD oraz PGDATA=. (sama kropka, czyli katalog tej aplikacji). Bez PGDATA baza powstanie wewnątrz kontenera, a ponowne utworzenie kontenera ją skasuje."
     },
     "purpur": {
       "description": "Fork Papera z dodatkowymi opcjami wydajności i rozgrywki — plik jar jest pobierany i aktualizowany automatycznie."
