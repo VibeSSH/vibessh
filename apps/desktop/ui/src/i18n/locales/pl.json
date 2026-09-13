@@ -1544,7 +1544,14 @@
     "couldntList": "Nie udało się wczytać serwerów tego zespołu.",
     "couldntAdd": "Nie udało się dodać serwera.",
     "couldntRemove": "Nie udało się usunąć serwera.",
-    "noSecretsNote": "To zapisuje tylko adres, nie hasło ani klucz - każdy członek zespołu nadal łączy się własnymi poświadczeniami."
+    "noSecretsNote": "To zapisuje tylko adres, nie hasło ani klucz - każdy członek zespołu nadal łączy się własnymi poświadczeniami.",
+    "grant": "Nadaj dostęp",
+    "grantTitle": "Załóż każdemu członkowi tego zespołu własne konto na tym serwerze",
+    "grantedToast": "Dostęp nadany: {{count}} osob(y).",
+    "grantOk": "{{email}} — konto {{account}} utworzone",
+    "grantFailed": "{{email}} — nie udało się: {{error}}",
+    "grantNoDevice": "{{email}} — nie otworzył jeszcze VibeSSH na żadnym urządzeniu, więc nie ma czego zainstalować",
+    "privilegeNote": "Konto członka może na tym serwerze wszystko to, co może VibeSSH. Konto jest jego i dziennik serwera wskazuje osobę, ale to jeszcze nie jest węższy zakres uprawnień."
   },
   "teams": {
     "accept": "Akceptuj",

@@ -55,6 +55,32 @@ pub struct CloudTeam {
     pub created_at: DateTime<Utc>,
 }
 
+/// One of this account's registered devices, as the backend returns it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudDeviceKey {
+    pub id: Uuid,
+    pub public_key: String,
+    pub label: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A team member, the account they are given on a Node, and the keys that
+/// should be in it.
+///
+/// `public_keys` is empty for somebody who has not opened VibeSSH on any
+/// device yet. That is the honest answer rather than an error, and it is
+/// what the interface needs in order to say so.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudMemberAccess {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub node_username: String,
+    pub public_keys: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudTeamMember {

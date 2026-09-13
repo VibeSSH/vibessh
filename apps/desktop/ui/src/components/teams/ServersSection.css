@@ -20,3 +20,28 @@
   flex: 0 0 80px;
   max-width: 80px;
 }
+
+/* The privilege note sits above the list rather than inside a tooltip: it
+   describes what pressing the button actually does, and a caveat somebody
+   has to hover to find is a caveat nobody reads. */
+.team-servers-privilege-note {
+  margin: 0 0 12px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* One line per member. The outcome differs per person, and collapsing it to
+   a single verdict would hide the one who did not get access. */
+.team-servers-grant-results {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.team-servers-grant-results li {
+  padding: 2px 0;
+}

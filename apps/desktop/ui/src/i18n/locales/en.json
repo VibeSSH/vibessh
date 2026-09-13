@@ -1536,7 +1536,14 @@
     "couldntList": "Couldn't load this team's servers.",
     "couldntAdd": "Couldn't add the server.",
     "couldntRemove": "Couldn't remove the server.",
-    "noSecretsNote": "This only stores the address, not a password or key - each teammate still connects with their own credentials."
+    "noSecretsNote": "This only stores the address, not a password or key - each teammate still connects with their own credentials.",
+    "grant": "Grant access",
+    "grantTitle": "Give every member of this team their own account on this server",
+    "grantedToast": "Access granted to {{count}} member(s).",
+    "grantOk": "{{email}} - account {{account}} created",
+    "grantFailed": "{{email}} - failed: {{error}}",
+    "grantNoDevice": "{{email}} - has not opened VibeSSH on any device yet, so there is no key to install",
+    "privilegeNote": "A member's account can do everything VibeSSH can do on that server. The account is theirs and the server's log names them, but it is not a narrower set of powers yet."
   },
   "teams": {
     "accept": "Accept",

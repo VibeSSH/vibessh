@@ -55,6 +55,53 @@ pub async fn cloud_set_backend_url(app: tauri::AppHandle, state: State<'_, Cloud
     Ok(())
 }
 
+/// Registers this device's public key so teammates' installs can put it in
+/// the account they create for this person on a Node.
+///
+/// Idempotent, and cheap enough to call whenever a session is established -
+/// a key nobody published is a member nobody can be given access to, and the
+/// person would have no way of guessing that was the missing step.
+#[tauri::command]
+pub async fn cloud_publish_this_device(app: tauri::AppHandle, state: State<'_, CloudState>) -> AppResult<()> {
+    let config_dir = app.path().app_config_dir().map_err(|err| crate::errors::AppError::Storage(err.to_string()))?;
+    services::team_access_service::publish_this_device(&state, &config_dir).await
+}
+
+#[tauri::command]
+pub async fn cloud_list_devices(state: State<'_, CloudState>) -> AppResult<Vec<crate::models::CloudDeviceKey>> {
+    services::cloud_list_device_keys(&state).await
+}
+
+/// Forgets a device. Removes it from the team's view; does **not** remove it
+/// from Nodes it was already installed on - the interface has to say which.
+#[tauri::command]
+pub async fn cloud_revoke_device(state: State<'_, CloudState>, key_id: uuid::Uuid) -> AppResult<()> {
+    services::cloud_revoke_device_key(&state, key_id).await
+}
+
+/// Gives every member of a team their own account on this Node.
+#[tauri::command]
+pub async fn grant_team_node_access(
+    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
+    sessions: State<'_, crate::state::SshSessionManager>,
+    cloud: State<'_, CloudState>,
+    server_id: uuid::Uuid,
+    team_id: uuid::Uuid,
+) -> AppResult<Vec<services::team_access_service::MemberAccessResult>> {
+    services::team_access_service::grant_team_access(&server_repo, &sessions, &cloud, server_id, team_id).await
+}
+
+/// Takes one member's access to this Node away.
+#[tauri::command]
+pub async fn revoke_team_node_access(
+    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
+    sessions: State<'_, crate::state::SshSessionManager>,
+    server_id: uuid::Uuid,
+    node_username: String,
+) -> AppResult<()> {
+    services::team_access_service::revoke_member_access(&server_repo, &sessions, server_id, &node_username).await
+}
+
 #[tauri::command]
 pub async fn cloud_list_teams(state: State<'_, CloudState>) -> AppResult<Vec<CloudTeam>> {
     services::cloud_list_teams(&state).await

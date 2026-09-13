@@ -128,6 +128,33 @@ pub async fn cloud_ai_endpoint(state: &CloudState) -> AppResult<(String, String)
     Ok((inner.client.base_url().to_string(), token))
 }
 
+/// Registers this device's public key with the backend.
+pub async fn publish_device_key(state: &CloudState, public_key: &str, label: &str) -> AppResult<crate::models::CloudDeviceKey> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.publish_device_key(&token, public_key, label).await
+}
+
+pub async fn list_device_keys(state: &CloudState) -> AppResult<Vec<crate::models::CloudDeviceKey>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_device_keys(&token).await
+}
+
+pub async fn revoke_device_key(state: &CloudState, key_id: uuid::Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.revoke_device_key(&token, key_id).await
+}
+
+/// Everyone in the team, with the account and keys each should have on a
+/// Node.
+pub async fn list_team_access(state: &CloudState, team_id: uuid::Uuid) -> AppResult<Vec<crate::models::CloudMemberAccess>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_team_access(&token, team_id).await
+}
+
 pub async fn list_teams(state: &CloudState) -> AppResult<Vec<CloudTeam>> {
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;

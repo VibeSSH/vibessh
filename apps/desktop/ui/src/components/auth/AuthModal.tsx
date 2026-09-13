@@ -5,7 +5,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { cloudBackendIsConfigured, cloudLogin, cloudRegister } from "@/services/cloudService";
+import { cloudBackendIsConfigured, cloudLogin, cloudRegister, cloudPublishThisDevice } from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -64,6 +64,13 @@ export function AuthModal() {
     try {
       const user = tab === "login" ? await cloudLogin(email, password) : await cloudRegister(email, password, displayName);
       setUser(user);
+      // Registers this machine's public key, so a teammate's install can put
+      // it in the account it creates for this person on a shared Node.
+      // Deliberately not awaited into the success path: signing in worked,
+      // and a backend that is briefly unreachable must not turn that into a
+      // failure. The next sign-in publishes again - the backend treats the
+      // same key twice as the same device.
+      cloudPublishThisDevice().catch((err) => console.warn("couldn't publish this device's key", err));
       toastSuccess(t(tab === "login" ? "auth.loggedInToast" : "auth.registeredToast", { name: user.displayName }));
       reset();
       close();

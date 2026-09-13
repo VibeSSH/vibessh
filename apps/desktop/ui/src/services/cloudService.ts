@@ -173,3 +173,65 @@ export function cloudChangePassword(currentPassword: string, newPassword: string
 export function cloudListAuditEvents(teamId: string, limit: number, offset: number): Promise<CloudAuditEvent[]> {
   return callCommand<CloudAuditEvent[]>("cloud_list_audit_events", { teamId, limit, offset });
 }
+
+/** One of this account's registered devices. Mirrors the Rust `CloudDeviceKey`. */
+export interface CloudDeviceKey {
+  id: string;
+  publicKey: string;
+  label: string;
+  createdAt: string;
+}
+
+/**
+ * What happened for one member when access to a Node was granted.
+ *
+ * Per member rather than one verdict for the team: four of five working is
+ * neither a success nor a failure, and the person reading needs to know
+ * which one did not.
+ */
+export interface MemberAccessResult {
+  userId: string;
+  email: string;
+  nodeUsername: string;
+  /** `false` when that person has not opened VibeSSH on any device yet, so there is no key to install. Not an error. */
+  hasKey: boolean;
+  granted: boolean;
+  error: string | null;
+}
+
+/**
+ * Registers this device's public key so a teammate's install can put it in
+ * the account it creates for this person on a shared Node.
+ *
+ * Safe to call whenever a session is established: the backend treats the
+ * same key twice as the same device.
+ */
+export function cloudPublishThisDevice(): Promise<void> {
+  return callCommand<void>("cloud_publish_this_device");
+}
+
+export function cloudListDevices(): Promise<CloudDeviceKey[]> {
+  return callCommand<CloudDeviceKey[]>("cloud_list_devices");
+}
+
+/**
+ * Forgets a device.
+ *
+ * This removes it from the team's view. It does **not** remove the key from
+ * Nodes it was already installed on - that needs an install that can reach
+ * each Node, and anything offering this has to say so rather than implying
+ * the access is gone.
+ */
+export function cloudRevokeDevice(keyId: string): Promise<void> {
+  return callCommand<void>("cloud_revoke_device", { keyId });
+}
+
+/** Gives every member of a team their own account on this Node. */
+export function grantTeamNodeAccess(serverId: string, teamId: string): Promise<MemberAccessResult[]> {
+  return callCommand<MemberAccessResult[]>("grant_team_node_access", { serverId, teamId });
+}
+
+/** Takes one member's access to this Node away. */
+export function revokeTeamNodeAccess(serverId: string, nodeUsername: string): Promise<void> {
+  return callCommand<void>("revoke_team_node_access", { serverId, nodeUsername });
+}

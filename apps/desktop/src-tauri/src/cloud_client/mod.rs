@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
+    CloudDeviceKey, CloudMemberAccess,
     CloudAiAnswer, CloudAiQuota,
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
@@ -335,6 +336,29 @@ impl CloudClient {
             Some(&json!({ "currentPassword": current_password, "newPassword": new_password })),
         )
         .await
+    }
+
+    /// Registers this device's public key, or refreshes it if the backend
+    /// already knows it.
+    pub async fn publish_device_key(&self, access_token: &str, public_key: &str, label: &str) -> AppResult<CloudDeviceKey> {
+        self.send(Method::POST, "/devices", Some(access_token), Some(&json!({ "publicKey": public_key, "label": label }))).await
+    }
+
+    pub async fn list_device_keys(&self, access_token: &str) -> AppResult<Vec<CloudDeviceKey>> {
+        self.send::<(), _>(Method::GET, "/devices", Some(access_token), None).await
+    }
+
+    /// Forgets a device. This removes it from the team's view and does not
+    /// remove it from any Node it was already installed on - see the
+    /// backend's own doc comment, and say so wherever this is offered.
+    pub async fn revoke_device_key(&self, access_token: &str, key_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(Method::DELETE, &format!("/devices/{key_id}"), Some(access_token), None).await
+    }
+
+    /// Everyone in the team, the account each gets on a Node, and the keys
+    /// that belong in it.
+    pub async fn list_team_access(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudMemberAccess>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/access"), Some(access_token), None).await
     }
 
     pub async fn list_audit_events(&self, access_token: &str, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {

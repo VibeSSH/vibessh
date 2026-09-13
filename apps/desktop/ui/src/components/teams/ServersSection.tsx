@@ -7,7 +7,9 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { cloudCreateServer, cloudDeleteServer, cloudListServers } from "@/services/cloudService";
+import { cloudCreateServer, cloudDeleteServer, cloudListServers, grantTeamNodeAccess, type MemberAccessResult } from "@/services/cloudService";
+import { listServers } from "@/services/serverService";
+import type { ServerSummary } from "@/types/server";
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudServer } from "@/types/cloud";
 import "./ServersSection.css";
@@ -16,6 +18,12 @@ import { errorMessage } from "@/services/tauri";
 export function ServersSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
   const { t } = useTranslation();
   const [servers, setServers] = useState<CloudServer[]>([]);
+  // This install's own servers, which is what "grant access" actually runs
+  // against. A team server is metadata; the account has to be created over a
+  // connection somebody already has, and only this machine has one.
+  const [localServers, setLocalServers] = useState<ServerSummary[]>([]);
+  const [granting, setGranting] = useState<string | null>(null);
+  const [grantResults, setGrantResults] = useState<Record<string, MemberAccessResult[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -34,6 +42,41 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
   }
 
   useEffect(load, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    listServers()
+      .then(setLocalServers)
+      .catch(() => setLocalServers([]));
+  }, []);
+
+  /**
+   * The local server that is this team server, matched on address.
+   *
+   * Matched rather than linked because nothing records the pair: a team
+   * server is a name and an address, and each install adds the machine
+   * separately. Host and port together are what identifies a machine to SSH,
+   * so they are what identifies it here.
+   */
+  function localMatch(server: CloudServer): ServerSummary | undefined {
+    return localServers.find((local) => local.host === server.host && local.sshPort === server.sshPort);
+  }
+
+  async function handleGrant(server: CloudServer) {
+    const local = localMatch(server);
+    if (!local) return;
+    setGranting(server.id);
+    setError(null);
+    try {
+      const results = await grantTeamNodeAccess(local.id, teamId);
+      setGrantResults((current) => ({ ...current, [server.id]: results }));
+      const granted = results.filter((result) => result.granted).length;
+      toastSuccess(t("teamServers.grantedToast", { count: granted }));
+    } catch (err) {
+      setError(errorMessage(err, t));
+    } finally {
+      setGranting(null);
+    }
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -70,6 +113,12 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     <Card title={t("teamServers.title")} subtitle={t("teamServers.subtitle")}>
       {error && <p className="page-error-note">{error}</p>}
 
+      {/* Said where the action is, not in a document nobody opens. A member's
+          account can do everything the app can do on that Node - the account
+          is theirs and the Node's log names them, but it is not a smaller
+          set of powers until role-derived sudo lands. */}
+      {canManage && <p className="team-servers-privilege-note">{t("teamServers.privilegeNote")}</p>}
+
       {loading ? (
         <SkeletonRows />
       ) : servers.length === 0 ? (
@@ -89,8 +138,36 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                   className="server-list-host"
                 />
               </div>
+              {canManage && localMatch(server) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={granting === server.id}
+                  onClick={() => handleGrant(server)}
+                  title={t("teamServers.grantTitle")}
+                >
+                  <Icon name="key" size={14} />
+                  {granting === server.id ? t("common.loading") : t("teamServers.grant")}
+                </Button>
+              )}
               {canManage && (
                 <IconButton icon="trash" size="sm" danger title={t("teamServers.removeAria", { name: server.name })} onClick={() => handleDelete(server)} />
+              )}
+              {grantResults[server.id] && (
+                <ul className="team-servers-grant-results">
+                  {grantResults[server.id].map((result) => (
+                    <li key={result.userId}>
+                      {/* Per member, because four of five working is neither
+                          a success nor a failure and the reader needs to know
+                          which one did not. */}
+                      {result.granted
+                        ? t("teamServers.grantOk", { email: result.email, account: result.nodeUsername })
+                        : result.hasKey
+                          ? t("teamServers.grantFailed", { email: result.email, error: result.error ?? "" })
+                          : t("teamServers.grantNoDevice", { email: result.email })}
+                    </li>
+                  ))}
+                </ul>
               )}
             </li>
           ))}
