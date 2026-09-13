@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    CloudApplication, CloudApplicationEnvironment, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess,
+    CloudApplication, CloudApplicationEnvironment, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation,
     CloudAiAnswer, CloudAiQuota,
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
@@ -359,6 +359,17 @@ impl CloudClient {
     /// that belong in it.
     pub async fn list_team_access(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudMemberAccess>> {
         self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/access"), Some(access_token), None).await
+    }
+
+    /// What the team has asked to be taken off its Nodes and has not been.
+    pub async fn list_pending_revocations(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudNodeRevocation>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/revocations"), Some(access_token), None).await
+    }
+
+    /// Says one revocation actually landed. Called only after the Node said
+    /// so - never because it was attempted.
+    pub async fn complete_revocation(&self, access_token: &str, team_id: Uuid, revocation_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(Method::POST, &format!("/teams/{team_id}/revocations/{revocation_id}"), Some(access_token), None).await
     }
 
     pub async fn list_team_applications(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudApplication>> {

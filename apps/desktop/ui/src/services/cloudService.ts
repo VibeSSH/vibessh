@@ -217,23 +217,72 @@ export function cloudListDevices(): Promise<CloudDeviceKey[]> {
 /**
  * Forgets a device.
  *
- * This removes it from the team's view. It does **not** remove the key from
- * Nodes it was already installed on - that needs an install that can reach
- * each Node, and anything offering this has to say so rather than implying
- * the access is gone.
+ * This removes it from the team's view. The key comes off the Nodes it was
+ * already installed on at the next `syncTeamNodeAccess` for each of them,
+ * run from an install that can reach the machine - because that sync writes
+ * `authorized_keys` whole, from the keys still published. Until one runs,
+ * the key is still there, and anything offering this has to say so rather
+ * than implying the access is already gone.
  */
 export function cloudRevokeDevice(keyId: string): Promise<void> {
   return callCommand<void>("cloud_revoke_device", { keyId });
 }
 
-/** Gives every member of a team their own account on this Node. */
-export function grantTeamNodeAccess(serverId: string, teamId: string): Promise<MemberAccessResult[]> {
-  return callCommand<MemberAccessResult[]>("grant_team_node_access", { serverId, teamId });
+/**
+ * What happened to one person's access that the team has taken away.
+ *
+ * `completed` is what the Node did, not what was asked for: a revocation
+ * that failed stays pending here and stays pending on the screen, because
+ * their key is still in a file on that machine.
+ */
+export interface RevocationResult {
+  id: string;
+  email: string;
+  nodeUsername: string;
+  completed: boolean;
+  error: string | null;
 }
 
-/** Takes one member's access to this Node away. */
-export function revokeTeamNodeAccess(serverId: string, nodeUsername: string): Promise<void> {
-  return callCommand<void>("revoke_team_node_access", { serverId, nodeUsername });
+/** Everything one sync did to one Node. */
+export interface NodeAccessSync {
+  members: MemberAccessResult[];
+  revocations: RevocationResult[];
+}
+
+/** Access removed in the team that is still on a Node. */
+export interface NodeRevocation {
+  id: string;
+  teamServerId: string;
+  serverName: string;
+  host: string;
+  sshPort: number;
+  userId: string;
+  nodeUsername: string;
+  email: string;
+  requestedAt: string;
+}
+
+/**
+ * Makes one Node hold exactly the access the team describes.
+ *
+ * Every current member's account and currently published keys - written
+ * whole, so a device somebody revoked stops working here too - and then
+ * every revocation the team is still owed on that machine.
+ */
+export function syncTeamNodeAccess(serverId: string, teamId: string, teamServerId: string): Promise<NodeAccessSync> {
+  return callCommand<NodeAccessSync>("sync_team_node_access", { serverId, teamId, teamServerId });
+}
+
+/**
+ * What the team has asked to be taken off its Nodes and has not been.
+ *
+ * Read from the backend rather than remembered from the last sync: the
+ * install that removed somebody is often not the one that can reach the
+ * machine, and this list is the only thing that carries the fact between
+ * them.
+ */
+export function listPendingRevocations(teamId: string): Promise<NodeRevocation[]> {
+  return callCommand<NodeRevocation[]>("cloud_list_pending_revocations", { teamId });
 }
 
 /** One port of an Application as the team sees it. */

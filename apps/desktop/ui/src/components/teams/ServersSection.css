@@ -45,3 +45,23 @@
 .team-servers-grant-results li {
   padding: 2px 0;
 }
+
+/* Access the team removed that is still on this machine.
+   Coloured like a warning rather than set in the same grey as the rest,
+   because it is a statement that somebody who was removed can still log in -
+   and it stays on screen until a sync has actually taken it away. */
+.team-servers-pending {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger, #e5484d);
+  border-radius: 8px;
+  list-style: none;
+  color: var(--danger, #e5484d);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.team-servers-pending li {
+  padding: 2px 0;
+}

@@ -294,6 +294,18 @@ pub async fn create_server(
     inner.client.create_server(&token, team_id, name, host, ssh_port, username).await
 }
 
+pub async fn list_pending_revocations(state: &CloudState, team_id: Uuid) -> AppResult<Vec<crate::models::CloudNodeRevocation>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_pending_revocations(&token, team_id).await
+}
+
+pub async fn complete_revocation(state: &CloudState, team_id: Uuid, revocation_id: Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.complete_revocation(&token, team_id, revocation_id).await
+}
+
 pub async fn delete_server(state: &CloudState, team_id: Uuid, server_id: Uuid) -> AppResult<()> {
     let token = ensure_valid_access_token(state).await?;
     let inner = state.inner.lock().await;

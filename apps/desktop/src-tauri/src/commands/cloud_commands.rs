@@ -100,34 +100,40 @@ pub async fn cloud_list_devices(state: State<'_, CloudState>) -> AppResult<Vec<c
     services::cloud_list_device_keys(&state).await
 }
 
-/// Forgets a device. Removes it from the team's view; does **not** remove it
-/// from Nodes it was already installed on - the interface has to say which.
+/// Forgets a device. Removes it from the team's view; the key comes off the
+/// Nodes it was installed on at the next `sync_team_node_access` for each of
+/// them, which writes `authorized_keys` whole from the keys still published.
 #[tauri::command]
 pub async fn cloud_revoke_device(state: State<'_, CloudState>, key_id: uuid::Uuid) -> AppResult<()> {
     services::cloud_revoke_device_key(&state, key_id).await
 }
 
-/// Gives every member of a team their own account on this Node.
+/// What this team has asked to be taken off its Nodes and has not been.
+///
+/// Read from the backend rather than remembered locally: the install that
+/// removed somebody is often not the one that can reach the machine, and
+/// this is the only thing that carries the fact between them.
 #[tauri::command]
-pub async fn grant_team_node_access(
+pub async fn cloud_list_pending_revocations(
+    state: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+) -> AppResult<Vec<crate::models::CloudNodeRevocation>> {
+    services::cloud_list_pending_revocations(&state, team_id).await
+}
+
+/// Makes one Node hold exactly the access this team describes: every current
+/// member's account and currently published keys, then every revocation the
+/// team is still owed on that machine.
+#[tauri::command]
+pub async fn sync_team_node_access(
     server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
     sessions: State<'_, crate::state::SshSessionManager>,
     cloud: State<'_, CloudState>,
     server_id: uuid::Uuid,
     team_id: uuid::Uuid,
-) -> AppResult<Vec<services::team_access_service::MemberAccessResult>> {
-    services::team_access_service::grant_team_access(&server_repo, &sessions, &cloud, server_id, team_id).await
-}
-
-/// Takes one member's access to this Node away.
-#[tauri::command]
-pub async fn revoke_team_node_access(
-    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
-    sessions: State<'_, crate::state::SshSessionManager>,
-    server_id: uuid::Uuid,
-    node_username: String,
-) -> AppResult<()> {
-    services::team_access_service::revoke_member_access(&server_repo, &sessions, server_id, &node_username).await
+    team_server_id: uuid::Uuid,
+) -> AppResult<services::team_access_service::NodeAccessSync> {
+    services::team_access_service::sync_team_access(&server_repo, &sessions, &cloud, server_id, team_id, team_server_id).await
 }
 
 #[tauri::command]

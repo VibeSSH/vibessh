@@ -124,7 +124,8 @@ pub async fn latest_purpur_build(version: &str) -> AppResult<PurpurBuild> {
 }
 
 pub use cloud_service::{
-    list_device_keys as cloud_list_device_keys, revoke_device_key as cloud_revoke_device_key,
+    list_device_keys as cloud_list_device_keys, list_pending_revocations as cloud_list_pending_revocations,
+    revoke_device_key as cloud_revoke_device_key,
     assign_role as cloud_assign_role, change_password as cloud_change_password,
     create_role as cloud_create_role, create_server as cloud_create_server, create_team as cloud_create_team,
     delete_role as cloud_delete_role, delete_server as cloud_delete_server,

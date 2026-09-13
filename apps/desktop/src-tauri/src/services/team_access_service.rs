@@ -10,6 +10,16 @@
 //! that Node. The account is theirs and the log names them, but until
 //! role-derived sudoers lands (stage 3) it is as privileged as the owner's.
 //! Anything in the interface that offers this has to say so.
+//!
+//! **Why one sync rather than a grant button and a revoke button.** What a
+//! Node should hold is stated entirely by the team: these members, with
+//! these published keys, and these people no longer. Applying it as one
+//! operation is what makes the two halves agree - and it is why removing a
+//! device, or removing a member, actually reaches the machine at all.
+//! `authorized_keys` is written whole, so a key that is no longer published
+//! disappears on the next sync without anybody having to ask for that
+//! separately. The same shape `firewall_service` uses: describe the desired
+//! state, apply it, report what really happened.
 
 use uuid::Uuid;
 
@@ -39,19 +49,55 @@ pub struct MemberAccessResult {
     pub error: Option<String>,
 }
 
-/// Gives every member of `team_id` an account on `server_id`.
+/// What happened to one person's access that the team has taken away.
+///
+/// `completed` is what the Node did, not what was asked for. A revocation
+/// that failed here stays pending in the backend and stays pending on the
+/// screen, because the person's key is still in a file on that machine and
+/// saying otherwise would be the worst available mistake.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevocationResult {
+    pub id: Uuid,
+    pub email: String,
+    pub node_username: String,
+    pub completed: bool,
+    pub error: Option<String>,
+}
+
+/// Everything one sync did to one Node.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeAccessSync {
+    pub members: Vec<MemberAccessResult>,
+    pub revocations: Vec<RevocationResult>,
+}
+
+/// Makes one Node hold exactly the access the team describes.
+///
+/// Two halves, in this order. Every current member gets their account and
+/// their currently published keys - written whole, so a device somebody
+/// revoked stops being able to log in here even though nobody asked for that
+/// specifically. Then every revocation the team is still owed on *this*
+/// machine is carried out and reported back as done.
+///
+/// Members first, deliberately. If the connection dies part way, the half
+/// that ran has given people access they are supposed to have; the other
+/// order would leave a removed person's key in place and a report saying the
+/// sync was interrupted, which reads like nothing happened.
 ///
 /// Runs per member and keeps going after one fails, because the alternative
 /// - stopping at the first problem - leaves the team in a state nobody can
 /// describe: some people have access, some do not, and the error names only
 /// the first.
-pub async fn grant_team_access(
+pub async fn sync_team_access(
     server_repo: &ServerRepository,
     sessions: &SshSessionManager,
     cloud: &CloudState,
     server_id: Uuid,
     team_id: Uuid,
-) -> AppResult<Vec<MemberAccessResult>> {
+    team_server_id: Uuid,
+) -> AppResult<NodeAccessSync> {
     let members = crate::services::cloud_service::list_team_access(cloud, team_id).await?;
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
 
@@ -80,7 +126,57 @@ pub async fn grant_team_access(
             error: outcome.err().map(|err| err.to_string()),
         });
     }
+
+    let revocations = complete_revocations(cloud, &connection, team_id, team_server_id).await?;
+    Ok(NodeAccessSync { members: results, revocations })
+}
+
+/// Carries out every revocation this team is owed on this Node.
+///
+/// Only this Node: the list covers every machine the team shares, and this
+/// install may be able to reach exactly one of them. Matching on the team
+/// server's own id rather than on its address, because the address is what
+/// the interface used to find a local server and re-deriving it here would
+/// be a second answer to a question already settled.
+///
+/// The backend is told a revocation landed only after the Node's own exit
+/// code said so. A failure leaves the row pending, which is correct: their
+/// key is still there.
+async fn complete_revocations(
+    cloud: &CloudState,
+    connection: &crate::ssh::SshSession,
+    team_id: Uuid,
+    team_server_id: Uuid,
+) -> AppResult<Vec<RevocationResult>> {
+    let pending = crate::services::cloud_service::list_pending_revocations(cloud, team_id).await?;
+
+    let mut results = Vec::new();
+    for revocation in pending.into_iter().filter(|row| row.team_server_id == team_server_id) {
+        let outcome = revoke_one(cloud, connection, team_id, &revocation).await;
+        results.push(RevocationResult {
+            id: revocation.id,
+            email: revocation.email,
+            node_username: revocation.node_username,
+            completed: outcome.is_ok(),
+            error: outcome.err().map(|err| err.to_string()),
+        });
+    }
     Ok(results)
+}
+
+async fn revoke_one(
+    cloud: &CloudState,
+    connection: &crate::ssh::SshSession,
+    team_id: Uuid,
+    revocation: &crate::models::CloudNodeRevocation,
+) -> AppResult<()> {
+    member_account::run(
+        connection,
+        &member_account::revoke_script(&revocation.node_username)?,
+        "revoke the member's access",
+    )
+    .await?;
+    crate::services::cloud_service::complete_revocation(cloud, team_id, revocation.id).await
 }
 
 async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAccess) -> AppResult<()> {
@@ -96,22 +192,6 @@ async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAcce
     )
     .await?;
     member_account::run(connection, &member_account::sudoers_script(username)?, "grant the member sudo").await
-}
-
-/// Takes one member's access to one Node away.
-///
-/// Separate from removing them from the team, and deliberately so: the team
-/// record lives in the backend and the account lives on the Node, and only
-/// an install that can reach the Node can do the second. Until stage 4
-/// reconciles the two, whatever offers this must say which of them happened.
-pub async fn revoke_member_access(
-    server_repo: &ServerRepository,
-    sessions: &SshSessionManager,
-    server_id: Uuid,
-    node_username: &str,
-) -> AppResult<()> {
-    let connection = get_or_connect(server_repo, sessions, server_id).await?;
-    member_account::run(connection.as_ref(), &member_account::revoke_script(node_username)?, "revoke the member's access").await
 }
 
 /// Publishes this device's public key, so other installs can put it in the

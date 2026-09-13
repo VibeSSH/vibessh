@@ -34,6 +34,7 @@ pub mod permissions;
 pub mod rate_limit;
 pub mod refresh_token;
 pub mod roles;
+pub mod revocations;
 pub mod team_applications;
 pub mod team_servers;
 pub mod teams;
@@ -110,6 +111,11 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/teams/:team_id/audit", get(audit::list_audit_events))
         .route("/teams/:team_id/servers", get(team_servers::list_servers).post(team_servers::create_server))
         .route("/teams/:team_id/servers/:server_id", delete(team_servers::delete_server))
+        // Access removed here but still on somebody's machine. Any member
+        // can read what is owed; completing one requires the permission that
+        // manages the team's servers, which is who can reach them.
+        .route("/teams/:team_id/revocations", get(revocations::list_pending))
+        .route("/teams/:team_id/revocations/:revocation_id", post(revocations::complete))
         .with_state(state)
 }
 

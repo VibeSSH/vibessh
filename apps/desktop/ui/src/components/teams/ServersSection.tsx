@@ -7,7 +7,15 @@ import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { cloudCreateServer, cloudDeleteServer, cloudListServers, grantTeamNodeAccess, type MemberAccessResult } from "@/services/cloudService";
+import {
+  cloudCreateServer,
+  cloudDeleteServer,
+  cloudListServers,
+  listPendingRevocations,
+  syncTeamNodeAccess,
+  type NodeAccessSync,
+  type NodeRevocation,
+} from "@/services/cloudService";
 import { listServers } from "@/services/serverService";
 import type { ServerSummary } from "@/types/server";
 import { toastSuccess } from "@/stores/toastStore";
@@ -23,7 +31,17 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
   // connection somebody already has, and only this machine has one.
   const [localServers, setLocalServers] = useState<ServerSummary[]>([]);
   const [granting, setGranting] = useState<string | null>(null);
-  const [grantResults, setGrantResults] = useState<Record<string, MemberAccessResult[]>>({});
+  const [grantResults, setGrantResults] = useState<Record<string, NodeAccessSync>>({});
+  /**
+   * Access the team has taken away that is still on a Node.
+   *
+   * Held here rather than derived from the last sync, because the install
+   * that removed somebody is usually not the one that can reach the machine.
+   * On this screen it is the difference between "they are gone" and "we
+   * asked for them to be gone", and only one of those is true until a sync
+   * runs.
+   */
+  const [pending, setPending] = useState<NodeRevocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -43,6 +61,14 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
 
   useEffect(load, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function loadPending() {
+    listPendingRevocations(teamId)
+      .then(setPending)
+      .catch(() => setPending([]));
+  }
+
+  useEffect(loadPending, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     listServers()
       .then(setLocalServers)
@@ -61,16 +87,21 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     return localServers.find((local) => local.host === server.host && local.sshPort === server.sshPort);
   }
 
-  async function handleGrant(server: CloudServer) {
+  async function handleSync(server: CloudServer) {
     const local = localMatch(server);
     if (!local) return;
     setGranting(server.id);
     setError(null);
     try {
-      const results = await grantTeamNodeAccess(local.id, teamId);
-      setGrantResults((current) => ({ ...current, [server.id]: results }));
-      const granted = results.filter((result) => result.granted).length;
-      toastSuccess(t("teamServers.grantedToast", { count: granted }));
+      const result = await syncTeamNodeAccess(local.id, teamId, server.id);
+      setGrantResults((current) => ({ ...current, [server.id]: result }));
+      const granted = result.members.filter((member) => member.granted).length;
+      const revoked = result.revocations.filter((revocation) => revocation.completed).length;
+      toastSuccess(t("teamServers.syncedToast", { granted, revoked }));
+      // Whatever did not land is still owed, so the list is re-read rather
+      // than adjusted here: the backend is what knows, and a local guess
+      // could show somebody as removed when their key is still in place.
+      loadPending();
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {
@@ -96,6 +127,11 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     } finally {
       setSaving(false);
     }
+  }
+
+  /** What this Node still owes, which is what makes the warning specific. */
+  function pendingFor(server: CloudServer): NodeRevocation[] {
+    return pending.filter((revocation) => revocation.teamServerId === server.id);
   }
 
   async function handleDelete(server: CloudServer) {
@@ -143,19 +179,35 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                   variant="ghost"
                   size="sm"
                   disabled={granting === server.id}
-                  onClick={() => handleGrant(server)}
-                  title={t("teamServers.grantTitle")}
+                  onClick={() => handleSync(server)}
+                  title={t("teamServers.syncTitle")}
                 >
                   <Icon name="key" size={14} />
-                  {granting === server.id ? t("common.loading") : t("teamServers.grant")}
+                  {granting === server.id ? t("common.loading") : t("teamServers.sync")}
                 </Button>
               )}
               {canManage && (
                 <IconButton icon="trash" size="sm" danger title={t("teamServers.removeAria", { name: server.name })} onClick={() => handleDelete(server)} />
               )}
+              {/* Said before the sync, not after: somebody looking at this
+                  list needs to know this machine still has an account for a
+                  person the team removed, whether or not they have pressed
+                  anything today. Local match or not - if this install cannot
+                  reach the Node, the warning matters more, not less. */}
+              {pendingFor(server).length > 0 && (
+                <ul className="team-servers-pending">
+                  {pendingFor(server).map((revocation) => (
+                    <li key={revocation.id}>
+                      {t("teamServers.revocationPending", { email: revocation.email, account: revocation.nodeUsername })}
+                    </li>
+                  ))}
+                  {!localMatch(server) && <li>{t("teamServers.revocationNoLocal")}</li>}
+                </ul>
+              )}
+
               {grantResults[server.id] && (
                 <ul className="team-servers-grant-results">
-                  {grantResults[server.id].map((result) => (
+                  {grantResults[server.id].members.map((result) => (
                     <li key={result.userId}>
                       {/* Per member, because four of five working is neither
                           a success nor a failure and the reader needs to know
@@ -165,6 +217,13 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                         : result.hasKey
                           ? t("teamServers.grantFailed", { email: result.email, error: result.error ?? "" })
                           : t("teamServers.grantNoDevice", { email: result.email })}
+                    </li>
+                  ))}
+                  {grantResults[server.id].revocations.map((revocation) => (
+                    <li key={revocation.id}>
+                      {revocation.completed
+                        ? t("teamServers.revocationOk", { email: revocation.email, account: revocation.nodeUsername })
+                        : t("teamServers.revocationFailed", { email: revocation.email, error: revocation.error ?? "" })}
                     </li>
                   ))}
                 </ul>

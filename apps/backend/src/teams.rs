@@ -22,6 +22,7 @@ use crate::auth::AuthUser;
 use crate::authorize::{authorize, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult, Detail};
 use crate::models::{AddMemberRequest, CreateTeamRequest, ProvisionMemberRequest, ProvisionedMember, Team, TeamMember};
+use crate::revocations;
 use crate::{permissions, AppState};
 
 pub const OWNER_ROLE_NAME: &str = "Owner";
@@ -191,7 +192,21 @@ pub async fn add_member(
     }
     insert?;
 
-    audit::record(&mut tx, team_id, user_id, audit::MEMBER_ADDED, "user", Some(target_user_id), json!({ "email": email })).await?;
+    // Somebody who was removed and is now back is no longer owed a removal.
+    // Left standing, the next sync of a Node would give them their account
+    // and take it away again in the same pass.
+    let cancelled = revocations::cancel_for_returning_member(&mut tx, team_id, target_user_id).await?;
+
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::MEMBER_ADDED,
+        "user",
+        Some(target_user_id),
+        json!({ "email": email, "revocations_cancelled": cancelled }),
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(StatusCode::CREATED)
@@ -355,7 +370,28 @@ pub async fn remove_member(
         return Err(ApiError::NotFound(Detail::new("not_a_team_member", "that user isn't a member of this team")));
     }
 
-    audit::record(&mut tx, team_id, user_id, audit::MEMBER_REMOVED, "user", Some(target_user_id), json!({})).await?;
+    // Removing the membership row does not touch the account this person has
+    // on each Node the team shares - only an install that can reach those
+    // machines can do that. So what is owed is written down in the same
+    // transaction, and an install completes it later. Reporting the removal
+    // as finished here, while their key is still in an authorized_keys file,
+    // is the one thing this screen must never do.
+    let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(target_user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let nodes = revocations::record_for_removed_member(&mut tx, team_id, target_user_id, &email, user_id).await?;
+
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::MEMBER_REMOVED,
+        "user",
+        Some(target_user_id),
+        json!({ "email": email, "revocations_pending": nodes }),
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)

@@ -81,6 +81,25 @@ pub struct CloudMemberAccess {
     pub public_keys: Vec<String>,
 }
 
+/// Access taken away in the team that is still on a Node.
+///
+/// Carries the Node's address because that is how this install decides
+/// whether the revocation is one it can complete: only the machine this
+/// install can actually reach.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudNodeRevocation {
+    pub id: Uuid,
+    pub team_server_id: Uuid,
+    pub server_name: String,
+    pub host: String,
+    pub ssh_port: i32,
+    pub user_id: Uuid,
+    pub node_username: String,
+    pub email: String,
+    pub requested_at: chrono::DateTime<chrono::Utc>,
+}
+
 /// One port of an Application as the team sees it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

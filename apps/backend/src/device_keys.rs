@@ -174,8 +174,9 @@ pub async fn list_mine(State(state): State<AppState>, AuthUser(user_id): AuthUse
 /// This removes the key from the team's view. It does **not** remove it from
 /// any Node it was already installed on - that needs an install with access
 /// to each Node, and pretending otherwise would be the worst possible thing
-/// to be wrong about. Stage 4 of the design covers it; until then the
-/// interface must say what this did and did not do.
+/// to be wrong about. It comes off at the next access sync of each Node,
+/// which writes `authorized_keys` whole from the keys still published here;
+/// until one runs, the key is still in that file.
 pub async fn revoke(State(state): State<AppState>, AuthUser(user_id): AuthUser, Path(key_id): Path<Uuid>) -> ApiResult<impl IntoResponse> {
     let deleted = sqlx::query("DELETE FROM device_keys WHERE id = $1 AND user_id = $2")
         .bind(key_id)

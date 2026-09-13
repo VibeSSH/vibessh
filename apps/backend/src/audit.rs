@@ -35,6 +35,9 @@ pub const INVITATION_CREATED: &str = "invitation.created";
 pub const INVITATION_REVOKED: &str = "invitation.revoked";
 pub const APPLICATION_SHARED: &str = "application.shared";
 pub const APPLICATION_UNSHARED: &str = "application.unshared";
+/// Recorded when a member's account actually came off a Node, not when its
+/// removal was asked for - the asking is part of `MEMBER_REMOVED`.
+pub const ACCESS_REVOKED: &str = "access.revoked";
 pub const SERVER_ADDED: &str = "server.added";
 pub const SERVER_REMOVED: &str = "server.removed";
 pub const INVITATION_ACCEPTED: &str = "invitation.accepted";

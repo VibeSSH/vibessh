@@ -282,6 +282,26 @@ pub struct MemberAccess {
     pub public_keys: Vec<String>,
 }
 
+/// Access that has been taken away in the team but is still on a Node.
+///
+/// Carries the Node's name and address because the person reading this needs
+/// to know *which machine* still has the account - "pending" without that is
+/// an alarm with no address on it.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeRevocation {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub team_server_id: Uuid,
+    pub server_name: String,
+    pub host: String,
+    pub ssh_port: i32,
+    pub user_id: Uuid,
+    pub node_username: String,
+    pub email: String,
+    pub requested_at: DateTime<Utc>,
+}
+
 /// One port an Application projects to its team. A snapshot, not the record
 /// a runtime acts on.
 #[derive(Debug, Clone, Serialize, Deserialize)]

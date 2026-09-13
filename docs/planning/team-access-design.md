@@ -144,11 +144,28 @@ person no longer has access" and "we asked" is the entire point.
 
 1. **Per-member accounts and key installation**, with a single blanket
    sudoers rule and the privilege position stated plainly in the interface.
-   This is the point at which a colleague can actually do something.
+   This is the point at which a colleague can actually do something. *Done.*
 2. **Applications shared to the team**, non-secret fields, reconciled against
-   the Node.
+   the Node. *Done.*
 3. **Role-derived sudoers**, which is where permissions stop being advisory.
-4. **Revocation reconcile**, including the pending state.
+   *Not started.* Until it lands, a member's account can do everything the
+   app can do on that Node, and the interface says so where access is
+   granted.
+4. **Revocation reconcile**, including the pending state. *Done* -
+   `node_revocations` in the backend records what is owed the moment a member
+   is removed, and one sync per Node applies the whole desired state: every
+   current member's account and currently published keys, then every
+   revocation owed on that machine. Two consequences worth stating. Because
+   `authorized_keys` is written whole, a device somebody forgot also stops
+   working at the next sync without anybody asking for that separately. And
+   re-adding a member cancels a removal nobody had carried out yet, without
+   which a sync would grant them their account and take it away again in the
+   same pass.
 
 Stage 1 without stage 3 must not describe roles as restrictions anywhere in
 the interface. That wording can only appear once the Node enforces them.
+
+What stages 1, 2 and 4 do **not** give you, stated once so nothing in the
+interface drifts into implying it: a member's account remains as privileged
+as the owner's. Revocation is now real and its pending state is visible, but
+what is being revoked is full access, not a narrow one.
