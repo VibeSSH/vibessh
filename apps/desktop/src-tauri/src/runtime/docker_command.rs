@@ -261,9 +261,6 @@ impl DockerCommandRunner for LocalDocker {
     }
 }
 
-/// The remote rendering is worth pinning because it is the half that cannot
-/// be checked by running it: an argument that loses its quoting becomes two
-/// arguments on the far side of an SSH channel, silently.
 /// Writes a file the rest of the machine cannot read.
 ///
 /// On Unix the mode goes on at creation rather than afterwards: a `chmod`
@@ -274,17 +271,19 @@ impl DockerCommandRunner for LocalDocker {
 async fn write_owner_only(path: &std::path::Path, contents: &str) -> AppResult<()> {
     let mut options = tokio::fs::OpenOptions::new();
     options.create(true).truncate(true).write(true);
+    // `mode` is tokio's own method on `OpenOptions` under Unix, not the
+    // standard library's extension trait, so nothing needs importing.
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+    options.mode(0o600);
     let mut file = options.open(path).await.map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", path.display())))?;
     tokio::io::AsyncWriteExt::write_all(&mut file, contents.as_bytes())
         .await
         .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", path.display())))
 }
 
+/// The remote rendering is worth pinning because it is the half that cannot
+/// be checked by running it: an argument that loses its quoting becomes two
+/// arguments on the far side of an SSH channel, silently.
 #[cfg(test)]
 mod tests {
     use super::*;
