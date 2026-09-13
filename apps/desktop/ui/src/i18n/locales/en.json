@@ -1911,5 +1911,19 @@
     "downloadingBanner": "Downloading the update - {{progress}}",
     "readyBanner": "The update is ready. VibeSSH will restart to finish installing it.",
     "dismissAria": "Hide the notice about version {{version}}"
+  },
+  "teamApplications": {
+    "emptyDescription": "Share an application below and everyone in the team will see it, along with its ports and settings.",
+    "emptyTitle": "Nothing shared yet",
+    "secretsHidden": "Secret values stay on the server and are not shared - only the fact that they are set.",
+    "share": "Share",
+    "shareHint": "Applications on this computer that the team cannot see yet:",
+    "sharedToast": "{{name}} is now visible to the team.",
+    "subtitle": "What the team can see. Each is a snapshot pushed by the install that runs it, not that install's own record.",
+    "tab": "Applications",
+    "title": "Shared applications",
+    "unshareAria": "Stop sharing {{name}} - it keeps running and this computer keeps its own copy",
+    "unsharedToast": "{{name}} is no longer shared.",
+    "updatedAt": "Snapshot taken {{when}}"
   }
 }

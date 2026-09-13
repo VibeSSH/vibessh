@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    CloudDeviceKey, CloudMemberAccess,
+    CloudApplication, CloudApplicationEnvironment, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess,
     CloudAiAnswer, CloudAiQuota,
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
@@ -359,6 +359,50 @@ impl CloudClient {
     /// that belong in it.
     pub async fn list_team_access(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudMemberAccess>> {
         self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/access"), Some(access_token), None).await
+    }
+
+    pub async fn list_team_applications(&self, access_token: &str, team_id: Uuid) -> AppResult<Vec<CloudApplication>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/applications"), Some(access_token), None).await
+    }
+
+    /// Pushes one Application's projection, replacing whatever was there.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn push_team_application(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        local_id: Uuid,
+        team_server_id: Option<Uuid>,
+        name: &str,
+        blueprint_id: &str,
+        runtime_type: &str,
+        working_directory: &str,
+        ports: &[CloudApplicationPort],
+        environment: &[CloudApplicationEnvironment],
+    ) -> AppResult<CloudApplication> {
+        self.send(
+            Method::POST,
+            &format!("/teams/{team_id}/applications"),
+            Some(access_token),
+            Some(&json!({
+                "localId": local_id,
+                "teamServerId": team_server_id,
+                "name": name,
+                "blueprintId": blueprint_id,
+                "runtimeType": runtime_type,
+                "workingDirectory": working_directory,
+                "ports": ports,
+                "environment": environment,
+            })),
+        )
+        .await
+    }
+
+    /// Stops sharing. Removes the projection only - the Application keeps
+    /// running and the install that owns it is untouched.
+    pub async fn remove_team_application(&self, access_token: &str, team_id: Uuid, application_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}/applications/{application_id}"), Some(access_token), None)
+            .await
     }
 
     pub async fn list_audit_events(&self, access_token: &str, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {

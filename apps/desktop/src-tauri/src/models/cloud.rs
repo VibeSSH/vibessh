@@ -81,6 +81,51 @@ pub struct CloudMemberAccess {
     pub public_keys: Vec<String>,
 }
 
+/// One port of an Application as the team sees it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudApplicationPort {
+    pub name: String,
+    pub protocol: String,
+    pub internal_port: i32,
+    pub external_port: Option<i32>,
+    pub visibility: String,
+}
+
+/// One environment variable as the team sees it.
+///
+/// A secret one carries an empty value and the flag. Omitting it altogether
+/// would read as "not configured", which would be wrong and would send
+/// somebody to set a variable that already exists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudApplicationEnvironment {
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub is_secret: bool,
+}
+
+/// An Application a team can see - a projection of the install that owns it,
+/// never the record a runtime acts on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudApplication {
+    pub id: Uuid,
+    pub team_id: Uuid,
+    pub team_server_id: Option<Uuid>,
+    pub local_id: Uuid,
+    pub name: String,
+    pub blueprint_id: String,
+    pub runtime_type: String,
+    pub working_directory: String,
+    pub ports: Vec<CloudApplicationPort>,
+    pub environment: Vec<CloudApplicationEnvironment>,
+    /// When this snapshot was last refreshed. A three-week-old projection is
+    /// worth knowing about and nothing else here would say so.
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudTeamMember {

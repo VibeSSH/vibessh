@@ -1927,5 +1927,19 @@
     "downloadingBanner": "Pobieranie aktualizacji - {{progress}}",
     "readyBanner": "Aktualizacja gotowa. VibeSSH uruchomi się ponownie, żeby dokończyć instalację.",
     "dismissAria": "Ukryj powiadomienie o wersji {{version}}"
+  },
+  "teamApplications": {
+    "emptyDescription": "Udostępnij aplikację poniżej, a wszyscy w zespole zobaczą ją razem z portami i ustawieniami.",
+    "emptyTitle": "Nic jeszcze nie jest współdzielone",
+    "secretsHidden": "Sekretne wartości zostają na serwerze i nie są współdzielone — współdzielony jest tylko fakt, że są ustawione.",
+    "share": "Udostępnij",
+    "shareHint": "Aplikacje na tym komputerze, których zespół jeszcze nie widzi:",
+    "sharedToast": "{{name}} jest teraz widoczna dla zespołu.",
+    "subtitle": "To, co widzi zespół. Każda pozycja to migawka wysłana przez instalację, która ją uruchamia, a nie jej własny zapis.",
+    "tab": "Aplikacje",
+    "title": "Współdzielone aplikacje",
+    "unshareAria": "Przestań udostępniać {{name}} — aplikacja działa dalej, a ten komputer zachowuje własny zapis",
+    "unsharedToast": "{{name}} nie jest już współdzielona.",
+    "updatedAt": "Migawka z {{when}}"
   }
 }

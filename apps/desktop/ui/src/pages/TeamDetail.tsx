@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
+import { ApplicationsSection } from "@/components/teams/ApplicationsSection";
 import { AuditLogSection } from "@/components/teams/AuditLogSection";
 import { ProvisionMemberSection } from "@/components/teams/ProvisionMemberSection";
 import { MemberRolesEditor } from "@/components/teams/MemberRolesEditor";
@@ -25,7 +26,7 @@ import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
 
-type Tab = "members" | "roles" | "servers" | "audit";
+type Tab = "members" | "roles" | "servers" | "applications" | "audit";
 
 export function TeamDetail() {
   const { t } = useTranslation();
@@ -129,6 +130,11 @@ export function TeamDetail() {
         <button className={`modal-tab ${tab === "servers" ? "modal-tab-active" : ""}`} onClick={() => setTab("servers")}>
           {t("teamServers.title")}
         {tab === "servers" && <TabUnderline group="team" />}
+
+        <button className={`modal-tab ${tab === "applications" ? "modal-tab-active" : ""}`} onClick={() => setTab("applications")}>
+          {t("teamApplications.tab")}
+        </button>
+        {tab === "applications" && <TabUnderline group="team" />}
               </button>
         {canViewAudit && (
           <button className={`modal-tab ${tab === "audit" ? "modal-tab-active" : ""}`} onClick={() => setTab("audit")}>
@@ -190,6 +196,7 @@ export function TeamDetail() {
 
       {tab === "roles" && <RolesSection teamId={teamId} canManage={canManageRoles} />}
       {tab === "servers" && <ServersSection teamId={teamId} canManage={canManageServers} />}
+      {tab === "applications" && <ApplicationsSection teamId={teamId} canManage={canManageServers} />}
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
 
       {confirmingDelete && (

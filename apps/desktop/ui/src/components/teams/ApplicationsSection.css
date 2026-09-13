@@ -1,0 +1,44 @@
+.team-applications-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-applications-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.team-applications-item:last-child {
+  border-bottom: none;
+}
+
+.team-applications-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.team-applications-name {
+  font-weight: 500;
+}
+
+/* The snapshot time and the secrets note are supporting detail, not the
+   heading - but they are the two things that stop somebody misreading the
+   list, so they are on screen rather than in a tooltip. */
+.team-applications-meta {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.team-applications-share {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

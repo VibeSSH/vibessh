@@ -294,13 +294,21 @@ pub struct TeamApplicationPort {
     pub visibility: String,
 }
 
-/// One non-secret environment variable. Secret ones never reach here - they
-/// are on the Node already, which is where the process reads them from.
+/// One projected environment variable.
+///
+/// A secret one arrives with an empty `value` and `is_secret` set, rather
+/// than not arriving at all. The distinction matters to the person reading:
+/// an omitted `MYSQL_ROOT_PASSWORD` reads as "not configured", which would be
+/// wrong and would send somebody to set one that already exists. The value
+/// itself stays on the Node, in the Application's own environment file,
+/// which is where the process reads it from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamApplicationEnvironment {
     pub key: String,
     pub value: String,
+    #[serde(default)]
+    pub is_secret: bool,
 }
 
 #[derive(sqlx::FromRow, Serialize)]

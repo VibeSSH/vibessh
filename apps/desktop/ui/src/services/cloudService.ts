@@ -235,3 +235,67 @@ export function grantTeamNodeAccess(serverId: string, teamId: string): Promise<M
 export function revokeTeamNodeAccess(serverId: string, nodeUsername: string): Promise<void> {
   return callCommand<void>("revoke_team_node_access", { serverId, nodeUsername });
 }
+
+/** One port of an Application as the team sees it. */
+export interface CloudApplicationPort {
+  name: string;
+  protocol: string;
+  internalPort: number;
+  externalPort: number | null;
+  visibility: string;
+}
+
+/**
+ * One environment variable as the team sees it.
+ *
+ * A secret one arrives with an empty `value` and `isSecret` set. It is listed
+ * rather than hidden on purpose: an omitted `MYSQL_ROOT_PASSWORD` reads as
+ * "not configured", which would send somebody to set one that already exists.
+ * The value itself never leaves the Node.
+ */
+export interface CloudApplicationEnvironment {
+  key: string;
+  value: string;
+  isSecret: boolean;
+}
+
+/**
+ * An Application a team can see.
+ *
+ * A projection of the install that owns it, refreshed by pushing again -
+ * never the record a runtime acts on. `updatedAt` is when that snapshot was
+ * last taken, which is the only way to tell a current one from a stale one.
+ */
+export interface CloudApplication {
+  id: string;
+  teamId: string;
+  teamServerId: string | null;
+  localId: string;
+  name: string;
+  blueprintId: string;
+  runtimeType: string;
+  workingDirectory: string;
+  ports: CloudApplicationPort[];
+  environment: CloudApplicationEnvironment[];
+  updatedAt: string;
+}
+
+/** Publishes one Application so the rest of the team can see it. */
+export function shareApplicationWithTeam(teamId: string, applicationId: string, teamServerId: string | null): Promise<CloudApplication> {
+  return callCommand<CloudApplication>("share_application_with_team", { teamId, applicationId, teamServerId });
+}
+
+export function listTeamApplications(teamId: string): Promise<CloudApplication[]> {
+  return callCommand<CloudApplication[]>("list_team_applications", { teamId });
+}
+
+/**
+ * Stops sharing.
+ *
+ * The Application keeps running and the install that owns it is untouched -
+ * only the team's copy goes. Anything offering this has to say so, because
+ * "remove" next to an application name reads like deletion.
+ */
+export function unshareApplicationFromTeam(teamId: string, applicationId: string): Promise<void> {
+  return callCommand<void>("unshare_application_from_team", { teamId, applicationId });
+}

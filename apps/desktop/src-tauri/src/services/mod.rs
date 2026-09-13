@@ -21,6 +21,7 @@ mod purpur_service;
 mod server_service;
 mod ssh_service;
 pub mod team_access_service;
+pub mod team_application_service;
 
 use crate::errors::AppResult;
 

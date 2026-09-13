@@ -55,6 +55,34 @@ pub async fn cloud_set_backend_url(app: tauri::AppHandle, state: State<'_, Cloud
     Ok(())
 }
 
+/// Publishes one Application so the rest of the team can see it.
+///
+/// A projection: this install keeps the record it acts on, and pushing again
+/// refreshes what the team sees.
+#[tauri::command]
+pub async fn share_application_with_team(
+    app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
+    cloud: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    team_server_id: Option<uuid::Uuid>,
+) -> AppResult<crate::models::CloudApplication> {
+    services::team_application_service::share_application(&app_repo, &cloud, team_id, application_id, team_server_id).await
+}
+
+#[tauri::command]
+pub async fn list_team_applications(cloud: State<'_, CloudState>, team_id: uuid::Uuid) -> AppResult<Vec<crate::models::CloudApplication>> {
+    services::team_application_service::list_shared_applications(&cloud, team_id).await
+}
+
+/// Stops sharing. The Application keeps running and this install keeps its
+/// own record - only the team's copy goes, which is what the interface has
+/// to say next to it.
+#[tauri::command]
+pub async fn unshare_application_from_team(cloud: State<'_, CloudState>, team_id: uuid::Uuid, application_id: uuid::Uuid) -> AppResult<()> {
+    services::team_application_service::unshare_application(&cloud, team_id, application_id).await
+}
+
 /// Registers this device's public key so teammates' installs can put it in
 /// the account they create for this person on a Node.
 ///

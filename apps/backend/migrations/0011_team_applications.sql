@@ -13,7 +13,7 @@
 -- a normal form nobody queries and cost a delete-and-reinsert dance on every
 -- push. The shape is documented by the Rust types that write it.
 --
--- **Secret environment values are not here, by construction.** They are
+-- **Secret environment *values* are not here, by construction.** They are
 -- already on the Node, in the Application's own environment file, which is
 -- where the process reads them from. A member does not need them to start,
 -- stop, inspect or back up an Application - only to recreate one, which is a
@@ -36,7 +36,9 @@ CREATE TABLE team_applications (
     working_directory TEXT NOT NULL,
     -- `[{name, protocol, internalPort, externalPort, visibility}]`
     ports             JSONB NOT NULL DEFAULT '[]'::jsonb,
-    -- `[{key, value}]` - non-secret only; see the note above.
+    -- `[{key, value, isSecret}]`. A secret one carries an empty value and
+    -- the flag, so a member can see that the variable exists without being
+    -- told what it is - omitting it entirely would read as "not configured".
     environment       JSONB NOT NULL DEFAULT '[]'::jsonb,
     -- Who pushed it last, and when. A projection that is three weeks old is
     -- worth knowing about, and without this nobody could tell.

@@ -128,6 +128,39 @@ pub async fn cloud_ai_endpoint(state: &CloudState) -> AppResult<(String, String)
     Ok((inner.client.base_url().to_string(), token))
 }
 
+pub async fn list_team_applications(state: &CloudState, team_id: uuid::Uuid) -> AppResult<Vec<crate::models::CloudApplication>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_team_applications(&token, team_id).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn push_team_application(
+    state: &CloudState,
+    team_id: uuid::Uuid,
+    local_id: uuid::Uuid,
+    team_server_id: Option<uuid::Uuid>,
+    name: &str,
+    blueprint_id: &str,
+    runtime_type: &str,
+    working_directory: &str,
+    ports: &[crate::models::CloudApplicationPort],
+    environment: &[crate::models::CloudApplicationEnvironment],
+) -> AppResult<crate::models::CloudApplication> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner
+        .client
+        .push_team_application(&token, team_id, local_id, team_server_id, name, blueprint_id, runtime_type, working_directory, ports, environment)
+        .await
+}
+
+pub async fn remove_team_application(state: &CloudState, team_id: uuid::Uuid, application_id: uuid::Uuid) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.remove_team_application(&token, team_id, application_id).await
+}
+
 /// Registers this device's public key with the backend.
 pub async fn publish_device_key(state: &CloudState, public_key: &str, label: &str) -> AppResult<crate::models::CloudDeviceKey> {
     let token = ensure_valid_access_token(state).await?;
