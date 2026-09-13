@@ -17,7 +17,7 @@ mod common;
 use axum::http::StatusCode;
 use serde_json::json;
 
-use common::{post_with_bearer, register_user, test_router};
+use common::{post_with_bearer, register_user, test_router, unique_email};
 
 async fn create_team(owner_token: &str, name: &str) -> serde_json::Value {
     let (status, team) = post_with_bearer(test_router().await, "/teams", owner_token, json!({ "name": name })).await;
@@ -36,143 +36,21 @@ async fn member_id(owner_token: &str, team_id: &str, email: &str) -> String {
     members.as_array().unwrap().iter().find(|m| m["email"] == email).unwrap()["userId"].as_str().unwrap().to_string()
 }
 
-/// Grants `delegate_token` a custom role with exactly `team.roles.manage`
-/// and nothing else - the minimal setup every scenario below starts from.
-async fn grant_roles_manage_only(owner_token: &str, team_id: &str, delegate_email: &str) -> String {
-    add_member(owner_token, team_id, delegate_email).await;
-    let delegate_id = member_id(owner_token, team_id, delegate_email).await;
-    let (_, role) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/roles"),
-        owner_token,
-        json!({ "name": "RoleManager", "permissions": ["team.roles.manage"] }),
-    )
-    .await;
-    let role_id = role["id"].as_str().unwrap();
-    post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/members/{delegate_id}/roles"),
-        owner_token,
-        json!({ "roleId": role_id }),
-    )
-    .await;
-    delegate_id
-}
-
+/// The same escalation, through the door that still exists.
+///
+/// This used to go through `create_invitation`, which was removed when
+/// `provision_member` replaced it. The endpoint changed; the risk did not.
+/// Provisioning takes a role and assigns it in the same step, so somebody
+/// holding only `team.members.add` could otherwise mint an account carrying
+/// permissions they do not have themselves and log in as it.
 #[tokio::test]
 #[ignore]
-async fn a_role_manager_cannot_create_a_role_with_permissions_they_dont_hold() {
+async fn provisioning_someone_with_a_role_beyond_the_provisioners_own_permissions_is_rejected() {
     let (_, owner_token) = register_user().await;
     let team = create_team(&owner_token, "Team").await;
     let team_id = team["id"].as_str().unwrap();
 
-    let (delegate_email, delegate_token) = register_user().await;
-    grant_roles_manage_only(&owner_token, team_id, &delegate_email).await;
-
-    // The delegate only holds team.roles.manage - trying to hand out
-    // team.delete (or anything else they don't personally have) must fail.
-    let (status, body) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/roles"),
-        &delegate_token,
-        json!({ "name": "SelfEscalated", "permissions": ["team.roles.manage", "team.delete"] }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-}
-
-#[tokio::test]
-#[ignore]
-async fn a_role_manager_cannot_widen_an_existing_roles_permissions_beyond_their_own() {
-    let (_, owner_token) = register_user().await;
-    let team = create_team(&owner_token, "Team").await;
-    let team_id = team["id"].as_str().unwrap();
-
-    let (delegate_email, delegate_token) = register_user().await;
-    grant_roles_manage_only(&owner_token, team_id, &delegate_email).await;
-
-    let (_, harmless_role) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/roles"),
-        &owner_token,
-        json!({ "name": "Harmless", "permissions": ["team.view"] }),
-    )
-    .await;
-    let role_id = harmless_role["id"].as_str().unwrap();
-
-    let (status, body) = common::patch(
-        test_router().await,
-        &format!("/teams/{team_id}/roles/{role_id}"),
-        &delegate_token,
-        json!({ "name": "Harmless", "permissions": ["team.view", "team.delete"] }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-}
-
-#[tokio::test]
-#[ignore]
-async fn a_role_manager_cannot_assign_a_role_that_grants_more_than_they_hold() {
-    let (_, owner_token) = register_user().await;
-    let team = create_team(&owner_token, "Team").await;
-    let team_id = team["id"].as_str().unwrap();
-
-    let (delegate_email, delegate_token) = register_user().await;
-    let delegate_id = grant_roles_manage_only(&owner_token, team_id, &delegate_email).await;
-
-    // The owner defines an overpowered role (this alone is fine - nobody
-    // holds it yet). The delegate, who only has team.roles.manage, tries to
-    // assign it to themselves.
-    let (_, powerful_role) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/roles"),
-        &owner_token,
-        json!({ "name": "Powerful", "permissions": ["team.delete", "team.members.remove"] }),
-    )
-    .await;
-    let powerful_role_id = powerful_role["id"].as_str().unwrap();
-
-    let (status, body) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/members/{delegate_id}/roles"),
-        &delegate_token,
-        json!({ "roleId": powerful_role_id }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-}
-
-#[tokio::test]
-#[ignore]
-async fn a_role_manager_cannot_assign_the_built_in_owner_role_to_anyone() {
-    let (_, owner_token) = register_user().await;
-    let team = create_team(&owner_token, "Team").await;
-    let team_id = team["id"].as_str().unwrap();
-
-    let (delegate_email, delegate_token) = register_user().await;
-    let delegate_id = grant_roles_manage_only(&owner_token, team_id, &delegate_email).await;
-
-    let (_, roles) = common::get_with_bearer(test_router().await, &format!("/teams/{team_id}/roles"), &owner_token).await;
-    let owner_role_id = roles.as_array().unwrap().iter().find(|r| r["name"] == "Owner").unwrap()["id"].as_str().unwrap();
-
-    let (status, body) = post_with_bearer(
-        test_router().await,
-        &format!("/teams/{team_id}/members/{delegate_id}/roles"),
-        &delegate_token,
-        json!({ "roleId": owner_role_id }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-}
-
-#[tokio::test]
-#[ignore]
-async fn inviting_someone_with_a_role_that_exceeds_the_inviters_own_permissions_is_rejected() {
-    let (_, owner_token) = register_user().await;
-    let team = create_team(&owner_token, "Team").await;
-    let team_id = team["id"].as_str().unwrap();
-
-    // team.members.add is what create_invitation is gated on - grant only that.
+    // `team.members.add` is what provisioning is gated on - grant only that.
     let (delegate_email, delegate_token) = register_user().await;
     add_member(&owner_token, team_id, &delegate_email).await;
     let delegate_id = member_id(&owner_token, team_id, &delegate_email).await;
@@ -180,7 +58,7 @@ async fn inviting_someone_with_a_role_that_exceeds_the_inviters_own_permissions_
         test_router().await,
         &format!("/teams/{team_id}/roles"),
         &owner_token,
-        json!({ "name": "Inviter", "permissions": ["team.members.add"] }),
+        json!({ "name": "Adder", "permissions": ["team.members.add"] }),
     )
     .await;
     post_with_bearer(
@@ -201,9 +79,9 @@ async fn inviting_someone_with_a_role_that_exceeds_the_inviters_own_permissions_
 
     let (status, body) = post_with_bearer(
         test_router().await,
-        &format!("/teams/{team_id}/invitations"),
+        &format!("/teams/{team_id}/members/provision"),
         &delegate_token,
-        json!({ "email": "victim-or-accomplice@example.com", "roleId": powerful_role["id"] }),
+        json!({ "email": unique_email(), "roleId": powerful_role["id"] }),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
