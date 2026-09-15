@@ -11,7 +11,10 @@ use std::time::Duration;
 use russh::keys::{Algorithm, PrivateKey};
 use russh::server::{Auth, ChannelOpenHandle, Handler as ServerHandler, Msg, Server as _, Session};
 use russh::{Channel, ChannelId, Preferred};
-use russh_sftp::protocol::{Data, File, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode, Version};
+use russh_sftp::protocol::{
+    Data, ExtendedReply, File, FileAttributes, Handle, Name, OpenFlags, Packet, Status, StatusCode,
+    Version,
+};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
@@ -30,6 +33,9 @@ struct InMemoryFs {
 #[derive(Clone)]
 struct MockServer {
     fs: InMemoryFs,
+    /// How many handles this server admits to allowing, or nothing to stay
+    /// quiet about it - see `refuses_nothing_after_many_transfers`.
+    handle_limit: Option<u64>,
 }
 
 impl russh::server::Server for MockServer {
@@ -37,6 +43,7 @@ impl russh::server::Server for MockServer {
     fn new_client(&mut self, _peer_addr: Option<std::net::SocketAddr>) -> MockSshHandler {
         MockSshHandler {
             fs: self.fs.clone(),
+            handle_limit: self.handle_limit,
             pending_channel: None,
         }
     }
@@ -44,6 +51,7 @@ impl russh::server::Server for MockServer {
 
 struct MockSshHandler {
     fs: InMemoryFs,
+    handle_limit: Option<u64>,
     pending_channel: Option<Channel<Msg>>,
 }
 
@@ -79,7 +87,7 @@ impl ServerHandler for MockSshHandler {
             return Ok(());
         };
         session.channel_success(channel_id)?;
-        let handler = MockSftpHandler::new(self.fs.clone());
+        let handler = MockSftpHandler::new(self.fs.clone(), self.handle_limit);
         russh_sftp::server::run(channel.into_stream(), handler).await;
         Ok(())
     }
@@ -87,15 +95,17 @@ impl ServerHandler for MockSshHandler {
 
 struct MockSftpHandler {
     fs: InMemoryFs,
+    handle_limit: Option<u64>,
     open_files: HashMap<String, String>,
     open_dirs: HashMap<String, (String, bool)>,
     next_handle: u64,
 }
 
 impl MockSftpHandler {
-    fn new(fs: InMemoryFs) -> Self {
+    fn new(fs: InMemoryFs, handle_limit: Option<u64>) -> Self {
         Self {
             fs,
+            handle_limit,
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             next_handle: 0,
@@ -116,7 +126,43 @@ impl russh_sftp::server::Handler for MockSftpHandler {
     }
 
     async fn init(&mut self, _version: u32, _extensions: HashMap<String, String>) -> Result<Version, Self::Error> {
-        Ok(Version::new())
+        let mut version = Version::new();
+
+        // A real OpenSSH server announces `limits@openssh.com` and the client
+        // then holds itself to those numbers. Announced only when a test asks
+        // for it, so the other tests keep negotiating exactly what they did
+        // before this one existed.
+        if self.handle_limit.is_some() {
+            version
+                .extensions
+                .insert(russh_sftp::extensions::LIMITS.to_string(), "1".to_string());
+        }
+
+        Ok(version)
+    }
+
+    async fn extended(&mut self, id: u32, request: String, _data: Vec<u8>) -> Result<Packet, Self::Error> {
+        let Some(handles) = self.handle_limit else {
+            return Err(StatusCode::OpUnsupported);
+        };
+
+        if request != russh_sftp::extensions::LIMITS {
+            return Err(StatusCode::OpUnsupported);
+        }
+
+        let limits = russh_sftp::extensions::LimitsExtension {
+            max_packet_len: 32 * 1024,
+            max_read_len: 32 * 1024,
+            max_write_len: 32 * 1024,
+            max_open_handles: handles,
+        };
+
+        Ok(Packet::ExtendedReply(ExtendedReply {
+            id,
+            data: russh_sftp::ser::to_bytes(&limits)
+                .map_err(|_| StatusCode::Failure)?
+                .to_vec(),
+        }))
     }
 
     async fn open(&mut self, id: u32, filename: String, pflags: OpenFlags, _attrs: FileAttributes) -> Result<Handle, Self::Error> {
@@ -221,6 +267,10 @@ fn ok_status(id: u32) -> Status {
 }
 
 async fn spawn_mock_server(fs: InMemoryFs) -> u16 {
+    spawn_mock_server_with_limit(fs, None).await
+}
+
+async fn spawn_mock_server_with_limit(fs: InMemoryFs, handle_limit: Option<u64>) -> u16 {
     let config = Arc::new(russh::server::Config {
         keys: vec![PrivateKey::random(&mut rand010::rng(), Algorithm::Ed25519).unwrap()],
         preferred: Preferred::default(),
@@ -230,7 +280,7 @@ async fn spawn_mock_server(fs: InMemoryFs) -> u16 {
     let port = socket.local_addr().unwrap().port();
 
     tokio::spawn(async move {
-        let mut server = MockServer { fs };
+        let mut server = MockServer { fs, handle_limit };
         let _ = server.run_on_socket(config, &socket).await;
     });
 
@@ -392,5 +442,150 @@ async fn reading_a_missing_file_is_a_clean_error_not_a_hang_or_panic() {
         .expect("timed out - a missing file must produce an error promptly, not hang");
     assert!(result.is_err());
 
+    outcome.session.close().await;
+}
+
+/// The regression behind "Limit exceeded: handle limit reached" in the file
+/// manager: nothing was open, and uploads still started failing.
+///
+/// `russh_sftp` keeps its own tally of open handles and checks it against the
+/// server's advertised ceiling before every open. The tally drops only on a
+/// close that is awaited; `File`'s `Drop` fires the close off without waiting,
+/// which frees it on the server and leaves it counted here forever. With a
+/// ceiling of two, the third transfer of any kind used to be refused by the
+/// client before a single packet went out.
+///
+/// Two handles, ten transfers - four times over the old ceiling, in every
+/// direction the module offers.
+///
+/// The library bug behind it: <https://github.com/AspectUnk/russh-sftp/issues/98>.
+/// This test should keep passing after it is fixed upstream - it asserts the
+/// behaviour, not the workaround.
+#[tokio::test]
+async fn keeps_transferring_after_more_files_than_the_handle_limit() {
+    let fs = InMemoryFs::default();
+    let port = spawn_mock_server_with_limit(fs, Some(2)).await;
+    let outcome = timeout(Duration::from_secs(5), connect(&credentials(port), None))
+        .await
+        .expect("timed out connecting")
+        .expect("connect should succeed");
+
+    let scratch = std::env::temp_dir().join(format!(
+        "vibessh-sftp-handles-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::create_dir_all(&scratch).expect("create scratch dir");
+
+    for round in 0..10 {
+        let remote = format!("/uploads/round-{round}.txt");
+        let body = format!("round {round}");
+
+        outcome
+            .session
+            .write_file(&remote, body.as_bytes())
+            .await
+            .unwrap_or_else(|err| panic!("write {round} should succeed: {err}"));
+
+        let read = outcome
+            .session
+            .read_file(&remote)
+            .await
+            .unwrap_or_else(|err| panic!("read {round} should succeed: {err}"));
+        assert_eq!(read, body.as_bytes());
+
+        let local = scratch.join(format!("round-{round}.txt"));
+        outcome
+            .session
+            .download_file(&remote, &local)
+            .await
+            .unwrap_or_else(|err| panic!("download {round} should succeed: {err}"));
+
+        outcome
+            .session
+            .upload_file(&local, &format!("/uploads/copy-{round}.txt"))
+            .await
+            .unwrap_or_else(|err| panic!("upload {round} should succeed: {err}"));
+
+        let mut moved = 0u64;
+        outcome
+            .session
+            .upload_file_with_progress(&local, &format!("/uploads/watched-{round}.txt"), &mut |bytes| {
+                moved += bytes;
+            })
+            .await
+            .unwrap_or_else(|err| panic!("watched upload {round} should succeed: {err}"));
+        assert_eq!(moved, body.len() as u64);
+    }
+
+    std::fs::remove_dir_all(&scratch).ok();
+    outcome.session.close().await;
+}
+
+/// The same leak on the path that is easy to miss: the remote file opens, and
+/// then creating the *local* one fails.
+///
+/// That failure is ordinary - a download directory that is not there, a full
+/// disk, a name Windows will not take, a file held open by something else -
+/// and the early return used to drop the remote handle rather than close it,
+/// which is exactly the bug the test above covers, one line further down.
+///
+/// A ceiling of two and three failed downloads: without the close, the third
+/// never reaches the local filesystem at all, because the client refuses to
+/// open the remote file first.
+#[tokio::test]
+async fn a_download_that_cannot_write_locally_still_gives_the_handle_back() {
+    let fs = InMemoryFs::default();
+    let port = spawn_mock_server_with_limit(fs, Some(2)).await;
+    let outcome = timeout(Duration::from_secs(5), connect(&credentials(port), None))
+        .await
+        .expect("timed out connecting")
+        .expect("connect should succeed");
+
+    outcome
+        .session
+        .write_file("/uploads/source.txt", b"body")
+        .await
+        .expect("writing the source should succeed");
+
+    // A directory that does not exist, so `LocalFile::create` fails every
+    // time and always for the same reason.
+    let impossible = std::env::temp_dir()
+        .join(format!("vibessh-sftp-missing-{}-{}", std::process::id(), unique_suffix()))
+        .join("nowhere")
+        .join("file.txt");
+
+    for round in 0..3 {
+        let error = outcome
+            .session
+            .download_file("/uploads/source.txt", &impossible)
+            .await
+            .expect_err("a download into a directory that is not there cannot succeed");
+        // The failure has to be the local one every time. Once the handles
+        // leak, the client refuses the *remote* open instead and the message
+        // changes - which is the regression, dressed as the same failure.
+        let message = error.to_string();
+        assert!(
+            message.contains("couldn't create"),
+            "round {round} failed for the wrong reason: {message}"
+        );
+    }
+
+    // And the session is still usable afterwards.
+    let scratch = std::env::temp_dir().join(format!(
+        "vibessh-sftp-recover-{}-{}",
+        std::process::id(),
+        unique_suffix()
+    ));
+    std::fs::create_dir_all(&scratch).expect("create scratch dir");
+    let local = scratch.join("source.txt");
+    outcome
+        .session
+        .download_file("/uploads/source.txt", &local)
+        .await
+        .expect("a download should still work after three local failures");
+    assert_eq!(std::fs::read(&local).expect("read the downloaded file"), b"body");
+
+    std::fs::remove_dir_all(&scratch).ok();
     outcome.session.close().await;
 }

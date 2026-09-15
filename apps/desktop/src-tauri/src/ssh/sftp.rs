@@ -19,6 +19,120 @@ use crate::errors::{AppError, AppResult};
 /// most of the transfer on per-chunk SFTP protocol overhead.
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
 
+/// Closes a remote file and waits for the server to confirm it.
+///
+/// Every open in this module goes through this on its way out, including the
+/// failure paths, and that is not tidiness - it is the difference between an
+/// upload working and the whole session refusing to open anything.
+///
+/// `russh_sftp` counts open handles on the client side, against the ceiling
+/// the server advertises through `limits@openssh.com`. That counter goes
+/// *down* only when a close is awaited: `File`'s `Drop` sends the close
+/// without waiting for the reply (it cannot await - `Drop` is synchronous),
+/// so the server frees the handle while the client's own tally keeps it
+/// forever. After as many transfers as the limit allows, every further open
+/// fails with "handle limit reached" even though nothing is open anywhere.
+/// It looks exactly like a server problem and is not one.
+///
+/// This is a bug in the library, not in how we call it, and it is reported
+/// upstream: <https://github.com/AspectUnk/russh-sftp/issues/98> (open
+/// against russh-sftp 2.4.0). Closing by hand everywhere is the workaround
+/// until it is fixed there; when it is, this helper and the `close_remote`
+/// calls can go back to being ordinary drops.
+async fn close_remote(file: &mut russh_sftp::client::fs::File, path: &str) -> AppResult<()> {
+    file.shutdown()
+        .await
+        .map_err(|err| AppError::Connection(format!("couldn't close {path}: {err}")))
+}
+
+/// The body of `read_file_range`'s loop, lifted out so the caller can close
+/// the file whether it succeeded or not.
+async fn read_range(
+    file: &mut russh_sftp::client::fs::File,
+    path: &str,
+    offset: u64,
+    buf: &mut [u8],
+) -> AppResult<usize> {
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|err| AppError::Connection(format!("couldn't seek in {path}: {err}")))?;
+
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        let read = file
+            .read(&mut buf[filled..])
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")))?;
+
+        if read == 0 {
+            break;
+        }
+
+        filled += read;
+    }
+
+    Ok(filled)
+}
+
+/// Same idea for the progress-reporting download: the loop is separate so a
+/// failure halfway through still reaches the close below it.
+async fn pour_down(
+    remote: &mut russh_sftp::client::fs::File,
+    local: &mut LocalFile,
+    remote_path: &str,
+    local_path: &Path,
+    on_progress: &mut (dyn FnMut(u64) + Send),
+) -> AppResult<()> {
+    let mut buf = vec![0u8; TRANSFER_CHUNK_SIZE];
+
+    loop {
+        let read = remote
+            .read(&mut buf)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't download {remote_path}: {err}")))?;
+
+        if read == 0 {
+            return Ok(());
+        }
+
+        local
+            .write_all(&buf[..read])
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", local_path.display())))?;
+
+        on_progress(read as u64);
+    }
+}
+
+/// And the upload the same way.
+async fn pour_up(
+    local: &mut LocalFile,
+    remote: &mut russh_sftp::client::fs::File,
+    local_path: &Path,
+    remote_path: &str,
+    on_progress: &mut (dyn FnMut(u64) + Send),
+) -> AppResult<()> {
+    let mut buf = vec![0u8; TRANSFER_CHUNK_SIZE];
+
+    loop {
+        let read = local
+            .read(&mut buf)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_path.display())))?;
+
+        if read == 0 {
+            return Ok(());
+        }
+
+        remote
+            .write_all(&buf[..read])
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't upload to {remote_path}: {err}")))?;
+
+        on_progress(read as u64);
+    }
+}
+
 impl SshSession {
     pub async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
         let sftp = self.sftp().await?;
@@ -133,11 +247,26 @@ impl SshSession {
             .map_err(|err| AppError::Connection(format!("couldn't change permissions on {path}: {err}")))
     }
 
+    /// Opens, reads and closes by hand rather than calling `SftpSession::read`,
+    /// which drops the file instead of closing it - see `close_remote`.
     pub async fn read_file(&self, path: &str) -> AppResult<Vec<u8>> {
         let sftp = self.sftp().await?;
-        sftp.read(path)
+        let mut file = sftp
+            .open(path)
             .await
-            .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")))
+            .map_err(|err| AppError::Connection(format!("couldn't open {path}: {err}")))?;
+
+        let mut buffer = Vec::new();
+        let read = file
+            .read_to_end(&mut buffer)
+            .await
+            .map(|_| ())
+            .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")));
+
+        let closed = close_remote(&mut file, path).await;
+        read?;
+        closed?;
+        Ok(buffer)
     }
 
     pub async fn create_directory(&self, path: &str) -> AppResult<()> {
@@ -157,12 +286,14 @@ impl SshSession {
             .open_with_flags(path, OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {path} for writing: {err}")))?;
-        file.write_all(contents)
+        let written = file
+            .write_all(contents)
             .await
-            .map_err(|err| AppError::Connection(format!("couldn't write {path}: {err}")))?;
-        file.shutdown()
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't finish writing {path}: {err}")))
+            .map_err(|err| AppError::Connection(format!("couldn't write {path}: {err}")));
+
+        let closed = close_remote(&mut file, path).await;
+        written?;
+        closed
     }
 
     /// Streams `remote_path` straight to `local_path` via `tokio::io::copy` -
@@ -177,12 +308,27 @@ impl SshSession {
             .open(remote_path)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for reading: {err}")))?;
-        let mut local = LocalFile::create(local_path)
+        // The remote file is already open, so a failure here has to close it
+        // rather than drop it - the same leak this module's `close_remote`
+        // exists to prevent, just on a path that is easy to miss. Creating
+        // the local file first would avoid it, but would also leave an empty
+        // file behind whenever the *remote* open is what fails.
+        let mut local = match LocalFile::create(local_path).await {
+            Ok(local) => local,
+            Err(err) => {
+                let _ = close_remote(&mut remote, remote_path).await;
+                return Err(AppError::Internal(format!("couldn't create {}: {err}", local_path.display())));
+            }
+        };
+        let copied = tokio::io::copy(&mut remote, &mut local)
             .await
-            .map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", local_path.display())))?;
-        tokio::io::copy(&mut remote, &mut local)
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't download {remote_path}: {err}")))?;
+            .map(|_| ())
+            .map_err(|err| AppError::Connection(format!("couldn't download {remote_path}: {err}")));
+
+        let closed = close_remote(&mut remote, remote_path).await;
+        copied?;
+        closed?;
+
         local
             .flush()
             .await
@@ -202,21 +348,13 @@ impl SshSession {
             .open(path)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {path}: {err}")))?;
-        file.seek(std::io::SeekFrom::Start(offset))
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't seek in {path}: {err}")))?;
         let mut buf = vec![0u8; len];
-        let mut filled = 0usize;
-        while filled < len {
-            let read = file
-                .read(&mut buf[filled..])
-                .await
-                .map_err(|err| AppError::Connection(format!("couldn't read {path}: {err}")))?;
-            if read == 0 {
-                break;
-            }
-            filled += read;
-        }
+        let filled = read_range(&mut file, path, offset, &mut buf).await;
+        let closed = close_remote(&mut file, path).await;
+
+        let filled = filled?;
+        closed?;
+
         buf.truncate(filled);
         Ok(buf)
     }
@@ -230,13 +368,14 @@ impl SshSession {
             .open_with_flags(remote_path, OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for writing: {err}")))?;
-        tokio::io::copy(&mut local, &mut remote)
+        let copied = tokio::io::copy(&mut local, &mut remote)
             .await
-            .map_err(|err| AppError::Connection(format!("couldn't upload to {remote_path}: {err}")))?;
-        remote
-            .shutdown()
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't finish writing {remote_path}: {err}")))
+            .map(|_| ())
+            .map_err(|err| AppError::Connection(format!("couldn't upload to {remote_path}: {err}")));
+
+        let closed = close_remote(&mut remote, remote_path).await;
+        copied?;
+        closed
     }
 
     /// Same as `download_file`, but calls `on_progress` with the number of
@@ -258,24 +397,24 @@ impl SshSession {
             .open(remote_path)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for reading: {err}")))?;
-        let mut local = LocalFile::create(local_path)
-            .await
-            .map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", local_path.display())))?;
-        let mut buf = vec![0u8; TRANSFER_CHUNK_SIZE];
-        loop {
-            let read = remote
-                .read(&mut buf)
-                .await
-                .map_err(|err| AppError::Connection(format!("couldn't download {remote_path}: {err}")))?;
-            if read == 0 {
-                break;
+        // The remote file is already open, so a failure here has to close it
+        // rather than drop it - the same leak this module's `close_remote`
+        // exists to prevent, just on a path that is easy to miss. Creating
+        // the local file first would avoid it, but would also leave an empty
+        // file behind whenever the *remote* open is what fails.
+        let mut local = match LocalFile::create(local_path).await {
+            Ok(local) => local,
+            Err(err) => {
+                let _ = close_remote(&mut remote, remote_path).await;
+                return Err(AppError::Internal(format!("couldn't create {}: {err}", local_path.display())));
             }
-            local
-                .write_all(&buf[..read])
-                .await
-                .map_err(|err| AppError::Internal(format!("couldn't write {}: {err}", local_path.display())))?;
-            on_progress(read as u64);
-        }
+        };
+        let copied =
+            pour_down(&mut remote, &mut local, remote_path, local_path, on_progress).await;
+        let closed = close_remote(&mut remote, remote_path).await;
+        copied?;
+        closed?;
+
         local
             .flush()
             .await
@@ -297,24 +436,10 @@ impl SshSession {
             .open_with_flags(remote_path, OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open {remote_path} for writing: {err}")))?;
-        let mut buf = vec![0u8; TRANSFER_CHUNK_SIZE];
-        loop {
-            let read = local
-                .read(&mut buf)
-                .await
-                .map_err(|err| AppError::Internal(format!("couldn't read {}: {err}", local_path.display())))?;
-            if read == 0 {
-                break;
-            }
-            remote
-                .write_all(&buf[..read])
-                .await
-                .map_err(|err| AppError::Connection(format!("couldn't upload to {remote_path}: {err}")))?;
-            on_progress(read as u64);
-        }
-        remote
-            .shutdown()
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't finish writing {remote_path}: {err}")))
+        let copied =
+            pour_up(&mut local, &mut remote, local_path, remote_path, on_progress).await;
+        let closed = close_remote(&mut remote, remote_path).await;
+        copied?;
+        closed
     }
 }

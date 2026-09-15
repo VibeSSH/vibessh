@@ -6,6 +6,23 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.13
+
+### Fixed
+
+- **Uploads and downloads stop failing after a while with "handle limit
+  reached".** File transfers left their remote file to be tidied up on the way
+  out instead of closing it and waiting for the server to say so. The server
+  did free it; the count kept on this side did not, and once that count
+  reached the server's ceiling every further transfer was refused before a
+  single byte went out - with a message that reads like the server's fault and
+  is not. Every transfer now closes what it opened, including the ones that
+  fail halfway, and including a download that cannot write its local file.
+
+  The cause is a bug in the SFTP library rather than in how VibeSSH uses it,
+  and it is reported upstream:
+  [AspectUnk/russh-sftp#98](https://github.com/AspectUnk/russh-sftp/issues/98).
+
 ## 0.1.0-beta.12
 
 ### New
