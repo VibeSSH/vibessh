@@ -23,6 +23,16 @@ their contents are in the git history between the tags.
   and it is reported upstream:
   [AspectUnk/russh-sftp#98](https://github.com/AspectUnk/russh-sftp/issues/98).
 
+### Security
+
+- **rustls updated to 0.23.45**, which closes
+  [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285): TLS
+  1.3 handshake messages were accepted at the wrong encryption level when
+  they followed a key change in the same record. The transcript is still
+  authenticated, so this could not be used to alter or complete a handshake -
+  the effect is that a peer could send in plaintext what should have been
+  encrypted, and rustls did not refuse the connection.
+
 ## 0.1.0-beta.12
 
 ### New
