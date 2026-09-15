@@ -17,6 +17,8 @@ const cloudListServers = vi.fn();
 const listPendingRevocations = vi.fn();
 const syncTeamNodeAccess = vi.fn();
 const listServers = vi.fn();
+const createServer = vi.fn();
+const cloudMyNodeAccess = vi.fn();
 
 vi.mock("@/services/cloudService", () => ({
   cloudListServers: (...args: unknown[]) => cloudListServers(...args),
@@ -24,10 +26,12 @@ vi.mock("@/services/cloudService", () => ({
   cloudDeleteServer: vi.fn(),
   listPendingRevocations: (...args: unknown[]) => listPendingRevocations(...args),
   syncTeamNodeAccess: (...args: unknown[]) => syncTeamNodeAccess(...args),
+  cloudMyNodeAccess: (...args: unknown[]) => cloudMyNodeAccess(...args),
 }));
 
 vi.mock("@/services/serverService", () => ({
   listServers: (...args: unknown[]) => listServers(...args),
+  createServer: (...args: unknown[]) => createServer(...args),
 }));
 
 vi.mock("@/stores/toastStore", () => ({ toastSuccess: vi.fn() }));
@@ -45,6 +49,9 @@ vi.mock("react-i18next", () => ({
 const TEAM_ID = "team-1";
 const SERVER = { id: "team-server-1", teamId: TEAM_ID, name: "Prod", host: "10.0.0.1", sshPort: 22, username: "root", createdAt: "" };
 const LOCAL = { id: "local-1", name: "Prod", host: "10.0.0.1", sshPort: 22, username: "root" };
+
+/** What this person logs in as on the team's Nodes, and with which key. */
+const MY_ACCESS = { nodeUsername: "vibessh-m-95ab31df2daf", privateKeyPath: "C:/config/device_key", published: true };
 
 const REVOCATION = {
   id: "revocation-1",
@@ -64,6 +71,8 @@ describe("ServersSection", () => {
     cloudListServers.mockResolvedValue([SERVER]);
     listPendingRevocations.mockResolvedValue([]);
     listServers.mockResolvedValue([LOCAL]);
+    createServer.mockResolvedValue({ id: "local-new" });
+    cloudMyNodeAccess.mockResolvedValue(MY_ACCESS);
   });
 
   /// Shown on arrival, not only after somebody presses sync. Whoever opens
@@ -131,6 +140,49 @@ describe("ServersSection", () => {
     const name = screen.getByText("Prod");
     expect(name).toBeTruthy();
     expect(name.closest("li")?.className).toContain("team-servers-row");
+  });
+
+  /// The step that did not exist. Being given an account on a machine is not
+  /// the same as being able to reach it: a member saw a server in the team,
+  /// no sync button, no explanation, and no way to learn the account name
+  /// that had been created for them.
+  it("adds a team server to this computer with the member's own account and key", async () => {
+    listServers.mockResolvedValue([]); // nothing local yet - the member's case
+    render(<ServersSection teamId={TEAM_ID} canManage={false} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /teamServers\.addLocally/ }));
+
+    expect(createServer).toHaveBeenCalledWith({
+      name: "Prod",
+      host: "10.0.0.1",
+      sshPort: 22,
+      username: MY_ACCESS.nodeUsername,
+      authenticationType: "privateKey",
+      privateKeyPath: MY_ACCESS.privateKeyPath,
+    });
+  });
+
+  /// A row that offered nothing and explained nothing is what sent somebody
+  /// to ask why the feature was broken. It now names the account and the key,
+  /// so connecting by hand is possible even if the button is not used.
+  it("says why the server is not connectable yet, and with what to connect", async () => {
+    listServers.mockResolvedValue([]);
+    render(<ServersSection teamId={TEAM_ID} canManage={false} />);
+
+    const note = await screen.findByText(/teamServers\.notLocalYet/);
+    expect(note.textContent).toContain(MY_ACCESS.nodeUsername);
+    expect(note.textContent).toContain(MY_ACCESS.privateKeyPath);
+  });
+
+  /// Adding the server before anybody has synced produces an entry that
+  /// cannot connect, so the note says so rather than letting them find out
+  /// from a refused login.
+  it("warns when nobody has synced access to that server yet", async () => {
+    listServers.mockResolvedValue([]);
+    cloudMyNodeAccess.mockResolvedValue({ ...MY_ACCESS, published: false });
+    render(<ServersSection teamId={TEAM_ID} canManage={false} />);
+
+    await screen.findByText(/teamServers\.notSyncedYet/);
   });
 
   /// A revocation that failed is still owed, and the list is re-read from

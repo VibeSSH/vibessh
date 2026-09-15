@@ -397,6 +397,7 @@ pub fn run() {
             commands::cloud_commands::cloud_revoke_device,
             commands::cloud_commands::sync_team_node_access,
             commands::cloud_commands::cloud_list_pending_revocations,
+            commands::cloud_commands::cloud_my_node_access,
             commands::cloud_commands::cloud_list_teams,
             commands::cloud_commands::cloud_create_team,
             commands::cloud_commands::cloud_list_members,

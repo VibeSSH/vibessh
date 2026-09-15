@@ -6,6 +6,20 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.14
+
+### New
+
+- **A server shared with your team can be added to your own list in one
+  click.** Being given an account on somebody's machine was not the same as
+  being able to reach it: the account was created, and nothing told you its
+  name, so a member saw a server in the team, no way to connect, and no
+  explanation. Each shared server you have not added yet now says what you
+  sign in as and which key you use, and offers to add it - with your account
+  and your own key filled in. If nobody has synced access to that server
+  yet, it says that instead, rather than letting you find out from a refused
+  login.
+
 ## 0.1.0-beta.13
 
 ### Fixed

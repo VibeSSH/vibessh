@@ -76,3 +76,13 @@
 .team-servers-row {
   flex-wrap: wrap;
 }
+
+/* Why this row has no sync button, and what to do instead. Full width on a
+   row that now wraps, so it sits under the server rather than squeezing it. */
+.team-servers-access-note {
+  flex-basis: 100%;
+  margin: 8px 0 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}

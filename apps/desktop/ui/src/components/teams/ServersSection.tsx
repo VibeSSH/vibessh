@@ -11,12 +11,14 @@ import {
   cloudCreateServer,
   cloudDeleteServer,
   cloudListServers,
+  cloudMyNodeAccess,
   listPendingRevocations,
   syncTeamNodeAccess,
+  type MyNodeAccess,
   type NodeAccessSync,
   type NodeRevocation,
 } from "@/services/cloudService";
-import { listServers } from "@/services/serverService";
+import { createServer, listServers } from "@/services/serverService";
 import type { ServerSummary } from "@/types/server";
 import { toastSuccess } from "@/stores/toastStore";
 import type { CloudServer } from "@/types/cloud";
@@ -42,6 +44,15 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
    * runs.
    */
   const [pending, setPending] = useState<NodeRevocation[]>([]);
+  /**
+   * This person's own account on the team's Nodes.
+   *
+   * The same for every server in the team - the account name comes from who
+   * they are, not from which machine - so it is fetched once here rather
+   * than per row.
+   */
+  const [myAccess, setMyAccess] = useState<MyNodeAccess | null>(null);
+  const [adding, setAdding] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -68,6 +79,12 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
   }
 
   useEffect(loadPending, [teamId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    cloudMyNodeAccess(teamId)
+      .then(setMyAccess)
+      .catch(() => setMyAccess(null));
+  }, [teamId]);
 
   useEffect(() => {
     listServers()
@@ -129,6 +146,42 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     }
   }
 
+  /**
+   * Puts a team's Node into this install's own server list.
+   *
+   * The step that did not exist. Being given an account on a machine is not
+   * the same as being able to reach it, and everything needed to close that
+   * gap was already known: the address from the team, the account name from
+   * the backend, the key from this device. Only nobody had put them
+   * together, so a member saw a server they could not connect to and no
+   * explanation.
+   */
+  async function handleAddLocally(server: CloudServer) {
+    if (!myAccess) return;
+    setAdding(server.id);
+    setError(null);
+    try {
+      await createServer({
+        name: server.name,
+        host: server.host,
+        sshPort: server.sshPort,
+        username: myAccess.nodeUsername,
+        authenticationType: "privateKey",
+        privateKeyPath: myAccess.privateKeyPath,
+      });
+      toastSuccess(t("teamServers.addedLocallyToast", { name: server.name }));
+      // Re-read rather than push onto the list: once it is really there the
+      // row changes shape, gaining the sync button it could not offer.
+      listServers()
+        .then(setLocalServers)
+        .catch(() => {});
+    } catch (err) {
+      setError(errorMessage(err, t));
+    } finally {
+      setAdding(null);
+    }
+  }
+
   /** What this Node still owes, which is what makes the warning specific. */
   function pendingFor(server: CloudServer): NodeRevocation[] {
     return pending.filter((revocation) => revocation.teamServerId === server.id);
@@ -187,8 +240,35 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                   {granting === server.id ? t("common.loading") : t("teamServers.sync")}
                 </Button>
               )}
+              {!localMatch(server) && myAccess && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={adding === server.id}
+                  onClick={() => handleAddLocally(server)}
+                  title={t("teamServers.addLocallyTitle")}
+                >
+                  <Icon name="plus" size={14} />
+                  {adding === server.id ? t("common.loading") : t("teamServers.addLocally")}
+                </Button>
+              )}
               {canManage && (
                 <IconButton icon="trash" size="sm" danger title={t("teamServers.removeAria", { name: server.name })} onClick={() => handleDelete(server)} />
+              )}
+
+              {/* Said rather than left to be worked out. A row with no sync
+                  button used to explain nothing at all; this says what this
+                  install can and cannot do with this server, and what the
+                  reader would need to connect by hand. */}
+              {!localMatch(server) && (
+                <p className="team-servers-access-note">
+                  {myAccess
+                    ? t(myAccess.published ? "teamServers.notLocalYet" : "teamServers.notSyncedYet", {
+                        account: myAccess.nodeUsername,
+                        key: myAccess.privateKeyPath,
+                      })
+                    : t("teamServers.notLocalUnknown")}
+                </p>
               )}
               {/* Said before the sync, not after: somebody looking at this
                   list needs to know this machine still has an account for a

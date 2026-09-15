@@ -200,6 +200,46 @@ async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAcce
     member_account::run(connection, &member_account::sudoers_script(username, &member.permissions)?, "set the member's sudo rules").await
 }
 
+/// What this person logs in as on a shared Node, and with which key.
+///
+/// Both halves are already decided - the account name by the backend, the
+/// key by this install - and neither was anywhere a member could see it.
+/// That was the whole of the gap: a teammate was given a real account on a
+/// real machine and no way to learn its name, so the feature looked broken
+/// while working exactly as designed.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MyNodeAccess {
+    /// The Linux account created for this person by a sync.
+    pub node_username: String,
+    /// The private half of the key a sync installs, on this machine.
+    pub private_key_path: String,
+    /// False until somebody has run a sync on the Node. The account name is
+    /// known either way - it is derived, not assigned - so this says whether
+    /// connecting will actually work yet rather than whether we can name it.
+    pub published: bool,
+}
+
+/// Looks this person up in the team's own access list.
+///
+/// Derived from the backend's answer rather than re-derived here: the
+/// account name comes from a rule in `device_keys::node_username`, and a
+/// second copy of that rule on this side is a second thing to keep in step.
+pub async fn my_node_access(cloud: &CloudState, team_id: Uuid, config_dir: &std::path::Path) -> AppResult<MyNodeAccess> {
+    let session = crate::services::cloud_service::session_info(cloud)
+        .await
+        .ok_or_else(|| AppError::InvalidInput("you are not signed in".to_string()))?;
+
+    let members = crate::services::cloud_service::list_team_access(cloud, team_id).await?;
+    let me = members
+        .into_iter()
+        .find(|member| member.user_id == session.user.id)
+        .ok_or_else(|| AppError::NotFound("you are not a member of this team".to_string()))?;
+
+    let key = crate::device_key::ensure(config_dir)?;
+    Ok(MyNodeAccess { node_username: me.node_username, private_key_path: key.private_key_path, published: !me.public_keys.is_empty() })
+}
+
 /// Publishes this device's public key, so other installs can put it in the
 /// accounts they create.
 ///

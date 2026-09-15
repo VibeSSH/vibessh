@@ -108,6 +108,17 @@ pub async fn cloud_revoke_device(state: State<'_, CloudState>, key_id: uuid::Uui
     services::cloud_revoke_device_key(&state, key_id).await
 }
 
+/// What this person logs in as on this team's Nodes, and with which key.
+#[tauri::command]
+pub async fn cloud_my_node_access(
+    app: tauri::AppHandle,
+    state: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+) -> AppResult<services::team_access_service::MyNodeAccess> {
+    let config_dir = app.path().app_config_dir().map_err(|err| crate::errors::AppError::Storage(err.to_string()))?;
+    services::team_access_service::my_node_access(&state, team_id, &config_dir).await
+}
+
 /// What this team has asked to be taken off its Nodes and has not been.
 ///
 /// Read from the backend rather than remembered locally: the install that

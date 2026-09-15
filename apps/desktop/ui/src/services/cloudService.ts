@@ -249,6 +249,25 @@ export interface NodeAccessSync {
   revocations: RevocationResult[];
 }
 
+/**
+ * What this person logs in as on a shared Node, and with which key.
+ *
+ * Both were already decided and neither was anywhere they could see it - a
+ * teammate was given a real account on a real machine with no way to learn
+ * its name, which is why the feature looked broken while working exactly as
+ * designed.
+ */
+export interface MyNodeAccess {
+  nodeUsername: string;
+  privateKeyPath: string;
+  /** False until somebody has run a sync on the Node. */
+  published: boolean;
+}
+
+export function cloudMyNodeAccess(teamId: string): Promise<MyNodeAccess> {
+  return callCommand<MyNodeAccess>("cloud_my_node_access", { teamId });
+}
+
 /** Access removed in the team that is still on a Node. */
 export interface NodeRevocation {
   id: string;
