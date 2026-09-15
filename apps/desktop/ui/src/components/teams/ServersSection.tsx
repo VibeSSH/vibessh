@@ -163,7 +163,7 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
       ) : (
         <ul className="server-list">
           {servers.map((server) => (
-            <li key={server.id} className="server-list-item">
+            <li key={server.id} className="server-list-item team-servers-row">
               <div className="server-list-icon">
                 <Icon name="server" size={16} />
               </div>

@@ -65,3 +65,14 @@
 .team-servers-pending li {
   padding: 2px 0;
 }
+
+/* The rows here carry things the Servers page's own rows do not: the sync
+   results, and the list of access still owed. Both are full-width blocks
+   (`flex-basis: 100%`), and `.server-list-item` is a flex row that does not
+   wrap - so the first time results appeared, they claimed the whole line and
+   squeezed the server's name and address to nothing. The name is how you
+   tell which server the results belong to, so it is the one thing that must
+   not be what gives way. */
+.team-servers-row {
+  flex-wrap: wrap;
+}

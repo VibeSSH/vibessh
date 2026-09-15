@@ -9,7 +9,7 @@ import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { startUpdateChecks } from "@/stores/updateStore";
 import { UpdateBanner } from "./UpdateBanner";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
-import { cloudSessionInfo } from "@/services/cloudService";
+import { cloudPublishThisDevice, cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
 import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
 import { useAuthStore } from "@/stores/authStore";
@@ -60,6 +60,16 @@ export function AppLayout() {
       // `nodePermissionsStore` for why "not loaded" means "permitted".
       if (info?.user) {
         void useNodePermissionsStore.getState().load();
+        // This machine's public key, republished on every restored session
+        // and not only when somebody signs in.
+        //
+        // Publishing only from the sign-in modal meant an install that was
+        // already signed in when this feature shipped never published at
+        // all - and then a teammate syncing access was told that person
+        // "has not opened VibeSSH on any device", while they had it open in
+        // front of them. Idempotent by (user, key), so doing it on every
+        // launch costs one request and cannot create a second device.
+        cloudPublishThisDevice().catch((err) => console.warn("couldn't publish this device's key", err));
       } else {
         useNodePermissionsStore.getState().clear();
       }

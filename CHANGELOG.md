@@ -10,6 +10,17 @@ their contents are in the git history between the tags.
 
 ### Fixed
 
+- **Your own machine registers itself, not only the moment you sign in.** The
+  key that lets a teammate's install create your account on a shared server
+  was published from the sign-in screen alone, so an installation that was
+  already signed in never published at all. Syncing access then reported you
+  as somebody who "has not opened VibeSSH on any device" - while you had it
+  open in front of you - and your own account was the one that never got
+  created. It is now registered on every launch as well.
+- **A shared server keeps its name on screen after a sync.** The results
+  appeared as a full-width block on a row that does not wrap, which squeezed
+  the server's name and address out of existence - so with more than one
+  server there was no way to tell which one the results belonged to.
 - **Uploads and downloads stop failing after a while with "handle limit
   reached".** File transfers left their remote file to be tidied up on the way
   out instead of closing it and waiting for the server to say so. The server

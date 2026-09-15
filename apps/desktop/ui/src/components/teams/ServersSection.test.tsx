@@ -112,6 +112,27 @@ describe("ServersSection", () => {
     expect(syncTeamNodeAccess).toHaveBeenCalledWith("local-1", TEAM_ID, "team-server-1");
   });
 
+  /// The name is how you tell which server a result belongs to, so it is the
+  /// one thing that must survive the results appearing. It did not: the row
+  /// is a flex line that does not wrap, the results are a full-width block,
+  /// and the name was squeezed to nothing the first time a sync ran.
+  it("keeps the server's name visible once the sync results are shown", async () => {
+    syncTeamNodeAccess.mockResolvedValue({
+      members: [{ userId: "u1", email: "someone@example.com", nodeUsername: "vibessh-m-0123456789ab", hasKey: true, granted: true, error: null }],
+      revocations: [],
+    });
+    render(<ServersSection teamId={TEAM_ID} canManage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /teamServers\.sync/ }));
+    await screen.findByText(/teamServers\.grantOk/);
+
+    // Still on screen, and on a row that is allowed to wrap rather than to
+    // crush its first column.
+    const name = screen.getByText("Prod");
+    expect(name).toBeTruthy();
+    expect(name.closest("li")?.className).toContain("team-servers-row");
+  });
+
   /// A revocation that failed is still owed, and the list is re-read from
   /// the backend rather than adjusted here. Guessing locally is how a person
   /// whose key is still in place ends up shown as removed.
