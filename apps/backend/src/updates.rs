@@ -18,11 +18,16 @@
 //! `migrations/0013_update_checks.sql` for why that trade is the right one
 //! and what it costs.
 //!
-//! **There is no endpoint for reading the numbers back.** Anyone entitled to
-//! them already has SSH to this machine, and an HTTP route would have meant a
-//! token to generate, hand over and keep safe - for a convenience nobody
-//! asked for. `apps/backend/scripts/update-stats.sh` reads the table
-//! directly and ships with every deploy.
+//! **The day-by-day numbers are not readable over HTTP.** Anyone entitled to
+//! that breakdown already has SSH to this machine, and a route for it would
+//! have meant a token to generate, hand over and keep safe.
+//! `apps/backend/scripts/update-stats.sh` reads the table directly and ships
+//! with every deploy.
+//!
+//! `stats` is the one exception, and only because it is not a secret: it
+//! answers with the two figures the landing page prints. It needs no token
+//! precisely because everything in it is about to be published on a public
+//! web page - there is nothing there to protect.
 //!
 //! **This must never be able to stop an update.** An update mechanism that
 //! fails closed because a counter had a bad day is worse than no counter, so
@@ -37,7 +42,7 @@ use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{NaiveDate, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
@@ -55,6 +60,32 @@ const UPSTREAM: &str = "https://github.com/VibeSSH/vibessh-releases/releases/lat
 /// release visible almost immediately while collapsing a burst of checks into
 /// one fetch.
 const CACHE_FOR: Duration = Duration::from_secs(5 * 60);
+
+/// Every release with its assets, which is where a download count lives.
+///
+/// `per_page=100` rather than paging: there are fifteen releases, and a
+/// counter that silently stopped counting the day there were a hundred and
+/// one would be worse than one openly capped at the most recent hundred,
+/// which is what this is.
+const RELEASES_API: &str = "https://api.github.com/repos/VibeSSH/vibessh-releases/releases?per_page=100";
+
+/// What a person downloads, as opposed to what a machine downloads.
+///
+/// A release carries fifteen assets and the raw total across them means
+/// nothing as a measure of people: measured on the real releases it came to
+/// 352, of which 204 were `latest.json`, fetched by every running copy every
+/// six hours, and another 21 were `.sig` files the updater fetches beside an
+/// installer nobody chose to download. These four are what a human clicks,
+/// so these four are what gets published as "downloads".
+const INSTALLER_SUFFIXES: [&str; 4] = ["-setup.exe", ".AppImage", ".deb", ".tar.gz"];
+
+/// How long the public figures are reused.
+///
+/// Long, because this is a headline on a web page rather than a dashboard,
+/// and because the alternative is one GitHub API call per visitor against an
+/// unauthenticated limit of sixty an hour for the whole server. Four calls an
+/// hour leaves that limit alone.
+const STATS_CACHE_FOR: Duration = Duration::from_secs(15 * 60);
 
 /// The cached manifest, and when it was fetched.
 #[derive(Default)]
@@ -210,6 +241,135 @@ async fn fetch_upstream() -> Result<String, String> {
     response.text().await.map_err(|err| err.to_string())
 }
 
+/// The two public figures, as the landing page receives them.
+///
+/// Both are `null` rather than `0` when they could not be worked out, so the
+/// page can tell "nobody yet" from "we do not know" and show neither a wrong
+/// number nor a zero that reads like failure.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stats {
+    /// Installers downloaded from GitHub, across every release, ever.
+    pub downloads: Option<i64>,
+    /// Distinct installations that checked for an update on `day`.
+    ///
+    /// One complete day, never a range: the hash that makes a machine one row
+    /// within a day is deliberately not comparable across days, so adding two
+    /// days together would count the same machine twice and calling that
+    /// "users this week" would be a lie the table itself cannot detect.
+    pub installations: Option<i64>,
+    /// Which day `installations` is for - yesterday, because today is half
+    /// over and a partial day shown as a total always reads low.
+    pub day: Option<NaiveDate>,
+}
+
+#[derive(Default)]
+pub struct StatsCache {
+    inner: Mutex<Option<(Instant, Stats)>>,
+}
+
+impl StatsCache {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ApiRelease {
+    #[serde(default)]
+    assets: Vec<ApiAsset>,
+}
+
+#[derive(Deserialize)]
+struct ApiAsset {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    download_count: i64,
+}
+
+/// Adds up the assets a person would have clicked.
+fn installer_downloads(releases: &[ApiRelease]) -> i64 {
+    releases
+        .iter()
+        .flat_map(|release| release.assets.iter())
+        .filter(|asset| INSTALLER_SUFFIXES.iter().any(|suffix| asset.name.ends_with(suffix)))
+        .map(|asset| asset.download_count)
+        .sum()
+}
+
+async fn fetch_downloads() -> Result<i64, String> {
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build().map_err(|err| err.to_string())?;
+    let response = client
+        .get(RELEASES_API)
+        .header("Accept", "application/vnd.github+json")
+        // GitHub refuses an API request without one, and a name is more use
+        // to whoever reads their logs than a default.
+        .header("User-Agent", "vibessh-backend")
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("github answered {}", response.status()));
+    }
+    let releases: Vec<ApiRelease> = response.json().await.map_err(|err| err.to_string())?;
+    Ok(installer_downloads(&releases))
+}
+
+/// The numbers for the landing page.
+///
+/// Readable by anybody, deliberately: this is what the site prints. It
+/// records nothing about the caller - `latest` is the app checking in, this
+/// is a person reading a page, and counting readers here would put web
+/// analytics into a table whose whole design is about not being that.
+pub async fn stats(State(state): State<AppState>) -> Response {
+    let cached = {
+        let guard = state.stats_cache.inner.lock().await;
+        guard.as_ref().filter(|(at, _)| at.elapsed() < STATS_CACHE_FOR).map(|(_, stats)| stats.clone())
+    };
+    if let Some(stats) = cached {
+        return public(stats);
+    }
+
+    let downloads = match fetch_downloads().await {
+        Ok(count) => Some(count),
+        Err(err) => {
+            log::warn!("couldn't read the download count from GitHub: {err}");
+            None
+        }
+    };
+
+    let day = Utc::now().date_naive().pred_opt();
+    let installations = match day {
+        Some(day) => match sqlx::query_scalar::<_, i64>("SELECT count(DISTINCT client_day_hash) FROM update_checks WHERE day = $1")
+            .bind(day)
+            .fetch_one(&state.db)
+            .await
+        {
+            Ok(count) => Some(count),
+            Err(err) => {
+                log::warn!("couldn't count yesterday's update checks: {err}");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let stats = Stats { downloads, installations, day };
+    // Cached even when a number is missing, so an outage at GitHub costs one
+    // failed call every fifteen minutes rather than one per visitor.
+    *state.stats_cache.inner.lock().await = Some((Instant::now(), stats.clone()));
+    public(stats)
+}
+
+/// `*` because the answer is public, and because `*` is the setting that
+/// cannot be used to read anything private: a browser will not attach
+/// cookies or an `Authorization` header to a request whose response allows
+/// any origin, so this cannot become a way into the rest of the API.
+fn public(stats: Stats) -> Response {
+    ([(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")], axum::Json(stats)).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +407,31 @@ mod tests {
         // Same day, different machines: still distinguishable, which is what
         // makes a daily count mean anything.
         assert_ne!(hash(&today, "ip:203.0.113.7"), hash(&today, "ip:203.0.113.8"));
+    }
+
+    /// The published figure says "downloads", and a reader takes that to mean
+    /// people. The raw total over every asset does not mean that at all.
+    #[test]
+    fn only_the_files_a_person_would_click_are_counted_as_downloads() {
+        let json = serde_json::json!([{
+            "assets": [
+                { "name": "VibeSSH_0.1.0-beta.15_x64-setup.exe", "download_count": 20 },
+                { "name": "VibeSSH_0.1.0-beta.15_amd64.AppImage", "download_count": 5 },
+                { "name": "VibeSSH_0.1.0-beta.15_amd64.deb", "download_count": 3 },
+                { "name": "VibeSSH_0.1.0-beta.15_amd64.tar.gz", "download_count": 2 },
+                // Every running copy, every six hours. Not a download.
+                { "name": "latest.json", "download_count": 900 },
+                // Fetched by the updater beside the installer, so counting it
+                // would roughly double the Windows figure.
+                { "name": "VibeSSH_0.1.0-beta.15_x64-setup.exe.sig", "download_count": 18 },
+                { "name": "VibeSSH_0.1.0-beta.15_amd64.deb.sig", "download_count": 3 },
+                // The agent is put on a server by a script, and is not
+                // somebody downloading VibeSSH.
+                { "name": "vibe-agent-linux-amd64", "download_count": 40 },
+                { "name": "install.sh", "download_count": 14 }
+            ]
+        }]);
+        let releases: Vec<ApiRelease> = serde_json::from_value(json).unwrap();
+        assert_eq!(installer_downloads(&releases), 30);
     }
 }
