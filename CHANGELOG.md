@@ -6,6 +6,25 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.15
+
+### Changed
+
+- **The update check asks VibeSSH's own server instead of GitHub's.** It sends
+  nothing it was not already sending - a version, a platform, and the address
+  every HTTP request carries - and GitHub stays configured as a fallback, so
+  an update still happens if that server is unreachable. What it changes is
+  who can see how many installations are running: previously only GitHub
+  could, and only as a download count that cannot tell one machine left open
+  from forty opened once.
+
+  What is kept from it is a day, a version, a platform, and a hash of the
+  address salted with a value that changes daily - so the same machine is one
+  entry within a day and cannot be joined to the day before, by us either.
+  The terms page says so, and the site's security section no longer claims
+  nothing leaves your computer without an account, which this check has
+  always contradicted.
+
 ## 0.1.0-beta.14
 
 ### New
