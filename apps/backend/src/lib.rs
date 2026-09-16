@@ -35,6 +35,7 @@ pub mod rate_limit;
 pub mod refresh_token;
 pub mod roles;
 pub mod revocations;
+pub mod updates;
 pub mod team_applications;
 pub mod team_servers;
 pub mod teams;
@@ -46,6 +47,8 @@ pub struct AppState {
     /// Shared across every request, because a limit that each request kept
     /// its own copy of would not be a limit.
     pub rate_limiter: Arc<rate_limit::RateLimiter>,
+    /// The update manifest, fetched once and reused - see `updates`.
+    pub manifest_cache: Arc<updates::ManifestCache>,
     /// Shared, not copied, per request - the secret itself never changes
     /// after startup.
     pub jwt_secret: Arc<[u8]>,
@@ -70,9 +73,14 @@ pub async fn connect_and_migrate(database_url: &str) -> Result<PgPool, String> {
 }
 
 pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
-    let state = AppState { db, jwt_secret, rate_limiter: Arc::new(rate_limit::RateLimiter::new()) };
+    let state = AppState { db, jwt_secret, rate_limiter: Arc::new(rate_limit::RateLimiter::new()), manifest_cache: updates::ManifestCache::new() };
     Router::new()
         .route("/health", get(health))
+        // The update manifest, served from here so the count of who is
+        // running VibeSSH stays here - see `updates`. Unauthenticated, like
+        // the file it stands in front of.
+        .route("/updates/latest.json", get(updates::latest))
+        .route("/updates/summary", get(updates::summary))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         // Takes `AnyAuthUser`, so it keeps working for the one account
