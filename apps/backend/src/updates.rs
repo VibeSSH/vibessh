@@ -18,6 +18,12 @@
 //! `migrations/0013_update_checks.sql` for why that trade is the right one
 //! and what it costs.
 //!
+//! **There is no endpoint for reading the numbers back.** Anyone entitled to
+//! them already has SSH to this machine, and an HTTP route would have meant a
+//! token to generate, hand over and keep safe - for a convenience nobody
+//! asked for. `apps/backend/scripts/update-stats.sh` reads the table
+//! directly and ships with every deploy.
+//!
 //! **This must never be able to stop an update.** An update mechanism that
 //! fails closed because a counter had a bad day is worse than no counter, so
 //! every failure here - the database, the fetch, the cache - ends with the
@@ -28,7 +34,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{NaiveDate, Utc};
 use serde::Deserialize;
@@ -202,48 +208,6 @@ async fn fetch_upstream() -> Result<String, String> {
         return Err(format!("upstream answered {}", response.status()));
     }
     response.text().await.map_err(|err| err.to_string())
-}
-
-/// What the counting adds up to, for whoever runs this backend.
-///
-/// Deliberately not a public endpoint: it answers with numbers about the
-/// whole installed base, which is the operator's business and nobody else's.
-pub async fn summary(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let expected = match std::env::var("UPDATE_STATS_TOKEN") {
-        Ok(token) if !token.is_empty() => token,
-        _ => return (StatusCode::NOT_FOUND, "not found").into_response(),
-    };
-    let offered = headers.get("x-stats-token").and_then(|value| value.to_str().ok()).unwrap_or_default();
-    // Constant-time-ish: compare whole strings rather than returning early on
-    // the first differing byte. The window is small and so is the cost.
-    if offered.len() != expected.len() || offered.bytes().zip(expected.bytes()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) != 0 {
-        return (StatusCode::NOT_FOUND, "not found").into_response();
-    }
-
-    let rows = sqlx::query_as::<_, (NaiveDate, i64, i64, String, String)>(
-        "SELECT day, count(DISTINCT client_day_hash), sum(checks)::bigint, \
-                string_agg(DISTINCT version, ',' ORDER BY version), \
-                string_agg(DISTINCT platform, ',' ORDER BY platform) \
-         FROM update_checks WHERE day > current_date - 30 GROUP BY day ORDER BY day DESC",
-    )
-    .fetch_all(&state.db)
-    .await;
-
-    match rows {
-        Ok(rows) => {
-            let days: Vec<_> = rows
-                .into_iter()
-                .map(|(day, installs, checks, versions, platforms)| {
-                    serde_json::json!({ "day": day, "installs": installs, "checks": checks, "versions": versions, "platforms": platforms })
-                })
-                .collect();
-            axum::Json(serde_json::json!({ "days": days })).into_response()
-        }
-        Err(err) => {
-            log::error!("couldn't read the update-check summary: {err}");
-            (StatusCode::INTERNAL_SERVER_ERROR, "couldn't read the summary").into_response()
-        }
-    }
 }
 
 #[cfg(test)]

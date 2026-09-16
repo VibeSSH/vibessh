@@ -80,7 +80,6 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         // running VibeSSH stays here - see `updates`. Unauthenticated, like
         // the file it stands in front of.
         .route("/updates/latest.json", get(updates::latest))
-        .route("/updates/summary", get(updates::summary))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         // Takes `AnyAuthUser`, so it keeps working for the one account
