@@ -235,6 +235,19 @@ pub fn hide_to_tray<R: Runtime>(app: &AppHandle<R>) {
     }
 
     let labels = labels(&language);
+    // **In a `cargo tauri dev` build this arrives labelled "PowerShell", and
+    // that is not a fault here.** `tauri-plugin-notification` sets the
+    // toast's `System.AppUserModel.ID` only when the executable is *not* in
+    // `target\debug` or `target\release`, and `notify-rust` falls back to
+    // `Toast::POWERSHELL_APP_ID` when none is set. The alternative would be
+    // an id Windows has never seen, and Windows silently drops those - so
+    // upstream chose "visible under the wrong name" over "invisible".
+    //
+    // The installed build has one: the NSIS installer's Start Menu shortcut
+    // carries `AppUserModelID = dev.vibessh.app`, matching `identifier` in
+    // tauri.conf.json, so a released VibeSSH is labelled VibeSSH. Written
+    // down because it looks exactly like a bug and cost an investigation
+    // once already.
     #[cfg(desktop)]
     {
         use tauri_plugin_notification::NotificationExt;
