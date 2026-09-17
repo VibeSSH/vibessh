@@ -6,6 +6,29 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.17
+
+### New
+
+- **Closing the window leaves VibeSSH beside the clock instead of quitting.**
+  The close button used to end the program, and with it every live SSH
+  session, port forward and followed log - which is not what most people mean
+  when they close a window to get it off the screen. It now hides the window
+  and leaves a tray icon: click it to bring the window back, or right-click
+  for a menu with **Show VibeSSH**, **Check for updates...** and **Quit
+  VibeSSH**. The first time this happens you get a notification saying where
+  the window went, because a program still running after you closed it, with
+  no word at all, is indistinguishable from one that failed to quit.
+
+  If you would rather the close button quit, turn off **Keep VibeSSH running
+  in the tray** under **Settings - Preferences**. The setting is saved the
+  moment you change it.
+
+  On Windows the tray icon is often tucked under the **^** arrow beside the
+  clock - click it to expand the list. The guide page for Settings covers
+  this, including what to do when you have closed the window and cannot find
+  the program.
+
 ## 0.1.0-beta.16
 
 ### Fixed
