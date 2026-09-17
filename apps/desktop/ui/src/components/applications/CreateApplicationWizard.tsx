@@ -218,6 +218,8 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
    */
   const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
   const [templateError, setTemplateError] = useState<string | null>(null);
+  /** Why there is no suggested working directory - see the fetch below. */
+  const [localRootError, setLocalRootError] = useState<string | null>(null);
   /**
    * Whether a create is already in flight.
    *
@@ -255,9 +257,15 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
     localDockerAvailable()
       .then(setLocalDocker)
       .catch(() => undefined);
+    // Kept, not swallowed. Every other call in this effect discards its
+    // failure because the wizard works without it - no templates, no
+    // Docker probe, no existing applications to connect to. This one is
+    // different: when it fails there is no suggested working directory,
+    // the field stays empty, and the button that would move on is dead
+    // with nothing on screen saying why.
     localApplicationsRoot()
       .then(setLocalRoot)
-      .catch(() => undefined);
+      .catch((err) => setLocalRootError(errorMessage(err, t)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -460,6 +468,43 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
   const step2Valid = Boolean(blueprintId && runtimeType);
   const step3Valid = selectedBlueprint ? selectedBlueprint.fields.every((field) => isFieldFilled(field, fieldValues)) : false;
 
+  /**
+   * The answers this step is still waiting for, by the name they are
+   * labelled with on screen.
+   *
+   * A disabled button is not an explanation. Somebody whose working
+   * directory failed to prefill, or who scrolled past a required field on a
+   * long blueprint, saw a grey "Next" and no way to find out what it wanted
+   * - and a screen reader was told even less, since `disabled` carries no
+   * reason with it.
+   *
+   * The labels come from the same place the fields themselves render from,
+   * including a blueprint's own translated ones, so what this names is
+   * literally what the reader is looking for.
+   */
+  const missingOnStep = useMemo<string[]>(() => {
+    if (step === 1) {
+      const missing: string[] = [];
+      if (!name.trim()) missing.push(t("createApplicationWizard.name"));
+      if (!workingDirectory.trim()) missing.push(t("createApplicationWizard.workingDirectory"));
+      return missing;
+    }
+    if (step === 2) {
+      const missing: string[] = [];
+      if (!blueprintId) missing.push(t("createApplicationWizard.blueprint"));
+      // Only when there is a choice to make. One option is auto-picked, and
+      // none of them is already reported by `noRuntimeForLocation` - naming
+      // it here too would be telling somebody to fill in a control that
+      // isn't on the screen.
+      if (blueprintId && !runtimeType && availableRuntimeTypes.length > 1) missing.push(t("createApplicationWizard.runtimeType"));
+      return missing;
+    }
+    if (step === 3 && selectedBlueprint) {
+      return selectedBlueprint.fields.filter((field) => !isFieldFilled(field, fieldValues)).map((field) => field.label);
+    }
+    return [];
+  }, [step, name, workingDirectory, blueprintId, runtimeType, availableRuntimeTypes, selectedBlueprint, fieldValues, t]);
+
   function canAdvanceFrom(currentStep: number): boolean {
     if (currentStep === 1) return step1Valid;
     if (currentStep === 2) return step2Valid;
@@ -628,6 +673,9 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
                   <p className="form-note">
                     {isLocal ? t("createApplicationWizard.workingDirectoryNote") : t("createApplicationWizard.workingDirectoryNoteRemote")}
                   </p>
+                  {isLocal && localRootError && (
+                    <p className="form-note form-note-danger">{t("createApplicationWizard.localRootFailed", { error: localRootError })}</p>
+                  )}
                 </label>
               </>
             )}
@@ -907,6 +955,10 @@ export function CreateApplicationWizard({ onClose, onCreated }: CreateApplicatio
             )}
           </div>
         </div>
+
+        {missingOnStep.length > 0 && (
+          <p className="form-note wizard-blocked">{t("createApplicationWizard.stillNeeded", { fields: missingOnStep.join(", ") })}</p>
+        )}
 
         <div className="form-actions form-actions-split wizard-footer">
           <Button variant="secondary" onClick={() => (step === 1 ? onClose() : setStep((s) => s - 1))} disabled={busy}>

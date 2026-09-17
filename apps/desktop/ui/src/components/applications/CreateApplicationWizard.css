@@ -202,6 +202,20 @@
 }
 
 /*
+ * What the disabled "Next" is waiting for, directly above it.
+ *
+ * Deliberately quiet rather than an error: nothing has gone wrong when a
+ * form is half filled in, and colouring it like a failure would make every
+ * freshly opened wizard look broken. It sits outside the scrolling body so
+ * it is beside the button it explains, however far down the step the empty
+ * field actually is.
+ */
+.wizard-blocked {
+  margin: 0;
+  padding: 0 20px;
+}
+
+/*
  * Saved starting points, offered before anything else on the first step.
  *
  * A row rather than a grid of tiles: a template is a line of text, and the
