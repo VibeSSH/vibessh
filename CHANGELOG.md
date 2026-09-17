@@ -6,6 +6,30 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.16
+
+### Fixed
+
+- **A Docker application on your own computer can now be created at all.**
+  Choosing the Docker runtime for a local application - a Paper server, say -
+  produced a container the daemon refused to make. The working directory
+  VibeSSH suggests on Windows is a Windows path, and that same path was handed
+  to the container as its own; a Linux container has no
+  `C:\Users\...\applications\paper`, so Docker complained about a path, and
+  there was nowhere in the app to give it a different one. The directory is
+  now mounted at `/home/container` inside the container, which is where a
+  remote application's files already live. Applications on a server are
+  unaffected - their working directories were always paths a container could
+  have, and they keep them.
+- **The "Create application" wizard says what it is waiting for, instead of
+  only greying out "Next".** Each step now names the answers still missing, by
+  the label they carry on screen. Two ways of getting stuck had nothing to
+  read at all: a working directory that could not be suggested, which left the
+  field empty with no explanation, and a required setting on the configuration
+  step that had scrolled out of sight. When VibeSSH cannot work out where to
+  keep an application's files on this computer, it now says so and says why,
+  rather than leaving you to invent a path.
+
 ## 0.1.0-beta.15
 
 ### Changed
