@@ -15,12 +15,15 @@
 //! the Docker network), not something meant to be reachable from outside
 //! the host, so it gets no `-p` flag at all.
 //!
-//! **Etap M1: `working_directory` is bind-mounted in** (`-v dir:dir` plus
-//! `-w dir`, host path = container path, so a jar/config path that's
-//! already just a bare filename relative to `working_directory` - the same
-//! assumption `runtime::local_process`/`remote_process`/`systemd` already
-//! make by launching with that as their own cwd - resolves identically
-//! inside the container, no path-translation layer needed anywhere else).
+//! **Etap M1: `working_directory` is bind-mounted in** (`-v host:container`
+//! plus `-w container`), so a jar/config path that's already just a bare
+//! filename relative to `working_directory` - the same assumption
+//! `runtime::local_process`/`remote_process`/`systemd` already make by
+//! launching with that as their own cwd - resolves identically inside the
+//! container. On a Node the two sides are the same string, because
+//! `/srv/my-app` is a path both sides can have; for a local Application on
+//! Windows they cannot be, and `container_working_directory` says what the
+//! container side is instead.
 //! This is *why* `start()`'s recreate-avoidance below is safe now instead
 //! of destroying state on every recreate: the container's writable layer is
 //! no longer the only place a world save/database file/config lives, the
@@ -162,6 +165,40 @@ fn restart_policy_or_default(config: &DockerConfig) -> AppResult<&str> {
 fn parse_config(ctx: &RuntimeContext<'_>) -> AppResult<DockerConfig> {
     serde_json::from_value(ctx.runtime_config.clone())
         .map_err(|err| AppError::InvalidInput(format!("invalid Docker configuration: {err}")))
+}
+
+/// Where the bind-mounted working directory lands *inside* the container.
+///
+/// Host path and container path were the same string until this existed, and
+/// on a Node they can be: `/srv/my-app` is a path a Linux host and a Linux
+/// container can both have. For an Application running on this machine they
+/// cannot. A local working directory is a Windows path - the wizard prefills
+/// one from `app_data_dir()` - and a Linux container has no
+/// `C:\Users\...\applications\paper`, so `-v C:\...:C:\...` and `-w C:\...`
+/// were rejected by the daemon with a complaint about a path the user was
+/// given nowhere to correct. Nowhere existed: nothing in VibeSSH asks for a
+/// container-side path, because until now there was no such thing.
+///
+/// **The test is the path's own shape, not this machine's operating system.**
+/// A VibeSSH running on Windows and managing a remote Linux Node must keep
+/// passing that Node's paths through untouched, and does, because they start
+/// with `/`. Only a path that could not be a path inside a Linux container
+/// gets replaced.
+///
+/// `/home/container` rather than `/app`: it is what a remote Application's
+/// working directory already looks like here (`working_directory_for` builds
+/// `/home/container/<slug>`), so the directory a user sees inside the
+/// container is the one they would expect from every other VibeSSH
+/// Application - and it is far less likely to be sitting on top of something
+/// an arbitrary image already ships.
+const CONTAINER_WORKING_DIRECTORY: &str = "/home/container";
+
+fn container_working_directory(working_directory: &str) -> &str {
+    if working_directory.starts_with('/') {
+        working_directory
+    } else {
+        CONTAINER_WORKING_DIRECTORY
+    }
 }
 
 /// `vibessh-app-<uuid>` - unambiguously VibeSSH-owned, matching
@@ -613,6 +650,7 @@ fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str
     }
 
     let working_directory = ctx.application.working_directory.clone();
+    let container_directory = container_working_directory(&working_directory).to_string();
     // `-i` keeps STDIN open even with nothing attached yet - harmless if the
     // Console tab is never used, and what makes `attach_console_fifo`'s
     // later `docker attach` able to feed the container's stdin at all (an
@@ -654,9 +692,9 @@ fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str
         "--network-alias".into(),
         network_alias(ctx.application),
         "-v".into(),
-        format!("{working_directory}:{working_directory}"),
+        format!("{working_directory}:{container_directory}"),
         "-w".into(),
-        working_directory.clone(),
+        container_directory.clone(),
     ];
     // Only ever set for `run_as_dedicated_user` (see that field's own doc
     // comment) - runs the process as this Application's own dedicated
@@ -1823,6 +1861,10 @@ second
         assert!(build_attach_script(&ctx, "not; a valid name").is_err());
     }
 
+    /// A Node's own path is a path the container can have, and goes through
+    /// unchanged. This is the regression guard for the pair of tests below:
+    /// nothing about making Windows work may quietly move a Linux
+    /// Application's files to a different directory inside its container.
     #[test]
     fn build_create_command_bind_mounts_and_sets_the_workdir_to_the_working_directory() {
         let application = stub_application(Uuid::new_v4());
@@ -1834,6 +1876,92 @@ second
         assert_eq!(flag_value(&args, "-v"), Some("/srv/my-app:/srv/my-app"), "{args:?}");
         assert_eq!(flag_value(&args, "-w"), Some("/srv/my-app"), "{args:?}");
         assert!(index_of(&args, "-v") < index_of(&args, "alpine:latest"), "{args:?}");
+    }
+
+    /// The bug this whole rule exists for. Creating a Paper Application on
+    /// this computer with the Docker runtime produced
+    /// `-v C:\...:C:\... -w C:\...`, and a Linux container has no such
+    /// path. The daemon refused it with a message about a path, and there
+    /// was nowhere in the wizard to give a different one - the container
+    /// side was never asked for, because it was assumed to equal the host
+    /// side.
+    #[test]
+    fn a_windows_working_directory_still_gets_a_posix_path_inside_the_container() {
+        let mut application = stub_application(Uuid::new_v4());
+        application.server_id = None; // local: the only way to get a Windows path here
+        application.working_directory = r"C:\Users\kompu\AppData\Roaming\com.vibessh.app\applications\paper".to_string();
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
+        // The host half keeps the Windows path - that is the directory the
+        // daemon is being asked to mount, and Docker Desktop translates it.
+        assert_eq!(
+            flag_value(&args, "-v"),
+            Some(r"C:\Users\kompu\AppData\Roaming\com.vibessh.app\applications\paper:/home/container"),
+            "{args:?}"
+        );
+        assert_eq!(flag_value(&args, "-w"), Some("/home/container"), "{args:?}");
+    }
+
+    /// A UNC path is not a drive letter and is still not a container path.
+    /// Written down because a rule phrased as "starts with a drive letter"
+    /// would pass the test above and fail here.
+    #[test]
+    fn a_unc_working_directory_is_replaced_too() {
+        let mut application = stub_application(Uuid::new_v4());
+        application.server_id = None;
+        application.working_directory = r"\\nas\share\minecraft".to_string();
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
+        assert_eq!(flag_value(&args, "-v"), Some(r"\\nas\share\minecraft:/home/container"), "{args:?}");
+        assert_eq!(flag_value(&args, "-w"), Some("/home/container"), "{args:?}");
+    }
+
+    /// `C:\Program Files\...` is where a path with a space actually turns
+    /// up, and these are argv entries rather than a command line, so the
+    /// space must survive inside one argument. `build_create_args` promising
+    /// that is the reason the local runner hands the arguments to the
+    /// process directly instead of rendering a shell string.
+    #[test]
+    fn a_windows_path_with_a_space_stays_one_argument() {
+        let mut application = stub_application(Uuid::new_v4());
+        application.server_id = None;
+        application.working_directory = r"C:\Program Files\VibeSSH\my app".to_string();
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
+        assert_eq!(flag_value(&args, "-v"), Some(r"C:\Program Files\VibeSSH\my app:/home/container"), "{args:?}");
+        assert!(!args.iter().any(|arg| arg == "Files\\VibeSSH\\my"), "the path was split: {args:?}");
+    }
+
+    /// The jar is a bare filename resolved against the container's cwd
+    /// (`render_java_config` builds `java -jar <filename>`), so moving that
+    /// cwd is only safe while the mount lands on it. Both halves are checked
+    /// together because it is the pair that has to agree - a fixed `-w` with
+    /// the mount left somewhere else would start a container whose jar is
+    /// not there.
+    #[test]
+    fn the_workdir_is_always_the_far_end_of_the_mount() {
+        for directory in ["/srv/my-app", r"C:\srv\my-app", r"\\nas\share\app"] {
+            let mut application = stub_application(Uuid::new_v4());
+            application.working_directory = directory.to_string();
+            let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+            let runtime_config = serde_json::json!({});
+            let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+            let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
+            let mount = flag_value(&args, "-v").unwrap();
+            let workdir = flag_value(&args, "-w").unwrap();
+            assert!(mount.ends_with(&format!(":{workdir}")), "{directory}: {mount} does not end at {workdir}");
+            assert!(workdir.starts_with('/'), "{directory}: {workdir} is not a path a Linux container can have");
+        }
     }
 
     #[test]
