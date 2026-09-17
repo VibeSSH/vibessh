@@ -14,10 +14,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `tray-icon` is what puts VibeSSH beside the clock - see `tray.rs` for why
+# closing the window no longer ends the process.
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 # Native open/save file dialogs for Files module upload/download.
 tauri-plugin-dialog = "2"
+# One notification, once per installation: the first time the close button
+# hides the window instead of quitting - see `tray::hide_to_tray`.
+tauri-plugin-notification = "2"
 # Opens a phpMyAdmin URL in the user's system browser (Databases tab) -
 # only the `open` command is granted (capabilities/default.json), not the
 # plugin's own `execute` (arbitrary process spawn), which this app has no

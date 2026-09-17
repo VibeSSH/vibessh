@@ -14,6 +14,7 @@ import { useModalDialog } from "@/hooks/useModalDialog";
 import { AiUsageModal } from "@/components/ai/AiUsageModal";
 import { getAiConfig, getAiQuota, setAiConfig, testAiConnection } from "@/services/aiService";
 import { getAppInfo } from "@/services/appService";
+import { getTraySettings, setMinimizeToTray } from "@/services/trayService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
 import { getDnsSuffix, setDnsSuffix } from "@/services/networkService";
@@ -78,6 +79,8 @@ export function Settings() {
           </div>
         </div>
         <ThemePicker />
+
+        <MinimizeToTrayRow />
       </Card>
 
       <AiCard />
@@ -770,6 +773,52 @@ function AddRegistryCredentialModal({ onClose, onAdded }: AddRegistryCredentialM
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Whether the close button quits VibeSSH or leaves it beside the clock.
+ *
+ * Its own component so that failing to read the setting costs this one row
+ * rather than the whole Settings page - and so the switch is not rendered at
+ * all until the real value is known, which is the difference between "off"
+ * and "not loaded yet". A switch that shows the wrong position for a moment
+ * is a switch somebody will click twice.
+ */
+function MinimizeToTrayRow() {
+  const { t } = useTranslation();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getTraySettings()
+      .then((settings) => setEnabled(settings.minimizeToTray))
+      .catch((err) => setError(errorMessage(err, t)));
+  }, [t]);
+
+  async function change(next: boolean) {
+    const previous = enabled;
+    setEnabled(next);
+    setError(null);
+    try {
+      await setMinimizeToTray(next);
+    } catch (err) {
+      // Put back, because the switch is a claim about what will happen when
+      // the window is closed, and a claim that did not reach disk is false.
+      setEnabled(previous);
+      setError(errorMessage(err, t));
+    }
+  }
+
+  return (
+    <div className="settings-preference-row settings-preference-row-stacked">
+      <div>
+        <p className="settings-preference-label">{t("settings.minimizeToTray")}</p>
+        <p className="settings-muted">{t("settings.minimizeToTrayDescription")}</p>
+        {error && <p className="form-note form-note-danger">{error}</p>}
+      </div>
+      {enabled !== null && <Switch checked={enabled} onChange={(next) => void change(next)} label={t("settings.minimizeToTrayLabel")} />}
     </div>
   );
 }

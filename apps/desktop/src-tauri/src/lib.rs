@@ -34,6 +34,8 @@ pub mod member_sudoers;
 // behaviour it is testing. There is nothing here a consumer of this crate
 // would use - the visibility exists so the property can be asserted.
 pub mod errors;
+/// The icon beside the clock, and what the close button does.
+pub mod tray;
 // `pub` for the same reason as `runtime`/`ssh` above - a real-server
 // integration test (`tests/firewall_ufw.rs`) drives `firewall::ufw::UfwProvider`
 // directly against a live, real ufw installation.
@@ -108,6 +110,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -173,6 +176,10 @@ pub fn run() {
             let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
             app.manage(CloudState::new(backend_url));
 
+            // Before `tray::build`, which reads the language out of it.
+            app.manage(tray::TrayState::new(storage::tray_config::load_tray_config(&config_dir)));
+            tray::build(app.handle())?;
+
             app.manage(storage::log_capture::LogCaptureStore::new(config_dir.join("logs"))?);
 
             let backup_destination = storage::backup_destination_config::load_backup_destination(&config_dir)?;
@@ -196,8 +203,27 @@ pub fn run() {
 
             Ok(())
         })
+        // The close button hides the window rather than ending the process -
+        // see `tray.rs`. Three ways out of that, in order: the user asked to
+        // quit from the tray, the setting is off, or the state does not exist
+        // yet because the window is closing during startup. All three let the
+        // close proceed, because the failure worth avoiding is a process that
+        // cannot be quit, not a window that closes.
+        .on_window_event(|window, event| {
+            let tauri::WindowEvent::CloseRequested { api, .. } = event else { return };
+            let app = window.app_handle();
+            let Some(state) = app.try_state::<tray::TrayState>() else { return };
+            if state.is_quitting() || !state.minimize_to_tray() {
+                return;
+            }
+            api.prevent_close();
+            tray::hide_to_tray(app);
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_info,
+            commands::app_commands::get_tray_settings,
+            commands::app_commands::set_minimize_to_tray,
+            commands::app_commands::set_tray_language,
             commands::app_commands::local_docker_available,
             commands::app_commands::local_applications_root,
             commands::pterodactyl_commands::pterodactyl_connection,

@@ -41,3 +41,47 @@ pub fn local_applications_root(app: tauri::AppHandle) -> AppResult<String> {
         .join("applications");
     Ok(dir.to_string_lossy().into_owned())
 }
+
+/// What the close button currently does, for the Settings switch to show.
+#[tauri::command]
+pub fn get_tray_settings(state: State<crate::tray::TrayState>) -> AppResult<crate::storage::tray_config::TrayConfig> {
+    state
+        .config
+        .lock()
+        .map(|config| *config)
+        .map_err(|_| crate::errors::AppError::Internal("the tray setting is unreadable".into()))
+}
+
+/// Turns hiding-on-close on or off, and writes it down.
+///
+/// Saved immediately rather than on exit, because the setting's whole subject
+/// is what happens when the application goes away - a value that only reached
+/// disk during a clean shutdown would be the one value most likely to be lost.
+#[tauri::command]
+pub fn set_minimize_to_tray(app: tauri::AppHandle, state: State<crate::tray::TrayState>, enabled: bool) -> AppResult<()> {
+    let config = {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|_| crate::errors::AppError::Internal("the tray setting is unwritable".into()))?;
+        config.minimize_to_tray = enabled;
+        *config
+    };
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| crate::errors::AppError::Storage(format!("couldn't resolve the config directory: {err}")))?;
+    crate::storage::tray_config::save_tray_config(&config_dir, &config)
+}
+
+/// The language the interface settled on, so the tray menu can be in it.
+///
+/// The interface decides the language - from a saved choice or the system's
+/// own - and the tray menu is built in Rust, where none of that is visible.
+/// This is the one wire between them. Called on startup and whenever the
+/// language is changed, and cheap enough to be called redundantly: an
+/// unchanged language rebuilds nothing.
+#[tauri::command]
+pub fn set_tray_language(app: tauri::AppHandle, language: String) {
+    crate::tray::set_language(&app, &language);
+}

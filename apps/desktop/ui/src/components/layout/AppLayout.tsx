@@ -9,6 +9,7 @@ import { useBackupScheduler } from "@/hooks/useBackupScheduler";
 import { startUpdateChecks } from "@/stores/updateStore";
 import { UpdateBanner } from "./UpdateBanner";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
+import { useTray } from "@/hooks/useTray";
 import { cloudPublishThisDevice, cloudSessionInfo } from "@/services/cloudService";
 import { useNodePermissionsStore } from "@/stores/nodePermissionsStore";
 import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
@@ -29,6 +30,9 @@ export function AppLayout() {
 
   // One periodic check for the whole app, started where the shell is.
   useEffect(startUpdateChecks, []);
+  // The tray menu's language, and its "Check for updates..." item, which
+  // runs the check above rather than one of its own.
+  useTray();
 
   const { t } = useTranslation();
   // Nothing in VibeSSH needs local root, but `sudo` is a natural thing to

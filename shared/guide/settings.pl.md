@@ -15,6 +15,30 @@ Ustawienia zbierają opcje dotyczące całej aplikacji.
 
 Ustawienie działa tylko na tym urządzeniu.
 
+## Co robi krzyżyk
+
+Domyślnie krzyżyk **nie zamyka VibeSSH** — chowa okno, a program zostaje przy zegarze,
+obok godziny i daty. Dzięki temu otwarte sesje SSH, przekierowania portów i podłączone
+logi działają dalej. Przy pierwszym takim schowaniu zobaczysz powiadomienie, żeby nie
+szukać potem programu, który „zniknął".
+
+Ikona przy zegarze bywa schowana pod strzałką **^** — kliknij ją, żeby rozwinąć listę.
+
+1. **Kliknięcie ikony** — okno wraca.
+2. **Prawy przycisk na ikonie** — menu z trzema pozycjami:
+   - **Pokaż VibeSSH** — to samo, co kliknięcie ikony.
+   - **Sprawdź aktualizacje...** — otwiera okno i sprawdza, czy jest nowsza wersja.
+   - **Zakończ VibeSSH** — naprawdę zamyka program.
+
+## Jak sprawić, żeby krzyżyk zamykał program
+
+1. Znajdź kartę **Preferencje**, wiersz **Zamknięcie okna**.
+2. Wyłącz przełącznik **Zostaw VibeSSH w zasobniku**.
+3. Od tej chwili krzyżyk kończy VibeSSH razem ze wszystkim, co robił — łącznie
+   z otwartymi sesjami i przekierowaniami portów.
+
+Ustawienie zapisuje się od razu, więc przetrwa też nagłe zamknięcie komputera.
+
 ## Jak ustawić cel backupów (S3)
 
 1. Znajdź kartę **Cel backupów**.
@@ -54,3 +78,6 @@ Obrazy publiczne działają bez logowania.
 - **Backupy nie trafiają do S3** — użyj **Testuj połączenie**. Przy MinIO najczęstszą przyczyną jest niezaznaczone **Adresowanie path-style**.
 - **Wyczyściłem pole klucza, żeby go usunąć, a nic się nie zmieniło** — puste pole zachowuje obecny klucz.
 - **„Oczekiwanie na backend"** — interfejs działa, ale nic pod nim. Zrestartuj aplikację.
+- **Zamknąłem okno i nie mogę znaleźć programu** — nie zamknąłeś go, tylko schowałeś.
+  Poszukaj ikony VibeSSH przy zegarze; może być pod strzałką **^**. Jeśli wolisz, żeby
+  krzyżyk kończył program, wyłącz **Zostaw VibeSSH w zasobniku** w **Preferencjach**.
