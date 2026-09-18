@@ -56,3 +56,24 @@
 .settings-language-btn-active:hover {
   color: var(--accent-contrast);
 }
+
+/*
+ * An address or a token beside the buttons that copy it.
+ *
+ * The field takes what is left rather than a fixed width: a token is 64
+ * characters and an address is twenty, and a row that suited one would cut
+ * the other in half.
+ */
+.settings-copy-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-copy-row .form-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* The token has no words in it, so a proportional font makes every
+     character a guess when somebody compares it against their config. */
+  font-family: var(--font-mono), ui-monospace, monospace;
+}

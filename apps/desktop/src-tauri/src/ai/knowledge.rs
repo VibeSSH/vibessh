@@ -205,6 +205,8 @@ impl KeywordKnowledgeService {
             ("Poradnik - Vibe AI", include_str!("../../../../../shared/guide/vibe-ai.pl.md")),
             ("Guide - Settings", include_str!("../../../../../shared/guide/settings.en.md")),
             ("Poradnik - Ustawienia", include_str!("../../../../../shared/guide/settings.pl.md")),
+            ("Guide - Claude and other assistants", include_str!("../../../../../shared/guide/mcp.en.md")),
+            ("Poradnik - Claude i inni asystenci", include_str!("../../../../../shared/guide/mcp.pl.md")),
             ("Guide - Backups", include_str!("../../../../../shared/guide/backups.en.md")),
             ("Poradnik - Backupy", include_str!("../../../../../shared/guide/backups.pl.md")),
             // How to set up each kind of application, step by step - the
