@@ -6,6 +6,41 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.18
+
+### New
+
+- **Claude and other assistants can ask VibeSSH about your servers.** Under
+  **Settings - Claude and other assistants** you can open a small endpoint that
+  only programs on this computer can reach - never your network. An assistant
+  configured with the address and token shown there can then ask what servers
+  and applications you have and read their logs, so "why won't this server
+  start?" is answered from the real log rather than from a guess.
+
+  It is off until you turn it on, and it is told nothing else: no passwords, no
+  keys, and no environment variables - not even the ones you did not mark
+  secret, since an ordinary variable is where a licence key ends up too.
+  Restarting an application needs a second switch, **Allow changes**, because
+  "may Claude see my servers" and "may Claude restart them" are different
+  questions.
+
+- **Build in your IDE, run it on your server.** The same endpoint accepts a
+  freshly built file, so a Minecraft plugin can go from `./gradlew build` into
+  `plugins/` with the server restarting into it, without leaving the editor.
+  There is an IntelliJ plugin for this in the repository (`apps/intellij`,
+  built from source for now) and, for anyone who would rather not install one,
+  a Gradle task documented in the guide.
+
+### Fixed
+
+- **A Docker application on your own computer can be started, restarted and
+  recreated.** Creating one worked; everything afterwards failed with
+  `internal error: DockerRuntime requires a connection` - a message about SSH,
+  shown to somebody who had chosen "This computer". It affected every Java
+  application type, since each of them asks for a per-application system
+  account that a local Docker daemon has no way to provide. It no longer asks
+  for one where it cannot exist.
+
 ## 0.1.0-beta.17
 
 ### New
