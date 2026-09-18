@@ -245,9 +245,51 @@ fn runner_arc(ctx: &RuntimeContext<'_>) -> Arc<dyn DockerCommandRunner> {
     }
 }
 
-fn connection_ref<'a>(ctx: &'a RuntimeContext<'_>) -> AppResult<&'a SshSession> {
-    ctx.connection.as_deref().ok_or_else(|| AppError::Internal("DockerRuntime requires a connection".into()))
+/// Whether this Application's per-Application Linux account can be honoured
+/// here at all.
+///
+/// **One function because the answer used to differ between three places
+/// that had to agree.** `create_container` learned that a local daemon has
+/// no POSIX accounts and stopped refusing; `start` and `restart` kept the
+/// older stance and went on demanding a connection. Since
+/// `render_java_docker_config` sets `run_as_dedicated_user` unconditionally
+/// for every Java blueprint, that made a local Minecraft Application
+/// creatable and then impossible to start, with "DockerRuntime requires a
+/// connection" - a message about SSH shown to somebody who never asked for
+/// a remote server.
+///
+/// Nothing is lost locally: the isolation exists so a *remote* Node keeps an
+/// Application's files out of root's ownership, and on this machine the
+/// files are already the user's own.
+fn dedicated_user_applies(config: &DockerConfig, runner: &dyn DockerCommandRunner) -> bool {
+    config.run_as_dedicated_user && runner.supports_dedicated_user()
 }
+
+/// The connection to set that account up on, or `None` where there is no
+/// account to set up.
+///
+/// **Returns the connection rather than a boolean so the mistake cannot be
+/// made again.** The bug was not that the rule was wrong; it was that two
+/// callers checked a weaker condition and then reached for
+/// `connection_ref(ctx)?`, which fails locally. A caller handed an
+/// `Option<&SshSession>` has nothing left to reach for: either there is a
+/// session and the work is due, or there is not and there is nothing to do.
+fn dedicated_user_connection<'a>(config: &DockerConfig, runner: &dyn DockerCommandRunner, ctx: &'a RuntimeContext<'_>) -> Option<&'a SshSession> {
+    if !dedicated_user_applies(config, runner) {
+        return None;
+    }
+    // `supports_dedicated_user()` is only true for the SSH runner, so this
+    // is belt and braces rather than a case anybody has seen.
+    ctx.connection.as_deref()
+}
+
+// `connection_ref` stood here and raised "DockerRuntime requires a
+// connection". It has no callers left: every remaining use of an
+// `SshSession` in this runtime comes from `dedicated_user_connection` or a
+// plain `ctx.connection.as_deref()`, both of which treat its absence as
+// "this is the local daemon" rather than as a fault. The error is gone
+// rather than merely unused, so it cannot come back by someone reaching for
+// the convenient helper.
 
 /// Same `.vibessh-app-<uuid>.stdin` naming/location `runtime::remote_process`
 /// uses for its own FIFO - not shared code (this module has no dependency on
@@ -768,12 +810,11 @@ async fn create_container(runner: &dyn DockerCommandRunner, ctx: &RuntimeContext
     // isolation is not lost here; it is a remote-Node mechanism that has
     // nothing to do on this machine. Refusing only made every Minecraft
     // blueprint impossible to run locally.
-    let dedicated_user_applies = config.run_as_dedicated_user && runner.supports_dedicated_user();
-    if config.run_as_dedicated_user && !dedicated_user_applies {
+    let dedicated = dedicated_user_connection(config, runner, ctx);
+    if config.run_as_dedicated_user && dedicated.is_none() {
         log::info!("{}: running without a dedicated user - the local daemon has no such accounts", ctx.application.name);
     }
-    let user_flag = if dedicated_user_applies {
-        let connection = connection_ref(ctx)?;
+    let user_flag = if let Some(connection) = dedicated {
         let username = dedicated_user::username(ctx.application.id);
         dedicated_user::ensure_provisioned(connection, &username).await?;
         Some(dedicated_user::user_id(connection, &username).await?)
@@ -1058,11 +1099,12 @@ impl ApplicationRuntime for DockerRuntime {
         // a connection revoked while this Application was stopped actually
         // stops applying. Propagates on failure - see `reconcile_networks`.
         reconcile_networks(runner, ctx, &name).await?;
-        if config.run_as_dedicated_user {
-            // Refused where it cannot be honoured rather than skipped: the
-            // isolation is POSIX users, groups and chown, and an Application
-            // that asked for it must not quietly run without it.
-            let connection = connection_ref(ctx)?;
+        // Only where it can be honoured - see `dedicated_user_connection`.
+        // This used to be `if config.run_as_dedicated_user` alone followed by
+        // `connection_ref(ctx)?`, which made a local Java Application
+        // startable only in theory: created fine, and then every start
+        // failed with a message about SSH.
+        if let Some(connection) = dedicated_user_connection(&config, runner, ctx) {
             ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
             // Best-effort, same reasoning as everything else on this path -
             // Application Files just falls back to failing clearly on its
@@ -1115,24 +1157,30 @@ impl ApplicationRuntime for DockerRuntime {
     /// (see the module doc comment). Falls back to `start()` if nothing has
     /// been created yet, same as the other two SSH runtimes.
     async fn restart(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
-        let connection = connection_ref(ctx)?;
+        // Was the last method here still written against an `SshSession`
+        // rather than the runner, so restarting a local container failed
+        // before it did anything at all. `restart_container` was only ever
+        // `docker restart <name>`, which the runner does on either target.
+        let runner = runner(ctx);
         let config = parse_config(ctx)?;
         let name = container_name(ctx.application.id);
-        if container_exists(connection, &name).await? {
-            reconcile_networks(connection, ctx, &name).await?;
-            if config.run_as_dedicated_user {
-                ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
-                let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
-            }
-            connection.restart_container(&name).await?;
-            // Best-effort, per `attach_console_fifo`'s own doc comment - the
-            // previous attach process died along with the pre-restart
-            // instance, a fresh one is needed for the new one.
-            let _ = attach_console_fifo(connection, ctx, &name).await;
-            Ok(())
-        } else {
-            self.start(ctx).await
+        if !container_exists(runner, &name).await? {
+            return self.start(ctx).await;
         }
+        reconcile_networks(runner, ctx, &name).await?;
+        if let Some(connection) = dedicated_user_connection(&config, runner, ctx) {
+            ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
+            let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
+        }
+        expect_success(runner.docker(&["restart", &name]).await?, "restart the container")?;
+        // Best-effort, per `attach_console_fifo`'s own doc comment - the
+        // previous attach process died along with the pre-restart instance,
+        // a fresh one is needed for the new one. Over SSH only: the FIFO is
+        // a POSIX object, and the local console attaches separately.
+        if let Some(connection) = ctx.connection.as_deref() {
+            let _ = attach_console_fifo(connection, ctx, &name).await;
+        }
+        Ok(())
     }
 
     async fn kill(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
@@ -2070,6 +2118,48 @@ second
 
         let negative_cpu = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: Some(-1.0), restart_policy: None, run_as_dedicated_user: false };
         assert!(build_create_args(&ctx, &negative_cpu, "vibessh-app-test", None, None).is_err());
+    }
+
+    /// The decision three methods have to agree on, and did not.
+    ///
+    /// A local Paper application was created successfully and then refused
+    /// to start, with "DockerRuntime requires a connection" - a message
+    /// about SSH shown to somebody who had chosen "this computer".
+    /// `create_container` knew a local daemon has no POSIX accounts;
+    /// `start` and `restart` still demanded a connection to set one up. The
+    /// flag is set unconditionally by every Java blueprint, so every
+    /// Minecraft application on this machine hit it.
+    #[test]
+    fn a_local_daemon_never_claims_the_dedicated_user_however_the_blueprint_asked() {
+        let asked = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: true };
+        let did_not_ask = DockerConfig { run_as_dedicated_user: false, ..asked.clone() };
+
+        // Locally: refused whatever the blueprint said, which is what keeps
+        // `connection_ref` from ever being reached without a connection.
+        assert!(!dedicated_user_applies(&asked, &LocalDocker));
+        assert!(!dedicated_user_applies(&did_not_ask, &LocalDocker));
+
+        // And the flag still means something where it can be honoured -
+        // a rule that always answered "no" would silently drop the
+        // isolation on every remote Node instead.
+        struct Remote;
+        #[async_trait::async_trait]
+        impl DockerCommandRunner for Remote {
+            async fn docker(&self, _args: &[&str]) -> AppResult<crate::transport::CommandOutput> {
+                unreachable!("this stub exists for `supports_dedicated_user` alone")
+            }
+            fn supports_dedicated_user(&self) -> bool {
+                true
+            }
+            async fn write_private_file(&self, _contents: &str) -> AppResult<PrivateFile> {
+                unreachable!()
+            }
+            async fn remove_private_directory(&self, _directory: &str) -> AppResult<()> {
+                unreachable!()
+            }
+        }
+        assert!(dedicated_user_applies(&asked, &Remote));
+        assert!(!dedicated_user_applies(&did_not_ask, &Remote));
     }
 
     /// This used to assert the opposite - that every one of these failed
