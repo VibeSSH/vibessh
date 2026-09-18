@@ -49,6 +49,68 @@ Rozdzieliliśmy to celowo: „niech Claude widzi moje serwery" i „niech Claude
 to dwa różne pytania i u większości ludzi mają różne odpowiedzi. Dopóki zmiany są
 wyłączone, asystent **nie widzi nawet takiego narzędzia** — nie może go więc proponować.
 
+## Odpalanie z IntelliJ (Gradle)
+
+Zamiast lokalnego serwera deweloperskiego możesz po zbudowaniu wrzucić wtyczkę wprost na
+serwer w VibeSSH i zrestartować go — bez wychodzenia z edytora.
+
+Wymaga włączonego **Zezwól na zmiany**, bo zapisuje plik na serwerze.
+
+1. Znajdź identyfikator aplikacji — zapytaj asystenta „jakie mam aplikacje w VibeSSH?".
+2. Dopisz zadanie do `build.gradle.kts`:
+
+```kotlin
+val vibesshDeploy by tasks.registering {
+    dependsOn(tasks.shadowJar) // albo tasks.jar
+    doLast {
+        val jar = tasks.shadowJar.get().archiveFile.get().asFile
+        val app = providers.gradleProperty("vibesshApp").get()
+        val token = providers.gradleProperty("vibesshToken").get()
+        val url = java.net.URI(
+            "http://127.0.0.1:7422/deploy?application=" + app +
+                "&path=plugins/" + jar.name + "&restart=true"
+        ).toURL()
+
+        with(url.openConnection() as java.net.HttpURLConnection) {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer " + token)
+            setRequestProperty("Content-Type", "application/octet-stream")
+            outputStream.use { jar.inputStream().copyTo(it) }
+            check(responseCode == 200) {
+                "VibeSSH odmowil: " + responseCode + " " +
+                    (errorStream?.readBytes()?.decodeToString() ?: "")
+            }
+            println("VibeSSH: " + inputStream.readBytes().decodeToString())
+        }
+    }
+}
+```
+
+3. W `gradle.properties` — **nie w repozytorium**, bo jest tam token:
+
+```properties
+vibesshApp=WKLEJ-ID-APLIKACJI
+vibesshToken=WKLEJ-TOKEN
+```
+
+4. W IntelliJ, w panelu Gradle, kliknij dwa razy `vibesshDeploy`. Możesz też dodać to
+   zadanie do konfiguracji uruchomieniowej, żeby szło jednym skrótem.
+
+Log po restarcie zobaczysz w VibeSSH w zakładce **Logi** tej aplikacji — albo poproś
+o niego asystenta.
+
+### Na co uważać
+
+- **Token trafia do `gradle.properties`, czyli do pliku.** Trzymaj go poza repozytorium
+  (dopisz do `.gitignore`) albo w `~/.gradle/gradle.properties`, wspólnym dla projektów.
+- **`restart=true` restartuje prawdziwy serwer.** Przy produkcyjnym raczej ustaw `false`
+  i zrestartuj świadomie, kiedy nikt nie gra.
+- **Ścieżka jest względna wobec katalogu roboczego aplikacji.** Próba wyjścia poza niego
+  jest odrzucana.
+- **VibeSSH musi być uruchomiony.** Schowany do zasobnika wystarczy; zamknięty przez
+  **Zakończ VibeSSH** już nie.
+
 ## Bezpieczeństwo, po ludzku
 
 **To wejście nie wychodzi poza Twój komputer.** Nie da się tego zmienić w ustawieniach,

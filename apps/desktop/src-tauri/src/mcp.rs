@@ -118,7 +118,14 @@ pub async fn apply(app: &tauri::AppHandle, state: &McpState, config: McpConfig) 
     }
 
     let endpoint = Endpoint { app: app.clone(), token: token()?, allow_changes: config.allow_changes };
-    let router = Router::new().route("/mcp", post(handle)).with_state(endpoint);
+    let router = Router::new()
+        .route("/mcp", post(handle))
+        // Not an MCP tool, on purpose. This one carries a build artifact -
+        // a plugin jar is megabytes - and MCP would mean base64 inside a
+        // JSON-RPC envelope. Its caller is a build, not a model: a Gradle
+        // task that has just produced a jar and wants it on the server.
+        .route("/deploy", post(deploy).layer(axum::extract::DefaultBodyLimit::max(MAX_DEPLOY_BYTES)))
+        .with_state(endpoint);
 
     // Loopback, not a setting - see the module doc.
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], config.port));
@@ -183,6 +190,79 @@ async fn handle(State(endpoint): State<Endpoint>, headers: HeaderMap, body: Json
         }))
         .into_response(),
     }
+}
+
+/// The largest thing `/deploy` will accept.
+///
+/// Generous because the realistic payload is a shaded jar, and mean enough
+/// that a mistake - pointing the task at a directory archive, say - fails at
+/// the door instead of after two minutes of SFTP.
+const MAX_DEPLOY_BYTES: usize = 128 * 1024 * 1024;
+
+// Checked when the crate is built rather than when its tests run: this is a
+// constant, so the question "is it still sane?" has an answer at compile
+// time and a test asserting it would only ever be true.
+const _: () = assert!(MAX_DEPLOY_BYTES >= 64 * 1024 * 1024, "a shaded jar is tens of megabytes");
+const _: () = assert!(MAX_DEPLOY_BYTES <= 512 * 1024 * 1024, "this is a plugin, not a disk image");
+
+#[derive(serde::Deserialize)]
+struct DeployParams {
+    application: Uuid,
+    /// Where to put it, relative to the application's working directory -
+    /// `plugins/myplugin.jar`. Not validated here: both file providers
+    /// already refuse anything that escapes that directory, and there is a
+    /// test for it at the service layer. A second copy of that rule here
+    /// would be a second thing to keep right.
+    path: String,
+    #[serde(default)]
+    restart: bool,
+}
+
+/// Puts a freshly built file onto a server and, if asked, restarts what
+/// runs it.
+///
+/// **The whole point of the IntelliJ story.** `./gradlew build` produces a
+/// jar; this is how it gets to `plugins/` and the server comes back with it
+/// loaded, without leaving the editor.
+///
+/// Behind `allow_changes` like every other tool that writes: this one both
+/// writes to a server and can restart it, which is further than reading a
+/// log.
+async fn deploy(State(endpoint): State<Endpoint>, headers: HeaderMap, params: axum::extract::Query<DeployParams>, body: axum::body::Bytes) -> Response {
+    if !authorized(&headers, &endpoint.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    if !endpoint.allow_changes {
+        return (
+            StatusCode::FORBIDDEN,
+            "changes from the local endpoint are switched off - turn on 'Allow changes' in VibeSSH's settings",
+        )
+            .into_response();
+    }
+
+    match deploy_inner(&endpoint, &params, &body).await {
+        Ok(value) => Json(value).into_response(),
+        Err(err) => (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
+    }
+}
+
+async fn deploy_inner(endpoint: &Endpoint, params: &DeployParams, body: &[u8]) -> AppResult<Value> {
+    use tauri::Manager;
+
+    let app_repo = endpoint.app.state::<crate::storage::application_repository::ApplicationRepository>();
+    let server_repo = endpoint.app.state::<crate::storage::server_repository::ServerRepository>();
+    let sessions = endpoint.app.state::<crate::state::SshSessionManager>();
+
+    crate::services::write_application_file(&app_repo, &server_repo, &sessions, params.application, &params.path, body).await?;
+    log::info!("the local endpoint wrote {} bytes to {} of application {}", body.len(), params.path, params.application);
+
+    if !params.restart {
+        return Ok(json!({ "bytes": body.len(), "path": params.path, "restarted": false }));
+    }
+
+    let local = endpoint.app.state::<Arc<crate::runtime::local_process::LocalProcessManager>>();
+    let status = crate::services::restart_application(&app_repo, &server_repo, &sessions, &local, params.application).await?;
+    Ok(json!({ "bytes": body.len(), "path": params.path, "restarted": true, "status": format!("{status:?}") }))
 }
 
 /// Everything a client asks for that does not need the application behind
@@ -457,6 +537,22 @@ mod tests {
         let answer = protocol_response("tools/destroy_everything", true).expect("still answered");
         let err = answer.expect_err("an unknown method cannot succeed");
         assert!(err.to_string().contains("tools/destroy_everything"), "{err}");
+    }
+
+    /// `/deploy` writes to a server and can restart it, so it sits behind
+    /// the same permission as the restarting tool. It is a separate route
+    /// rather than an MCP tool, which is exactly how a check like this gets
+    /// forgotten - hence a test rather than a comment.
+    #[test]
+    fn deploy_is_behind_the_same_permission_as_restarting() {
+        let source = include_str!("mcp.rs");
+        let start = source.find("async fn deploy(").expect("the deploy handler");
+        // To the end of that function rather than a fixed window, so the
+        // test keeps meaning the same thing as the code around it moves.
+        let end = source[start + 1..].find("\nasync fn ").map(|at| start + 1 + at).unwrap_or(source.len());
+        let body = &source[start..end];
+        assert!(body.contains("authorized(&headers"), "deploy must check the token like every other route");
+        assert!(body.contains("endpoint.allow_changes"), "deploy writes to a server - it cannot be gated as if it only read");
     }
 
     /// Every tool must declare a schema an MCP client can actually read; a

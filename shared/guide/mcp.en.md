@@ -49,6 +49,69 @@ The split is deliberate: "may Claude see my servers" and "may Claude restart the
 different questions, and most people answer them differently. While changes are off the
 assistant **cannot even see** such a tool, so it cannot keep offering one.
 
+## Running it from IntelliJ (Gradle)
+
+Instead of a local dev server, you can push the freshly built plugin straight to a server
+in VibeSSH and restart it - without leaving the editor.
+
+Needs **Allow changes** on, because it writes a file to a server.
+
+1. Get the application id - ask your assistant "what applications do I have in VibeSSH?".
+2. Add a task to `build.gradle.kts`:
+
+```kotlin
+val vibesshDeploy by tasks.registering {
+    dependsOn(tasks.shadowJar) // or tasks.jar
+    doLast {
+        val jar = tasks.shadowJar.get().archiveFile.get().asFile
+        val app = providers.gradleProperty("vibesshApp").get()
+        val token = providers.gradleProperty("vibesshToken").get()
+        val url = java.net.URI(
+            "http://127.0.0.1:7422/deploy?application=" + app +
+                "&path=plugins/" + jar.name + "&restart=true"
+        ).toURL()
+
+        with(url.openConnection() as java.net.HttpURLConnection) {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer " + token)
+            setRequestProperty("Content-Type", "application/octet-stream")
+            outputStream.use { jar.inputStream().copyTo(it) }
+            check(responseCode == 200) {
+                "VibeSSH refused: " + responseCode + " " +
+                    (errorStream?.readBytes()?.decodeToString() ?: "")
+            }
+            println("VibeSSH: " + inputStream.readBytes().decodeToString())
+        }
+    }
+}
+```
+
+3. In `gradle.properties` - **not in the repository**, since it holds a token:
+
+```properties
+vibesshApp=PASTE-APPLICATION-ID
+vibesshToken=PASTE-TOKEN
+```
+
+4. In IntelliJ, double-click `vibesshDeploy` in the Gradle panel. You can also add the
+   task to a run configuration so one shortcut does it.
+
+The log after the restart is in VibeSSH, on that application's **Logs** tab - or ask your
+assistant for it.
+
+### Things to watch
+
+- **The token ends up in `gradle.properties`, which is a file.** Keep it out of the
+  repository (add it to `.gitignore`) or put it in `~/.gradle/gradle.properties`, shared
+  across projects.
+- **`restart=true` restarts a real server.** On a production one, prefer `false` and
+  restart deliberately, when nobody is playing.
+- **The path is relative to the application's working directory.** Anything trying to
+  climb out of it is refused.
+- **VibeSSH has to be running.** Hidden in the tray is fine; closed with **Quit VibeSSH**
+  is not.
+
 ## Security, in plain terms
 
 **This endpoint never leaves your computer.** That is not a setting, because there is no
