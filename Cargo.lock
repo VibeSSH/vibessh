@@ -7705,6 +7705,7 @@ name = "vibessh"
 version = "0.1.0-beta.17"
 dependencies = [
  "async-trait",
+ "axum",
  "chrono",
  "futures-util",
  "hex",

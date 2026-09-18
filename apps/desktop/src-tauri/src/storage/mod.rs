@@ -23,6 +23,7 @@ pub mod node_state_repository;
 pub mod registry_credential_repository;
 pub mod schema;
 pub mod server_repository;
+pub mod mcp_config;
 pub mod tray_config;
 
 use std::path::Path;

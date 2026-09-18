@@ -34,6 +34,8 @@ pub mod member_sudoers;
 // behaviour it is testing. There is nothing here a consumer of this crate
 // would use - the visibility exists so the property can be asserted.
 pub mod errors;
+/// The local endpoint Claude talks to - off unless switched on.
+pub mod mcp;
 /// The icon beside the clock, and what the close button does.
 pub mod tray;
 // `pub` for the same reason as `runtime`/`ssh` above - a real-server
@@ -180,6 +182,20 @@ pub fn run() {
             app.manage(tray::TrayState::new(storage::tray_config::load_tray_config(&config_dir)));
             tray::build(app.handle())?;
 
+            // The local endpoint Claude talks to. Off unless somebody turned
+            // it on, and a port already taken is logged rather than raised:
+            // the alternative is an application that refuses to start
+            // because something unrelated is using 7422.
+            let mcp_state = mcp::McpState::new();
+            app.manage(mcp_state.clone());
+            let mcp_config = storage::mcp_config::load_mcp_config(&config_dir);
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = mcp::apply(&handle, &mcp_state, mcp_config).await {
+                    log::warn!("couldn't open the local MCP endpoint: {err}");
+                }
+            });
+
             app.manage(storage::log_capture::LogCaptureStore::new(config_dir.join("logs"))?);
 
             let backup_destination = storage::backup_destination_config::load_backup_destination(&config_dir)?;
@@ -224,6 +240,9 @@ pub fn run() {
             commands::app_commands::get_tray_settings,
             commands::app_commands::set_minimize_to_tray,
             commands::app_commands::set_tray_language,
+            commands::app_commands::get_mcp_settings,
+            commands::app_commands::set_mcp_settings,
+            commands::app_commands::rotate_mcp_token,
             commands::app_commands::local_docker_available,
             commands::app_commands::local_applications_root,
             commands::pterodactyl_commands::pterodactyl_connection,

@@ -31,6 +31,9 @@ pub enum SecretKind {
     /// A generated `ApplicationDatabase` user's password (Phase 11
     /// foundation) - keyed by the `ApplicationDatabase`'s own `id`.
     ApplicationDatabaseUser,
+    /// The bearer token for the local MCP endpoint (`mcp.rs`). Keyed by
+    /// the nil UUID: it belongs to this installation, not to any server.
+    McpToken,
 }
 
 impl SecretKind {
@@ -41,6 +44,7 @@ impl SecretKind {
             SecretKind::SshKeyPassphrase => "ssh-key-passphrase",
             SecretKind::DatabaseHostAdmin => "database-host-admin",
             SecretKind::ApplicationDatabaseUser => "application-database-user",
+            SecretKind::McpToken => "mcp-token",
         }
     }
 }

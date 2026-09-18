@@ -23,6 +23,9 @@ tauri-plugin-dialog = "2"
 # One notification, once per installation: the first time the close button
 # hides the window instead of quitting - see `tray::hide_to_tray`.
 tauri-plugin-notification = "2"
+# The local MCP endpoint (`mcp.rs`) - the same HTTP server the agent and the
+# backend already use, rather than a bespoke one on a socket.
+axum = "0.7"
 # Opens a phpMyAdmin URL in the user's system browser (Databases tab) -
 # only the `open` command is granted (capabilities/default.json), not the
 # plugin's own `execute` (arbitrary process spawn), which this app has no

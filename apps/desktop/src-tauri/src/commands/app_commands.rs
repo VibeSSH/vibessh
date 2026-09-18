@@ -85,3 +85,79 @@ pub fn set_minimize_to_tray(app: tauri::AppHandle, state: State<crate::tray::Tra
 pub fn set_tray_language(app: tauri::AppHandle, language: String) {
     crate::tray::set_language(&app, &language);
 }
+
+/// What the local MCP endpoint is set to, and how to point a client at it.
+///
+/// The token travels to the interface so it can be copied into a client's
+/// configuration - that is the whole purpose of showing it. It is read from
+/// the keyring on demand rather than held anywhere, and it is generated on
+/// this first read if there was none.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSettings {
+    pub enabled: bool,
+    pub allow_changes: bool,
+    pub port: u16,
+    pub url: String,
+    pub token: String,
+}
+
+fn mcp_settings_from(config: crate::storage::mcp_config::McpConfig) -> AppResult<McpSettings> {
+    Ok(McpSettings {
+        enabled: config.enabled,
+        allow_changes: config.allow_changes,
+        port: config.port,
+        url: format!("http://127.0.0.1:{}/mcp", config.port),
+        token: crate::mcp::token()?,
+    })
+}
+
+#[tauri::command]
+pub fn get_mcp_settings(app: tauri::AppHandle) -> AppResult<McpSettings> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| crate::errors::AppError::Storage(format!("couldn't resolve the config directory: {err}")))?;
+    mcp_settings_from(crate::storage::mcp_config::load_mcp_config(&config_dir))
+}
+
+/// Saves the setting and makes it true in the same call.
+///
+/// Written to disk *after* the endpoint has actually opened, so a port
+/// already taken by something else leaves the setting off rather than
+/// recording a state the app is not in - the next launch would otherwise
+/// fail the same way with nobody watching.
+#[tauri::command]
+pub async fn set_mcp_settings(
+    app: tauri::AppHandle,
+    state: State<'_, std::sync::Arc<crate::mcp::McpState>>,
+    enabled: bool,
+    allow_changes: bool,
+    port: u16,
+) -> AppResult<McpSettings> {
+    let config = crate::storage::mcp_config::McpConfig { enabled, allow_changes, port };
+    crate::mcp::apply(&app, &state, config).await?;
+
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| crate::errors::AppError::Storage(format!("couldn't resolve the config directory: {err}")))?;
+    crate::storage::mcp_config::save_mcp_config(&config_dir, &config)?;
+    mcp_settings_from(config)
+}
+
+/// A new token, and every client configured with the old one stops working.
+#[tauri::command]
+pub async fn rotate_mcp_token(app: tauri::AppHandle, state: State<'_, std::sync::Arc<crate::mcp::McpState>>) -> AppResult<McpSettings> {
+    crate::mcp::rotate_token()?;
+    // Restarted so the running endpoint stops accepting the old one - a
+    // rotation that left the old token working until the next launch would
+    // be worse than no rotation, because it would look like it had worked.
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| crate::errors::AppError::Storage(format!("couldn't resolve the config directory: {err}")))?;
+    let config = crate::storage::mcp_config::load_mcp_config(&config_dir);
+    crate::mcp::apply(&app, &state, config).await?;
+    mcp_settings_from(config)
+}
