@@ -14,7 +14,7 @@
 // is convenience; this part is not.
 
 plugins {
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.3.0"
     id("org.jetbrains.intellij.platform") version "2.19.0"
 }
 
@@ -30,9 +30,25 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Community edition: nothing here needs a paid IDE, and building
-        // against the smaller platform keeps the plugin loadable in both.
-        intellijIdeaCommunity("2024.2.5")
+        // Against a locally installed IDE when one is named, and a released
+        // Community build otherwise.
+        //
+        // The local path is how you find out whether this still compiles
+        // against the IDE somebody actually runs - an API removed two
+        // releases after the pinned version is a plugin that installs and
+        // then throws on first use, which no amount of building against an
+        // older SDK will reveal. Passed in rather than committed, because it
+        // is a path on one person's disk:
+        //
+        //   ./gradlew buildPlugin -PvibesshIdePath="C:/Program Files/JetBrains/IntelliJ IDEA 2026.1"
+        val localIde = providers.gradleProperty("vibesshIdePath").orNull
+        if (localIde != null) {
+            local(localIde)
+        } else {
+            // Community: nothing here needs a paid IDE, and building against
+            // the smaller platform keeps the plugin loadable in both.
+            intellijIdeaCommunity("2024.2.5")
+        }
     }
     testImplementation(kotlin("test"))
 }
