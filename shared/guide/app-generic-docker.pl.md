@@ -30,6 +30,38 @@ Nic nie jest publikowane automatycznie. Sprawdź na stronie obrazu, na którym p
 
 Katalog roboczy aplikacji jest podmontowany do kontenera. Wszystko, co program tam zapisze, przetrwa restart i odtworzenie kontenera. To, co zapisze gdzie indziej w kontenerze, przepadnie przy **Odtwórz kontener**.
 
+**Gdzie ten katalog widać w kontenerze** zależy od tego, gdzie aplikacja działa:
+
+- **Na serwerze** — pod tą samą ścieżką co na serwerze, na przykład `/home/container/mojaapka`.
+- **Na Twoim komputerze** — pod `/home/container`. Katalog na dysku zostaje tam, gdzie
+  jest (`C:\Users\...`), ale kontener Linuksa nie potrafi mieć ścieżki z literą dysku,
+  więc w środku widzi go pod ścieżką linuksową.
+
+Ma to znaczenie tylko wtedy, gdy sam wpisujesz ścieżki bezwzględne w komendzie albo
+w zmiennych środowiskowych. Nazwy plików względem katalogu roboczego działają tak samo
+w obu przypadkach — i dlatego blueprinty z nich korzystają.
+
+## Docker na tym komputerze
+
+Wybierając **Ten komputer** i runtime **Kontener Docker**, potrzebujesz zainstalowanego
+Docker Desktopa (na Windowsie razem z WSL2). VibeSSH sprawdza to przy tworzeniu aplikacji
+i mówi, jeśli go nie widzi.
+
+Kilka rzeczy działa inaczej niż na serwerze i tak ma być:
+
+- **Nie ma osobnego konta systemowego dla aplikacji.** Izolacja przez konta i `chown` to
+  mechanizm POSIX, którego lokalny Docker Desktop nie ma. Nie jest to strata: pliki
+  aplikacji są po prostu Twoje.
+- **Konsola działa inaczej pod spodem**, ale w oknie wygląda tak samo.
+
+**Naprawione w 0.1.0-beta.17.** We wcześniejszych wersjach lokalna aplikacja Dockera dawała
+się utworzyć, a potem nie chciała wystartować — z komunikatem
+`internal error: DockerRuntime requires a connection`, czyli o SSH, mimo wyboru
+„Ten komputer". Dotyczyło to wszystkich aplikacji javowych (Paper, Velocity, Waterfall
+i pozostałych), bo każda z nich prosi o osobne konto systemowe, którego lokalnie nie ma.
+Poprawione: uruchamianie, restart i **Odtwórz kontener** działają lokalnie. Jeśli wciąż
+widzisz ten komunikat — zaktualizuj aplikację.
+
 ## Zmiana obrazu na coś zarządzanego
 
 Jeśli okaże się, że kontener zawiera zwykły serwer Paper, możesz przełączyć aplikację na rodzaj **Paper** w **Ustawieniach → Typ aplikacji**. Od tej pory VibeSSH zarządza wersją serwera — i pobierze wtedy własny plik serwera do tego katalogu. Ostrzeżenie przy przełączaniu mówi dokładnie, co się stanie.

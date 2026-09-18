@@ -30,6 +30,37 @@ Nothing is published automatically. Check the image's page for the port it liste
 
 The application's working directory is mounted into the container. Anything the program writes there survives a restart and a container recreate. Anything it writes elsewhere inside the container is lost on **Recreate container**.
 
+**Where that directory appears inside the container** depends on where the application runs:
+
+- **On a server** - at the same path it has on the server, for instance `/home/container/myapp`.
+- **On your own computer** - at `/home/container`. The directory on disk stays where it is
+  (`C:\Users\...`), but a Linux container cannot have a path with a drive letter in it, so
+  inside it appears under a Linux path.
+
+This only matters if you write absolute paths yourself, in the command or in environment
+variables. File names relative to the working directory behave identically either way -
+which is why the built-in application types use them.
+
+## Docker on this computer
+
+Choosing **This computer** with the **Docker container** runtime needs Docker Desktop
+installed (on Windows, together with WSL2). VibeSSH checks while you are creating the
+application and says so if it cannot see one.
+
+A few things work differently from a server, deliberately:
+
+- **There is no separate system account for the application.** That isolation is built
+  from POSIX users and `chown`, which a local Docker Desktop does not have. Nothing is
+  lost by it: the application's files are simply your own.
+- **The console works differently underneath**, though it looks the same on screen.
+
+**Fixed in 0.1.0-beta.17.** In earlier versions a local Docker application could be
+created and then refused to start, with `internal error: DockerRuntime requires a
+connection` - a message about SSH, despite "This computer" having been chosen. It affected
+every Java application type (Paper, Velocity, Waterfall and the rest), because each of them
+asks for that separate system account which does not exist locally. Starting, restarting
+and **Recreate container** now work locally. If you still see that message, update the app.
+
 ## Switching to a managed type
 
 If it turns out the container is really an ordinary Paper server, you can switch the application to the **Paper** type under **Settings - Application type**. From then on VibeSSH manages the server version - and it will download its own server file into that directory. The warning shown when switching says exactly what will happen.
