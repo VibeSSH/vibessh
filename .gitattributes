@@ -10,3 +10,9 @@
 # reason, so migrations always check out with LF regardless of local
 # settings, same as shell scripts above.
 apps/backend/migrations/*.sql text eol=lf
+# The Gradle wrapper script has no extension, so the `*.sh` rule above does
+# not reach it - and it is a shell script run on Linux and macOS, where a
+# CRLF shebang breaks it exactly the way it breaks install.sh.
+gradlew text eol=lf
+# Its jar is a binary; normalisation would corrupt it.
+gradle-wrapper.jar binary

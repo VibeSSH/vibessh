@@ -1,0 +1,45 @@
+<idea-plugin>
+    <id>dev.vibessh.intellij</id>
+    <name>VibeSSH</name>
+    <vendor email="hello@vibessh.dev" url="https://vibessh.dev">VibeSSH</vendor>
+
+    <description><![CDATA[
+    Build here, run it on your server.
+    <br><br>
+    Sends the artifact your build just produced to an application managed by
+    <a href="https://vibessh.dev">VibeSSH</a> and restarts it - without leaving the IDE.
+    A Minecraft plugin lands in <code>plugins/</code> and the server comes back with it loaded.
+    <br><br>
+    Talks to the VibeSSH desktop application over a loopback endpoint on your own computer.
+    Nothing here reaches a network, and the token is kept in the IDE's credential store
+    rather than in a file in your project.
+    <br><br>
+    Requires VibeSSH 0.1.0-beta.17 or newer, running, with
+    <b>Settings - Claude and other assistants</b> switched on.
+    ]]></description>
+
+    <!-- Nothing here needs more than the platform: no Java PSI, no Gradle
+         model, no language support. Declaring only this keeps the plugin
+         loadable in every JetBrains IDE rather than IDEA alone. -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="dev.vibessh.intellij.VibeSshSettings"/>
+        <applicationConfigurable
+            parentId="tools"
+            instance="dev.vibessh.intellij.VibeSshConfigurable"
+            id="dev.vibessh.intellij.settings"
+            displayName="VibeSSH"/>
+        <notificationGroup id="VibeSSH" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action
+            id="dev.vibessh.intellij.DeployAction"
+            class="dev.vibessh.intellij.DeployAction"
+            text="Deploy to VibeSSH"
+            description="Send the built artifact to the configured VibeSSH application and restart it">
+            <add-to-group group-id="BuildMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
