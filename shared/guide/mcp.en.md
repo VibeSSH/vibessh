@@ -32,13 +32,42 @@ It is **off** by default and nothing is listening.
 2. Turn on **Answer assistants on this computer**.
 3. Copy the **Address** - it looks like `http://127.0.0.1:7422/mcp`.
 4. Click **Show** beside the **Token** and copy it.
-5. Put both into your assistant's configuration as an MCP server. In Claude Code:
+
+### Connecting from Claude Code
 
 ```bash
-claude mcp add --transport http vibessh http://127.0.0.1:7422/mcp --header "Authorization: Bearer PASTE_TOKEN"
+claude mcp add --transport http --scope user vibessh http://127.0.0.1:7422/mcp --header "Authorization: Bearer PASTE_TOKEN"
 ```
 
-6. Ask it something simple, such as "what servers do I have in VibeSSH?".
+Three things this usually trips over:
+
+- **`--scope user`** makes the server visible whichever directory you start Claude in.
+  Without it the entry belongs to the directory you added it from, and in another project
+  VibeSSH simply does not exist.
+- **The list of MCP servers is fixed when a session starts.** After adding the entry,
+  end the current session and start a new one, or the tools will not appear.
+- **The token is part of the entry.** After issuing a new one in VibeSSH you have to
+  replace it here too - easiest is `claude mcp remove vibessh` and then the command above
+  again.
+
+To see what Claude has:
+
+```bash
+claude mcp list
+```
+
+`vibessh` should be on it. Dead entries from old experiments go with
+`claude mcp remove NAME`, run from the directory they were added in.
+
+### Connecting from anything else
+
+Any MCP client that speaks HTTP needs only two things: the address
+`http://127.0.0.1:7422/mcp` and an `Authorization: Bearer TOKEN` header. If your client
+only speaks stdio, it is not supported yet - a bridge is a small thing to add but does
+not exist.
+
+Finally, ask your assistant something simple, such as "what servers do I have in
+VibeSSH?".
 
 ## How to allow restarts
 
@@ -99,18 +128,71 @@ val vibesshDeploy by tasks.registering {
 }
 ```
 
-4. In `gradle.properties` - **not in the repository**, since it holds a token:
+4. Split the two values across two files. **This is not a detail** - one of them is a
+   secret and the other is not.
 
-```properties
-vibesshApp=PASTE-APPLICATION-ID
-vibesshToken=PASTE-TOKEN
-```
+   Put the **token** in your home `gradle.properties`, **outside the project**:
 
-5. In IntelliJ, double-click `vibesshDeploy` in the Gradle panel. You can also add the
-   task to a run configuration so one shortcut does it.
+   - Windows: `C:\Users\YOUR-NAME\.gradle\gradle.properties`
+   - Linux and macOS: `~/.gradle/gradle.properties`
+
+   ```properties
+   vibesshToken=PASTE-TOKEN
+   ```
+
+   Gradle reads that file for every project, so it is a one-off.
+
+   The **application id** can stay in the project's own `gradle.properties` - it is not a
+   secret:
+
+   ```properties
+   vibesshApp=PASTE-APPLICATION-ID
+   ```
+
+   A `gradle.properties` in the project directory is very often **in the repository**. A
+   token written there is one `git commit -a` away from a public GitHub, and a token once
+   pushed has to be revoked, not deleted. If you are unsure, check:
+
+   ```bash
+   git ls-files --error-unmatch gradle.properties
+   ```
+
+   An answer without an error means the file is tracked. All the more reason to keep the
+   token in the home file, and you can add the project's `gradle.properties` to
+   `.gitignore` as well.
+
+5. In IntelliJ, in the **Gradle** panel (right-hand edge), expand `Tasks → other` and
+   double-click `vibesshDeploy`.
 
 The log after the restart is in VibeSSH, on that application's **Logs** tab - or ask your
 assistant for it.
+
+### A run configuration, so one shortcut does it
+
+Double-clicking in the Gradle panel is fine now and then. While actually working on a
+plugin it is better to have it on one button at the top of the window.
+
+1. In the **Gradle** panel, right-click `vibesshDeploy` → **Modify Run Configuration...**.
+2. Give it a readable **Name**, such as `Deploy to bedwars`.
+3. Leave **Store as project file** **unticked** if the configuration would hold anything
+   private - a stored project configuration lands in `.idea/` and often gets committed.
+4. **OK**. It appears in the list beside the ▶ button, top right.
+5. From then on **Shift+F10** runs the last used configuration.
+
+Want it shorter still? In **Settings → Keymap**, search for your configuration's name and
+give it a shortcut of its own.
+
+### Building and deploying in one move
+
+To have an ordinary **Build** send the plugin too, add a dependency rather than clicking
+two tasks:
+
+```kotlin
+tasks.named("build") { finalizedBy(vibesshDeploy) }
+```
+
+Be careful with that while `restart=true`: every build of the project will then restart
+the server, including the builds IntelliJ runs by itself.
 
 ### Things to watch
 
@@ -156,3 +238,9 @@ access.
 - **`Unresolved reference 'net'` on `java.net.URI`** - inside `build.gradle.kts` the name
   `java` belongs to Gradle's extension, not to the Java package. Add `import java.net.URI`
   and `import java.net.HttpURLConnection` at the very top and use the short names.
+- **The token ended up in the project's `gradle.properties`** - check whether the file is
+  tracked (`git ls-files --error-unmatch gradle.properties`). If it is, issue a new token
+  in VibeSSH and put it in your home `~/.gradle/gradle.properties`. Issuing the new one
+  voids the old one by itself.
+- **Claude does not see the tools after `claude mcp add`** - the server list is fixed when
+  a session starts. End the current one and start a new one.
