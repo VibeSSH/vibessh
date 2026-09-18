@@ -57,7 +57,19 @@ in VibeSSH and restart it - without leaving the editor.
 Needs **Allow changes** on, because it writes a file to a server.
 
 1. Get the application id - ask your assistant "what applications do I have in VibeSSH?".
-2. Add a task to `build.gradle.kts`:
+2. Add **two imports at the very top** of `build.gradle.kts`, above the `plugins` block:
+
+```kotlin
+import java.net.HttpURLConnection
+import java.net.URI
+```
+
+Not decoration. Inside `build.gradle.kts` the name `java` belongs to Gradle's own
+extension (`JavaPluginExtension`), not to the Java package - so writing `java.net.URI`
+out in full fails with `Unresolved reference 'net'`. The imports are what let you write
+`URI` and `HttpURLConnection` instead.
+
+3. Add the task, anywhere in the same file:
 
 ```kotlin
 val vibesshDeploy by tasks.registering {
@@ -66,12 +78,12 @@ val vibesshDeploy by tasks.registering {
         val jar = tasks.shadowJar.get().archiveFile.get().asFile
         val app = providers.gradleProperty("vibesshApp").get()
         val token = providers.gradleProperty("vibesshToken").get()
-        val url = java.net.URI(
+        val url = URI(
             "http://127.0.0.1:7422/deploy?application=" + app +
                 "&path=plugins/" + jar.name + "&restart=true"
         ).toURL()
 
-        with(url.openConnection() as java.net.HttpURLConnection) {
+        with(url.openConnection() as HttpURLConnection) {
             requestMethod = "POST"
             doOutput = true
             setRequestProperty("Authorization", "Bearer " + token)
@@ -87,14 +99,14 @@ val vibesshDeploy by tasks.registering {
 }
 ```
 
-3. In `gradle.properties` - **not in the repository**, since it holds a token:
+4. In `gradle.properties` - **not in the repository**, since it holds a token:
 
 ```properties
 vibesshApp=PASTE-APPLICATION-ID
 vibesshToken=PASTE-TOKEN
 ```
 
-4. In IntelliJ, double-click `vibesshDeploy` in the Gradle panel. You can also add the
+5. In IntelliJ, double-click `vibesshDeploy` in the Gradle panel. You can also add the
    task to a run configuration so one shortcut does it.
 
 The log after the restart is in VibeSSH, on that application's **Logs** tab - or ask your
@@ -141,3 +153,6 @@ access.
 - **The assistant offers a restart and is refused** - **Allow changes** is off.
 - **The assistant does not see the new token** - after issuing one you have to paste it
   into the assistant again; the old one is void immediately.
+- **`Unresolved reference 'net'` on `java.net.URI`** - inside `build.gradle.kts` the name
+  `java` belongs to Gradle's extension, not to the Java package. Add `import java.net.URI`
+  and `import java.net.HttpURLConnection` at the very top and use the short names.
