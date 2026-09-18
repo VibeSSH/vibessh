@@ -331,6 +331,26 @@ pub async fn get_metrics(repo: &ServerRepository, sessions: &SshSessionManager, 
     session.get_metrics().await
 }
 
+/// One poll of a Minecraft server running on `server_id`, over RCON through
+/// the SSH tunnel. The password is read from the keyring here, so it never
+/// crosses the Tauri boundary; the caller passes only the (non-secret) port.
+pub async fn get_minecraft_metrics(
+    repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    server_id: Uuid,
+    rcon_port: u16,
+) -> AppResult<vibessh_protocol::MinecraftMetrics> {
+    let password = crate::storage::credentials::load_secret(server_id, crate::storage::credentials::SecretKind::RconPassword)?
+        .ok_or_else(|| crate::errors::AppError::NotFound("no RCON password is stored for this server".into()))?;
+    let session = get_or_connect(repo, sessions, server_id).await?;
+    session.get_minecraft_metrics(rcon_port, &password).await
+}
+
+/// Stores (or replaces) the RCON password for `server_id` in the keyring.
+pub fn set_rcon_password(server_id: Uuid, password: &str) -> AppResult<()> {
+    crate::storage::credentials::store_secret(server_id, crate::storage::credentials::SecretKind::RconPassword, password)
+}
+
 pub async fn list_processes(
     repo: &ServerRepository,
     sessions: &SshSessionManager,

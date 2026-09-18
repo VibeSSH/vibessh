@@ -24,3 +24,21 @@ pub async fn list_server_processes(
 ) -> AppResult<Vec<ProcessSummary>> {
     services::list_server_processes(&repo, &sessions, server_id).await
 }
+
+#[tauri::command]
+pub async fn get_minecraft_metrics(
+    repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    server_id: Uuid,
+    rcon_port: u16,
+) -> AppResult<vibessh_protocol::MinecraftMetrics> {
+    services::get_minecraft_metrics(&repo, &sessions, server_id, rcon_port).await
+}
+
+/// Stores the RCON password in the OS keyring. Kept off every read path and
+/// out of any config file - the frontend sends it here once and never reads
+/// it back.
+#[tauri::command]
+pub async fn set_minecraft_rcon_password(server_id: Uuid, password: String) -> AppResult<()> {
+    services::set_rcon_password(server_id, &password)
+}
