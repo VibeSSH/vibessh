@@ -31,6 +31,10 @@
             id="dev.vibessh.intellij.settings"
             displayName="VibeSSH"/>
         <notificationGroup id="VibeSSH" displayType="BALLOON"/>
+        <!-- Project-scoped so the running stream is hung up when the project
+             closes, rather than leaving a `docker logs -f` attached on a
+             server with nobody reading it. -->
+        <projectService serviceImplementation="dev.vibessh.intellij.LogConsoleService"/>
     </extensions>
 
     <actions>
@@ -39,6 +43,13 @@
             class="dev.vibessh.intellij.DeployAction"
             text="Deploy to VibeSSH"
             description="Send the built artifact to the configured VibeSSH application and restart it">
+            <add-to-group group-id="BuildMenu" anchor="last"/>
+        </action>
+        <action
+            id="dev.vibessh.intellij.FollowLogsAction"
+            class="dev.vibessh.intellij.FollowLogsAction"
+            text="Follow VibeSSH Logs"
+            description="Stream an application's output into a console in this IDE">
             <add-to-group group-id="BuildMenu" anchor="last"/>
         </action>
     </actions>

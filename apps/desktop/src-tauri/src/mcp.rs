@@ -125,6 +125,10 @@ pub async fn apply(app: &tauri::AppHandle, state: &McpState, config: McpConfig) 
         // JSON-RPC envelope. Its caller is a build, not a model: a Gradle
         // task that has just produced a jar and wants it on the server.
         .route("/deploy", post(deploy).layer(axum::extract::DefaultBodyLimit::max(MAX_DEPLOY_BYTES)))
+        // A GET, and the one route here that never ends on its own: it holds
+        // the connection open and writes a line whenever the application
+        // does, until the reader goes away.
+        .route("/logs", axum::routing::get(logs))
         .with_state(endpoint);
 
     // Loopback, not a setting - see the module doc.
@@ -263,6 +267,97 @@ async fn deploy_inner(endpoint: &Endpoint, params: &DeployParams, body: &[u8]) -
     let local = endpoint.app.state::<Arc<crate::runtime::local_process::LocalProcessManager>>();
     let status = crate::services::restart_application(&app_repo, &server_repo, &sessions, &local, params.application).await?;
     Ok(json!({ "bytes": body.len(), "path": params.path, "restarted": true, "status": format!("{status:?}") }))
+}
+
+#[derive(serde::Deserialize)]
+struct LogParams {
+    application: Uuid,
+    /// How much history to send before going live, so a console that has
+    /// just opened is not staring at nothing until the server next speaks.
+    #[serde(default = "default_tail")]
+    tail: u32,
+}
+
+fn default_tail() -> u32 {
+    200
+}
+
+/// Follows an application's output for as long as the caller keeps reading.
+///
+/// **Plain lines, not an event format.** The reader is an IDE console
+/// appending text; server-sent events would mean framing on this side and
+/// unframing on the other for no gain. One line per line, and the connection
+/// ending is the end.
+///
+/// **Reading, so it needs no permission to change.** Following a log is the
+/// same act as `application_logs`, held open - it writes nothing and
+/// restarts nothing.
+///
+/// **The follow stops when the reader goes.** `FollowHandle` stops the
+/// remote `docker logs -f` when it is dropped, so it is moved into the
+/// stream: an IDE that closes the console, or a laptop that sleeps, ends the
+/// process on the server rather than leaving it attached forever.
+async fn logs(State(endpoint): State<Endpoint>, headers: HeaderMap, params: axum::extract::Query<LogParams>) -> Response {
+    use tauri::Manager;
+
+    if !authorized(&headers, &endpoint.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let app_repo = endpoint.app.state::<crate::storage::application_repository::ApplicationRepository>();
+    let server_repo = endpoint.app.state::<crate::storage::server_repository::ServerRepository>();
+    let sessions = endpoint.app.state::<crate::state::SshSessionManager>();
+    let local = endpoint.app.state::<Arc<crate::runtime::local_process::LocalProcessManager>>();
+
+    let (lines_tx, lines_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let closed_tx = lines_tx.clone();
+    let follow = crate::services::follow_application_logs(
+        &app_repo,
+        &server_repo,
+        &sessions,
+        &local,
+        params.application,
+        params.tail,
+        move |line| {
+            let _ = lines_tx.send(line);
+        },
+        move |reason| {
+            // Said in the stream rather than swallowed: a console that stops
+            // filling looks the same as one whose application went quiet,
+            // and those are very different situations.
+            if let Some(reason) = reason {
+                let _ = closed_tx.send(format!("--- VibeSSH: podglad zakonczony: {reason}"));
+            } else {
+                let _ = closed_tx.send("--- VibeSSH: podglad zakonczony".to_string());
+            }
+        },
+    )
+    .await;
+
+    let handle = match follow {
+        Ok(handle) => handle,
+        Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response(),
+    };
+
+    // The handle rides along in the stream's state, so it lives exactly as
+    // long as somebody is reading and not one moment longer.
+    let stream = futures_util::stream::unfold((lines_rx, handle), |(mut rx, handle)| async move {
+        let line = rx.recv().await?;
+        Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(format!("{line}\n"))), (rx, handle)))
+    });
+
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            // Nothing between here and the reader, but both are ways a proxy
+            // or a client library decides to buffer a response until it ends
+            // - and this one does not end.
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+            (axum::http::HeaderName::from_static("x-accel-buffering"), "no"),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response()
 }
 
 /// Everything a client asks for that does not need the application behind
@@ -543,16 +638,53 @@ mod tests {
     /// the same permission as the restarting tool. It is a separate route
     /// rather than an MCP tool, which is exactly how a check like this gets
     /// forgotten - hence a test rather than a comment.
+    /// One handler's source, from its signature to the next item.
+    ///
+    /// Bounded by the next `fn` of any kind, not just the next `async fn`.
+    /// The first version looked only for `async fn`, so a handler followed
+    /// by a plain function swallowed everything up to the one after it -
+    /// and the log test then failed on an `allow_changes` belonging to
+    /// `call_tool`, which is the right place for one. Caught by the test
+    /// it broke, which is the only reason this note exists.
+    fn handler_source(name: &str) -> &'static str {
+        let source = include_str!("mcp.rs");
+        let start = source.find(name).unwrap_or_else(|| panic!("no handler called {name}"));
+        let rest = &source[start + 1..];
+        let end = [rest.find("\nasync fn "), rest.find("\nfn ")]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|at| start + 1 + at)
+            .unwrap_or(source.len());
+        &source[start..end]
+    }
+
     #[test]
     fn deploy_is_behind_the_same_permission_as_restarting() {
-        let source = include_str!("mcp.rs");
-        let start = source.find("async fn deploy(").expect("the deploy handler");
-        // To the end of that function rather than a fixed window, so the
-        // test keeps meaning the same thing as the code around it moves.
-        let end = source[start + 1..].find("\nasync fn ").map(|at| start + 1 + at).unwrap_or(source.len());
-        let body = &source[start..end];
+        let body = handler_source("async fn deploy(");
         assert!(body.contains("authorized(&headers"), "deploy must check the token like every other route");
         assert!(body.contains("endpoint.allow_changes"), "deploy writes to a server - it cannot be gated as if it only read");
+    }
+
+    /// Following a log is reading, held open - it writes nothing and
+    /// restarts nothing, so it must not sit behind the permission that
+    /// exists for changing things. Asserted rather than commented because
+    /// the two routes are next to each other and the gate is one line.
+    #[test]
+    fn following_a_log_needs_the_token_but_not_permission_to_change_things() {
+        let body = handler_source("async fn logs(");
+        assert!(body.contains("authorized(&headers"), "every route checks the token");
+        assert!(!body.contains("allow_changes"), "reading a log is not a change and must not need that permission");
+    }
+
+    /// The remote `docker logs -f` has to stop when the reader goes away.
+    /// The only thing that makes that true is the handle being owned by the
+    /// stream, so that is what is asserted - a handle dropped early kills a
+    /// live console, and one held forever leaks a process per open console.
+    #[test]
+    fn the_follow_handle_lives_exactly_as_long_as_the_stream() {
+        let body = handler_source("async fn logs(");
+        assert!(body.contains("unfold((lines_rx, handle)"), "the handle must be part of the stream's own state");
     }
 
     /// Every tool must declare a schema an MCP client can actually read; a
