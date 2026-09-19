@@ -80,8 +80,8 @@
   padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--t-bg-input);
+  color: var(--text-primary);
   font-size: 13px;
 }
 
