@@ -255,7 +255,7 @@ export function Dashboard() {
             <div className="stat-card">
               <div className="stat-card-top">
                 <span className="stat-card-label">CPU</span>
-                <Icon name="cpu" size={15} className="stat-card-icon" />
+                <Icon name="activity" size={15} className="stat-card-icon" />
               </div>
               <div className="stat-card-value">{avgCpu != null ? `${avgCpu.toFixed(1)}%` : "—"}</div>
               <div className="stat-card-bar">
