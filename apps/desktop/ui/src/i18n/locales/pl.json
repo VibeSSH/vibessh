@@ -1084,6 +1084,10 @@
     "cpuColumn": "CPU",
     "ramColumn": "RAM",
     "command": "Polecenie",
+    "noDataTitle": "Brak danych",
+    "noMetricsDescription": "Ten host w tej chwili nie zwraca metryk.",
+    "noProcessesTitle": "Brak procesów",
+    "noProcessesDescription": "Ten host nie zgłosił żadnych działających procesów.",
     "couldntReach": "Nie udało się połączyć z tym serwerem."
   },
   "nav": {

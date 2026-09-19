@@ -1077,6 +1077,10 @@
     "cpuColumn": "CPU",
     "ramColumn": "RAM",
     "command": "Command",
+    "noDataTitle": "No data",
+    "noMetricsDescription": "This host isn't returning metrics right now.",
+    "noProcessesTitle": "No processes",
+    "noProcessesDescription": "This host reported no running processes.",
     "couldntReach": "Couldn't reach this server."
   },
   "nav": {

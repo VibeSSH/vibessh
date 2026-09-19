@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { TerminalView } from "@/components/servers/TerminalView";
@@ -130,11 +131,16 @@ export function TerminalPage() {
       <div className="terminal-page-body">
         {tabs.length === 0 ? (
           <div className="terminal-empty-state">
-            <p>{t("terminalPage.noSessions")}</p>
-            <Button onClick={addTab}>
-              <Icon name="plus" size={14} />
-              {t("terminalPage.newTerminal")}
-            </Button>
+            <EmptyState
+              icon="terminal"
+              title={t("terminalPage.noSessions")}
+              action={
+                <Button onClick={addTab}>
+                  <Icon name="plus" size={14} />
+                  {t("terminalPage.newTerminal")}
+                </Button>
+              }
+            />
           </div>
         ) : (
           tabs.map((tab) => (
