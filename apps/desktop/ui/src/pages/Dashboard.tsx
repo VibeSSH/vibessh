@@ -248,6 +248,45 @@ export function Dashboard() {
         </Card>
       ) : (
         <>
+          {/* Aggregate overview across the SSH Nodes that report metrics - the
+              reference's three-metric row. VibeSSH has no single node, so these
+              are averages over the Nodes with data, not one machine's figures. */}
+          <div className="dashboard-metrics">
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">CPU</span>
+                <Icon name="cpu" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{avgCpu != null ? `${avgCpu.toFixed(1)}%` : "—"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgCpu ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">{t("rail.ram")}</span>
+                <Icon name="server" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{avgRam != null ? `${avgRam.toFixed(0)}%` : "—"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgRam ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">{t("rail.disk")}</span>
+                <Icon name="database" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{avgDisk != null ? `${avgDisk.toFixed(0)}%` : "—"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgDisk ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+            </div>
+          </div>
+
           <div className="dashboard-section">
             <h2 className="dashboard-section-title">{t("dashboard.sectionNodes", { count: servers.length })}</h2>
             <div className="dashboard-node-row">

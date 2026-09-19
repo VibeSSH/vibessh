@@ -277,3 +277,61 @@
 .dashboard-footer-bar-online-problem {
   color: var(--danger-text);
 }
+
+/* Aggregate overview: three equal metric cards in one row (reference's top
+   band). The bar fill is the one place the blue->teal->purple gradient is used
+   as a small accent. */
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+  .dashboard-metrics { grid-template-columns: 1fr; }
+}
+.stat-card {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface-1);
+}
+.stat-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.stat-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.stat-card-icon { color: var(--text-tertiary); }
+.stat-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.stat-card-bar {
+  height: 5px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.stat-card-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--accent) 55%, var(--purple));
+  transition: width 0.4s ease;
+}
+.stat-card-foot {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
