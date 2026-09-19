@@ -1958,5 +1958,23 @@
     "unshareAria": "Stop sharing {{name}} - it keeps running and this computer keeps its own copy",
     "unsharedToast": "{{name}} is no longer shared.",
     "updatedAt": "Snapshot taken {{when}}"
+  },
+  "minecraftMetrics": {
+    "title": "Minecraft health",
+    "setupHint": "Reads TPS, tick time and players over RCON through the SSH tunnel. Enable RCON in server.properties, then enter the port and password. The password is kept in your OS keyring, never in a file.",
+    "portLabel": "RCON port",
+    "passwordLabel": "RCON password",
+    "passwordPlaceholder": "from server.properties",
+    "save": "Save",
+    "cancel": "Cancel",
+    "settings": "RCON settings",
+    "refresh": "Refresh",
+    "tpsNow": "{{tps}} TPS",
+    "tpsUnknown": "No TPS",
+    "tps": "TPS",
+    "tpsWindows": "1m / 5m / 15m",
+    "mspt": "Tick time",
+    "msptValue": "{{avg}} ms avg · {{max}} ms max",
+    "players": "Players"
   }
 }

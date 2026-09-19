@@ -1,0 +1,44 @@
+/* Restrained on purpose: no bright fills, hairline separators, teal reserved
+   for the TPS badge where it means "healthy". Matches the app's visual
+   restraint - the accent is a signal, not a surface. */
+
+.minecraft-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin: 16px 0 0;
+}
+
+.minecraft-metrics-grid dt {
+  font-size: 12px;
+  color: var(--text-muted, #8a8f98);
+  margin-bottom: 4px;
+}
+
+.minecraft-metrics-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.minecraft-metrics-unit,
+.minecraft-metrics-names {
+  font-size: 12px;
+  color: var(--text-muted, #8a8f98);
+  font-variant-numeric: normal;
+}
+
+.form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-error {
+  color: var(--danger, #e5484d);
+  font-size: 13px;
+  margin: 8px 0 0;
+}

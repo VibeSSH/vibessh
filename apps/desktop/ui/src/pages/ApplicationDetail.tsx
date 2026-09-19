@@ -29,6 +29,7 @@ import { DockerImageCard } from "@/components/applications/DockerImageCard";
 import { EnvironmentTab } from "@/components/applications/EnvironmentTab";
 import { ApplicationFilesTab } from "@/components/applications/files/ApplicationFilesTab";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
+import { MinecraftMetricsCard } from "@/components/applications/MinecraftMetricsCard";
 import { PortsTab } from "@/components/applications/PortsTab";
 import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
 import {
@@ -758,6 +759,14 @@ export function ApplicationDetail() {
 
               {features.includes("healthCheck") && (
                 <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
+              )}
+
+              {/* Paper and Purpur are the game servers with a tick loop; the
+                  proxies (Velocity, Waterfall) have no TPS. RCON runs over the
+                  server's SSH tunnel, so a local application has nowhere to
+                  reach - hence the serverId guard. */}
+              {(application.blueprintId === "paper" || application.blueprintId === "purpur") && application.serverId && (
+                <MinecraftMetricsCard applicationId={id} serverId={application.serverId} />
               )}
 
               {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (

@@ -1974,5 +1974,23 @@
     "unshareAria": "Przestań udostępniać {{name}} — aplikacja działa dalej, a ten komputer zachowuje własny zapis",
     "unsharedToast": "{{name}} nie jest już współdzielona.",
     "updatedAt": "Migawka z {{when}}"
+  },
+  "minecraftMetrics": {
+    "title": "Kondycja Minecrafta",
+    "setupHint": "Czyta TPS, czas ticka i graczy przez RCON w tunelu SSH. Włącz RCON w server.properties, potem podaj port i hasło. Hasło trafia do keyringu systemu, nigdy do pliku.",
+    "portLabel": "Port RCON",
+    "passwordLabel": "Hasło RCON",
+    "passwordPlaceholder": "z server.properties",
+    "save": "Zapisz",
+    "cancel": "Anuluj",
+    "settings": "Ustawienia RCON",
+    "refresh": "Odśwież",
+    "tpsNow": "{{tps}} TPS",
+    "tpsUnknown": "Brak TPS",
+    "tps": "TPS",
+    "tpsWindows": "1m / 5m / 15m",
+    "mspt": "Czas ticka",
+    "msptValue": "{{avg}} ms śr. · {{max}} ms maks.",
+    "players": "Gracze"
   }
 }

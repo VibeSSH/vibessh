@@ -15,6 +15,20 @@ export interface ServerMetrics {
   osName: string | null;
 }
 
+/** Mirrors the Rust `MinecraftMetrics` struct. The TPS/MSPT fields are null
+ * on a server that has no `/tps` command (not Paper/Purpur); an honest gap,
+ * never a guessed 20. */
+export interface MinecraftMetrics {
+  tps1m: number | null;
+  tps5m: number | null;
+  tps15m: number | null;
+  msptAvg: number | null;
+  msptMax: number | null;
+  playersOnline: number;
+  playersMax: number;
+  playerNames: string[];
+}
+
 /** Mirrors the Rust `ProcessSummary` struct. */
 export interface ProcessSummary {
   pid: number;
