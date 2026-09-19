@@ -611,6 +611,7 @@
     "statOnlineValue": "{{online}} z {{total}} online",
     "statNetworkValueNone": "Brak Node'ów w sieci",
     "sectionNodes": "Node'y ({{count}})",
+    "loadFoot": "obciążenie {{load}}",
     "applicationsEmpty": "Brak aplikacji do pokazania.",
     "sectionAlerts": "Alerty",
     "alertsEmpty": "Brak alertów - wszystko działa poprawnie.",

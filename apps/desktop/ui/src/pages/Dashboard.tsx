@@ -35,6 +35,7 @@ import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
 import { errorMessage } from "@/services/tauri";
+import { formatBytes } from "@/utils/formatBytes";
 import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 
@@ -217,6 +218,34 @@ export function Dashboard() {
   const selectedMetricsState = selectedNodeId ? metricsByServer[selectedNodeId] : undefined;
   const selectedSyncStatus = selectedNodeId ? (agentSync[selectedNodeId] ?? null) : null;
 
+  // With a Node picked in the Servers panel the three tiles scope to that
+  // Node's own figures; with nothing picked they show the fleet averages.
+  const scopedMetric = selectedNodeId ? (metricsByServer[selectedNodeId]?.latest ?? null) : null;
+  const cpuValue = scopedMetric ? scopedMetric.cpuUsagePercent : avgCpu;
+  const ramValue = scopedMetric ? (scopedMetric.ramTotalBytes > 0 ? (scopedMetric.ramUsedBytes / scopedMetric.ramTotalBytes) * 100 : 0) : avgRam;
+  const diskValue = scopedMetric ? (scopedMetric.diskTotalBytes > 0 ? (scopedMetric.diskUsedBytes / scopedMetric.diskTotalBytes) * 100 : 0) : avgDisk;
+
+  // Footer data, replacing the bare Node count: CPU shows the load average,
+  // RAM and Disk show used / total in real units - scoped to the picked Node,
+  // or summed across the Nodes with data when none is picked.
+  const avgLoad = sshMetricsWithData.length > 0 ? sshMetricsWithData.reduce((s, m) => s + m.loadAverage1m, 0) / sshMetricsWithData.length : null;
+  const loadFoot = scopedMetric ? scopedMetric.loadAverage1m : avgLoad;
+  const ramUsed = scopedMetric ? scopedMetric.ramUsedBytes : sshMetricsWithData.reduce((s, m) => s + m.ramUsedBytes, 0);
+  const ramTotal = scopedMetric ? scopedMetric.ramTotalBytes : sshMetricsWithData.reduce((s, m) => s + m.ramTotalBytes, 0);
+  const diskUsed = scopedMetric ? scopedMetric.diskUsedBytes : sshMetricsWithData.reduce((s, m) => s + m.diskUsedBytes, 0);
+  const diskTotal = scopedMetric ? scopedMetric.diskTotalBytes : sshMetricsWithData.reduce((s, m) => s + m.diskTotalBytes, 0);
+  const bytesFoot = (used: number, total: number) => (total > 0 ? `${formatBytes(used)} / ${formatBytes(total)}` : "-");
+
+  // Picking a Node in the Servers panel jumps the workspace to its live stats
+  // (the Activity tab) rather than leaving the console in front.
+  const handleSelectNode = (id: string) => {
+    setSelectedNodeId((prev) => {
+      const next = prev === id ? null : id;
+      if (next) setActiveTab("activity");
+      return next;
+    });
+  };
+
   return (
     <div className="page dashboard-page">
       <div className="page-header page-header-row">
@@ -256,42 +285,43 @@ export function Dashboard() {
         </Card>
       ) : (
         <>
-          {/* Aggregate overview across the SSH Nodes that report metrics - the
-              reference's three-metric row. VibeSSH has no single node, so these
-              are averages over the Nodes with data, not one machine's figures. */}
+          {/* Three-metric row (the reference's top band). With a Node picked in
+              the Servers panel below, the tiles read that Node's own CPU / RAM /
+              Disk and their footers its load and used/total; with nothing picked
+              they show the fleet averages and summed totals. */}
           <div className="dashboard-metrics">
             <div className="stat-card">
               <div className="stat-card-top">
                 <span className="stat-card-label">CPU</span>
                 <Icon name="activity" size={15} className="stat-card-icon" />
               </div>
-              <div className="stat-card-value">{avgCpu != null ? `${avgCpu.toFixed(1)}%` : "—"}</div>
+              <div className="stat-card-value">{cpuValue != null ? `${cpuValue.toFixed(1)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgCpu ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, cpuValue ?? 0)}%` }} />
               </div>
-              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+              <div className="stat-card-foot">{loadFoot != null ? t("dashboard.loadFoot", { load: loadFoot.toFixed(2) }) : "-"}</div>
             </div>
             <div className="stat-card">
               <div className="stat-card-top">
                 <span className="stat-card-label">{t("rail.ram")}</span>
                 <Icon name="server" size={15} className="stat-card-icon" />
               </div>
-              <div className="stat-card-value">{avgRam != null ? `${avgRam.toFixed(0)}%` : "—"}</div>
+              <div className="stat-card-value">{ramValue != null ? `${ramValue.toFixed(0)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgRam ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, ramValue ?? 0)}%` }} />
               </div>
-              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+              <div className="stat-card-foot">{bytesFoot(ramUsed, ramTotal)}</div>
             </div>
             <div className="stat-card">
               <div className="stat-card-top">
                 <span className="stat-card-label">{t("rail.disk")}</span>
                 <Icon name="database" size={15} className="stat-card-icon" />
               </div>
-              <div className="stat-card-value">{avgDisk != null ? `${avgDisk.toFixed(0)}%` : "—"}</div>
+              <div className="stat-card-value">{diskValue != null ? `${diskValue.toFixed(0)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, avgDisk ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, diskValue ?? 0)}%` }} />
               </div>
-              <div className="stat-card-foot">{t("dashboard.sectionNodes", { count: sshMetricsWithData.length })}</div>
+              <div className="stat-card-foot">{bytesFoot(diskUsed, diskTotal)}</div>
             </div>
           </div>
 
@@ -326,7 +356,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       className="dashboard-server-row-main"
-                      onClick={() => setSelectedNodeId((prev) => (prev === server.id ? null : server.id))}
+                      onClick={() => handleSelectNode(server.id)}
                       aria-pressed={selected}
                     >
                       <span className="dashboard-server-row-icon">

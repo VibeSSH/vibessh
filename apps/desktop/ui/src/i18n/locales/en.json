@@ -607,6 +607,7 @@
     "statOnlineValue": "{{online}} of {{total}} online",
     "statNetworkValueNone": "No Nodes in the network",
     "sectionNodes": "Nodes ({{count}})",
+    "loadFoot": "load {{load}}",
     "applicationsEmpty": "No applications to show.",
     "sectionAlerts": "Alerts",
     "alertsEmpty": "No alerts - everything is running fine.",

@@ -393,6 +393,22 @@
   border: 1px solid var(--border);
   border-radius: 15px;
   background: var(--surface-1);
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+/* Lifts slightly and picks up a teal-tinted edge on hover - the tiles are a
+   live reading worth pointing at, and the motion matches the rest of the
+   dashboard's hover language. */
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface-2);
+  box-shadow: var(--t-elev-2);
+}
+.stat-card .stat-card-icon {
+  transition: color 140ms ease;
+}
+.stat-card:hover .stat-card-icon {
+  color: var(--accent);
 }
 .stat-card-top {
   display: flex;
