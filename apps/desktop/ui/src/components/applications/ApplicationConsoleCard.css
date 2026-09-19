@@ -15,16 +15,13 @@
   border-radius: 50%;
 }
 
-.application-console-dot-red {
-  background: #ff5f57;
-}
-
-.application-console-dot-yellow {
-  background: #febc2e;
-}
-
+/* Neutral terminal-header dots. The red/yellow/green macOS traffic lights were
+   the one bit of macOS window imitation in the app; the palette here is
+   restrained, so these are three subtle graphite dots instead. */
+.application-console-dot-red,
+.application-console-dot-yellow,
 .application-console-dot-green {
-  background: #28c840;
+  background: var(--surface-3);
 }
 
 /*

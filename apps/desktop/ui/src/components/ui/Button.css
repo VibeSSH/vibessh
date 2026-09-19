@@ -93,14 +93,14 @@
  * needs the contrast to run the other way (4.8:1 against this one).
  */
 .btn-primary {
-  background-color: color-mix(in srgb, var(--accent) 54%, var(--surface-bg) 46%);
-  color: #f2fafc;
-  border-color: color-mix(in srgb, var(--accent) 64%, var(--surface-bg) 36%);
+  background-color: var(--primary);
+  color: var(--primary-contrast);
+  border-color: color-mix(in srgb, var(--primary) 78%, #000 22%);
   box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--accent) 66%, var(--surface-bg) 34%);
-  border-color: color-mix(in srgb, var(--accent) 76%, var(--surface-bg) 24%);
+  background-color: var(--primary-hover);
+  border-color: var(--primary);
 }
 
 /* The quiet default. A real border rather than a white ring, so it holds an
