@@ -1991,6 +1991,8 @@
     "tpsWindows": "1m / 5m / 15m",
     "mspt": "Czas ticka",
     "msptValue": "{{avg}} ms śr. · {{max}} ms maks.",
-    "players": "Gracze"
+    "players": "Gracze",
+    "badPassword": "RCON odrzucił hasło. Sprawdź rcon.password w server.properties.",
+    "unreachable": "Nie udało się połączyć z RCON na porcie {{port}}. W server.properties ustaw enable-rcon=true oraz pasujący rcon.port i rcon.password, potem zrestartuj serwer."
   }
 }

@@ -83,15 +83,23 @@ export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetri
         setNeedsPassword(false);
       })
       .catch((err) => {
-        // A missing keyring entry is the first-run state, not a failure to
-        // shout about - it opens the setup form instead of a red error. Keyed
-        // on the error code, not its text: `errorMessage` returns a localized
-        // sentence, so matching English words would break in Polish. The
-        // command's only `not_found` is the absent RCON password.
-        if (err instanceof CommandError && err.code === "not_found") {
+        // Keyed on the error code, not its text: `errorMessage` returns a
+        // localized sentence, so matching English words would break in Polish.
+        const code = err instanceof CommandError ? err.code : null;
+        if (code === "not_found") {
+          // A missing keyring entry is the first-run state, not a failure to
+          // shout about - it opens the setup form instead of a red error.
           setNeedsPassword(true);
+        } else if (code === "unauthorized") {
+          // The password reached RCON and was refused - a different problem,
+          // and a different fix, from the port not answering at all.
+          setError(t("minecraftMetrics.badPassword"));
         } else {
-          setError(errorMessage(err, t));
+          // Everything else here is the tunnel not reaching RCON: not enabled,
+          // wrong port, or the server is down. The raw "couldn't open a tunnel
+          // to 127.0.0.1:25575" is true but says nothing a server owner can
+          // act on, so this replaces it with the three things to check.
+          setError(t("minecraftMetrics.unreachable", { port: storedPort(applicationId) }));
         }
       })
       .finally(() => setLoading(false));

@@ -376,7 +376,11 @@ impl SshSession {
             .map_err(|e| crate::errors::AppError::Connection(format!("couldn't send RCON login: {e}")))?;
         let (auth_id, _, _) = rcon_read_packet(&mut stream).await?;
         if auth_id == super::minecraft_rcon::RCON_AUTH_FAILED {
-            return Err(crate::errors::AppError::Connection("RCON rejected the password".into()));
+            // Unauthorized, not Connection: the frontend tells a wrong
+            // password apart from an unreachable port by the error code, and
+            // "the password is wrong" and "RCON isn't listening" need
+            // different advice.
+            return Err(crate::errors::AppError::Unauthorized("RCON rejected the password".into()));
         }
 
         // Each is optional: a non-Paper server answers `list` but not `tps`.
