@@ -438,51 +438,56 @@ async fn rcon_read_packet<S: tokio::io::AsyncRead + Unpin>(stream: &mut S) -> Ap
     }
 }
 
-/// Runs one command and returns its full text reply. A reply can span several
-/// packets, so a second empty command is sent as a sentinel: the server
-/// processes in order and echoes the sentinel's id last, which is how the end
-/// of the real reply is known without guessing at packet boundaries.
+/// Runs one command and returns its text reply.
+///
+/// The Source protocol's trick for finding the end of a multi-packet reply is
+/// to send a second, empty command as a sentinel and watch for its echo.
+/// Minecraft's RCON does not answer an empty command, so the sentinel never
+/// comes back - which is exactly why an earlier version read the real reply,
+/// then waited for a marker that never arrived, timed out, and threw the reply
+/// away. The end is read from a pause instead: once the first reply packet is
+/// in, a short quiet gap means the (usually single-packet) reply is complete.
+/// `/tps`, `/mspt` and `/list` each fit in one packet, so this returns as soon
+/// as that packet lands and the next read goes quiet.
 async fn rcon_command<S>(stream: &mut S, command: &str) -> AppResult<String>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     const CMD_ID: i32 = 10;
-    const END_ID: i32 = 11;
 
     stream
         .write_all(&super::minecraft_rcon::encode_packet(CMD_ID, super::minecraft_rcon::RCON_TYPE_COMMAND, command))
         .await
         .map_err(|e| crate::errors::AppError::Connection(format!("couldn't send RCON command: {e}")))?;
-    stream
-        .write_all(&super::minecraft_rcon::encode_packet(END_ID, super::minecraft_rcon::RCON_TYPE_COMMAND, ""))
-        .await
-        .map_err(|e| crate::errors::AppError::Connection(format!("couldn't send RCON sentinel: {e}")))?;
 
     let mut body = String::new();
+    let mut got_reply = false;
     let mut buf: Vec<u8> = Vec::new();
-    let mut chunk = [0u8; 1024];
+    let mut chunk = [0u8; 4096];
     loop {
         while let Some((id, _kind, part, used)) = super::minecraft_rcon::decode_packet(&buf) {
             buf.drain(..used);
-            if id == END_ID {
-                return Ok(body);
-            }
+            // The server echoes the command's id on its reply packets.
             if id == CMD_ID {
                 body.push_str(&part);
+                got_reply = true;
             }
         }
-        let read = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read(&mut chunk))
-            .await
-            .map_err(|_| crate::errors::AppError::Connection("RCON timed out".into()))?
-            .map_err(|e| crate::errors::AppError::Connection(format!("RCON read failed: {e}")))?;
-        if read == 0 {
-            return if body.is_empty() {
-                Err(crate::errors::AppError::Connection("RCON closed the channel early".into()))
-            } else {
-                Ok(body)
-            };
+        // Wait a long time for the first packet, then only briefly - a brief
+        // silence after a reply has begun means it is finished.
+        let wait = if got_reply {
+            std::time::Duration::from_millis(500)
+        } else {
+            std::time::Duration::from_secs(5)
+        };
+        match tokio::time::timeout(wait, stream.read(&mut chunk)).await {
+            Ok(Ok(0)) => return Ok(body),
+            Ok(Ok(read)) => buf.extend_from_slice(&chunk[..read]),
+            Ok(Err(e)) => return Err(crate::errors::AppError::Connection(format!("RCON read failed: {e}"))),
+            // A connected server that says nothing to a valid command produces
+            // an empty reply, which the parsers turn into "no data", not a 20.
+            Err(_) => return Ok(body),
         }
-        buf.extend_from_slice(&chunk[..read]);
     }
 }
