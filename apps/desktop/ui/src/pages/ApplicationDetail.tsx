@@ -766,7 +766,7 @@ export function ApplicationDetail() {
                   server's SSH tunnel, so a local application has nowhere to
                   reach - hence the serverId guard. */}
               {(application.blueprintId === "paper" || application.blueprintId === "purpur") && application.serverId && (
-                <MinecraftMetricsCard applicationId={id} serverId={application.serverId} />
+                <MinecraftMetricsCard applicationId={id} />
               )}
 
               {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (

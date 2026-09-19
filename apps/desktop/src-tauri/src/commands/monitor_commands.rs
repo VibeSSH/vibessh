@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::errors::AppResult;
 use crate::services;
 use crate::state::SshSessionManager;
+use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::server_repository::ServerRepository;
 use crate::transport::{ProcessSummary, ServerMetrics};
 
@@ -27,18 +28,19 @@ pub async fn list_server_processes(
 
 #[tauri::command]
 pub async fn get_minecraft_metrics(
+    app_repo: State<'_, ApplicationRepository>,
     repo: State<'_, ServerRepository>,
     sessions: State<'_, SshSessionManager>,
-    server_id: Uuid,
+    application_id: Uuid,
     rcon_port: u16,
 ) -> AppResult<vibessh_protocol::MinecraftMetrics> {
-    services::get_minecraft_metrics(&repo, &sessions, server_id, rcon_port).await
+    services::get_minecraft_metrics(&app_repo, &repo, &sessions, application_id, rcon_port).await
 }
 
 /// Stores the RCON password in the OS keyring. Kept off every read path and
 /// out of any config file - the frontend sends it here once and never reads
 /// it back.
 #[tauri::command]
-pub async fn set_minecraft_rcon_password(server_id: Uuid, password: String) -> AppResult<()> {
-    services::set_rcon_password(server_id, &password)
+pub async fn set_minecraft_rcon_password(application_id: Uuid, password: String) -> AppResult<()> {
+    services::set_rcon_password(application_id, &password)
 }

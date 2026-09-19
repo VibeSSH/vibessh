@@ -48,10 +48,10 @@ function formatTps(tps: number | null): string {
 }
 
 interface MinecraftMetricsCardProps {
+  /** The RCON channel, the password and the port are all keyed by the
+   * application - the Rust side resolves which server and, for a Docker app,
+   * which container to reach. */
   applicationId: string;
-  /** The server the application runs on - the RCON channel is opened over
-   * that server's SSH session. */
-  serverId: string;
 }
 
 /**
@@ -63,7 +63,7 @@ interface MinecraftMetricsCardProps {
  * exchange over the tunnel, so it runs when the card mounts and when the user
  * asks again, like the health check beside it.
  */
-export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetricsCardProps) {
+export function MinecraftMetricsCard({ applicationId }: MinecraftMetricsCardProps) {
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<MinecraftMetrics | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,7 +77,7 @@ export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetri
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    getMinecraftMetrics(serverId, storedPort(applicationId))
+    getMinecraftMetrics(applicationId, storedPort(applicationId))
       .then((result) => {
         setMetrics(result);
         setNeedsPassword(false);
@@ -103,7 +103,7 @@ export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetri
         }
       })
       .finally(() => setLoading(false));
-  }, [applicationId, serverId, t]);
+  }, [applicationId, t]);
 
   useEffect(load, [load]);
 
@@ -112,7 +112,7 @@ export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetri
     setError(null);
     try {
       rememberPort(applicationId, port);
-      await setMinecraftRconPassword(serverId, passwordDraft);
+      await setMinecraftRconPassword(applicationId, passwordDraft);
       setPasswordDraft("");
       setEditing(false);
       load();

@@ -331,24 +331,73 @@ pub async fn get_metrics(repo: &ServerRepository, sessions: &SshSessionManager, 
     session.get_metrics().await
 }
 
-/// One poll of a Minecraft server running on `server_id`, over RCON through
-/// the SSH tunnel. The password is read from the keyring here, so it never
-/// crosses the Tauri boundary; the caller passes only the (non-secret) port.
+/// One poll of a Minecraft application over RCON through the SSH tunnel.
+///
+/// Keyed by the application, not its server: two Paper servers on one Node
+/// have different RCON passwords, and RCON runs per game server, not per host.
+/// The password is read from the keyring here, so it never crosses the Tauri
+/// boundary; the caller passes only the (non-secret) port. For a Docker
+/// application the host is the container's own address, because RCON listens
+/// inside the container and never on the Node's loopback - `rcon_host`
+/// resolves which.
 pub async fn get_minecraft_metrics(
+    app_repo: &crate::storage::application_repository::ApplicationRepository,
     repo: &ServerRepository,
     sessions: &SshSessionManager,
-    server_id: Uuid,
+    application_id: Uuid,
     rcon_port: u16,
 ) -> AppResult<vibessh_protocol::MinecraftMetrics> {
-    let password = crate::storage::credentials::load_secret(server_id, crate::storage::credentials::SecretKind::RconPassword)?
-        .ok_or_else(|| crate::errors::AppError::NotFound("no RCON password is stored for this server".into()))?;
+    let app = app_repo
+        .get(application_id)?
+        .ok_or_else(|| AppError::NotFound("application not found".into()))?;
+    let server_id = app
+        .application
+        .server_id
+        .ok_or_else(|| AppError::InvalidInput("a local application has no server to reach RCON through".into()))?;
+    let password = credentials::load_secret(application_id, SecretKind::RconPassword)?
+        .ok_or_else(|| AppError::NotFound("no RCON password is stored for this application".into()))?;
     let session = get_or_connect(repo, sessions, server_id).await?;
-    session.get_minecraft_metrics(rcon_port, &password).await
+    let host = rcon_host(&session, &app).await;
+    session.get_minecraft_metrics(&host, rcon_port, &password).await
 }
 
-/// Stores (or replaces) the RCON password for `server_id` in the keyring.
-pub fn set_rcon_password(server_id: Uuid, password: &str) -> AppResult<()> {
-    crate::storage::credentials::store_secret(server_id, crate::storage::credentials::SecretKind::RconPassword, password)
+/// `docker inspect`'s Go template for a container's IP on its first network -
+/// the same `inspect -f` shape `runtime::docker` already relies on.
+const RCON_CONTAINER_IP_FORMAT: &str = "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}";
+
+/// Where RCON is reachable from the Node for this application. A bare process
+/// (systemd, local, remote) binds it on the host loopback; a Docker container
+/// binds it inside its own network, so this asks `docker inspect` for the
+/// container's address. Anything that goes wrong falls back to the loopback
+/// rather than failing the poll - the worst case is the same ConnectFailed
+/// the caller already handles, not a crash.
+async fn rcon_host(session: &SshSession, app: &crate::models::ApplicationDetail) -> String {
+    use crate::models::RuntimeType;
+    if app.application.runtime_type != RuntimeType::Docker {
+        return "127.0.0.1".to_string();
+    }
+    let container = format!("vibessh-app-{}", app.application.id);
+    let command = format!(
+        "docker inspect -f {} {}",
+        ssh::command::quote(RCON_CONTAINER_IP_FORMAT),
+        ssh::command::quote(&container)
+    );
+    match session.execute_command(&command).await {
+        Ok(output) if output.exit_code == 0 => {
+            let ip = output.stdout.trim();
+            if ip.is_empty() {
+                "127.0.0.1".to_string()
+            } else {
+                ip.to_string()
+            }
+        }
+        _ => "127.0.0.1".to_string(),
+    }
+}
+
+/// Stores (or replaces) an application's RCON password in the keyring.
+pub fn set_rcon_password(application_id: Uuid, password: &str) -> AppResult<()> {
+    credentials::store_secret(application_id, SecretKind::RconPassword, password)
 }
 
 pub async fn list_processes(

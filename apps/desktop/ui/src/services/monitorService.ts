@@ -14,12 +14,12 @@ export function listServerProcesses(serverId: string): Promise<ProcessSummary[]>
  * through the SSH tunnel. The port is not a secret and is passed here; the
  * password is read from the keyring on the Rust side, never sent from here.
  */
-export function getMinecraftMetrics(serverId: string, rconPort: number): Promise<MinecraftMetrics> {
-  return callCommand<MinecraftMetrics>("get_minecraft_metrics", { serverId, rconPort });
+export function getMinecraftMetrics(applicationId: string, rconPort: number): Promise<MinecraftMetrics> {
+  return callCommand<MinecraftMetrics>("get_minecraft_metrics", { applicationId, rconPort });
 }
 
 /** Stores the RCON password in the OS keyring. Sent once when the user saves
  * it; there is no read-back path. */
-export function setMinecraftRconPassword(serverId: string, password: string): Promise<void> {
-  return callCommand<void>("set_minecraft_rcon_password", { serverId, password });
+export function setMinecraftRconPassword(applicationId: string, password: string): Promise<void> {
+  return callCommand<void>("set_minecraft_rcon_password", { applicationId, password });
 }

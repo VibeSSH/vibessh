@@ -360,12 +360,16 @@ mod os_release_tests {
 impl SshSession {
     pub async fn get_minecraft_metrics(
         &self,
+        rcon_host: &str,
         rcon_port: u16,
         password: &str,
     ) -> AppResult<vibessh_protocol::MinecraftMetrics> {
         use tokio::io::AsyncWriteExt;
 
-        let channel = self.open_direct_tcpip("127.0.0.1", rcon_port, "127.0.0.1", 0).await?;
+        // `rcon_host` is the host loopback for a bare process, or the
+        // container's own address for a Docker application - RCON listens
+        // inside the container, not on the host, so the caller resolves which.
+        let channel = self.open_direct_tcpip(rcon_host, rcon_port, "127.0.0.1", 0).await?;
         let mut stream = channel.into_stream();
 
         // Auth. On success the reply echoes our id; a wrong password is -1.
