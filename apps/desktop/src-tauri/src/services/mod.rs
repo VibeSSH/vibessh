@@ -148,7 +148,6 @@ pub use ssh_service::{
     download_file as download_remote_file, enable_service as enable_server_service,
     read_file_window as read_remote_file_window,
     execute_command as execute_ssh_command, extract_archive as extract_remote_archive, get_metrics as get_server_metrics,
-    get_minecraft_metrics, set_rcon_password,
     list_containers as list_server_containers,
     list_directory as list_remote_directory, list_processes as list_server_processes,
     list_services as list_server_services, open_terminal as open_ssh_terminal, read_file as read_remote_file,

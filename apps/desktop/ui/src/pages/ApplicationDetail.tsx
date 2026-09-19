@@ -29,7 +29,6 @@ import { DockerImageCard } from "@/components/applications/DockerImageCard";
 import { EnvironmentTab } from "@/components/applications/EnvironmentTab";
 import { ApplicationFilesTab } from "@/components/applications/files/ApplicationFilesTab";
 import { HealthCheckCard } from "@/components/applications/HealthCheckCard";
-import { MinecraftMetricsCard } from "@/components/applications/MinecraftMetricsCard";
 import { PortsTab } from "@/components/applications/PortsTab";
 import { ResourceLimitsCard } from "@/components/applications/ResourceLimitsCard";
 import {
@@ -626,14 +625,6 @@ export function ApplicationDetail() {
           {tab === "overview" && (
             <div className="application-detail-overview-grid">
               <div className="application-detail-overview">
-                {/* First thing on a Paper/Purpur server's Overview: is it
-                    healthy right now. Proxies (Velocity, Waterfall) have no
-                    tick loop, and a local application has no tunnel to reach
-                    RCON through, so neither gets the card. */}
-                {(application.blueprintId === "paper" || application.blueprintId === "purpur") && application.serverId && (
-                  <MinecraftMetricsCard applicationId={id} />
-                )}
-
                 {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
 
                 {/* Where the stdin console would be, for the kinds that have

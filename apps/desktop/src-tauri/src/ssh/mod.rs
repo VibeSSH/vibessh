@@ -22,7 +22,6 @@ pub mod command;
 // `stats` calls, not only the calls this module's own methods already
 // validate.
 pub(crate) mod docker;
-mod minecraft_rcon;
 mod monitor;
 mod port_forward;
 mod sftp;

@@ -96,30 +96,3 @@ pub struct ContainerSummary {
     pub status: String,
     pub running: bool,
 }
-
-/// One poll of a Minecraft server's own health - TPS, tick time and who is
-/// online - read over RCON through the SSH tunnel, never a public link the
-/// way spark's web view works. `ServerMetrics` above is the host (CPU, RAM);
-/// this is the game server running on it, which only the JVM can report.
-///
-/// Every field is what the server itself said, parsed from `/tps`, `/mspt`
-/// and `/list`. A server that answers `/list` but not `/tps` (a Spigot build
-/// without the Paper commands) still fills the player fields, so the TPS ones
-/// are optional rather than a fabricated 20.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MinecraftMetrics {
-    /// Ticks per second over the last 1m, 5m, 15m. 20 is healthy. `None` when
-    /// the server has no `/tps` command (not Paper/Purpur), because a guessed
-    /// number here is worse than an honest gap.
-    pub tps_1m: Option<f32>,
-    pub tps_5m: Option<f32>,
-    pub tps_15m: Option<f32>,
-    /// Milliseconds per tick over the shortest window the server reports -
-    /// avg and max. Max catches a single bad tick that the smoothed TPS hides.
-    pub mspt_avg: Option<f32>,
-    pub mspt_max: Option<f32>,
-    pub players_online: u32,
-    pub players_max: u32,
-    pub player_names: Vec<String>,
-}

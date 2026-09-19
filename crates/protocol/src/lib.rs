@@ -16,7 +16,7 @@ mod pairing;
 
 pub use capabilities::AgentCapabilities;
 pub use commands::{DesktopCommand, NodeDesiredState};
-pub use dto::{CommandOutput, ContainerSummary, MinecraftMetrics, ProcessSummary, RemoteFileEntry, ServerMetrics, ServiceSummary};
+pub use dto::{CommandOutput, ContainerSummary, ProcessSummary, RemoteFileEntry, ServerMetrics, ServiceSummary};
 pub use error::ProtocolErrorCode;
 pub use events::{LogLine, QuickActionProgress, ServerEvent, TerminalClosed, TerminalOutput};
 pub use handshake::{HandshakeRequest, HandshakeResponse, PROTOCOL_VERSION};

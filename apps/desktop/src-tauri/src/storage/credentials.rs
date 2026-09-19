@@ -34,10 +34,6 @@ pub enum SecretKind {
     /// The bearer token for the local MCP endpoint (`mcp.rs`). Keyed by
     /// the nil UUID: it belongs to this installation, not to any server.
     McpToken,
-    /// A Minecraft server's RCON password, keyed by the server it runs on.
-    /// Read only to open an RCON channel over the SSH tunnel; never sent to
-    /// the frontend, never written to a config file.
-    RconPassword,
 }
 
 impl SecretKind {
@@ -49,7 +45,6 @@ impl SecretKind {
             SecretKind::DatabaseHostAdmin => "database-host-admin",
             SecretKind::ApplicationDatabaseUser => "application-database-user",
             SecretKind::McpToken => "mcp-token",
-            SecretKind::RconPassword => "rcon-password",
         }
     }
 }

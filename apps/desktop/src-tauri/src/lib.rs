@@ -414,8 +414,6 @@ pub fn run() {
             commands::file_commands::extract_remote_archive,
             commands::file_commands::compress_remote_paths,
             commands::monitor_commands::get_server_metrics,
-            commands::monitor_commands::get_minecraft_metrics,
-            commands::monitor_commands::set_minecraft_rcon_password,
             commands::monitor_commands::list_server_processes,
             commands::actions_commands::list_server_services,
             commands::actions_commands::restart_server_service,
