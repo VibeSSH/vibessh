@@ -1,10 +1,11 @@
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 200px;
-  min-width: 200px;
+  width: 220px;
+  min-width: 220px;
   height: 100%;
-  padding: 12px 8px;
+  padding: 0;
+  background: var(--surface-0);
   border-right: 1px solid var(--border);
   transition: width 140ms ease, min-width 140ms ease;
   flex-shrink: 0;
@@ -22,8 +23,12 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
+  padding: 8px;
+}
+.sidebar-collapsed .sidebar-scroll {
+  padding: 8px 8px;
 }
 
 .sidebar-group {
@@ -120,11 +125,17 @@
 .sidebar-footer {
   flex-shrink: 0;
   width: 100%;
-  margin-top: 8px;
-  padding-top: 8px;
+  padding: 6px 8px 8px;
   border-top: 1px solid var(--border);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-footer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 4px;
 }
 
 /* Resting color moved up from --text-tertiary to --text-secondary so it

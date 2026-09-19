@@ -1,0 +1,230 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 46px;
+  min-height: 46px;
+  flex-shrink: 0;
+  padding-left: 14px;
+  background: var(--surface-0);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+/* ---- Left: breadcrumb context ---- */
+.topbar-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.topbar-mark {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.topbar-crumb-root {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.topbar-crumb-sep {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.topbar-crumb-current {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Right: actions + window controls ---- */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 8px;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.topbar-action {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.topbar-action:hover {
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+  color: var(--text-primary);
+}
+.topbar-action-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: 700 9px var(--font-sans);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topbar-window {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.topbar-win-btn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.topbar-win-btn:hover {
+  background: color-mix(in srgb, #ffffff 8%, transparent);
+  color: var(--text-primary);
+}
+.topbar-win-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ---- Popovers (notifications, account) ---- */
+.topbar-menu-anchor {
+  position: relative;
+  display: flex;
+}
+.topbar-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 300px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--t-elev-2);
+  z-index: var(--z-popover);
+  overflow: hidden;
+  animation: scaleIn 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.topbar-popover-account {
+  width: 240px;
+}
+.topbar-popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font: 600 12px var(--font-sans);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.topbar-popover-clear {
+  font-size: 11px;
+  color: var(--accent);
+  background: none;
+  border: none;
+}
+.topbar-popover-empty {
+  margin: 0;
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.topbar-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.topbar-notification {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 9px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.topbar-notification:hover {
+  background: color-mix(in srgb, #ffffff 4%, transparent);
+}
+.topbar-notification-icon {
+  transform: translateY(2px);
+}
+.topbar-notification-icon-success {
+  color: var(--success);
+}
+.topbar-notification-icon-error {
+  color: var(--danger);
+}
+.topbar-notification-icon-info {
+  color: var(--accent);
+}
+.topbar-notification-message {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.topbar-notification-time {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.topbar-account-info {
+  padding: 12px 14px;
+}
+.topbar-account-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.topbar-account-email {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.topbar-account-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+}
+.topbar-account-action:hover {
+  background: color-mix(in srgb, #ffffff 4%, transparent);
+  color: var(--text-primary);
+}
