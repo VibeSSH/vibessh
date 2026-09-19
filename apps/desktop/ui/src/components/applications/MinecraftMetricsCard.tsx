@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { getMinecraftMetrics, setMinecraftRconPassword } from "@/services/monitorService";
 import type { MinecraftMetrics } from "@/types/serverEvent";
-import { errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage } from "@/services/tauri";
 import "@/components/servers/forms.css";
 import "./MinecraftMetricsCard.css";
 
@@ -83,13 +83,15 @@ export function MinecraftMetricsCard({ applicationId, serverId }: MinecraftMetri
         setNeedsPassword(false);
       })
       .catch((err) => {
-        const message = errorMessage(err, t);
         // A missing keyring entry is the first-run state, not a failure to
-        // shout about - it opens the setup form instead of a red error.
-        if (/rcon password/i.test(message)) {
+        // shout about - it opens the setup form instead of a red error. Keyed
+        // on the error code, not its text: `errorMessage` returns a localized
+        // sentence, so matching English words would break in Polish. The
+        // command's only `not_found` is the absent RCON password.
+        if (err instanceof CommandError && err.code === "not_found") {
           setNeedsPassword(true);
         } else {
-          setError(message);
+          setError(errorMessage(err, t));
         }
       })
       .finally(() => setLoading(false));
