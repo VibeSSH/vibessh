@@ -34,7 +34,20 @@ export function useFileDrop(onDrop: (paths: string[]) => void, enabled = true) {
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
 
-    void getCurrentWebview()
+    // `getCurrentWebview()` reads Tauri's injected metadata synchronously and
+    // throws when it is absent - the Vite dev page opened in a plain browser,
+    // where `__TAURI_INTERNALS__` has no window metadata. That throw is not a
+    // rejected promise, so the `.catch` below never saw it and the whole page
+    // (Files, application Files tab) crashed instead of simply going without
+    // drag-and-drop. Guard the synchronous call too.
+    let webview: ReturnType<typeof getCurrentWebview>;
+    try {
+      webview = getCurrentWebview();
+    } catch {
+      return;
+    }
+
+    void webview
       .onDragDropEvent((event) => {
         const payload = event.payload;
         if (payload.type === "enter" || payload.type === "over") {

@@ -7,10 +7,19 @@ import { useRipple } from "@/hooks/useRipple";
 import { sidebarGroups } from "@/config/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import type { NavModule } from "@/types/common";
+import { ConnectionSelector } from "./ConnectionSelector";
 import "./Sidebar.css";
 
 const COLLAPSED_KEY = "vibessh_sidebar_collapsed";
 const EXPANDED_GROUPS_KEY = "vibessh_sidebar_expanded_groups";
+
+/** Settings and the guide live pinned at the foot of the sidebar, separated
+ * from the contextual navigation above - so they are excluded from the groups
+ * and rendered on their own below. */
+const FOOTER_ITEM_IDS = ["settings", "guide"];
+const footerItems: NavModule[] = FOOTER_ITEM_IDS.map((id) => sidebarGroups.flatMap((g) => g.items).find((item) => item.id === id)).filter(
+  (item): item is NavModule => Boolean(item),
+);
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
   try {
@@ -63,7 +72,7 @@ function SidebarGroupSection({
 }) {
   const { t } = useTranslation();
   const isSignedIn = useAuthStore((s) => s.status === "signedIn");
-  const visibleItems = group.items.filter((item) => !item.requiresAuth || isSignedIn);
+  const visibleItems = group.items.filter((item) => (!item.requiresAuth || isSignedIn) && !FOOTER_ITEM_IDS.includes(item.id));
   if (visibleItems.length === 0) return null;
 
   return (
@@ -151,6 +160,8 @@ export function Sidebar() {
       onKeyDown={handleKeyDown}
       aria-label={t("nav.sidebarAria")}
     >
+      {!collapsed && <ConnectionSelector />}
+
       <div className="sidebar-scroll">
         {visibleGroups.map((group) => (
           <SidebarGroupSection
@@ -164,6 +175,11 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-footer">
+        <div className="sidebar-footer-nav">
+          {footerItems.map((item) => (
+            <NavItem key={item.id} item={item} collapsed={collapsed} />
+          ))}
+        </div>
         <Tooltip label={collapsed ? t("nav.expand") : t("nav.collapse")} placement="right">
           <button
             className="sidebar-collapse-btn ripple-host"

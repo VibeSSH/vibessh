@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Details } from "@/components/ui/Details";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
@@ -341,7 +342,9 @@ function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormM
               onChange={setServerId}
               options={[{ id: "", icon: "x", name: t("databaseHosts.noLinkedServer") }, ...servers.map((s) => serverRowPickerOption(s, t))]}
             />
-            <p className="form-note">{t("databaseHosts.linkedServerNote")}</p>
+            <Details>
+              <p className="form-note">{t("databaseHosts.linkedServerNote")}</p>
+            </Details>
             <div className="form-row">
               <label className="form-field form-field-narrow">
                 <span className="form-label">{t("databaseHosts.engine")}</span>
@@ -367,7 +370,9 @@ function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormM
                 it to 3307, and spent an evening on a plugin that could no
                 longer open a socket. `update_database_host` isn't even async -
                 it writes this row and touches nothing on the Node. */}
-            <p className="form-note">{t("databaseHosts.addressNote")}</p>
+            <Details>
+              <p className="form-note">{t("databaseHosts.addressNote")}</p>
+            </Details>
             <div className="form-row">
               <label className="form-field">
                 <span className="form-label">{t("databaseHosts.adminUsername")}</span>
@@ -384,7 +389,9 @@ function DatabaseHostFormModal({ existing, onClose, onSaved }: DatabaseHostFormM
                 />
               </label>
             </div>
-            <p className="form-note">{t("databaseHosts.adminPasswordNote")}</p>
+            <Details>
+              <p className="form-note">{t("databaseHosts.adminPasswordNote")}</p>
+            </Details>
             <div className="form-actions">
               <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
                 {t("common.cancel")}
@@ -446,7 +453,9 @@ function PhpmyadminLinkModal({ host, onClose, onSaved }: PhpmyadminLinkModalProp
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            <p className="form-note">{t("databaseHosts.phpmyadminHelp")}</p>
+            <Details>
+              <p className="form-note">{t("databaseHosts.phpmyadminHelp")}</p>
+            </Details>
             {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
             {loading ? (
               <SkeletonRows />

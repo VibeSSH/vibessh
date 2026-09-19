@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
@@ -160,15 +161,16 @@ export function ActionsPage() {
         <input
           className="form-input actions-filter"
           placeholder={t("actionsPage.filterByName")}
+          aria-label={t("actionsPage.filterByName")}
           value={serviceFilter}
           onChange={(e) => setServiceFilter(e.target.value)}
         />
         {servicesLoading ? (
           <SkeletonRows />
         ) : services.length === 0 ? (
-          <p className="settings-muted">{t("actionsPage.noServices")}</p>
+          <EmptyState icon="list-checks" title={t("actionsPage.noServicesTitle")} description={t("actionsPage.noServices")} />
         ) : filteredServices.length === 0 ? (
-          <p className="settings-muted">{t("actionsPage.noServicesMatch")}</p>
+          <EmptyState icon="search" title={t("actionsPage.noServicesMatchTitle")} description={t("actionsPage.noServicesMatch")} />
         ) : (
           <ul className="server-list">
             {filteredServices.slice(0, MAX_ROWS_SHOWN).map((service) => (
@@ -211,7 +213,7 @@ export function ActionsPage() {
         {containersLoading ? (
           <SkeletonRows count={3} />
         ) : containers.length === 0 ? (
-          <p className="settings-muted">{t("actionsPage.noContainers")}</p>
+          <EmptyState icon="box" title={t("actionsPage.noContainersTitle")} description={t("actionsPage.noContainers")} />
         ) : (
           <ul className="server-list">
             {containers.map((container) => (

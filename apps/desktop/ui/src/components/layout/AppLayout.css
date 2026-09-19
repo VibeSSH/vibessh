@@ -1,18 +1,13 @@
-/* app-shell is the whole window: a custom titlebar (decorations: false, see
-   TitleBar.tsx) stacked above everything else. Below it, app-body splits
-   into Rail (narrow icon rail, sits directly on the frame color) and the
-   content slab - Voltius's own DesktopShell.tsx has the same two-level
-   split (TitleBar full-width on top, then a row of [VaultSidebar][slab]
-   underneath it). */
+/* The whole window: one compact top bar stacked above a body that is a single
+   row of [Sidebar][content]. The old two-level split (title bar, then a row of
+   [Rail][slab] with its own brand row) is gone - one bar, one sidebar. */
 .app-shell {
   display: flex;
   flex-direction: column;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-}
-.app-shell.chrome-frame {
-  background: var(--t-bg-terminal);
+  background: var(--surface-bg);
 }
 
 .app-body {
@@ -21,83 +16,32 @@
   min-height: 0;
 }
 
-.app-layout-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  margin: 0 8px 8px 0;
-  background: var(--t-bg-base);
-  overflow: hidden;
-  /* This margin is why `.chrome-slab` rounds every corner: it leaves 8px of
-     frame visible along the right and bottom, so those edges are free-
-     standing. The left edge sits flush against the Rail and the top against
-     the title bar, and rounding them reads as a deliberate notch rather than
-     a gap. */
-}
-
-.app-layout-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 48px;
-  min-height: 48px;
-  padding: 0 var(--brand-padding);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.app-layout-brand-mark {
-  width: 20px;
-  height: 20px;
-}
-
-.app-layout-brand-name {
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.app-layout-row {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.app-layout-content {
+/* Lenis scrolls this element's own position; `.app-content-inner` exists only
+   as something it can watch for resize (see the height:100%/overflow:visible
+   note below). */
+.app-content {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  background: var(--surface-bg);
   padding: var(--space-6);
 }
 
-/* Keep the literal value in sync with --bp-compact (globals.css) - CSS
-   @media conditions can't reference a custom property. */
 @media (max-width: 1100px) {
-  .app-layout-content {
+  .app-content {
     padding: var(--space-4);
   }
 }
 
 /*
- * Lenis moves the scroll position of `.app-layout-content` itself rather than
- * transforming this element; it exists only as something Lenis can watch for
- * resizes, since a wrapper's own box does not change when its contents grow.
- *
  * `height: 100%` with `overflow: visible`, not `min-height` and not a flex
- * column. Three pages - the terminal, the file editor and Vibe AI - fill the
- * viewport with `height: 100%`, and a percentage height needs a parent whose
- * height is *definite*: under `min-height` it is not, so those pages fell
- * back to their content height and ended up overflowing the scroller by the
- * width of its own padding. That reads as a terminal cut off at the bottom.
- *
- * A fixed height would normally clip a long page, but `overflow: visible`
- * means an overflowing child still extends the scrollable area of
- * `.app-layout-content` above it - so short pages get an exact height to
- * resolve against and long ones still scroll.
+ * column. Full-height pages (terminal, file editor, Vibe AI) need a parent
+ * whose height is definite; a fixed height would clip a long page, but
+ * `overflow: visible` lets an overflowing child extend the scrollable area of
+ * `.app-content` above it - so short pages get an exact height and long ones
+ * still scroll.
  */
-.app-layout-scroll-content {
+.app-content-inner {
   height: 100%;
   overflow: visible;
 }
@@ -105,8 +49,7 @@
 /*
  * Said at the top of every page, not dismissable: the situation stays wrong
  * for as long as the app is running as root, and the failures it explains
- * arrive later - when somebody tries to save a password and is told the
- * Secret Service has no result.
+ * arrive later - when somebody tries to save a password.
  *
  * `background-color`, not the `background` shorthand: a `color-mix()` in the
  * shorthand is dropped silently.

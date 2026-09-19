@@ -12,3 +12,9 @@ apps/desktop/src-tauri/gen/
 # arrive in a diff as noise.
 apps/desktop/src-tauri/proptest-regressions/
 apps/desktop/src-tauri/tests/*.proptest-regressions
+
+# Playwright (desktop UI e2e/visual regression)
+apps/desktop/ui/test-results/
+apps/desktop/ui/playwright-report/
+apps/desktop/ui/blob-report/
+apps/desktop/ui/.playwright/

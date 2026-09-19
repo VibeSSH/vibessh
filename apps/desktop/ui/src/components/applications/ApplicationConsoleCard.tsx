@@ -59,9 +59,9 @@ function readConsoleTheme() {
   const styles = getComputedStyle(document.documentElement);
   const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
   return {
-    background: token("--surface-2", "#0e1626"),
-    foreground: token("--text-primary", "#dbe6f5"),
-    selectionBackground: token("--surface-3", "#2a3f5a"),
+    background: token("--surface-2", "#191b20"),
+    foreground: token("--text-primary", "#ecedef"),
+    selectionBackground: token("--surface-3", "#1d2026"),
   };
 }
 

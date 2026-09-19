@@ -20,3 +20,73 @@
 .teams-accept-row .form-input {
   flex: 1;
 }
+
+/* Discrete back link above a detail page's title. */
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px 8px 4px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 7px;
+}
+.page-back:hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, #ffffff 5%, transparent);
+}
+
+.team-members-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+/* Add-member modal: a transparent panel so ProvisionMemberSection's own card is
+   the modal content (no nested cards), with a floating close. Compound selector
+   to win over .modal-panel from AddServerModal.css. */
+.modal-panel.team-add-member-panel {
+  position: relative;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.team-add-member-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+.team-add-member-close:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, #ffffff 8%, transparent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

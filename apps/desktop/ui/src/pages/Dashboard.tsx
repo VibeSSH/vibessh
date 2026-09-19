@@ -10,7 +10,14 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { NodeMiniCard } from "@/components/dashboard/NodeMiniCard";
+import { NodeIcon } from "@/components/servers/NodeIcon";
+import { StatusDot } from "@/components/ui/StatusDot";
+import { OverflowMenu } from "@/components/ui/OverflowMenu";
+import { usePingStore } from "@/stores/pingStore";
+// The compact server rows and the Activity tab's agent view reuse the sync
+// pill styles that live in this stylesheet; keep it loaded now that the
+// NodeMiniCard component itself is no longer rendered here.
+import "@/components/dashboard/NodeMiniCard.css";
 import { MetricsHistoryChart } from "@/components/servers/MetricsHistoryChart";
 import { TerminalView } from "@/components/servers/TerminalView";
 import { useServerPinging } from "@/hooks/useServerPinging";
@@ -20,6 +27,7 @@ import { listNetworkMembers, getVibeNetworkStatus, syncVibeNetwork } from "@/ser
 import { getNodeSyncStatus, listServers, reconcileAgentNode, serverSummaryToManagedServer, type NodeSyncStatus } from "@/services/serverService";
 import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore } from "@/stores/serversStore";
+import { useSelectedNodeStore } from "@/stores/selectedNodeStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application } from "@/types/application";
 import type { NodeMeshStatus, NodeNetworkMember } from "@/types/network";
@@ -28,6 +36,7 @@ import "./Servers.css";
 import "./Monitor.css";
 import "./Dashboard.css";
 import { errorMessage } from "@/services/tauri";
+import { formatBytes } from "@/utils/formatBytes";
 import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
 
@@ -51,12 +60,17 @@ export function Dashboard() {
   const [syncingNetwork, setSyncingNetwork] = useState(false);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("applications");
+  // Shared with the sidebar connection selector so both drive the same focus.
+  const selectedNodeId = useSelectedNodeStore((s) => s.selectedNodeId);
+  const setSelectedNodeId = useSelectedNodeStore((s) => s.setSelectedNodeId);
+  // Landing here with a Node already picked (from the sidebar selector) opens
+  // straight onto its live stats rather than the applications list.
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(selectedNodeId ? "activity" : "applications");
   const [alertsExpanded, setAlertsExpanded] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
   useServerPinging(servers);
+  const latencies = usePingStore((s) => s.latencies);
 
   const sshServerIds = useMemo(() => servers.filter((s) => s.connectionMode === "ssh").map((s) => s.id), [servers]);
   const agentServerIds = useMemo(() => servers.filter((s) => s.connectionMode === "agent").map((s) => s.id), [servers]);
@@ -80,6 +94,13 @@ export function Dashboard() {
       setSelectedNodeId(null);
     }
   }, [servers, selectedNodeId]);
+
+  // Focusing a Node - whether from the Servers panel below or the sidebar
+  // connection selector - brings its live stats (the Activity tab) to the
+  // front of the workspace rather than leaving the console there.
+  useEffect(() => {
+    if (selectedNodeId) setActiveTab("activity");
+  }, [selectedNodeId]);
 
   const reloadOverview = useCallback(() => {
     Promise.all([listApplications(), listNetworkMembers(), getVibeNetworkStatus()])
@@ -209,6 +230,30 @@ export function Dashboard() {
   const selectedMetricsState = selectedNodeId ? metricsByServer[selectedNodeId] : undefined;
   const selectedSyncStatus = selectedNodeId ? (agentSync[selectedNodeId] ?? null) : null;
 
+  // With a Node picked in the Servers panel the three tiles scope to that
+  // Node's own figures; with nothing picked they show the fleet averages.
+  const scopedMetric = selectedNodeId ? (metricsByServer[selectedNodeId]?.latest ?? null) : null;
+  const cpuValue = scopedMetric ? scopedMetric.cpuUsagePercent : avgCpu;
+  const ramValue = scopedMetric ? (scopedMetric.ramTotalBytes > 0 ? (scopedMetric.ramUsedBytes / scopedMetric.ramTotalBytes) * 100 : 0) : avgRam;
+  const diskValue = scopedMetric ? (scopedMetric.diskTotalBytes > 0 ? (scopedMetric.diskUsedBytes / scopedMetric.diskTotalBytes) * 100 : 0) : avgDisk;
+
+  // Footer data, replacing the bare Node count: CPU shows the load average,
+  // RAM and Disk show used / total in real units - scoped to the picked Node,
+  // or summed across the Nodes with data when none is picked.
+  const avgLoad = sshMetricsWithData.length > 0 ? sshMetricsWithData.reduce((s, m) => s + m.loadAverage1m, 0) / sshMetricsWithData.length : null;
+  const loadFoot = scopedMetric ? scopedMetric.loadAverage1m : avgLoad;
+  const ramUsed = scopedMetric ? scopedMetric.ramUsedBytes : sshMetricsWithData.reduce((s, m) => s + m.ramUsedBytes, 0);
+  const ramTotal = scopedMetric ? scopedMetric.ramTotalBytes : sshMetricsWithData.reduce((s, m) => s + m.ramTotalBytes, 0);
+  const diskUsed = scopedMetric ? scopedMetric.diskUsedBytes : sshMetricsWithData.reduce((s, m) => s + m.diskUsedBytes, 0);
+  const diskTotal = scopedMetric ? scopedMetric.diskTotalBytes : sshMetricsWithData.reduce((s, m) => s + m.diskTotalBytes, 0);
+  const bytesFoot = (used: number, total: number) => (total > 0 ? `${formatBytes(used)} / ${formatBytes(total)}` : "-");
+
+  // Picking a Node in the Servers panel jumps the workspace to its live stats
+  // (the Activity tab) rather than leaving the console in front.
+  const handleSelectNode = (id: string) => {
+    setSelectedNodeId(selectedNodeId === id ? null : id);
+  };
+
   return (
     <div className="page dashboard-page">
       <div className="page-header page-header-row">
@@ -248,22 +293,121 @@ export function Dashboard() {
         </Card>
       ) : (
         <>
-          <div className="dashboard-section">
-            <h2 className="dashboard-section-title">{t("dashboard.sectionNodes", { count: servers.length })}</h2>
-            <div className="dashboard-node-row">
-              {servers.map((server) => (
-                <NodeMiniCard
-                  key={server.id}
-                  server={server}
-                  metrics={metricsByServer[server.id]?.latest ?? null}
-                  history={metricsByServer[server.id]?.history ?? []}
-                  syncStatus={agentSync[server.id] ?? null}
-                  selected={server.id === selectedNodeId}
-                  onSelect={() => setSelectedNodeId((prev) => (prev === server.id ? null : server.id))}
-                />
-              ))}
+          {/* Three-metric row (the reference's top band). With a Node picked in
+              the Servers panel below, the tiles read that Node's own CPU / RAM /
+              Disk and their footers its load and used/total; with nothing picked
+              they show the fleet averages and summed totals. */}
+          <div className="dashboard-metrics">
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">CPU</span>
+                <Icon name="activity" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{cpuValue != null ? `${cpuValue.toFixed(1)}%` : "-"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, cpuValue ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{loadFoot != null ? t("dashboard.loadFoot", { load: loadFoot.toFixed(2) }) : "-"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">{t("rail.ram")}</span>
+                <Icon name="server" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{ramValue != null ? `${ramValue.toFixed(0)}%` : "-"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, ramValue ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{bytesFoot(ramUsed, ramTotal)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-top">
+                <span className="stat-card-label">{t("rail.disk")}</span>
+                <Icon name="database" size={15} className="stat-card-icon" />
+              </div>
+              <div className="stat-card-value">{diskValue != null ? `${diskValue.toFixed(0)}%` : "-"}</div>
+              <div className="stat-card-bar">
+                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, diskValue ?? 0)}%` }} />
+              </div>
+              <div className="stat-card-foot">{bytesFoot(diskUsed, diskTotal)}</div>
             </div>
           </div>
+
+          {/* Nodes (wider) beside the workspace/activity panel (narrower) on
+              wide windows; stacks back to one column when the content pane is
+              narrow (see Dashboard.css). */}
+          <div className="dashboard-columns">
+          <section className="dashboard-panel dashboard-servers-panel">
+            <div className="dashboard-panel-head">
+              <h2 className="dashboard-panel-title">{t("nav.servers")}</h2>
+              <span className={`dashboard-panel-count ${online < servers.length ? "dashboard-panel-count-problem" : ""}`}>
+                {t("dashboard.statOnlineValue", { online, total: servers.length })}
+              </span>
+            </div>
+            <ul className="dashboard-server-rows">
+              {servers.map((server) => {
+                const isAgent = server.connectionMode === "agent";
+                const m = metricsByServer[server.id]?.latest ?? null;
+                const ram = m && m.ramTotalBytes > 0 ? (m.ramUsedBytes / m.ramTotalBytes) * 100 : null;
+                const latency = latencies[server.id];
+                const syncState = agentSync[server.id] ?? null;
+                const selected = server.id === selectedNodeId;
+                const rowActions = [
+                  ...(isAgent ? [] : [{ label: t("nav.terminal"), icon: "terminal", onClick: () => navigate(`/terminal/${server.id}`) }]),
+                  { label: t("nav.monitor"), icon: "activity", onClick: () => navigate(`/monitor/${server.id}`) },
+                  ...(isAgent && syncState && !syncState.inSync
+                    ? [{ label: t("dashboard.taskReconcileAction"), icon: "refresh-cw", onClick: () => handleReconcile(server.id) }]
+                    : []),
+                ];
+                return (
+                  <li key={server.id} className={`dashboard-server-row ${selected ? "dashboard-server-row-active" : ""}`}>
+                    <button
+                      type="button"
+                      className="dashboard-server-row-main"
+                      onClick={() => handleSelectNode(server.id)}
+                      aria-pressed={selected}
+                    >
+                      <span className="dashboard-server-row-icon">
+                        <NodeIcon server={server} size={15} />
+                      </span>
+                      <span className="dashboard-server-row-id">
+                        <span className="dashboard-server-row-name" title={server.name}>
+                          {server.name}
+                        </span>
+                        <StatusDot status={server.status} withLabel />
+                      </span>
+                      <span className="dashboard-server-row-stats">
+                        {isAgent ? (
+                          <span
+                            className={`node-mini-card-sync-pill ${syncState?.inSync ? "node-mini-card-sync-pill-ok" : "node-mini-card-sync-pill-stale"}`}
+                          >
+                            {syncState ? (syncState.inSync ? t("dashboard.nodeInSync") : t("dashboard.nodeOutOfSync")) : t("dashboard.nodeStatusUnknown")}
+                          </span>
+                        ) : m ? (
+                          <>
+                            <span className="dashboard-server-stat">
+                              <i>CPU</i>
+                              {m.cpuUsagePercent.toFixed(0)}%
+                            </span>
+                            <span className="dashboard-server-stat">
+                              <i>RAM</i>
+                              {ram != null ? `${ram.toFixed(0)}%` : "-"}
+                            </span>
+                            <span className="dashboard-server-stat dashboard-server-stat-latency">{typeof latency === "number" ? `${latency} ms` : "-"}</span>
+                          </>
+                        ) : (
+                          <span className="dashboard-server-stat-empty">
+                            {server.status === "offline" ? t("dashboard.nodeOffline") : t("dashboard.nodeCollecting")}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <OverflowMenu ariaLabel={server.name} items={rowActions} />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
 
           <div className="dashboard-workspace">
             <div className="dashboard-workspace-header">
@@ -370,6 +514,7 @@ export function Dashboard() {
                 ))}
             </div>
           </div>
+          </div>
 
           <Card>
             {/* Buttons, not clickable divs: these three were reachable with a
@@ -460,24 +605,6 @@ export function Dashboard() {
               </>
             )}
           </Card>
-
-          <div className="dashboard-footer-bar">
-            <span className="dashboard-footer-bar-item">
-              <Icon name="activity" size={13} />
-              {t("metricsPreview.cpu")} <span className="dashboard-footer-bar-value">{avgCpu !== null ? formatPercent(avgCpu) : "—"}</span>
-            </span>
-            <span className="dashboard-footer-bar-item">
-              {t("metricsPreview.ram")} <span className="dashboard-footer-bar-value">{avgRam !== null ? formatPercent(avgRam) : "—"}</span>
-            </span>
-            <span className="dashboard-footer-bar-item">
-              {t("metricsPreview.disk")} <span className="dashboard-footer-bar-value">{avgDisk !== null ? formatPercent(avgDisk) : "—"}</span>
-            </span>
-            <span className="dashboard-footer-bar-spacer" />
-            <span className={`dashboard-footer-bar-online ${online < servers.length ? "dashboard-footer-bar-online-problem" : ""}`}>
-              <Icon name={online < servers.length ? "wifi-off" : "wifi"} size={13} />
-              {t("dashboard.statOnlineValue", { online, total: servers.length })}
-            </span>
-          </div>
         </>
       )}
     </div>

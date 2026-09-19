@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Details } from "@/components/ui/Details";
 import { Icon } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
 import {
@@ -345,7 +346,9 @@ export function PterodactylMigration() {
                 </li>
               ))}
             </ul>
-            <p className="ptero-run-note">{t("pterodactyl.machinesNote")}</p>
+            <Details>
+              <p className="ptero-run-note">{t("pterodactyl.machinesNote")}</p>
+            </Details>
             <Button type="button" variant="secondary" onClick={() => void loadPlan()} disabled={planning || running}>
               <Icon name="activity" size={14} />
               {t("pterodactyl.applyMachines")}

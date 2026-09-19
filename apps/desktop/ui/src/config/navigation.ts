@@ -14,23 +14,21 @@ import type { SidebarGroup } from "@/types/common";
  */
 export const sidebarGroups: SidebarGroup[] = [
   {
+    // Everything that is about the whole install, not one chosen server.
     id: "main",
     labelKey: "nav.groupMain",
     items: [
       { id: "dashboard", labelKey: "nav.dashboard", path: "/", icon: "layout-grid" },
       { id: "servers", labelKey: "nav.servers", path: "/servers", icon: "server" },
       { id: "applications", labelKey: "nav.applications", path: "/applications", icon: "box" },
-    ],
-  },
-  {
-    id: "infrastructure",
-    labelKey: "nav.groupInfrastructure",
-    items: [
       { id: "vibe-network", labelKey: "nav.vibeNetwork", path: "/vibe-network", icon: "wifi" },
       { id: "database-hosts", labelKey: "nav.databaseHosts", path: "/database-hosts", icon: "database" },
+      { id: "vibe-ai", labelKey: "nav.vibeAi", path: "/vibe-ai", icon: "sparkles" },
+      { id: "teams", labelKey: "nav.teams", path: "/teams", icon: "users", requiresAuth: true },
     ],
   },
   {
+    // The tools that act on a chosen server (each opens onto a server picker).
     id: "tools",
     labelKey: "nav.groupTools",
     items: [
@@ -39,22 +37,18 @@ export const sidebarGroups: SidebarGroup[] = [
       { id: "monitor", labelKey: "nav.monitor", path: "/monitor", icon: "activity" },
       { id: "actions", labelKey: "nav.actions", path: "/actions", icon: "zap" },
       { id: "port-forwarding", labelKey: "nav.portForwarding", path: "/port-forwarding", icon: "arrow-left-right" },
-      { id: "vibe-ai", labelKey: "nav.vibeAi", path: "/vibe-ai", icon: "sparkles" },
-    ],
-  },
-  {
-    id: "security",
-    labelKey: "nav.groupSecurity",
-    items: [
       { id: "firewall", labelKey: "nav.firewall", path: "/firewall", icon: "lock" },
-      { id: "teams", labelKey: "nav.teams", path: "/teams", icon: "users", requiresAuth: true },
+      { id: "pterodactyl", labelKey: "nav.pterodactyl", path: "/pterodactyl", icon: "arrow-left-right" },
     ],
   },
   {
-    id: "other",
+    // Settings and the guide render pinned in the sidebar footer (filtered out
+    // of the groups by FOOTER_ITEM_IDS in Sidebar.tsx). This group therefore
+    // has no visible items and shows no header - it exists only so the footer
+    // can find these two entries by id.
+    id: "footer",
     labelKey: "nav.groupOther",
     items: [
-      { id: "pterodactyl", labelKey: "nav.pterodactyl", path: "/pterodactyl", icon: "arrow-left-right" },
       { id: "guide", labelKey: "nav.guide", path: "/guide", icon: "book-open" },
       { id: "settings", labelKey: "nav.settings", path: "/settings", icon: "settings" },
     ],
