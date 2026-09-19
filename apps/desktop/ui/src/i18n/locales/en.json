@@ -628,7 +628,7 @@
     "tabApplications": "Applications",
     "tabTerminal": "Terminal",
     "tabActivity": "Activity",
-    "clearSelection": "All Nodes",
+    "clearSelection": "All servers",
     "terminalSelectPrompt": "Select a Node above to open a terminal to it.",
     "terminalAgentUnavailable": "Terminal is only available for SSH servers.",
     "activitySelectPrompt": "Select a Node above to see its activity.",

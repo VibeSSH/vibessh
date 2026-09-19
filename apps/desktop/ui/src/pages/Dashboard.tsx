@@ -27,6 +27,7 @@ import { listNetworkMembers, getVibeNetworkStatus, syncVibeNetwork } from "@/ser
 import { getNodeSyncStatus, listServers, reconcileAgentNode, serverSummaryToManagedServer, type NodeSyncStatus } from "@/services/serverService";
 import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore } from "@/stores/serversStore";
+import { useSelectedNodeStore } from "@/stores/selectedNodeStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application } from "@/types/application";
 import type { NodeMeshStatus, NodeNetworkMember } from "@/types/network";
@@ -59,8 +60,12 @@ export function Dashboard() {
   const [syncingNetwork, setSyncingNetwork] = useState(false);
   const [reconcilingId, setReconcilingId] = useState<string | null>(null);
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("applications");
+  // Shared with the sidebar connection selector so both drive the same focus.
+  const selectedNodeId = useSelectedNodeStore((s) => s.selectedNodeId);
+  const setSelectedNodeId = useSelectedNodeStore((s) => s.setSelectedNodeId);
+  // Landing here with a Node already picked (from the sidebar selector) opens
+  // straight onto its live stats rather than the applications list.
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(selectedNodeId ? "activity" : "applications");
   const [alertsExpanded, setAlertsExpanded] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
 
@@ -89,6 +94,13 @@ export function Dashboard() {
       setSelectedNodeId(null);
     }
   }, [servers, selectedNodeId]);
+
+  // Focusing a Node - whether from the Servers panel below or the sidebar
+  // connection selector - brings its live stats (the Activity tab) to the
+  // front of the workspace rather than leaving the console there.
+  useEffect(() => {
+    if (selectedNodeId) setActiveTab("activity");
+  }, [selectedNodeId]);
 
   const reloadOverview = useCallback(() => {
     Promise.all([listApplications(), listNetworkMembers(), getVibeNetworkStatus()])
@@ -239,11 +251,7 @@ export function Dashboard() {
   // Picking a Node in the Servers panel jumps the workspace to its live stats
   // (the Activity tab) rather than leaving the console in front.
   const handleSelectNode = (id: string) => {
-    setSelectedNodeId((prev) => {
-      const next = prev === id ? null : id;
-      if (next) setActiveTab("activity");
-      return next;
-    });
+    setSelectedNodeId(selectedNodeId === id ? null : id);
   };
 
   return (

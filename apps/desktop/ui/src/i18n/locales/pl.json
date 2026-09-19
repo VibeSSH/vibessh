@@ -632,7 +632,7 @@
     "tabApplications": "Aplikacje",
     "tabTerminal": "Terminal",
     "tabActivity": "Aktywność",
-    "clearSelection": "Wszystkie Node'y",
+    "clearSelection": "Wszystkie serwery",
     "terminalSelectPrompt": "Wybierz Node powyżej, aby otworzyć do niego terminal.",
     "terminalAgentUnavailable": "Terminal jest dostępny tylko dla serwerów SSH.",
     "activitySelectPrompt": "Wybierz Node powyżej, aby zobaczyć jego aktywność.",
