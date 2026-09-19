@@ -361,9 +361,12 @@ pub async fn get_minecraft_metrics(
     session.get_minecraft_metrics(&host, rcon_port, &password).await
 }
 
-/// `docker inspect`'s Go template for a container's IP on its first network -
-/// the same `inspect -f` shape `runtime::docker` already relies on.
-const RCON_CONTAINER_IP_FORMAT: &str = "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}";
+/// `docker inspect`'s Go template for a container's network addresses, one per
+/// network, space-separated - the same `inspect -f` shape `runtime::docker`
+/// already relies on. Space-separated, not run together, because a container
+/// on two networks would otherwise hand back "172.18.0.5172.19.0.3", one
+/// unusable address; the caller takes the first real one.
+const RCON_CONTAINER_IP_FORMAT: &str = "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}";
 
 /// Where RCON is reachable from the Node for this application. A bare process
 /// (systemd, local, remote) binds it on the host loopback; a Docker container
@@ -384,11 +387,10 @@ async fn rcon_host(session: &SshSession, app: &crate::models::ApplicationDetail)
     );
     match session.execute_command(&command).await {
         Ok(output) if output.exit_code == 0 => {
-            let ip = output.stdout.trim();
-            if ip.is_empty() {
-                "127.0.0.1".to_string()
-            } else {
-                ip.to_string()
+            // First real address; a container on two networks lists several.
+            match output.stdout.split_whitespace().next() {
+                Some(ip) if !ip.is_empty() => ip.to_string(),
+                _ => "127.0.0.1".to_string(),
             }
         }
         _ => "127.0.0.1".to_string(),
