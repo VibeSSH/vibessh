@@ -18,7 +18,7 @@ import { NodeIcon } from "@/components/servers/NodeIcon";
  * rather than polling - this is a manual "check in on this Node" action,
  * not a live dashboard.
  */
-function NodeSyncBadge({ serverId, name }: { serverId: string; name: string }) {
+export function NodeSyncBadge({ serverId, name }: { serverId: string; name: string }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<NodeSyncStatus | null>(null);
   const [busy, setBusy] = useState(false);
