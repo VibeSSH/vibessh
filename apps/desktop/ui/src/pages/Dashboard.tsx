@@ -287,6 +287,10 @@ export function Dashboard() {
             </div>
           </div>
 
+          {/* Nodes (wider) beside the workspace/activity panel (narrower) on
+              wide windows; stacks back to one column when the content pane is
+              narrow (see Dashboard.css). */}
+          <div className="dashboard-columns">
           <div className="dashboard-section">
             <h2 className="dashboard-section-title">{t("dashboard.sectionNodes", { count: servers.length })}</h2>
             <div className="dashboard-node-row">
@@ -408,6 +412,7 @@ export function Dashboard() {
                   <div className="dashboard-workspace-prompt">{t("dashboard.nodeCollecting")}</div>
                 ))}
             </div>
+          </div>
           </div>
 
           <Card>

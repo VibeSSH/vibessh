@@ -13,6 +13,22 @@
   flex-wrap: wrap;
 }
 
+/* Two columns on a wide content pane: the Node list gets the room, the
+   workspace/activity panel sits narrower beside it (the reference's
+   list + console split). Falls back to a single stacked column once the
+   pane is too narrow to hold both - see the media query below. */
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+@media (max-width: 1080px) {
+  .dashboard-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dashboard-section {
   display: flex;
   flex-direction: column;
