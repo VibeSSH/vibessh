@@ -626,6 +626,14 @@ export function ApplicationDetail() {
           {tab === "overview" && (
             <div className="application-detail-overview-grid">
               <div className="application-detail-overview">
+                {/* First thing on a Paper/Purpur server's Overview: is it
+                    healthy right now. Proxies (Velocity, Waterfall) have no
+                    tick loop, and a local application has no tunnel to reach
+                    RCON through, so neither gets the card. */}
+                {(application.blueprintId === "paper" || application.blueprintId === "purpur") && application.serverId && (
+                  <MinecraftMetricsCard applicationId={id} />
+                )}
+
                 {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
 
                 {/* Where the stdin console would be, for the kinds that have
@@ -759,14 +767,6 @@ export function ApplicationDetail() {
 
               {features.includes("healthCheck") && (
                 <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
-              )}
-
-              {/* Paper and Purpur are the game servers with a tick loop; the
-                  proxies (Velocity, Waterfall) have no TPS. RCON runs over the
-                  server's SSH tunnel, so a local application has nowhere to
-                  reach - hence the serverId guard. */}
-              {(application.blueprintId === "paper" || application.blueprintId === "purpur") && application.serverId && (
-                <MinecraftMetricsCard applicationId={id} />
               )}
 
               {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (
