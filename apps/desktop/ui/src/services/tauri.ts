@@ -163,7 +163,11 @@ export function errorMessage(error: unknown, t: (key: string, options?: Record<s
       const fromBackend = t(`cloudErrors.${backendCode}`, { ...error.params, defaultValue: "" });
       if (fromBackend) return fromBackend;
     }
-    const translated = t(`errors.${error.code}`, { ...error.params, context, defaultValue: "" });
+    // `message` first so a key like `errors.internal` ("...: {{message}}")
+    // always has something to interpolate - the error's own message - even
+    // when the backend did not repeat it inside `params`. A real `params.message`
+    // still wins by coming after.
+    const translated = t(`errors.${error.code}`, { message: error.message, ...error.params, context, defaultValue: "" });
     if (translated) return translated;
   }
   if (error instanceof Error) return error.message;
