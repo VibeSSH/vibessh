@@ -4,10 +4,13 @@
     "unitsCount": "{{count}} units",
     "filterByName": "Filter by name...",
     "noServices": "No services found on this server.",
+    "noServicesTitle": "No services",
     "noServicesMatch": "No services match your filter.",
+    "noServicesMatchTitle": "No matches",
     "containersTitle": "Docker containers",
     "containersCount": "{{count}} containers",
     "noContainers": "No containers, or Docker isn't installed on this server.",
+    "noContainersTitle": "No containers",
     "viewLogsAria": "View logs for {{name}}",
     "startAria": "Start {{name}}",
     "stopAria": "Stop {{name}}",
@@ -500,7 +503,8 @@
     "done": "Done",
     "create": "Create",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "details": "Details"
   },
   "connections": {
     "title": "Connections",
@@ -1374,6 +1378,7 @@
     "monitorAria": "Monitor {{name}}",
     "actionsAria": "Quick actions for {{name}}",
     "openFirewallAria": "Firewall for {{name}}",
+    "setupNode": "Node setup",
     "setupNodeAria": "Node setup for {{name}}",
     "terminalAria": "Open a terminal to {{name}}",
     "syncOk": "Synced",

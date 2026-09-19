@@ -4,10 +4,13 @@
     "unitsCount": "{{count}} jednostek",
     "filterByName": "Filtruj po nazwie...",
     "noServices": "Nie znaleziono żadnych usług na tym serwerze.",
+    "noServicesTitle": "Brak usług",
     "noServicesMatch": "Żadna usługa nie pasuje do filtra.",
+    "noServicesMatchTitle": "Brak dopasowań",
     "containersTitle": "Kontenery Docker",
     "containersCount": "{{count}} kontenerów",
     "noContainers": "Brak kontenerów albo Docker nie jest zainstalowany na tym serwerze.",
+    "noContainersTitle": "Brak kontenerów",
     "viewLogsAria": "Pokaż logi {{name}}",
     "startAria": "Uruchom {{name}}",
     "stopAria": "Zatrzymaj {{name}}",
@@ -504,7 +507,8 @@
     "done": "Gotowe",
     "create": "Utwórz",
     "yes": "Tak",
-    "no": "Nie"
+    "no": "Nie",
+    "details": "Szczegóły"
   },
   "connections": {
     "title": "Połączenia",
@@ -1382,6 +1386,7 @@
     "monitorAria": "Monitoruj {{name}}",
     "actionsAria": "Szybkie akcje dla {{name}}",
     "openFirewallAria": "Firewall {{name}}",
+    "setupNode": "Konfiguracja Node'a",
     "setupNodeAria": "Konfiguracja Node'a {{name}}",
     "terminalAria": "Otwórz terminal do {{name}}",
     "syncOk": "Zsynchronizowany",
