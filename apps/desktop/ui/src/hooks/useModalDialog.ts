@@ -83,6 +83,11 @@ export function useModalDialog(onClose: () => void, options: { labelledBy?: stri
 
   return {
     backdropProps: {
+      // The panel opts out of Lenis so its own content scrolls; the backdrop
+      // must too, or a wheel over the dim area around the panel falls through
+      // to Lenis and scrolls the page behind the open dialog. Same opt-out,
+      // one level up, so the whole overlay holds the scroll.
+      "data-lenis-prevent": true,
       onMouseDown: (event: MouseEvent<HTMLDivElement>) => {
         // Tracking where the mousedown landed, not just the click: a drag
         // that starts inside the panel and ends on the backdrop synthesizes
