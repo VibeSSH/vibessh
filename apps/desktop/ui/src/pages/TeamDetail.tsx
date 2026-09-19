@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
+import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationsSection } from "@/components/teams/ApplicationsSection";
@@ -42,6 +43,8 @@ export function TeamDetail() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const confirmDeleteBackdrop = useModalDialog(() => !deleteBusy && setConfirmingDelete(false), { labelledBy: "teamdetail-dialog-title-1" });
+  const [addingMember, setAddingMember] = useState(false);
+  const addMemberBackdrop = useModalDialog(() => setAddingMember(false), { labelledBy: "teamdetail-addmember-title" });
 
   function loadOverview() {
     if (!teamId) return;
@@ -97,23 +100,21 @@ export function TeamDetail() {
 
   return (
     <div className="page">
+      <button className="page-back" onClick={() => navigate("/teams")}>
+        <Icon name="chevron-left" size={15} />
+        {t("teams.backToTeams")}
+      </button>
       <div className="page-header page-header-row">
         <div>
           <h1 className="page-title">{team ? team.name : t("nav.teams")}</h1>
           <p className="page-subtitle">{t("teams.detailSubtitle")}</p>
         </div>
-        <div className="team-detail-header-actions">
-          {canDeleteTeam && (
-            <Button variant="danger" size="sm" onClick={() => setConfirmingDelete(true)}>
-              <Icon name="trash" size={14} />
-              {t("teams.deleteTeam")}
-            </Button>
-          )}
-          <Button variant="secondary" onClick={() => navigate("/teams")}>
-            <Icon name="chevron-left" size={16} />
-            {t("teams.backToTeams")}
-          </Button>
-        </div>
+        {canDeleteTeam && (
+          <OverflowMenu
+            ariaLabel={team?.name ?? t("nav.teams")}
+            items={[{ label: t("teams.deleteTeam"), icon: "trash", danger: true, onClick: () => setConfirmingDelete(true) }]}
+          />
+        )}
       </div>
 
       {error && <p className="page-error-note">{error}</p>}
@@ -146,6 +147,14 @@ export function TeamDetail() {
 
       {tab === "members" && (
         <>
+        {canManageMembers && (
+          <div className="team-members-toolbar">
+            <Button size="sm" onClick={() => setAddingMember(true)}>
+              <Icon name="plus" size={15} />
+              {t("provisionMember.title")}
+            </Button>
+          </div>
+        )}
         <Card title={t("teams.membersTitle")} subtitle={t("teams.membersCount", { count: members.length })}>
           {loading ? (
             <SkeletonRows />
@@ -186,11 +195,6 @@ export function TeamDetail() {
             </ul>
           )}
         </Card>
-        {/* Under the member list, because adding somebody belongs where you
-            can see who is already there. This replaced the invitations tab
-            outright: two ways to bring a person in was one too many, and the
-            other one only worked for people who had already registered. */}
-        <ProvisionMemberSection teamId={teamId} canAdd={canManageMembers} />
         </>
       )}
 
@@ -198,6 +202,18 @@ export function TeamDetail() {
       {tab === "servers" && <ServersSection teamId={teamId} canManage={canManageServers} />}
       {tab === "applications" && <ApplicationsSection teamId={teamId} canManage={canManageServers} />}
       {tab === "audit" && canViewAudit && <AuditLogSection teamId={teamId} />}
+
+      {addingMember && (
+        <div className="modal-backdrop" {...addMemberBackdrop.backdropProps}>
+          <div className="modal-panel team-add-member-panel" {...addMemberBackdrop.panelProps}>
+            <span id="teamdetail-addmember-title" className="sr-only">{t("provisionMember.title")}</span>
+            <button className="team-add-member-close" onClick={() => setAddingMember(false)} aria-label={t("common.close")}>
+              <Icon name="x" size={16} />
+            </button>
+            <ProvisionMemberSection teamId={teamId} canAdd={canManageMembers} />
+          </div>
+        </div>
+      )}
 
       {confirmingDelete && (
         <div className="modal-backdrop" {...confirmDeleteBackdrop.backdropProps}>
