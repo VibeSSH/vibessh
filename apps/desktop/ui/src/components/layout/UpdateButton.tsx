@@ -30,7 +30,7 @@ export function UpdateButton() {
   return (
     <div className="rail-update" ref={panelRef}>
       <button
-        className={`rail-btn rail-update-btn ${hasUpdate ? "rail-update-btn-available" : ""}`.trim()}
+        className={`topbar-action rail-update-btn ${hasUpdate ? "rail-update-btn-available" : ""}`.trim()}
         onClick={() => setOpen((o) => !o)}
         aria-label={hasUpdate ? t("update.availableAria", { version }) : t("update.checkAria")}
         title={hasUpdate ? t("update.availableAria", { version }) : t("update.checkAria")}
