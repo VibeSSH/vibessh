@@ -177,15 +177,31 @@ function AccountMenu() {
 export function TopBar() {
   const { t } = useTranslation();
   const viewLabel = useViewLabel();
+  // When the last drag-region press landed, so a second one in quick succession
+  // reads as the title bar's double-click-to-maximize rather than another drag.
+  const lastPressRef = useRef(0);
 
   function handleMouseDown(event: React.MouseEvent) {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    if (!target.closest('button, a, input, [role="button"]')) {
+    // A control (window buttons, menus, the update pill) handles its own click.
+    if (target.closest('button, a, input, [role="button"]')) return;
+
+    const now = Date.now();
+    if (now - lastPressRef.current < 400) {
+      // Second press on the bar within the double-click window: toggle
+      // maximize, the way every native title bar does. Decided here on
+      // mousedown, before a drag can start and swallow the second click.
+      lastPressRef.current = 0;
       currentWindow()
-        ?.startDragging()
-        .catch((err) => console.error("startDragging failed:", err));
+        ?.toggleMaximize()
+        .catch((err) => console.error("toggleMaximize failed:", err));
+      return;
     }
+    lastPressRef.current = now;
+    currentWindow()
+      ?.startDragging()
+      .catch((err) => console.error("startDragging failed:", err));
   }
 
   return (

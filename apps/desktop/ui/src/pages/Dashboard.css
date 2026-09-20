@@ -486,3 +486,94 @@
   font-size: 11px;
   color: var(--text-tertiary);
 }
+/* A quiet "updated x s ago" beneath the foot. It climbs every second, so a
+   poll that stalls shows up as a number growing past the 6s interval rather
+   than a value that merely looks stable. */
+.stat-card-updated {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Customizable widget grid (react-grid-layout) --- */
+
+/* Each grid item is a flex column so its box fills the resized cell and the
+   scrollable parts (server list, applications list) get a real height to work
+   against rather than growing past the widget. */
+.dash-widget {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dash-widget > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The auto-fit bands (metrics, ops) size their grid cell to their content, so
+   their inner block stays at its natural height rather than stretching to fill
+   the cell - that keeps the measurement honest and leaves no dead space. */
+.dash-widget[data-autofit] > * {
+  flex: 0 0 auto;
+}
+/* ...and they don't clip: the cell already fits the content exactly, so the
+   only thing overflow:hidden would cut is a card's hover lift and its shadow
+   spilling past the top edge. Let those show. */
+.dash-widget[data-autofit] {
+  overflow: visible;
+}
+.dash-widget > .dashboard-panel,
+.dash-widget > .dashboard-workspace {
+  display: flex;
+  flex-direction: column;
+}
+.dash-widget .dashboard-server-rows,
+.dash-widget .dashboard-workspace-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The three metric tiles keep their own height rather than stretching to fill
+   a tall cell, which would leave the value marooned in the middle. */
+.dash-widget > .dashboard-metrics {
+  align-content: start;
+}
+
+/* Edit mode: every widget reads as grabbable and shows where it can go. */
+.dashboard-grid-editing .dash-widget {
+  cursor: grab;
+  outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: var(--r-md);
+}
+.dashboard-grid-editing .dash-widget:active {
+  cursor: grabbing;
+}
+/* The drop target react-grid-layout paints while dragging. */
+.dashboard-grid .react-grid-placeholder {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: var(--r-md);
+  opacity: 1;
+}
+/* The resize grip, made visible on the dark surface. */
+.dashboard-grid .react-resizable-handle::after {
+  border-right-color: var(--text-tertiary);
+  border-bottom-color: var(--text-tertiary);
+}
+
+.dashboard-edit-reset {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.dashboard-edit-reset:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}

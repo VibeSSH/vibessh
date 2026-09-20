@@ -114,6 +114,36 @@
   text-overflow: ellipsis;
 }
 
+/* A small count pill pushed to the right edge of the row - how many Nodes /
+   Applications there are, at a glance. A fixed height and centered digits keep
+   it a clean, even pill whether the number is one figure or three. */
+.sidebar-link-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 130ms ease, color 130ms ease;
+}
+.sidebar-link:hover .sidebar-link-count {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+.sidebar-link-active .sidebar-link-count {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
 .sidebar-collapsed .sidebar-link {
   justify-content: center;
   padding: 0;

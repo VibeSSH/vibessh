@@ -6,6 +6,8 @@ import { Tooltip } from "@/components/ui/Tooltip";
 import { useRipple } from "@/hooks/useRipple";
 import { sidebarGroups } from "@/config/navigation";
 import { useAuthStore } from "@/stores/authStore";
+import { useServersStore } from "@/stores/serversStore";
+import { useApplicationsStore } from "@/stores/applicationsStore";
 import type { NavModule } from "@/types/common";
 import { ConnectionSelector } from "./ConnectionSelector";
 import { open } from "@tauri-apps/plugin-shell";
@@ -74,7 +76,7 @@ function readStoredGroups(): Record<string, boolean> {
   }
 }
 
-function NavItem({ item, collapsed }: { item: NavModule; collapsed: boolean }) {
+function NavItem({ item, collapsed, count }: { item: NavModule; collapsed: boolean; count?: number }) {
   const { t } = useTranslation();
   const { createRipple, rippleEls } = useRipple();
   const label = t(item.labelKey);
@@ -90,6 +92,7 @@ function NavItem({ item, collapsed }: { item: NavModule; collapsed: boolean }) {
       {rippleEls}
       <Icon name={item.icon} size={16} className="sidebar-link-icon" />
       {!collapsed && <span className="sidebar-link-label">{label}</span>}
+      {!collapsed && count != null && count > 0 && <span className="sidebar-link-count">{count}</span>}
     </NavLink>
   );
 }
@@ -99,11 +102,13 @@ function SidebarGroupSection({
   collapsed,
   expanded,
   onToggle,
+  counts,
 }: {
   group: (typeof sidebarGroups)[number];
   collapsed: boolean;
   expanded: boolean;
   onToggle: () => void;
+  counts: Record<string, number | undefined>;
 }) {
   const { t } = useTranslation();
   const isSignedIn = useAuthStore((s) => s.status === "signedIn");
@@ -121,7 +126,7 @@ function SidebarGroupSection({
       {(collapsed || expanded) && (
         <div className="sidebar-group-items">
           {visibleItems.map((item) => (
-            <NavItem key={item.id} item={item} collapsed={collapsed} />
+            <NavItem key={item.id} item={item} collapsed={collapsed} count={counts[item.id]} />
           ))}
         </div>
       )}
@@ -147,6 +152,12 @@ export function Sidebar() {
   const { createRipple, rippleEls } = useRipple();
   const isSignedIn = useAuthStore((s) => s.status === "signedIn");
   const visibleGroups = sidebarGroups.filter((group) => !group.requiresAuth || isSignedIn);
+  // Counts beside the Servers and Applications rows. Both stores are filled by
+  // the Dashboard on launch (and kept current by their own pages), so the
+  // numbers are there without the sidebar fetching anything of its own.
+  const serverCount = useServersStore((s) => s.servers.length);
+  const applicationCount = useApplicationsStore((s) => s.applications.length);
+  const navCounts: Record<string, number | undefined> = { servers: serverCount, applications: applicationCount };
 
   useEffect(() => {
     try {
@@ -205,6 +216,7 @@ export function Sidebar() {
             collapsed={collapsed}
             expanded={isGroupExpanded(group.id)}
             onToggle={() => toggleGroup(group.id)}
+            counts={navCounts}
           />
         ))}
       </div>

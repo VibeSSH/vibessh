@@ -30,7 +30,11 @@ interface FileTransferState {
   removeTransfer: (id: string) => void;
 }
 
-export const useFileTransferStore = create<FileTransferState>((set) => ({
+/** How long a finished transfer lingers before it clears itself. Long enough
+ *  to read "done", short enough that the queue does not become a history. */
+const DONE_LINGER_MS = 4000;
+
+export const useFileTransferStore = create<FileTransferState>((set, get) => ({
   transfers: [],
 
   addTransfer: (item) =>
@@ -50,7 +54,12 @@ export const useFileTransferStore = create<FileTransferState>((set) => ({
       }),
     })),
 
-  markDone: (id) => set((state) => ({ transfers: state.transfers.map((t) => (t.id === id ? { ...t, status: "done", speedBps: 0 } : t)) })),
+  markDone: (id) => {
+    set((state) => ({ transfers: state.transfers.map((t) => (t.id === id ? { ...t, status: "done", speedBps: 0 } : t)) }));
+    // A finished transfer clears itself after a moment; an errored or canceled
+    // one is left in place so its message - and its Retry - stay reachable.
+    setTimeout(() => get().removeTransfer(id), DONE_LINGER_MS);
+  },
 
   markError: (id, error) =>
     set((state) => ({ transfers: state.transfers.map((t) => (t.id === id ? { ...t, status: "error", error, speedBps: 0 } : t)) })),

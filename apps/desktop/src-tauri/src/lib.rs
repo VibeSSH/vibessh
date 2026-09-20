@@ -126,6 +126,7 @@ pub fn run() {
         .manage(state::AiTurnManager::new())
         .manage(state::LogFollowManager::new())
         .manage(state::MigrationLockManager::new())
+        .manage(state::MetricsStreamManager::new())
         // Arc-wrapped (unlike the two managers above) because
         // `LocalProcessRuntime` needs an owned, cheaply-cloneable handle to
         // construct itself with, not just a borrow scoped to one command -
@@ -415,6 +416,8 @@ pub fn run() {
             commands::file_commands::compress_remote_paths,
             commands::monitor_commands::get_server_metrics,
             commands::monitor_commands::list_server_processes,
+            commands::monitor_commands::start_metrics_stream,
+            commands::monitor_commands::stop_metrics_stream,
             commands::actions_commands::list_server_services,
             commands::actions_commands::restart_server_service,
             commands::actions_commands::start_server_service,
