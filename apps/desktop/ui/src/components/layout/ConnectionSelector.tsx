@@ -7,6 +7,8 @@ import { NodeIcon } from "@/components/servers/NodeIcon";
 import { useServerModalStore } from "@/stores/serverModalStore";
 import { useServersStore } from "@/stores/serversStore";
 import { useSelectedNodeStore } from "@/stores/selectedNodeStore";
+import { useServerMetricsStore } from "@/stores/serverMetricsStore";
+import { formatBytes } from "@/utils/formatBytes";
 import "./ConnectionSelector.css";
 
 /**
@@ -27,6 +29,15 @@ export function ConnectionSelector() {
   const setSelectedNodeId = useSelectedNodeStore((s) => s.setSelectedNodeId);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // The hover card that restores the old rail preview: pointing at a Node in
+  // the list shows its live disk/RAM/system/IP beside the menu. Readings come
+  // from the shared metrics cache (whatever the Dashboard already fetched);
+  // `ensure` fetches once if nothing fresh is cached, so a hover never opens a
+  // connection of its own when the number is already known.
+  const ensureMetrics = useServerMetricsStore((s) => s.ensure);
+  const metricsByServer = useServerMetricsStore((s) => s.byServer);
+  const [hovered, setHovered] = useState<{ id: string; top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +75,7 @@ export function ConnectionSelector() {
 
       {open && (
         <div className="conn-selector-menu" role="listbox">
-          <ul className="conn-selector-list">
+          <ul className="conn-selector-list" data-lenis-prevent>
             {/* The fleet-wide overview, marked active when no Node is picked. */}
             <li>
               <button
@@ -84,6 +95,12 @@ export function ConnectionSelector() {
                   onClick={() => focusNode(server.id)}
                   role="option"
                   aria-selected={activeServer?.id === server.id}
+                  onMouseEnter={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setHovered({ id: server.id, top: r.top, left: r.right + 10 });
+                    ensureMetrics(server.id);
+                  }}
+                  onMouseLeave={() => setHovered((h) => (h?.id === server.id ? null : h))}
                 >
                   <NodeIcon server={server} size={15} />
                   <span className="conn-selector-item-name">{server.name}</span>
@@ -104,6 +121,30 @@ export function ConnectionSelector() {
           </button>
         </div>
       )}
+
+      {open && hovered && (() => {
+        const m = metricsByServer[hovered.id]?.metrics;
+        const srv = servers.find((s) => s.id === hovered.id);
+        return (
+          <div className="conn-hover-card" style={{ top: hovered.top, left: hovered.left }} role="tooltip">
+            <div className="conn-hover-name">{srv?.name}</div>
+            <dl className="conn-hover-grid">
+              <dt>IP</dt>
+              <dd>{srv?.host ?? "—"}</dd>
+              {m?.osName ? (
+                <>
+                  <dt>{t("rail.system")}</dt>
+                  <dd>{m.osName}</dd>
+                </>
+              ) : null}
+              <dt>{t("rail.ram")}</dt>
+              <dd>{m ? `${formatBytes(m.ramUsedBytes)} / ${formatBytes(m.ramTotalBytes)}` : t("dashboard.nodeCollecting")}</dd>
+              <dt>{t("rail.disk")}</dt>
+              <dd>{m ? `${formatBytes(m.diskUsedBytes)} / ${formatBytes(m.diskTotalBytes)}` : "—"}</dd>
+            </dl>
+          </div>
+        );
+      })()}
     </div>
   );
 }

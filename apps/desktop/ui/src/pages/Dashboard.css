@@ -104,9 +104,17 @@
   text-align: left;
   color: inherit;
 }
+/* A fixed square, because NodeIcon's image is `width:100%` of its container -
+   without a bounded box here it renders at the image's own (large) size. */
 .dashboard-server-row-icon {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
   color: var(--text-secondary);
 }
 .dashboard-server-row-id {
@@ -225,6 +233,35 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* The dashboard's application list is a compact glanceable strip, not the full
+   Servers-page rows it shares styles with: smaller icon chips, tighter rows,
+   and a bounded height that scrolls. Without the cap a long fleet runs this
+   panel far past the Servers list beside it (align-items:start means the
+   columns don't stretch to match, so the right one just grows). Scoped to the
+   workspace body so the Servers page and the Alerts list keep their own size. */
+.dashboard-workspace-body .server-list {
+  max-height: 336px;
+  overflow-y: auto;
+  /* Only the vertical axis scrolls. Without pinning overflow-x, the CSS spec
+     promotes it to `auto` too, and the items' -8px side margins then trip a
+     spurious horizontal scrollbar instead of scrolling the list up and down. */
+  overflow-x: hidden;
+}
+.dashboard-workspace-body .server-list-item {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  gap: 10px;
+  /* Drop the Servers-page negative side margins here: inside a scroll
+     container they push the rows wider than the box (the real cause of the
+     horizontal scrollbar). */
+  margin-left: 0;
+  margin-right: 0;
+}
+.dashboard-workspace-body .server-list-icon {
+  width: 28px;
+  height: 28px;
 }
 
 /* A fixed height, not flex:1 - unlike the dedicated Terminal page (whose

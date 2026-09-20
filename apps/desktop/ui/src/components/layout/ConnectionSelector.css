@@ -95,6 +95,15 @@
   color: var(--text-secondary);
   font-size: 13px;
 }
+/* The dropdown rows have no icon tile, and NodeIcon's image is `width:100%` of
+   its slot - so without a bound here it renders at the image's own (large)
+   size. Match the ~20px of the fleet row's glyph beside it. */
+.conn-selector-item .node-icon-image {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
 .conn-selector-item:hover {
   background: color-mix(in srgb, #ffffff 5%, transparent);
   color: var(--text-primary);
@@ -133,4 +142,50 @@
 }
 .conn-selector-add:hover {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* The Node hover preview - fixed to the viewport (so the menu's overflow never
+   clips it) and anchored to the right of the hovered row. It only reports, so
+   it takes no pointer events: moving toward it leaves the row and dismisses it,
+   which is the intended behaviour. */
+.conn-hover-card {
+  position: fixed;
+  z-index: var(--z-popover);
+  width: 216px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--t-elev-2);
+  pointer-events: none;
+}
+.conn-hover-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conn-hover-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  margin: 0;
+}
+.conn-hover-grid dt {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.conn-hover-grid dd {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

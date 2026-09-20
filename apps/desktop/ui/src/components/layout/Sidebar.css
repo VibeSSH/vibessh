@@ -18,7 +18,11 @@
 }
 
 .sidebar-scroll {
-  flex: 1;
+  /* Sizes to the navigation rather than growing to fill the column, so the
+     footer (Settings/Guide/collapse) sits directly under the last nav item
+     instead of being pushed to the very bottom with a large void between.
+     Still shrinks and scrolls when the window is too short to hold it all. */
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -122,42 +126,91 @@
    padding-bottom), throwing the icon's vertical centering off. The wrapper
    carries the border edge-to-edge and centers the button inside it; the
    button itself stays a plain, symmetric, truly-centered box. */
-.sidebar-footer {
+/* Settings/Guide sit directly under the navigation, not pinned to the very
+   bottom - which is what left the big void the reskin's first pass had. */
+.sidebar-footer-nav {
   flex-shrink: 0;
   width: 100%;
-  padding: 6px 8px 8px;
+  margin-top: 4px;
+  padding: 10px 8px 0;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-.sidebar-footer-nav {
-  display: flex;
-  flex-direction: column;
   gap: 1px;
-  margin-bottom: 4px;
 }
 
-/* Resting color moved up from --text-tertiary to --text-secondary so it
-   isn't the near-invisible tier reserved for pure decoration (see
-   forms.css's own note on that same distinction). */
+/* The bottom bar - external links and the collapse toggle - pinned to the foot
+   of the column with margin-top:auto, so it stays at the bottom while the nav
+   above only takes the height it needs. */
+.sidebar-bottom {
+  flex-shrink: 0;
+  margin-top: auto;
+  width: 100%;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-social {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sidebar-social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.sidebar-social-btn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+}
+
+/* A defined button, not a lone hover-only chevron: a hairline border and a
+   raised surface so it reads as the control it is, with a label when expanded. */
 .sidebar-collapse-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
+  gap: 7px;
+  height: 34px;
   width: 100%;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  background: var(--surface-1);
   color: var(--text-secondary);
-  transition: color 120ms ease, background-color 120ms ease;
-}
-.sidebar-collapsed .sidebar-collapse-btn {
-  width: 36px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease;
 }
 .sidebar-collapse-btn:hover {
   color: var(--text-primary);
-  background: color-mix(in srgb, #ffffff 6%, transparent);
+  background: var(--surface-2);
+  border-color: var(--border-hover);
 }
 .sidebar-collapse-btn:active {
-  background: color-mix(in srgb, #ffffff 10%, transparent);
+  background: var(--surface-3);
+}
+.sidebar-collapse-label {
+  white-space: nowrap;
+}
+
+/* Collapsed rail: bottom bar centers, links stack, toggle drops to a square. */
+.sidebar-collapsed .sidebar-bottom {
+  align-items: center;
+}
+.sidebar-collapsed .sidebar-social {
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-collapsed .sidebar-social-btn,
+.sidebar-collapsed .sidebar-collapse-btn {
+  width: 36px;
 }

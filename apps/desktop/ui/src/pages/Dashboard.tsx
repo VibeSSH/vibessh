@@ -442,11 +442,15 @@ export function Dashboard() {
                 (filteredApplications.length === 0 ? (
                   <p className="dashboard-empty-row">{selectedServer ? t("dashboard.applicationsEmptyForNode") : t("dashboard.applicationsEmpty")}</p>
                 ) : (
-                  <ul className="server-list">
+                  // data-lenis-prevent: the app shell scrolls through Lenis,
+                  // which swallows wheel events for smooth scrolling - without
+                  // this the nested list shows a scrollbar but the wheel scrolls
+                  // the page instead of the list.
+                  <ul className="server-list" data-lenis-prevent>
                     {filteredApplications.map((app) => (
                       <li key={app.id} className="server-list-item">
                         <div className="server-list-icon">
-                          <BlueprintIcon blueprintId={app.blueprintId} size={16} />
+                          <BlueprintIcon blueprintId={app.blueprintId} size={14} />
                         </div>
                         <button type="button" className="server-list-main dashboard-row-btn" onClick={() => navigate(`/applications/${app.id}`)}>
                           <span className="server-list-name">{app.name}</span>
