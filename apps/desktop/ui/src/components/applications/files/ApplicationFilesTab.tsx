@@ -151,6 +151,12 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [filter, setFilter] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(null);
+  // Split-view editing: whether the open editor has unsaved changes (reported
+  // up by the editor), and a file the user asked to switch to while it did -
+  // held until they confirm discarding, so a click in the side list never
+  // throws away edits silently.
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [pendingSwitch, setPendingSwitch] = useState<RemoteFileEntry | null>(null);
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ entry: RemoteFileEntry; mode: "rename" | "move" | "copy" } | null>(null);
   const [chmodTarget, setChmodTarget] = useState<RemoteFileEntry | null>(null);
@@ -481,14 +487,101 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
     ];
   }
 
+  // Open a file in the editor beside the list. A different file requested with
+  // unsaved changes in the current one is held for a discard confirmation
+  // rather than switched under the edits.
+  function requestOpenFile(entry: RemoteFileEntry) {
+    if (openFile && entry.path === openFile.path) return;
+    if (editorDirty) {
+      setPendingSwitch(entry);
+      return;
+    }
+    setEditorDirty(false);
+    setOpenFile(entry);
+  }
+
+  function closeEditor() {
+    setEditorDirty(false);
+    setOpenFile(null);
+  }
+
   if (openFile) {
+    const dirs = visibleEntries.filter((entry) => entry.isDir);
+    const files = visibleEntries.filter((entry) => !entry.isDir);
     return (
-      <ApplicationFileEditorPanel
-        applicationId={applicationId}
-        entry={openFile}
-        onClose={() => setOpenFile(null)}
-        onSaved={() => load(path)}
-      />
+      <div className="application-files-editor-split">
+        <div className="application-files-editor-main">
+          <ApplicationFileEditorPanel
+            key={openFile.path}
+            applicationId={applicationId}
+            entry={openFile}
+            onClose={closeEditor}
+            onSaved={() => load(path)}
+            onDirtyChange={setEditorDirty}
+          />
+        </div>
+
+        <aside className="application-files-editor-sidebar">
+          <div className="application-files-editor-sidebar-head">
+            <Breadcrumbs segments={segments} onNavigate={load} rootPath={ROOT_PATH} />
+          </div>
+          <div className="application-files-editor-tree" data-lenis-prevent>
+            {loading ? (
+              <p className="form-note application-files-editor-tree-note">{t("applicationFileEditor.loading")}</p>
+            ) : visibleEntries.length === 0 ? (
+              <p className="form-note application-files-editor-tree-note">{t("applicationFilesTab.emptyTitle")}</p>
+            ) : (
+              <ul className="application-files-editor-tree-list">
+                {dirs.map((entry) => {
+                  const icon = fileIcon(entry.name, true);
+                  return (
+                    <li key={entry.path}>
+                      <button className="application-files-editor-tree-row" onClick={() => load(entry.path)} title={entry.name}>
+                        <span className={`application-files-editor-tree-icon file-icon-${icon.tone}`}>
+                          <Icon name={icon.name} size={15} />
+                        </span>
+                        <span className="application-files-editor-tree-name">{entry.name}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {files.map((entry) => {
+                  const icon = fileIcon(entry.name, false);
+                  const active = entry.path === openFile.path;
+                  return (
+                    <li key={entry.path}>
+                      <button
+                        className={`application-files-editor-tree-row ${active ? "application-files-editor-tree-row-active" : ""}`.trim()}
+                        onClick={() => requestOpenFile(entry)}
+                        title={entry.name}
+                        aria-current={active ? "true" : undefined}
+                      >
+                        <span className={`application-files-editor-tree-icon file-icon-${icon.tone}`}>
+                          <Icon name={icon.name} size={15} />
+                        </span>
+                        <span className="application-files-editor-tree-name">{entry.name}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </aside>
+
+        {pendingSwitch && (
+          <SwitchFileDialog
+            fileName={openFile.name}
+            onCancel={() => setPendingSwitch(null)}
+            onDiscard={() => {
+              const next = pendingSwitch;
+              setPendingSwitch(null);
+              setEditorDirty(false);
+              setOpenFile(next);
+            }}
+          />
+        )}
+      </div>
     );
   }
 
@@ -676,6 +769,37 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Stands between a click on another file in the side list and losing the
+ *  edits in the one open now - the split-view counterpart to the editor's own
+ *  back-button discard guard. */
+function SwitchFileDialog({ fileName, onCancel, onDiscard }: { fileName: string; onCancel: () => void; onDiscard: () => void }) {
+  const { t } = useTranslation();
+  const dialog = useModalDialog(onCancel, { labelledBy: "switch-file-title" });
+  return (
+    <div className="modal-backdrop" {...dialog.backdropProps}>
+      <div className="modal-panel modal-panel-sm" {...dialog.panelProps}>
+        <div className="modal-header">
+          <h2 className="modal-title" id="switch-file-title">
+            {t("applicationFileEditor.discardTitle")}
+          </h2>
+          <IconButton icon="x" size="sm" onClick={onCancel} title={t("common.close")} />
+        </div>
+        <div className="modal-body">
+          <p className="dialog-body-text">{t("applicationFilesTab.switchDiscardBody", { name: fileName })}</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={onDiscard}>
+              {t("applicationFileEditor.discard")}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
