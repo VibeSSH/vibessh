@@ -21,9 +21,16 @@
   display: block;
   margin-bottom: var(--space-3);
 }
+/* Stackowany wiersz jest blokiem, więc flexowy `gap` wyżej go nie dotyczy -
+   bez tego przełącznik/przycisk pod opisem siedział przyklejony do tekstu.
+   Odstęp między kolejnymi elementami (blok tekstu -> kontrolka) przywraca
+   pionowy rytm. */
+.settings-preference-row-stacked > * + * {
+  margin-top: var(--space-3);
+}
 
 .settings-preference-label {
-  margin: 0 0 2px;
+  margin: 0 0 4px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);

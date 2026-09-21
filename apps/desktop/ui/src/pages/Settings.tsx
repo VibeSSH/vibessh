@@ -79,8 +79,8 @@ export function Settings() {
             <p className="settings-preference-label">{t("theme.title")}</p>
             <p className="settings-muted">{t("theme.description")}</p>
           </div>
+          <ThemePicker />
         </div>
-        <ThemePicker />
 
         <MinimizeToTrayRow />
       </Card>

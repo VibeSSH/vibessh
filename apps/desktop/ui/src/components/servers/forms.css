@@ -3,6 +3,12 @@
   flex-direction: column;
   gap: 16px;
 }
+/* A stacked settings row carries its own bottom margin for when it sits loose
+   in a card body; inside a form the flex `gap` already separates it, so the
+   extra margin would stack on top of the gap and space it too far. */
+.server-form > .settings-preference-row-stacked {
+  margin-bottom: 0;
+}
 
 .form-row {
   display: flex;
