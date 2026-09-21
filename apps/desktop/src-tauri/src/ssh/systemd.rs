@@ -58,7 +58,18 @@ impl SshSession {
     async fn run_systemctl(&self, action: &str, service_name: &str) -> AppResult<()> {
         validate_unit_name(service_name)?;
         let verb = action.split_whitespace().next().unwrap_or(action);
-        let output = self.execute_command(&format!("systemctl {action} {service_name}")).await?;
+        // Starting or stopping a *system* unit needs root - listing them (the
+        // read path above) does not. The SSH user is often not root, so run the
+        // control verb through `sudo` when it isn't, the same way the systemd
+        // application runtime already provisions its units. `sudo -n` never
+        // blocks on a password prompt over this TTY-less channel: it fails
+        // cleanly, surfacing as a permission error rather than a hang, and a
+        // user who is already root skips sudo entirely (so a box without sudo
+        // installed still works). `service_name` is validated to a safe charset
+        // above, so this interpolation cannot smuggle in a second command.
+        let command =
+            format!("if [ \"$(id -u)\" = 0 ]; then systemctl {action} {service_name}; else sudo -n systemctl {action} {service_name}; fi");
+        let output = self.execute_command(&command).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
             let detail = if detail.is_empty() { "systemctl exited with an error".to_string() } else { detail.to_string() };
