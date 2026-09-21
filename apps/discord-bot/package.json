@@ -1,0 +1,21 @@
+{
+  "name": "vibessh-discord-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The VibeSSH community Discord bot - self-configures roles, channels and permissions, drives language selection, tickets, moderation and live status.",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "deploy": "bun run src/deploy-commands.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3"
+  }
+}
