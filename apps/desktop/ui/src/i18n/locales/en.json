@@ -196,6 +196,7 @@
     "connecting": "connecting…"
   },
   "applicationDetail": {
+    "applyingChanges": "Applying changes…",
     "loadError": "Couldn't load this application.",
     "logsError": "Couldn't load logs.",
     "logsLoading": "Loading...",
@@ -316,6 +317,7 @@
   },
   "applicationFilesTab": {
     "loadError": "Couldn't load files.",
+    "switchDiscardBody": "{{name}} has unsaved changes. Discard them and open another file?",
     "emptyTitle": "This folder is empty",
     "emptyDescription": "Upload a file or create a new one to get started.",
     "quickFiles": "Quick files",
@@ -764,7 +766,7 @@
     "unknown": "Something went wrong.",
     "permission_denied": "VibeSSH doesn't have permission to do that on this Node. Check that the account it connects as can reach the path, or has sudo.",
     "port_in_use": "Port {{port}}/{{protocol}} is already taken on this Node. Pick a different port.",
-    "docker_unavailable": "Docker isn't installed or isn't running on this Node. Install it from the Node's page, then try again.",
+    "docker_unavailable": "Docker isn't available here - it's either not running or not installed. Start Docker (on Windows and macOS, that's Docker Desktop) or install it, then try again.",
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
@@ -1705,6 +1707,8 @@
     "stop": "Stop",
     "clear": "Clear",
     "askAction": "Ask Vibe AI",
+    "askAboutError": "Ask Vibe AI about this",
+    "seedError": "I hit this error in VibeSSH: “{{error}}”. What does it mean and how do I fix it?",
     "seedApplicationFailed": "The Application “{{name}}” has failed. What is wrong, and how do I fix it?",
     "disclaimer": "Answers come from the model you configured and can be wrong. Vibe AI can read your setup but never changes anything.",
     "collecting": "Reading the Node…"

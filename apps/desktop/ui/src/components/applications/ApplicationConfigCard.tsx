@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { BlueprintFieldInput, fieldValueOrDefault, formatFieldValueForReview } from "./CreateApplicationWizard";
-import { recreateApplication, refreshApplicationStatus, updateApplicationConfig } from "@/services/applicationService";
+import { updateApplicationConfig } from "@/services/applicationService";
+import { useContainerApply } from "@/hooks/useContainerApply";
 import { toastSuccess } from "@/stores/toastStore";
 import type { ApplicationDetail, Blueprint } from "@/types/application";
 import "@/components/servers/forms.css";
@@ -15,7 +16,7 @@ interface ApplicationConfigCardProps {
   applicationId: string;
   application: ApplicationDetail;
   blueprint: Blueprint | null;
-  onSaved: () => void;
+  onApplied: (updated: ApplicationDetail) => void;
 }
 
 function storedBlueprintInputs(application: ApplicationDetail): Record<string, unknown> {
@@ -37,8 +38,9 @@ function storedBlueprintInputs(application: ApplicationDetail): Record<string, u
  * `update_application_config`'s own doc comment for why a value can't be
  * safely reverse-engineered out of the already-rendered runtime config).
  */
-export function ApplicationConfigCard({ applicationId, application, blueprint, onSaved }: ApplicationConfigCardProps) {
+export function ApplicationConfigCard({ applicationId, application, blueprint, onApplied }: ApplicationConfigCardProps) {
   const { t } = useTranslation();
+  const applyToContainer = useContainerApply();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
@@ -72,37 +74,17 @@ export function ApplicationConfigCard({ applicationId, application, blueprint, o
     setBusy(true);
     setError(null);
     try {
-      await updateApplicationConfig(applicationId, values);
+      // The config write returns the fresh application and is quick; show it
+      // and settle the form at once. A Docker container bakes its launch
+      // command in at `docker create` time, so the change only takes effect
+      // once the container is recreated - but that recreate (the slow part)
+      // now runs in the background via `useContainerApply` rather than
+      // freezing this form on it. A stopped app is left stopped.
+      const updated = await updateApplicationConfig(applicationId, values);
       setEditing(false);
-      // A Docker container's `docker create` bakes the launch command in at
-      // creation time (see runtime::docker's own doc comment) - a plain
-      // restart reuses the same, now-stale container, so the edit would
-      // silently never take effect. Pterodactyl's own "change a variable,
-      // hit update, it just works" convention is the bar here: if the app
-      // was already running, recreate it (stop the stale container, create
-      // and start a fresh one) as part of saving, rather than making the
-      // user separately find and click "Recreate Container" themselves. A
-      // stopped app is left stopped - auto-starting something the user
-      // deliberately stopped would be its own surprise.
-      //
-      // Checks a freshly-probed status (`refreshApplicationStatus`), not
-      // the `application` prop's own `status` field - that field is only
-      // ever updated by an explicit start/stop/restart/recreate/kill action
-      // or the next 5s poll tick (`ApplicationDetail.tsx` polls via the
-      // passive `getApplication`, which never re-probes the runtime - see
-      // `models::ApplicationStatus`'s own "never trusted as sole truth" doc
-      // comment). A JVM-flag edit made soon after starting the app could
-      // otherwise still see a stale "stopped" here and silently skip the
-      // recreate this save depends on to actually take effect - exactly the
-      // "I had to restart the container myself" bug this fixes.
-      if (application.runtimeType === "docker") {
-        const status = await refreshApplicationStatus(applicationId);
-        if (status === "running") {
-          await recreateApplication(applicationId);
-        }
-      }
-      onSaved();
+      onApplied(updated);
       toastSuccess(t("applicationConfig.savedToast"));
+      void applyToContainer(updated);
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {

@@ -222,9 +222,11 @@ fn expect_success(output: crate::transport::CommandOutput, what: &str) -> AppRes
     let detail = if detail.is_empty() { format!("docker exited with {}", output.exit_code) } else { detail };
     // A daemon that is not running is the single most common way this fails,
     // and the CLI's own words for it are about a named pipe - see
-    // `daemon_unreachable`.
-    if let Some(message) = super::docker_command::daemon_unreachable(&detail) {
-        return Err(AppError::Connection(message));
+    // `daemon_unreachable`. Give it the localized `docker_unavailable` code so
+    // the user reads one clear sentence in their own language rather than a
+    // translated frame wrapped around raw CLI prose.
+    if super::docker_command::daemon_unreachable(&detail).is_some() {
+        return Err(AppError::DockerUnavailable);
     }
     Err(AppError::Connection(format!("couldn't {what}: {detail}")))
 }
@@ -551,6 +553,12 @@ async fn ensure_network(runner: &dyn DockerCommandRunner, name: &str, internal: 
                  networks with 'docker network prune', or widen 'default-address-pools' in /etc/docker/daemon.json. Docker said: {detail}"
             )));
         }
+        // The daemon being down surfaces here as a raw named-pipe/socket
+        // error; give it the localized `docker_unavailable` code rather than
+        // leaking the CLI's own prose through a generic connection error.
+        if super::docker_command::daemon_unreachable(detail).is_some() {
+            return Err(AppError::DockerUnavailable);
+        }
         let detail = if detail.is_empty() { "docker network create failed".to_string() } else { detail.to_string() };
         return Err(AppError::Connection(format!("couldn't create the '{name}' network: {detail}")));
     }
@@ -607,6 +615,9 @@ async fn reconcile_networks(runner: &dyn DockerCommandRunner, ctx: &RuntimeConte
         let output = runner.docker(&["network", "connect", "--alias", &alias, name, container]).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
+            if super::docker_command::daemon_unreachable(detail).is_some() {
+                return Err(AppError::DockerUnavailable);
+            }
             let detail = if detail.is_empty() { "docker network connect failed".to_string() } else { detail.to_string() };
             return Err(AppError::Connection(format!("couldn't join the '{name}' network: {detail}")));
         }

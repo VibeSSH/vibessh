@@ -196,6 +196,7 @@
     "connecting": "łączę…"
   },
   "applicationDetail": {
+    "applyingChanges": "Stosuję zmiany…",
     "loadError": "Nie udało się wczytać tej aplikacji.",
     "logsError": "Nie udało się wczytać logów.",
     "logsLoading": "Wczytywanie...",
@@ -316,6 +317,7 @@
   },
   "applicationFilesTab": {
     "loadError": "Nie udało się wczytać plików.",
+    "switchDiscardBody": "{{name}} ma niezapisane zmiany. Odrzucić je i otworzyć inny plik?",
     "emptyTitle": "Ten folder jest pusty",
     "emptyDescription": "Prześlij plik albo utwórz nowy, żeby zacząć.",
     "quickFiles": "Szybkie pliki",
@@ -770,7 +772,7 @@
     "unknown": "Coś poszło nie tak.",
     "permission_denied": "VibeSSH nie ma uprawnień, aby to zrobić na tym Node. Sprawdź, czy konto, którym się łączy, ma dostęp do tej ścieżki albo uprawnienia sudo.",
     "port_in_use": "Port {{port}}/{{protocol}} jest już zajęty na tym Node. Wybierz inny port.",
-    "docker_unavailable": "Docker nie jest zainstalowany albo nie działa na tym Node. Zainstaluj go ze strony Node i spróbuj ponownie.",
+    "docker_unavailable": "Docker jest tu niedostępny - albo nie działa, albo nie jest zainstalowany. Uruchom Dockera (na Windows i macOS to Docker Desktop) lub zainstaluj go i spróbuj ponownie.",
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
@@ -1713,6 +1715,8 @@
     "stop": "Zatrzymaj",
     "clear": "Wyczyść",
     "askAction": "Zapytaj Vibe AI",
+    "askAboutError": "Zapytaj Vibe AI o ten błąd",
+    "seedError": "Napotkałem w VibeSSH taki błąd: „{{error}}”. Co on oznacza i jak go naprawić?",
     "seedApplicationFailed": "Aplikacja „{{name}}” ma status błędu. Co jest nie tak i jak to naprawić?",
     "disclaimer": "Odpowiedzi pochodzą z modelu, który skonfigurowałeś, i mogą być błędne. Vibe AI czyta Twoją konfigurację, ale niczego w niej nie zmienia.",
     "collecting": "Zbieram dane z node…"
