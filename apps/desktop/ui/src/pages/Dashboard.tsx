@@ -455,7 +455,7 @@ export function Dashboard() {
               </div>
               <div className="stat-card-value">{cpuValue != null ? `${cpuValue.toFixed(1)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, cpuValue ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ transform: `scaleX(${1 - Math.min(100, cpuValue ?? 0) / 100})` }} />
               </div>
               <div className="stat-card-foot">{loadFoot != null ? t("dashboard.loadFoot", { load: loadFoot.toFixed(2) }) : "-"}</div>
               {metricsUpdatedLabel && <div className="stat-card-updated">{metricsUpdatedLabel}</div>}
@@ -467,7 +467,7 @@ export function Dashboard() {
               </div>
               <div className="stat-card-value">{ramValue != null ? `${ramValue.toFixed(0)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, ramValue ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ transform: `scaleX(${1 - Math.min(100, ramValue ?? 0) / 100})` }} />
               </div>
               <div className="stat-card-foot">{bytesFoot(ramUsed, ramTotal)}</div>
               {metricsUpdatedLabel && <div className="stat-card-updated">{metricsUpdatedLabel}</div>}
@@ -479,7 +479,7 @@ export function Dashboard() {
               </div>
               <div className="stat-card-value">{diskValue != null ? `${diskValue.toFixed(0)}%` : "-"}</div>
               <div className="stat-card-bar">
-                <span className="stat-card-bar-fill" style={{ width: `${Math.min(100, diskValue ?? 0)}%` }} />
+                <span className="stat-card-bar-fill" style={{ transform: `scaleX(${1 - Math.min(100, diskValue ?? 0) / 100})` }} />
               </div>
               <div className="stat-card-foot">{bytesFoot(diskUsed, diskTotal)}</div>
               {metricsUpdatedLabel && <div className="stat-card-updated">{metricsUpdatedLabel}</div>}

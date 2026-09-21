@@ -468,18 +468,25 @@
   font-variant-numeric: tabular-nums;
 }
 .stat-card-bar {
+  position: relative;
   height: 5px;
   margin-top: 12px;
   border-radius: 999px;
-  background: var(--surface-3);
+  /* The gradient now lives on the track, full width and static. The fill above
+     is an opaque cover that scales in from the right to hide the unfilled part,
+     revealing the gradient to the reading - so the level animates as a
+     compositor-only `scaleX` instead of a per-frame width reflow, without
+     compressing the gradient the way scaling a gradient-filled bar would. */
+  background: linear-gradient(90deg, var(--primary), var(--accent) 55%, var(--purple));
   overflow: hidden;
 }
 .stat-card-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--primary), var(--accent) 55%, var(--purple));
-  transition: width 0.4s ease;
+  position: absolute;
+  inset: 0;
+  transform-origin: right center;
+  background: var(--surface-3);
+  transition: transform 0.4s ease;
+  will-change: transform;
 }
 .stat-card-foot {
   margin-top: 10px;
