@@ -121,9 +121,14 @@
 }
 .node-mini-bar-fill {
   height: 100%;
+  width: 100%;
+  transform-origin: left center;
   background: var(--accent);
   border-radius: 999px;
-  transition: width 400ms ease;
+  /* scaleX rather than width - a compositor-only animation for a live bar,
+     see MetricsPreview.css for the reasoning. */
+  transition: transform 400ms ease;
+  will-change: transform;
 }
 
 .node-mini-card-footer-row {
