@@ -55,7 +55,7 @@ function DiscordGlyph() {
 const SOCIAL_LINKS: { id: string; url: string; label: string; glyph: React.ReactNode }[] = [
   { id: "web", url: "https://vibessh.dev", label: "vibessh.dev", glyph: <GlobeGlyph /> },
   { id: "github", url: "https://github.com/VibeSSH/vibessh", label: "GitHub", glyph: <GithubGlyph /> },
-  { id: "discord", url: "https://discord.gg/vibessh", label: "Discord", glyph: <DiscordGlyph /> },
+  { id: "discord", url: "https://discord.gg/CKAZWRJjJC", label: "Discord", glyph: <DiscordGlyph /> },
 ];
 
 function readStoredBoolean(key: string, fallback: boolean): boolean {
