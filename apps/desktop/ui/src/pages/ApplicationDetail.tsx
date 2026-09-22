@@ -19,6 +19,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
+import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -68,7 +69,7 @@ const LOG_TAIL_LINES = 500;
 
 /** Every tab, and the values the `?tab=` parameter accepts. One list, so a
  * tab cannot exist without being linkable to. */
-const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "settings"] as const;
+const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
@@ -651,6 +652,10 @@ export function ApplicationDetail() {
               {t("applicationDetail.tabBackups")}
             {tab === "backups" && <TabUnderline group="application" />}
               </button>
+            <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
+              {t("applicationDetail.tabMembers")}
+            {tab === "members" && <TabUnderline group="application" />}
+              </button>
             <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
               {t("applicationDetail.tabSettings")}
             {tab === "settings" && <TabUnderline group="application" />}
@@ -842,6 +847,7 @@ export function ApplicationDetail() {
 
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
+          {tab === "members" && <ApplicationMembersTab applicationId={id} />}
         </div>
       )}
 

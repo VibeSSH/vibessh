@@ -83,6 +83,40 @@ pub async fn unshare_application_from_team(cloud: State<'_, CloudState>, team_id
     services::team_application_service::unshare_application(&cloud, team_id, application_id).await
 }
 
+/// Who, of a team's members, may see one shared Application.
+#[tauri::command]
+pub async fn list_application_members(
+    cloud: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+) -> AppResult<Vec<crate::models::CloudApplicationMember>> {
+    services::team_application_service::list_application_members(&cloud, team_id, application_id).await
+}
+
+/// Grants one team member access to a shared Application. The first grant
+/// flips it from team-wide to visible only to its allow-list.
+#[tauri::command]
+pub async fn add_application_member(
+    cloud: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> AppResult<()> {
+    services::team_application_service::add_application_member(&cloud, team_id, application_id, user_id).await
+}
+
+/// Revokes one member's access to a shared Application. Emptying the list
+/// returns it to being visible to the whole team.
+#[tauri::command]
+pub async fn remove_application_member(
+    cloud: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> AppResult<()> {
+    services::team_application_service::remove_application_member(&cloud, team_id, application_id, user_id).await
+}
+
 /// Registers this device's public key so teammates' installs can put it in
 /// the account they create for this person on a Node.
 ///

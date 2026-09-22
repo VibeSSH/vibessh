@@ -15,3 +15,8 @@ export const TEAM_MEMBERS_REMOVE = "team.members.remove";
 export const TEAM_ROLES_MANAGE = "team.roles.manage";
 export const AUDIT_VIEW = "audit.view";
 export const SERVERS_MANAGE = "servers.manage";
+/** Sharing an application with a team, and managing who on that team may see
+ * it. Genuinely backend-enforced for the team-application endpoints - see
+ * `apps/backend/src/team_applications.rs` - unlike the other `applications.*`
+ * keys, which are desktop-side guard rails. */
+export const APPLICATIONS_CREATE = "applications.create";
