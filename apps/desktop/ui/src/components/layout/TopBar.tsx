@@ -207,7 +207,7 @@ export function TopBar() {
   return (
     <div className="topbar" onMouseDown={handleMouseDown}>
       <div className="topbar-context">
-        <img src="/vibessh-mark.svg" alt="" className="topbar-mark" />
+        <img src="/vibessh-mark.png" alt="" className="topbar-mark" />
         <span className="topbar-crumb-root">VibeSSH</span>
         <Icon name="chevron-right" size={13} className="topbar-crumb-sep" />
         <span className="topbar-crumb-current">{viewLabel}</span>
