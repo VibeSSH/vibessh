@@ -6,6 +6,18 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.20
+
+### New
+
+- **A live Minecraft tab for a server running the ServerPulse plugin.** An
+  application grows a Minecraft tab whenever it is running ServerPulse - a small
+  companion plugin that writes a status file VibeSSH reads over its own SSH
+  connection. The tab is a monitor: TPS, MSPT, players and memory, each with its
+  own history, alongside a per-world table of players, entities and chunks and
+  the list of who is online. An application that is not a Minecraft server never
+  shows the tab.
+
 ## 0.1.0-beta.19
 
 ### New
