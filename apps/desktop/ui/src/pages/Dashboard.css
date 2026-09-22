@@ -469,22 +469,29 @@
 }
 .stat-card-bar {
   position: relative;
-  height: 5px;
+  height: 6px;
   margin-top: 12px;
   border-radius: 999px;
-  /* The gradient now lives on the track, full width and static. The fill above
-     is an opaque cover that scales in from the right to hide the unfilled part,
-     revealing the gradient to the reading - so the level animates as a
-     compositor-only `scaleX` instead of a per-frame width reflow, without
-     compressing the gradient the way scaling a gradient-filled bar would. */
-  background: linear-gradient(90deg, var(--primary), var(--accent) 55%, var(--purple));
+  /* An always-visible groove, so the track reads even at a low level and
+     even against whatever the card sits on. A faint tint of the foreground
+     rather than a surface token, because `--surface-3` came out a hair off
+     the card and the whole bar disappeared into it. */
+  background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 .stat-card-bar-fill {
   position: absolute;
   inset: 0;
-  transform-origin: right center;
-  background: var(--surface-3);
+  transform-origin: left center;
+  border-radius: inherit;
+  /* The filled level, in the theme's own accent so it follows whatever palette
+     is active. It is built from `--accent`/`--accent-hover`, the two tokens the
+     theme actually sets - the old gradient reached for `--primary` and
+     `--purple`, which the reskin leaves empty, so the whole `linear-gradient`
+     was invalid and painted nothing, leaving only the grey track. The fallbacks
+     keep it valid even on a theme that somehow sets neither. `scaleX` from the
+     left keeps the animation compositor-only. */
+  background: linear-gradient(90deg, var(--accent, #4dd9f5), var(--accent-hover, #6fe3fb));
   transition: transform 0.4s ease;
   will-change: transform;
 }
