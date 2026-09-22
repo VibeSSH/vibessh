@@ -22,9 +22,12 @@ export interface RuntimeConfig {
   categories: Record<string, string>;
   /** Arbitrary keyed message ids the bot posts and later edits (panels, status). */
   messages: Record<string, string>;
+  /** Arbitrary keyed scalar state the bot remembers between restarts - e.g. the
+   * last release version it announced, so it does not announce one twice. */
+  values: Record<string, string>;
 }
 
-const EMPTY: RuntimeConfig = { roles: {}, channels: {}, categories: {}, messages: {} };
+const EMPTY: RuntimeConfig = { roles: {}, channels: {}, categories: {}, messages: {}, values: {} };
 
 let cache: RuntimeConfig | null = null;
 
@@ -42,6 +45,7 @@ export function loadConfig(): RuntimeConfig {
     cache.channels ??= {};
     cache.categories ??= {};
     cache.messages ??= {};
+    cache.values ??= {};
     return cache;
   } catch (error) {
     log.error(`config.runtime.json is unreadable, starting from empty`, error);
@@ -72,5 +76,11 @@ export const ids = {
       delete config.messages[key];
       saveConfig(config);
     }
+  },
+  value: (key: string) => loadConfig().values[key],
+  setValue(key: string, value: string) {
+    const config = loadConfig();
+    config.values[key] = value;
+    saveConfig(config);
   },
 };

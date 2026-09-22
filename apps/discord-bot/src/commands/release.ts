@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, type ChatInputCommandInteraction, type GuildTextBasedChannel } from "discord.js";
 import { buildReleasePanel } from "../features/release.js";
+import { markReleaseAnnounced } from "../features/releaseWatcher.js";
 import { panel } from "../lib/components.js";
 import { replyPanel } from "../lib/reply.js";
 import { COLOR } from "../lib/theme.js";
@@ -41,6 +42,8 @@ export const releaseCommand: BotCommand = {
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { roles: roleId ? [roleId] : [] },
       });
+      // Keep the watcher in step, so this version is not announced again automatically.
+      markReleaseAnnounced(version);
       await replyPanel(interaction, panel({ accent: COLOR.success, body: `Ogłoszono \`${version}\` w <#${channel.id}>.` }), { ephemeral: true });
     } catch (error) {
       log.error("release announcement failed", error);

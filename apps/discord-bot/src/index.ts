@@ -7,6 +7,7 @@ import { handleTicketButton, isTicketButton } from "./features/tickets.js";
 import { handleNotifyButton, isNotifyButton } from "./features/notifications.js";
 import { moderateMessage } from "./features/moderation.js";
 import { startStatusUpdater } from "./features/statusChannels.js";
+import { startReleaseWatcher } from "./features/releaseWatcher.js";
 import { startPresence } from "./features/presence.js";
 import { handleMemberJoin, handleMemberLeave } from "./features/memberLog.js";
 
@@ -37,6 +38,7 @@ client.once(Events.ClientReady, (ready) => {
     .edit({ description: DESCRIPTION })
     .catch((error) => log.warn(`couldn't set bot description: ${error instanceof Error ? error.message : String(error)}`));
   startStatusUpdater(ready);
+  startReleaseWatcher(ready);
   startPresence(ready);
 });
 
