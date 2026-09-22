@@ -91,8 +91,16 @@ if [ -n "$POSTGRES_CID" ]; then
     # A backup you find out about while restoring is worse than no backup.
     # `pg_dump`'s own status is lost here - in POSIX sh a pipeline reports
     # gzip's, and gzip is perfectly happy to compress a truncated dump - so
-    # the file is what gets checked. Every complete dump ends with the line
-    # pg_dump writes last.
+    # the file is what gets checked. A complete dump contains the marker line
+    # pg_dump writes when it finishes.
+    #
+    # Checked over the last several lines rather than the last three: pg_dump
+    # from PostgreSQL 17 appends a `\unrestrict <token>` line (and a blank)
+    # *after* the "dump complete" marker, which pushed the marker out of a
+    # `tail -3` window and made every good backup look truncated. The marker
+    # is still the last thing that proves completion - a genuinely truncated
+    # dump does not reach it - so widening the window keeps the guard honest
+    # while tolerating whatever psql meta-commands pg_dump now trails it with.
     # A bad dump is moved out of the way rather than left under a name that
     # reads like a good one. Whoever restores in a hurry picks the newest
     # `vibessh-*.sql.gz` and will not be reading this script at the time.
@@ -100,7 +108,7 @@ if [ -n "$POSTGRES_CID" ]; then
         mv "$BACKUP" "$BACKUP.unusable"
         die "the backup was empty, kept as $BACKUP.unusable - stopping before anything migrates"
     fi
-    if ! gzip -dc "$BACKUP" | tail -3 | grep -q 'PostgreSQL database dump complete'; then
+    if ! gzip -dc "$BACKUP" | tail -10 | grep -q 'PostgreSQL database dump complete'; then
         mv "$BACKUP" "$BACKUP.unusable"
         die "the backup was truncated, kept as $BACKUP.unusable - stopping before anything migrates"
     fi
