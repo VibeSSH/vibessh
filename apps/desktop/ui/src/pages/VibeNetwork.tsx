@@ -13,7 +13,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { RowPicker, serverRowPickerOption, type RowPickerOption } from "@/components/ui/RowPicker";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
-import { Switch } from "@/components/ui/Switch";
+import { Details } from "@/components/ui/Details";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { addApplicationPort, listApplications, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
@@ -66,7 +66,6 @@ export function VibeNetwork() {
   const [addNodeOpen, setAddNodeOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<VibeNetworkSyncResult[] | null>(null);
-  const [advanced, setAdvanced] = useState(false);
 
   const [leavingMember, setLeavingMember] = useState<NodeNetworkMember | null>(null);
   const [leaveBusy, setLeaveBusy] = useState(false);
@@ -141,7 +140,6 @@ export function VibeNetwork() {
         </div>
         <div className="vibe-network-header-actions">
           <GuideLink topic="vibe-network" />
-          <Switch checked={advanced} onChange={setAdvanced} label={t("vibeNetwork.advancedToggle")} />
           <Button variant="secondary" onClick={handleSync} disabled={syncing || members.length === 0}>
             <Icon name="refresh-cw" size={16} />
             {syncing ? t("vibeNetwork.syncing") : t("vibeNetwork.syncButton")}
@@ -205,27 +203,28 @@ export function VibeNetwork() {
                 <EmptyState icon="wifi" title={t("vibeNetwork.emptyTitle")} description={t("vibeNetwork.emptyDescription")} />
               </Card>
             ) : (
-              <div className="vibe-network-node-grid">
-                {members.map((member) => (
-                  <NodeCard
-                    key={member.serverId}
-                    member={member}
-                    name={serverName(member.serverId)}
-                    status={meshStatus.find((s) => s.serverId === member.serverId) ?? null}
-                    dnsName={dnsView.find((v) => v.kind.type === "node" && v.serverId === member.serverId)?.hostname ?? null}
-                    serverName={serverName}
-                    advanced={advanced}
-                    applicationCount={applications.filter((a) => a.serverId === member.serverId).length}
-                    onLeave={() => {
-                      setLeaveError(null);
-                      setLeavingMember(member);
-                    }}
-                  />
-                ))}
-              </div>
+              <Card>
+                <ul className="server-list vibe-network-node-list">
+                  {members.map((member) => (
+                    <NodeCard
+                      key={member.serverId}
+                      member={member}
+                      name={serverName(member.serverId)}
+                      status={meshStatus.find((s) => s.serverId === member.serverId) ?? null}
+                      dnsName={dnsView.find((v) => v.kind.type === "node" && v.serverId === member.serverId)?.hostname ?? null}
+                      serverName={serverName}
+                      applicationCount={applications.filter((a) => a.serverId === member.serverId).length}
+                      onLeave={() => {
+                        setLeaveError(null);
+                        setLeavingMember(member);
+                      }}
+                    />
+                  ))}
+                </ul>
+              </Card>
             ))}
 
-          {tab === "endpoints" && <EndpointsPanel members={members} servers={servers} meshStatus={meshStatus} advanced={advanced} />}
+          {tab === "endpoints" && <EndpointsPanel members={members} servers={servers} meshStatus={meshStatus} />}
 
           {tab === "dns" && <DnsPanel members={members} dnsView={dnsView} onChanged={reload} />}
         </>
@@ -274,12 +273,11 @@ interface NodeCardProps {
   status: NodeMeshStatus | null;
   dnsName: string | null;
   serverName: (serverId: string) => string;
-  advanced: boolean;
   applicationCount: number;
   onLeave: () => void;
 }
 
-function NodeCard({ member, name, status, dnsName, serverName, advanced, applicationCount, onLeave }: NodeCardProps) {
+function NodeCard({ member, name, status, dnsName, serverName, applicationCount, onLeave }: NodeCardProps) {
   // Read here rather than passed down: the card already knows its
   // `member.serverId`, and threading the whole server list through the props
   // of every intermediate component to reach one icon is worse.
@@ -335,82 +333,79 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
   }, [member.serverId]);
 
   return (
-    <Card>
-      <div className="vibe-network-node-header">
-        <div className="server-card-avatar glossy-tile">
+    <li className="server-list-item vibe-network-node-item">
+      <div className="vibe-network-node-row">
+        <div className="server-list-icon">
           {/* The node's own icon, so a mesh member is recognisable here by
               the same mark as everywhere else. */}
           <NodeIcon server={node} size={16} />
         </div>
-        <div className="vibe-network-node-title">
-          <p className="server-card-name">{name}</p>
-          <HostAddress value={member.wireguardIp} className="server-card-host" />
+        <div className="server-list-main">
+          <span className="server-list-name" title={name}>
+            {name}
+            {dnsName && <span className="vibe-network-row-dns">{dnsName}</span>}
+          </span>
+          <HostAddress value={member.wireguardIp} className="server-list-host" />
         </div>
-        <Badge tone={reachable ? "success" : "danger"}>{reachable ? t("vibeNetwork.online") : t("vibeNetwork.offline")}</Badge>
+        <span className="vibe-network-node-meta">
+          {/* Connection is the one warning kept in the row itself - it stays
+              short by design, so a degraded tunnel is visible without opening
+              the details. */}
+          <span className={`vibe-network-conn${connectionIsGood ? "" : " vibe-network-conn-warn"}`}>{connectionLabel}</span>
+          {typeof latencyMs === "number" && <span className="vibe-network-row-latency">{latencyMs} ms</span>}
+          <Badge tone={reachable ? "success" : "danger"}>{reachable ? t("vibeNetwork.online") : t("vibeNetwork.offline")}</Badge>
+        </span>
         <OverflowMenu
           ariaLabel={t("vibeNetwork.nodeMenuAria", { name })}
           items={[{ label: t("vibeNetwork.leaveButton"), icon: "trash", danger: true, onClick: onLeave }]}
         />
       </div>
 
-      <div className="vibe-network-node-facts">
-        {dnsName && (
+      <Details>
+        <div className="vibe-network-node-facts">
+          {dnsName && (
+            <div className="vibe-network-fact">
+              <span className="form-label">{t("vibeNetwork.dnsName")}</span>
+              <span className="vibe-network-fact-value">{dnsName}</span>
+            </div>
+          )}
+          {status?.tunnelError && tunnel !== "unreachable" && (
+            <div className="vibe-network-fact">
+              <span className="form-label">{t("vibeNetwork.tunnelErrorLabel")}</span>
+              {/* The row ellipsises, and the Node's own words are exactly what
+                  somebody needs in full - `title` is where the rest of them
+                  live. */}
+              <span className="vibe-network-fact-value vibe-network-fact-value-bad" title={status.tunnelError}>
+                {status.tunnelError}
+              </span>
+            </div>
+          )}
+          {(status?.unknownPeers ?? 0) > 0 && (
+            <div className="vibe-network-fact">
+              <span className="form-label">{t("vibeNetwork.unknownPeersLabel")}</span>
+              <span className="vibe-network-fact-value vibe-network-fact-value-bad">
+                {t("vibeNetwork.unknownPeersValue", { count: status?.unknownPeers ?? 0 })}
+              </span>
+            </div>
+          )}
           <div className="vibe-network-fact">
-            <span className="form-label">{t("vibeNetwork.dnsName")}</span>
-            <span className="vibe-network-fact-value">{dnsName}</span>
+            <span className="form-label">{t("vibeNetwork.applicationsLabel")}</span>
+            <span className="vibe-network-fact-value">{applicationCount}</span>
           </div>
-        )}
-        <div className="vibe-network-fact">
-          <span className="form-label">{t("vibeNetwork.connectionLabel")}</span>
-          <span className={`vibe-network-fact-value${connectionIsGood ? "" : " vibe-network-fact-value-warn"}`}>{connectionLabel}</span>
-        </div>
-        {status?.tunnelError && tunnel !== "unreachable" && (
           <div className="vibe-network-fact">
-            <span className="form-label">{t("vibeNetwork.tunnelErrorLabel")}</span>
-            {/* The row ellipsises, and the Node's own words are exactly what
-                somebody needs in full - `title` is where the rest of them
-                live. */}
-            <span className="vibe-network-fact-value vibe-network-fact-value-bad" title={status.tunnelError}>
-              {status.tunnelError}
+            <span className="form-label">{t("vibeNetwork.endpointsLabel")}</span>
+            <span className="vibe-network-fact-value">{endpointCount ?? "-"}</span>
+          </div>
+          <div className="vibe-network-fact">
+            {/* "Last sync" was the wrong name for this: it is WireGuard's own
+                last handshake, and nothing about it is driven by the
+                Synchronize button - which is why "sync succeeded" and "last
+                sync: never" could sit on the same card and look like a lie. */}
+            <span className="form-label">{t("vibeNetwork.lastHandshakeLabel")}</span>
+            <span className="vibe-network-fact-value">
+              {lastHandshakeUnix > 0 ? formatRelativeTime(lastHandshakeUnix * 1000, t) : t("vibeNetwork.neverHandshaked")}
             </span>
           </div>
-        )}
-        {(status?.unknownPeers ?? 0) > 0 && (
-          <div className="vibe-network-fact">
-            <span className="form-label">{t("vibeNetwork.unknownPeersLabel")}</span>
-            <span className="vibe-network-fact-value vibe-network-fact-value-bad">
-              {t("vibeNetwork.unknownPeersValue", { count: status?.unknownPeers ?? 0 })}
-            </span>
-          </div>
-        )}
-        {typeof latencyMs === "number" && (
-          <div className="vibe-network-fact">
-            <span className="form-label">{t("vibeNetwork.latencyLabel")}</span>
-            <span className="vibe-network-fact-value">{latencyMs} ms</span>
-          </div>
-        )}
-        <div className="vibe-network-fact">
-          <span className="form-label">{t("vibeNetwork.applicationsLabel")}</span>
-          <span className="vibe-network-fact-value">{applicationCount}</span>
-        </div>
-        <div className="vibe-network-fact">
-          <span className="form-label">{t("vibeNetwork.endpointsLabel")}</span>
-          <span className="vibe-network-fact-value">{endpointCount ?? "—"}</span>
-        </div>
-        <div className="vibe-network-fact">
-          {/* "Last sync" was the wrong name for this: it is WireGuard's own
-              last handshake, and nothing about it is driven by the
-              Synchronize button - which is why "sync succeeded" and "last
-              sync: never" could sit on the same card and look like a lie. */}
-          <span className="form-label">{t("vibeNetwork.lastHandshakeLabel")}</span>
-          <span className="vibe-network-fact-value">
-            {lastHandshakeUnix > 0 ? formatRelativeTime(lastHandshakeUnix * 1000, t) : t("vibeNetwork.neverHandshaked")}
-          </span>
-        </div>
-      </div>
-
-      {advanced && (
-        <div className="vibe-network-advanced">
           <div className="vibe-network-fact">
             <span className="form-label">{t("vibeNetwork.publicKey")}</span>
             <span className="vibe-network-fact-value vibe-network-mono" title={member.wireguardPublicKey}>
@@ -434,8 +429,8 @@ function NodeCard({ member, name, status, dnsName, serverName, advanced, applica
             </div>
           ))}
         </div>
-      )}
-    </Card>
+      </Details>
+    </li>
   );
 }
 
@@ -524,14 +519,13 @@ interface EndpointsPanelProps {
   members: NodeNetworkMember[];
   servers: ManagedServer[];
   meshStatus: NodeMeshStatus[];
-  advanced: boolean;
 }
 
 /** "Endpoints" - a Node-scoped read over the *existing* Application Ports
  * data (see the Rust `NodeEndpoint`'s own doc comment for why this isn't a
  * separate model) - CRUD reuses the exact same commands the Ports tab
  * already uses. */
-function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPanelProps) {
+function EndpointsPanel({ members, servers, meshStatus }: EndpointsPanelProps) {
   const { t } = useTranslation();
   const nodeOptions: RowPickerOption[] = members.map((m) => {
     const server = servers.find((s) => s.id === m.serverId);
@@ -624,12 +618,10 @@ function EndpointsPanel({ members, servers, meshStatus, advanced }: EndpointsPan
                   <span className="server-list-host">
                     {endpoint.internalPort}/{endpoint.protocol.toUpperCase()} · {t("vibeNetwork.pointsTo", { application: endpoint.applicationName, port: endpoint.internalPort })}
                   </span>
-                  {advanced && (
-                    <span className="server-list-host vibe-network-mono">
-                      {endpoint.bindAddress}:{endpoint.externalPort ?? endpoint.internalPort}
-                      {endpoint.externalPort ? ` → ${endpoint.internalPort}` : ""}
-                    </span>
-                  )}
+                  <span className="server-list-host vibe-network-mono">
+                    {endpoint.bindAddress}:{endpoint.externalPort ?? endpoint.internalPort}
+                    {endpoint.externalPort ? ` → ${endpoint.internalPort}` : ""}
+                  </span>
                 </div>
                 <Badge tone="neutral">{visibilityLabel(endpoint.visibility, t)}</Badge>
                 <IconButton

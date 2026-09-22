@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import { recreateApplication, refreshApplicationStatus, setApplicationResourceLimits } from "@/services/applicationService";
+import { setApplicationResourceLimits } from "@/services/applicationService";
+import { useContainerApply } from "@/hooks/useContainerApply";
 import type { ApplicationDetail, ResourceLimitsConfig } from "@/types/application";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
@@ -11,12 +12,13 @@ import { errorMessage } from "@/services/tauri";
 interface ResourceLimitsCardProps {
   applicationId: string;
   application: ApplicationDetail;
-  onSaved: () => void;
+  onApplied: (updated: ApplicationDetail) => void;
 }
 
 /** Rendered for Docker/systemd/Remote Process applications (see `ApplicationDetail`'s own gating) - Local Process is the only one with no OS-level mechanism VibeSSH can enforce even a CPU limit through, so it's the one left out. Remote Process only gets the CPU field: it has no cgroup of its own to cap memory through the way Docker/systemd do (see `runtime::remote_process`'s `cpulimit`-based CPU cap for why CPU alone is still possible there). */
-export function ResourceLimitsCard({ applicationId, application, onSaved }: ResourceLimitsCardProps) {
+export function ResourceLimitsCard({ applicationId, application, onApplied }: ResourceLimitsCardProps) {
   const { t } = useTranslation();
+  const applyToContainer = useContainerApply();
   const config = (application.runtimeConfig ?? {}) as ResourceLimitsConfig;
   const supportsMemory = application.runtimeType !== "remoteProcess";
 
@@ -45,24 +47,16 @@ export function ResourceLimitsCard({ applicationId, application, onSaved }: Reso
     setBusy(true);
     setError(null);
     try {
-      await setApplicationResourceLimits(applicationId, { memoryLimitMb: memory, cpuLimitCores: cpu });
+      // The limits write returns the fresh application and is quick; show it
+      // and settle the form at once. A Docker container's memory/CPU limits
+      // are baked in at `docker create` time, so the change only takes effect
+      // once the container is recreated - but that recreate (the slow part)
+      // now runs in the background via `useContainerApply` rather than
+      // freezing this form on it. A stopped app is left stopped.
+      const updated = await setApplicationResourceLimits(applicationId, { memoryLimitMb: memory, cpuLimitCores: cpu });
       setEditing(false);
-      // Same "Pterodactyl: change it, save it, it just works" reasoning as
-      // `ApplicationConfigCard` - a Docker container's memory/CPU limits are
-      // baked in at `docker create` time, so a plain restart reuses the
-      // same, now-stale container. Only auto-recreate a *running*
-      // application - a stopped one is left stopped, see that component's
-      // own doc comment for why auto-starting it would be its own surprise.
-      // Checks the freshly-probed status, not `application.status` - see
-      // `EnvironmentTab`'s own `recreateIfRunningDocker` for why that prop
-      // alone can still say "stopped" for a few seconds after a real start.
-      if (application.runtimeType === "docker") {
-        const status = await refreshApplicationStatus(applicationId);
-        if (status === "running") {
-          await recreateApplication(applicationId);
-        }
-      }
-      onSaved();
+      onApplied(updated);
+      void applyToContainer(updated);
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {

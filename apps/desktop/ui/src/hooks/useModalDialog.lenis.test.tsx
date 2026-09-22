@@ -28,4 +28,16 @@ describe("wheel events inside a hand-built dialog", () => {
 
     expect(target.closest(OWN_SCROLLERS)).toBe(screen.getByRole("dialog"));
   });
+
+  it("opt the backdrop out too, so the dim area does not scroll the page behind", () => {
+    const { container } = render(<Modal />);
+
+    // A wheel over the dim area around the panel targets the backdrop itself.
+    // If it did not match a Lenis opt-out, Lenis would scroll the page under
+    // the open dialog - the backdrop carries `data-lenis-prevent` for exactly
+    // this, so it is its own nearest own-scroller.
+    const backdrop = container.querySelector(".modal-backdrop") as HTMLElement;
+    expect(backdrop).not.toBeNull();
+    expect(backdrop.closest(OWN_SCROLLERS)).toBe(backdrop);
+  });
 });

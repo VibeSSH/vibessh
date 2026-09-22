@@ -19,13 +19,12 @@ import { useModalDialog } from "@/hooks/useModalDialog";
 import {
   addApplicationPort,
   listApplicationPorts,
-  recreateApplication,
-  refreshApplicationStatus,
   removeApplicationPort,
   syncApplicationNodeFirewall,
   updateApplicationPort,
   type FirewallSyncResult,
 } from "@/services/applicationService";
+import { useContainerApply } from "@/hooks/useContainerApply";
 import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -55,28 +54,6 @@ interface PortsTabProps {
   application: ApplicationDetail;
 }
 
-/** A Docker container's published ports (`-p host:container`) are baked in
- * at `docker create` time (see `runtime::docker`'s own doc comment) - a
- * plain restart reuses the same, now-stale container, so adding/editing/
- * removing a port would silently never actually take effect on a running
- * app. Same Pterodactyl-matching "change it, it just works" auto-recreate
- * `ApplicationConfigCard`/`ResourceLimitsCard` already do for their own
- * saves - a stopped app is left stopped, see those components' own doc
- * comments for why auto-starting it would be its own surprise. Best-effort:
- * a failed recreate here doesn't undo the port change that already saved
- * successfully, it just means the user needs to notice and recreate by hand.
- *
- * Checks the freshly-probed status, not the `application.status` prop - see
- * `EnvironmentTab`'s own copy of this function for why that prop alone
- * isn't trustworthy enough for this check. */
-async function recreateIfRunningDocker(application: ApplicationDetail) {
-  if (application.runtimeType !== "docker") return;
-  const status = await refreshApplicationStatus(application.id);
-  if (status === "running") {
-    await recreateApplication(application.id);
-  }
-}
-
 /**
  * How exposed a port is, in the badge's own colour.
  *
@@ -96,6 +73,7 @@ function visibilityTone(visibility: PortVisibility): "neutral" | "success" | "wa
 export function PortsTab({ applicationId, application }: PortsTabProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const applyToContainer = useContainerApply();
   // A member without this sees the ports and cannot change them - the
   // list is the useful half and reading it harms nothing.
   const canEditPorts = useCanOnServer(application.serverId, "applications.ports");
@@ -154,11 +132,15 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     }
   }
 
-  /** After a change the Node has already accepted - the next read is the
-   * authoritative one, and it happens in the background with the old rows
-   * still on screen. */
-  const reload = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.applicationPorts(applicationId) });
+  /** The ports list is kept current by writing the mutation's own result into
+   * the cache, so a change shows at once with no second SSH refetch. */
+  const upsertPortInCache = (port: ApplicationPort) => {
+    queryClient.setQueryData<ApplicationPort[]>(queryKeys.applicationPorts(applicationId), (old = []) =>
+      old.some((existing) => existing.id === port.id) ? old.map((existing) => (existing.id === port.id ? port : existing)) : [...old, port],
+    );
+  };
+  const removePortFromCache = (portId: string) => {
+    queryClient.setQueryData<ApplicationPort[]>(queryKeys.applicationPorts(applicationId), (old = []) => old.filter((existing) => existing.id !== portId));
   };
 
   async function handleConfirmDelete() {
@@ -167,9 +149,11 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     setDeleteError(null);
     try {
       await removeApplicationPort(applicationId, deletingPort.id);
+      removePortFromCache(deletingPort.id);
       setDeletingPort(null);
-      await recreateIfRunningDocker(application);
-      reload();
+      // The published `-p` only leaves the container on a recreate; run it in
+      // the background so the row disappears at once.
+      void applyToContainer(application);
     } catch (err) {
       setDeleteError(errorMessage(err, t));
     } finally {
@@ -297,12 +281,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
       {formOpen && (
         <PortFormModal
           applicationId={applicationId}
-          application={application}
           editingPort={editingPort}
           onClose={() => setFormOpen(false)}
-          onSaved={() => {
+          onSaved={(port) => {
             setFormOpen(false);
-            reload();
+            upsertPortInCache(port);
+            void applyToContainer(application);
           }}
         />
       )}
@@ -335,13 +319,12 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
 
 interface PortFormModalProps {
   applicationId: string;
-  application: ApplicationDetail;
   editingPort: ApplicationPort | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (port: ApplicationPort) => void;
 }
 
-function PortFormModal({ applicationId, application, editingPort, onClose, onSaved }: PortFormModalProps) {
+function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFormModalProps) {
   const { t } = useTranslation();
   const backdrop = useModalDialog(onClose, { labelledBy: "portstab-dialog-title-2" });
   const isEditing = Boolean(editingPort);
@@ -376,13 +359,11 @@ function PortFormModal({ applicationId, application, editingPort, onClose, onSav
     setBusy(true);
     setError(null);
     try {
-      if (editingPort) {
-        await updateApplicationPort(applicationId, editingPort.id, input);
-      } else {
-        await addApplicationPort(applicationId, input);
-      }
-      await recreateIfRunningDocker(application);
-      onSaved();
+      // The mutation returns the saved port; hand it back so the list updates
+      // from it directly. The container recreate the `-p` change needs runs in
+      // the background from the parent, not awaited here.
+      const saved = editingPort ? await updateApplicationPort(applicationId, editingPort.id, input) : await addApplicationPort(applicationId, input);
+      onSaved(saved);
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {

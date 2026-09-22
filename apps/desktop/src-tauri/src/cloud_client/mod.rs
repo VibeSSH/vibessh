@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    CloudApplication, CloudApplicationEnvironment, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation,
+    CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation,
     CloudAiAnswer, CloudAiQuota,
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
@@ -414,6 +414,36 @@ impl CloudClient {
     pub async fn remove_team_application(&self, access_token: &str, team_id: Uuid, application_id: Uuid) -> AppResult<()> {
         self.send_no_content::<()>(Method::DELETE, &format!("/teams/{team_id}/applications/{application_id}"), Some(access_token), None)
             .await
+    }
+
+    /// Who may see one shared Application - the per-Application allow-list.
+    pub async fn list_application_members(&self, access_token: &str, team_id: Uuid, application_id: Uuid) -> AppResult<Vec<CloudApplicationMember>> {
+        self.send::<(), _>(Method::GET, &format!("/teams/{team_id}/applications/{application_id}/members"), Some(access_token), None)
+            .await
+    }
+
+    /// Adds one member to a shared Application's allow-list. The first grant
+    /// flips the Application from team-wide to restricted.
+    pub async fn add_application_member(&self, access_token: &str, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {
+        self.send_no_content(
+            Method::POST,
+            &format!("/teams/{team_id}/applications/{application_id}/members"),
+            Some(access_token),
+            Some(&json!({ "userId": user_id })),
+        )
+        .await
+    }
+
+    /// Removes one member. Emptying the list returns the Application to being
+    /// visible to the whole team.
+    pub async fn remove_application_member(&self, access_token: &str, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {
+        self.send_no_content::<()>(
+            Method::DELETE,
+            &format!("/teams/{team_id}/applications/{application_id}/members/{user_id}"),
+            Some(access_token),
+            None,
+        )
+        .await
     }
 
     pub async fn list_audit_events(&self, access_token: &str, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {

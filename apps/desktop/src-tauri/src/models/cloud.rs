@@ -149,6 +149,17 @@ pub struct CloudApplication {
     pub updated_at: DateTime<Utc>,
 }
 
+/// One member allowed to see a shared Application, joined to their account so
+/// the "Users" tab can name them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudApplicationMember {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub granted_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudTeamMember {

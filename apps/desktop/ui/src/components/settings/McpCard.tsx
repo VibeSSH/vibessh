@@ -78,7 +78,7 @@ export function McpCard() {
       {settings === null ? (
         error && <p className="form-note form-note-danger">{error}</p>
       ) : (
-        <>
+        <div className="server-form">
           <div className="settings-preference-row settings-preference-row-stacked">
             <div>
               <p className="settings-preference-label">{t("settings.mcpEnable")}</p>
@@ -142,7 +142,7 @@ export function McpCard() {
           )}
 
           {error && <p className="form-note form-note-danger">{error}</p>}
-        </>
+        </div>
       )}
     </Card>
   );

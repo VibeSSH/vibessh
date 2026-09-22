@@ -36,7 +36,7 @@ function Gauge({ label, percent }: { label: string; percent: number }) {
         <span>{clamped.toFixed(0)}%</span>
       </div>
       <div className="metrics-gauge-track">
-        <div className="metrics-gauge-fill" style={{ width: `${clamped}%` }} />
+        <div className="metrics-gauge-fill" style={{ transform: `scaleX(${clamped / 100})` }} />
       </div>
     </div>
   );

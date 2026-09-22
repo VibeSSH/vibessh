@@ -1,0 +1,122 @@
+/* Team selector, shown only when the operator belongs to more than one team.
+   Quiet pills - the accent is a signal for the one that is active, not a fill
+   across all of them. */
+.application-members-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.application-members-team {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.application-members-team:hover {
+  color: var(--text-primary);
+}
+
+.application-members-team-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The one line that says what "shared" currently means for this application.
+   Its icon changes with its state - an open eye while the whole team can see
+   it, a lock once the list narrows it - because the difference is the whole
+   point of the screen. */
+.application-members-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.application-members-note-restricted {
+  color: var(--accent);
+}
+
+/* The backend does not have the endpoints yet. A quiet "come back after the
+   deploy" state, deliberately not the red of a real error - nothing is broken,
+   something is just not shipped. */
+.application-members-note-pending {
+  color: var(--text-secondary);
+}
+
+.application-members-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.application-members-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.application-members-item:last-child {
+  border-bottom: none;
+}
+
+.application-members-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.application-members-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.application-members-owner-pill {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.application-members-email {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The honesty note. Muted and set apart from the list above it, so it reads
+   as the standing caveat it is rather than a per-member detail. */
+.application-members-guardrail {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}

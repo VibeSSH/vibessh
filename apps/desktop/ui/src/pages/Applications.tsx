@@ -341,21 +341,6 @@ export function Applications() {
           <p className="page-subtitle">{t("applications.subtitle")}</p>
         </div>
         <div className="applications-header-actions">
-          {applications.length > 0 && (
-            <label className="applications-group-by">
-              <span className="form-label">{t("applications.groupByLabel")}</span>
-              <Select
-                value={groupBy}
-                onChange={(value) => handleGroupByChange(value as GroupBy)}
-                items={[
-                  { value: "none", label: t("applications.groupByNone") },
-                  { value: "egg", label: t("applications.groupByEgg") },
-                  { value: "runtimeType", label: t("applications.groupByRuntimeType") },
-                  { value: "server", label: t("applications.groupByServer") },
-                ]}
-              />
-            </label>
-          )}
           {/* Beside "create" rather than inside the wizard: adopting a
               server that exists and setting one up from nothing are different
               intentions, and somebody with a migrated host arrives holding
@@ -378,7 +363,26 @@ export function Applications() {
           <EmptyState icon="box" title={t("applications.emptyTitle")} description={t("applications.emptyDescription")} />
         </Card>
       ) : (
-        groups.map((group) => (
+        <>
+        {/* Grouping is a way of looking at the list, not a header action, so
+            it sits in a toolbar above the grid rather than crowding the
+            create/adopt buttons in the header. */}
+        <div className="applications-toolbar">
+          <label className="applications-group-by">
+            <span className="form-label">{t("applications.groupByLabel")}</span>
+            <Select
+              value={groupBy}
+              onChange={(value) => handleGroupByChange(value as GroupBy)}
+              items={[
+                { value: "none", label: t("applications.groupByNone") },
+                { value: "egg", label: t("applications.groupByEgg") },
+                { value: "runtimeType", label: t("applications.groupByRuntimeType") },
+                { value: "server", label: t("applications.groupByServer") },
+              ]}
+            />
+          </label>
+        </div>
+        {groups.map((group) => (
           <section key={group.key} className="applications-group">
             {group.label && <h2 className="applications-group-title">{group.label}</h2>}
             {/* A context per group, so a card cannot be dragged into another
@@ -411,7 +415,8 @@ export function Applications() {
               </SortableContext>
             </DndContext>
           </section>
-        ))
+        ))}
+        </>
       )}
 
       {adoptOpen && (

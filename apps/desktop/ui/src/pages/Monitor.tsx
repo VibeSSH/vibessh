@@ -5,6 +5,7 @@ import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { HostAddress } from "@/components/ui/HostAddress";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
@@ -50,11 +51,20 @@ export function MonitorPage() {
   const [history, setHistory] = useState<ServerMetrics[]>([]);
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Whether the first poll for this Node has finished. Until it has, an empty
+  // card is "still loading" (skeleton); after it has, an empty card is the
+  // honest "this host returned nothing" state rather than a skeleton that
+  // never resolves.
+  const [loaded, setLoaded] = useState(false);
 
-  // Switching Node clears the chart so the new host's history doesn't
-  // continue the previous one's line.
+  // Switching Node clears the chart and the loaded flag so the new host's
+  // history doesn't continue the previous one's line and its cards go back to
+  // loading rather than showing the last host's data or empty states.
   useEffect(() => {
     setHistory([]);
+    setMetrics(null);
+    setProcesses([]);
+    setLoaded(false);
   }, [serverId]);
 
   const poll = useCallback(async () => {
@@ -67,6 +77,8 @@ export function MonitorPage() {
       setError(null);
     } catch (err) {
       setError(errorMessage(err, t));
+    } finally {
+      setLoaded(true);
     }
   }, [serverId, t]);
 
@@ -92,7 +104,13 @@ export function MonitorPage() {
       {error && <p className="page-error-note">{error}</p>}
 
       <Card title={t("monitorPage.resources")} subtitle={t("monitorPage.refreshesEvery", { seconds: POLL_INTERVALS.monitor / 1000 })}>
-        {metrics ? <MetricsPreview metrics={metrics} /> : <SkeletonRows count={3} height={52} />}
+        {metrics ? (
+          <MetricsPreview metrics={metrics} />
+        ) : loaded ? (
+          <EmptyState icon="activity" title={t("monitorPage.noDataTitle")} description={t("monitorPage.noMetricsDescription")} />
+        ) : (
+          <SkeletonRows count={3} height={52} />
+        )}
       </Card>
 
       <Card
@@ -104,7 +122,11 @@ export function MonitorPage() {
         }
       >
         {history.length === 0 ? (
-          <SkeletonRows count={2} height={70} />
+          loaded ? (
+            <EmptyState icon="activity" title={t("monitorPage.noDataTitle")} description={t("monitorPage.noMetricsDescription")} />
+          ) : (
+            <SkeletonRows count={2} height={70} />
+          )
         ) : (
           <div className="monitor-history-grid">
             <MetricsHistoryChart label={t("monitorPage.cpu")} values={history.map((m) => m.cpuUsagePercent)} formatValue={formatPercent} minScale={100} />
@@ -122,7 +144,11 @@ export function MonitorPage() {
 
       <Card title={t("monitorPage.processes")} subtitle={t("monitorPage.sortedByMemory", { count: processes.length })}>
         {processes.length === 0 ? (
-          <SkeletonRows count={6} height={28} />
+          loaded ? (
+            <EmptyState icon="list-checks" title={t("monitorPage.noProcessesTitle")} description={t("monitorPage.noProcessesDescription")} />
+          ) : (
+            <SkeletonRows count={6} height={28} />
+          )
         ) : (
           <div className="monitor-process-table-wrap">
             <table className="monitor-process-table">

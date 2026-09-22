@@ -49,10 +49,10 @@ function readTerminalTheme() {
   const styles = getComputedStyle(document.documentElement);
   const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
   return {
-    background: token("--surface-bg", "#0b1220"),
-    foreground: token("--text-primary", "#dbe6f5"),
-    cursor: token("--accent", "#57c7d8"),
-    selectionBackground: token("--surface-3", "#2a3f5a"),
+    background: token("--surface-bg", "#090a0c"),
+    foreground: token("--text-primary", "#ecedef"),
+    cursor: token("--accent", "#4dd9f5"),
+    selectionBackground: token("--surface-3", "#1d2026"),
   };
 }
 

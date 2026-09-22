@@ -13,23 +13,168 @@
   flex-wrap: wrap;
 }
 
-.dashboard-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* Two columns on a wide content pane: the Node list gets the room, the
+   workspace/activity panel sits narrower beside it (the reference's
+   list + console split). Falls back to a single stacked column once the
+   pane is too narrow to hold both - see the media query below. */
+.dashboard-columns {
+  display: grid;
+  /* ~55% / 45%. align-items:start so the two panels line up at the top and
+     neither is stretched to match the other's height. */
+  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+  align-items: start;
+  gap: 16px;
+}
+@media (max-width: 1080px) {
+  .dashboard-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
-.dashboard-section-title {
+/* The Nodes as one bounded "Servers" panel of compact rows, not a grid of
+   separate tiles. Same graphite surface + hairline border as the workspace
+   panel beside it. */
+.dashboard-panel {
+  background: var(--t-bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--space-4);
+}
+
+.dashboard-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 10px;
+}
+.dashboard-panel-title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
 }
+.dashboard-panel-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.dashboard-panel-count-problem {
+  color: var(--danger);
+}
 
-.dashboard-node-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
+.dashboard-server-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-server-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+}
+.dashboard-server-row + .dashboard-server-row {
+  border-top: 1px solid var(--border);
+}
+.dashboard-server-row-active {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.dashboard-server-row-active + .dashboard-server-row,
+.dashboard-server-row-active {
+  border-top-color: transparent;
+}
+
+.dashboard-server-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+/* A fixed square, because NodeIcon's image is `width:100%` of its container -
+   without a bounded box here it renders at the image's own (large) size. */
+.dashboard-server-row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  color: var(--text-secondary);
+}
+.dashboard-server-row-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.dashboard-server-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-server-row-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.dashboard-server-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.dashboard-server-stat i {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.dashboard-server-stat-latency {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.dashboard-server-stat-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* At a narrow content pane the metrics would crowd the name; drop the
+   per-Node latency first, then the metric block wraps under the name. */
+@media (max-width: 1320px) {
+  .dashboard-server-stat-latency {
+    display: none;
+  }
+}
+@media (max-width: 460px) {
+  .dashboard-server-row-stats {
+    gap: 10px;
+  }
 }
 
 /* The "operations center" workspace - one bounded panel whose content
@@ -39,7 +184,6 @@
 .dashboard-workspace {
   display: flex;
   flex-direction: column;
-  min-height: 420px;
   background: var(--t-bg-card);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -86,10 +230,38 @@
 }
 
 .dashboard-workspace-body {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* The dashboard's application list is a compact glanceable strip, not the full
+   Servers-page rows it shares styles with: smaller icon chips, tighter rows,
+   and a bounded height that scrolls. Without the cap a long fleet runs this
+   panel far past the Servers list beside it (align-items:start means the
+   columns don't stretch to match, so the right one just grows). Scoped to the
+   workspace body so the Servers page and the Alerts list keep their own size. */
+.dashboard-workspace-body .server-list {
+  max-height: 336px;
+  overflow-y: auto;
+  /* Only the vertical axis scrolls. Without pinning overflow-x, the CSS spec
+     promotes it to `auto` too, and the items' -8px side margins then trip a
+     spurious horizontal scrollbar instead of scrolling the list up and down. */
+  overflow-x: hidden;
+}
+.dashboard-workspace-body .server-list-item {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  gap: 10px;
+  /* Drop the Servers-page negative side margins here: inside a scroll
+     container they push the rows wider than the box (the real cause of the
+     horizontal scrollbar). */
+  margin-left: 0;
+  margin-right: 0;
+}
+.dashboard-workspace-body .server-list-icon {
+  width: 28px;
+  height: 28px;
 }
 
 /* A fixed height, not flex:1 - unlike the dedicated Terminal page (whose
@@ -99,18 +271,18 @@
    real space to resolve against and xterm's own fitAddon ends up sizing
    itself against unconstrained/runaway layout instead. */
 .dashboard-workspace-terminal {
-  height: 420px;
+  height: 340px;
 }
 
 .dashboard-workspace-prompt {
-  flex: 1;
+  min-height: 132px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   color: var(--text-secondary);
   font-size: 13px;
-  padding: var(--space-6);
+  padding: var(--space-5);
 }
 
 .dashboard-workspace-activity-agent {
@@ -242,38 +414,173 @@
   white-space: nowrap;
 }
 
-/* Closes the layout, same role the reference screenshot's own footer bar
-   plays - an always-visible aggregate reading, not another clickable panel. */
-.dashboard-footer-bar {
+/* Aggregate overview: three equal metric cards in one row (reference's top
+   band). The bar fill is the one place the blue->teal->purple gradient is used
+   as a small accent. */
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .dashboard-metrics { grid-template-columns: 1fr; }
+}
+.stat-card {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface-1);
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+/* Lifts slightly and picks up a teal-tinted edge on hover - the tiles are a
+   live reading worth pointing at, and the motion matches the rest of the
+   dashboard's hover language. */
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface-2);
+  box-shadow: var(--t-elev-2);
+}
+.stat-card .stat-card-icon {
+  transition: color 140ms ease;
+}
+.stat-card:hover .stat-card-icon {
+  color: var(--accent);
+}
+.stat-card-top {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
-  padding: 10px 16px;
-  background: var(--t-bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  font-size: 13px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.stat-card-label {
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
 }
-.dashboard-footer-bar-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dashboard-footer-bar-value {
+.stat-card-icon { color: var(--text-tertiary); }
+.stat-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
   color: var(--text-primary);
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
-.dashboard-footer-bar-spacer {
-  flex: 1;
+.stat-card-bar {
+  position: relative;
+  height: 5px;
+  margin-top: 12px;
+  border-radius: 999px;
+  /* The gradient now lives on the track, full width and static. The fill above
+     is an opaque cover that scales in from the right to hide the unfilled part,
+     revealing the gradient to the reading - so the level animates as a
+     compositor-only `scaleX` instead of a per-frame width reflow, without
+     compressing the gradient the way scaling a gradient-filled bar would. */
+  background: linear-gradient(90deg, var(--primary), var(--accent) 55%, var(--purple));
+  overflow: hidden;
 }
-.dashboard-footer-bar-online {
+.stat-card-bar-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: right center;
+  background: var(--surface-3);
+  transition: transform 0.4s ease;
+  will-change: transform;
+}
+.stat-card-foot {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+/* A quiet "updated x s ago" beneath the foot. It climbs every second, so a
+   poll that stalls shows up as a number growing past the 6s interval rather
+   than a value that merely looks stable. */
+.stat-card-updated {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Customizable widget grid (react-grid-layout) --- */
+
+/* Each grid item is a flex column so its box fills the resized cell and the
+   scrollable parts (server list, applications list) get a real height to work
+   against rather than growing past the widget. */
+.dash-widget {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--success);
+  flex-direction: column;
+  overflow: hidden;
 }
-.dashboard-footer-bar-online-problem {
-  color: var(--danger-text);
+.dash-widget > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The auto-fit bands (metrics, ops) size their grid cell to their content, so
+   their inner block stays at its natural height rather than stretching to fill
+   the cell - that keeps the measurement honest and leaves no dead space. */
+.dash-widget[data-autofit] > * {
+  flex: 0 0 auto;
+}
+/* ...and they don't clip: the cell already fits the content exactly, so the
+   only thing overflow:hidden would cut is a card's hover lift and its shadow
+   spilling past the top edge. Let those show. */
+.dash-widget[data-autofit] {
+  overflow: visible;
+}
+.dash-widget > .dashboard-panel,
+.dash-widget > .dashboard-workspace {
+  display: flex;
+  flex-direction: column;
+}
+.dash-widget .dashboard-server-rows,
+.dash-widget .dashboard-workspace-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The three metric tiles keep their own height rather than stretching to fill
+   a tall cell, which would leave the value marooned in the middle. */
+.dash-widget > .dashboard-metrics {
+  align-content: start;
+}
+
+/* Edit mode: every widget reads as grabbable and shows where it can go. */
+.dashboard-grid-editing .dash-widget {
+  cursor: grab;
+  outline: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -1px;
+  border-radius: var(--r-md);
+}
+.dashboard-grid-editing .dash-widget:active {
+  cursor: grabbing;
+}
+/* The drop target react-grid-layout paints while dragging. */
+.dashboard-grid .react-grid-placeholder {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: var(--r-md);
+  opacity: 1;
+}
+/* The resize grip, made visible on the dark surface. */
+.dashboard-grid .react-resizable-handle::after {
+  border-right-color: var(--text-tertiary);
+  border-bottom-color: var(--text-tertiary);
+}
+
+.dashboard-edit-reset {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.dashboard-edit-reset:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
 }

@@ -13,7 +13,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
   return (
     <div className="empty-state">
       <div className="empty-state-icon">
-        <Icon name={icon} size={28} />
+        <Icon name={icon} size={22} />
       </div>
       <h3 className="empty-state-title">{title}</h3>
       {description && <p className="empty-state-description">{description}</p>}

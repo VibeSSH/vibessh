@@ -49,7 +49,7 @@ function MiniBar({ label, percent }: { label: string; percent: number }) {
         <span>{clamped.toFixed(0)}%</span>
       </div>
       <div className="node-mini-bar-track">
-        <div className="node-mini-bar-fill" style={{ width: `${clamped}%` }} />
+        <div className="node-mini-bar-fill" style={{ transform: `scaleX(${clamped / 100})` }} />
       </div>
     </div>
   );

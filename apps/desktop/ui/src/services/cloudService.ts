@@ -1,5 +1,6 @@
 import { callCommand } from "./tauri";
 import type {
+  CloudApplicationMember,
   CloudAuditEvent,
   CloudProvisionedMember,
   CloudRole,
@@ -366,4 +367,24 @@ export function listTeamApplications(teamId: string): Promise<CloudApplication[]
  */
 export function unshareApplicationFromTeam(teamId: string, applicationId: string): Promise<void> {
   return callCommand<void>("unshare_application_from_team", { teamId, applicationId });
+}
+
+/**
+ * Who, of a team's members, may see one shared application.
+ *
+ * An empty list is not "nobody" - a shared application with no members listed
+ * is visible to the whole team, and adding the first member is what restricts
+ * it to exactly the people listed here (plus whoever shared it). The backend
+ * enforces that; see `apps/backend/src/team_applications.rs`.
+ */
+export function listApplicationMembers(teamId: string, applicationId: string): Promise<CloudApplicationMember[]> {
+  return callCommand<CloudApplicationMember[]>("list_application_members", { teamId, applicationId });
+}
+
+export function addApplicationMember(teamId: string, applicationId: string, userId: string): Promise<void> {
+  return callCommand<void>("add_application_member", { teamId, applicationId, userId });
+}
+
+export function removeApplicationMember(teamId: string, applicationId: string, userId: string): Promise<void> {
+  return callCommand<void>("remove_application_member", { teamId, applicationId, userId });
 }

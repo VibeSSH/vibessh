@@ -21,7 +21,14 @@ export function useAiReady(): boolean {
     let cancelled = false;
     getAiConfig()
       .then((config) => {
-        if (!cancelled) setReady(config.enabled && config.baseUrl.length > 0 && config.model.length > 0);
+        // The hosted provider answers with no base URL or model of its own -
+        // those fields belong to an OpenAI-compatible endpoint. Requiring them
+        // for every provider hid every "Ask Vibe AI" button from anyone on the
+        // included model, which is the default a fresh install opens on.
+        if (!cancelled) {
+          const configured = config.provider === "vibeSshHosted" || (config.baseUrl.length > 0 && config.model.length > 0);
+          setReady(config.enabled && configured);
+        }
       })
       .catch(() => {
         if (!cancelled) setReady(false);

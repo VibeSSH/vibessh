@@ -80,9 +80,9 @@ export function MemberRolesEditor({ teamId, userId, memberName, isOwner, canMana
         <div className="member-roles-popover">
           <div className="member-roles-popover-header">{t("roles.rolesFor", { name: memberName })}</div>
           {loading ? (
-            <p className="rail-popover-empty">{t("common.loading")}</p>
+            <p className="member-roles-empty">{t("common.loading")}</p>
           ) : allRoles.length === 0 ? (
-            <p className="rail-popover-empty">{t("roles.emptyTitle")}</p>
+            <p className="member-roles-empty">{t("roles.emptyTitle")}</p>
           ) : (
             <ul className="member-roles-list">
               {allRoles.map((role) => {

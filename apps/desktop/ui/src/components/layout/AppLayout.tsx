@@ -17,8 +17,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
 import { SessionPasswordPrompt } from "@/components/servers/SessionPasswordPrompt";
 import { Sidebar } from "./Sidebar";
-import { Rail } from "./Rail";
-import { TitleBar } from "./TitleBar";
+import { TopBar } from "./TopBar";
 import "./AppLayout.css";
 
 export function AppLayout() {
@@ -82,43 +81,29 @@ export function AppLayout() {
   }, []);
 
   return (
-    <div className="app-shell chrome-frame">
+    <div className="app-shell">
       {mustChangePassword && <ForcePasswordChange />}
-      <TitleBar />
+      <TopBar />
       <div className="app-body">
-        <Rail />
-        <div className="app-layout-main chrome-slab">
-          <div className="app-layout-brand">
-            <img src="/vibessh-mark.svg" alt="" className="app-layout-brand-mark" />
-            <span className="app-layout-brand-name">VibeSSH</span>
+        <Sidebar />
+        {/* Lenis needs one element holding everything that scrolls, to watch
+            it for resizes - a route renders whatever it likes, sometimes a
+            fragment. This wrapper is that element. */}
+        <main className="app-content" ref={scrollWrapperRef}>
+          <div className="app-content-inner" ref={scrollContentRef}>
+            {/* Not dismissable: it stays wrong for as long as the app is
+                running as root, and the failures it explains happen later,
+                when somebody tries to save a password. */}
+            {runningAsRoot && (
+              <p className="app-layout-root-warning">
+                <Icon name="alert-triangle" size={16} />
+                <span>{t("common.runningAsRoot")}</span>
+              </p>
+            )}
+            <UpdateBanner />
+            <Outlet />
           </div>
-          <div className="app-layout-row">
-            <Sidebar />
-            {/* Lenis needs one element holding everything that scrolls, to
-                watch it for resizes - a route renders whatever it likes,
-                sometimes a fragment. This wrapper is that element. */}
-            <main className="app-layout-content" ref={scrollWrapperRef}>
-              <div className="app-layout-scroll-content" ref={scrollContentRef}>
-                {/* Not dismissable: it stays wrong for as long as the app is
-                    running as root, and the failures it explains happen later,
-                    when somebody tries to save a password. */}
-                {runningAsRoot && (
-                  <p className="app-layout-root-warning">
-                    <Icon name="alert-triangle" size={16} />
-                    <span>{t("common.runningAsRoot")}</span>
-                  </p>
-                )}
-
-                {/* Above the page's own content and below the root warning:
-                    a waiting update is worth seeing on every page, and it is
-                    still less urgent than being told the app is running as
-                    root. */}
-                <UpdateBanner />
-                <Outlet />
-              </div>
-            </main>
-          </div>
-        </div>
+        </main>
       </div>
       <SessionPasswordPrompt />
       <ToastHost />

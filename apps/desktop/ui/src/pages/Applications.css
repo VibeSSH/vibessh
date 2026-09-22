@@ -11,6 +11,13 @@
   flex-wrap: wrap;
 }
 
+/* Grouping control lives in its own toolbar row above the grid, aligned to
+   the right so it reads as a view filter rather than a header action. */
+.applications-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .applications-group-by {
   display: flex;
   flex-direction: column;

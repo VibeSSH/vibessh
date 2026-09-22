@@ -45,13 +45,13 @@
  * see the memory/README note on why this is a values port, not a fork.
  */
 :root {
-  --surface-bg: #0b1220;
-  --surface-0: #111827;
-  --surface-1: #1c2740;
-  --surface-2: #1e2e42;
-  --surface-3: #2a3f5a;
-  --border: #1e2d42;
-  --border-hover: #2d3f5c;
+  --surface-bg: #090a0c;
+  --surface-0: #101115;
+  --surface-1: #141619;
+  --surface-2: #191b20;
+  --surface-3: #1d2026;
+  --border: #282b31;
+  --border-hover: #363a42;
 
   /* Three steps of emphasis, all of which clear WCAG AA (4.5:1) against
      every surface in this file - the lightest, `--surface-2`, is the one
@@ -59,26 +59,34 @@
      unreadable for anyone with reduced contrast sensitivity and the second
      one missed on cards. Keeping three visible steps *and* a 4.5 floor is
      what pushed all three up rather than only the bottom one. */
-  --text-primary: #dbe6f5;
-  --text-secondary: #a8bacf;
-  --text-tertiary: #8296ab;
+  --text-primary: #ecedef;
+  --text-secondary: #a0a1aa;
+  --text-tertiary: #747780;
 
-  --accent: #57c7d8;
+  --accent: #4dd9f5;
   /* The checkbox tick, used as a mask so it takes `--accent-contrast`
      rather than carrying a colour of its own. */
   --checkbox-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23000' d='M6.2 11.6 2.9 8.3l1.1-1.1 2.2 2.2 5.8-5.8 1.1 1.1z'/%3E%3C/svg%3E");
-  --accent-hover: #5fe2f7;
+  --accent-hover: #6fe3fb;
   --accent-contrast: #04141c;
 
+  /* Blue primary for main action buttons, and a sparing purple accent, per the
+     app's palette. Separate from the teal --accent, which stays the colour of
+     active navigation, icons and highlights. */
+  --primary: #258fff;
+  --primary-hover: #4aa2ff;
+  --primary-contrast: #ffffff;
+  --purple: #be7af0;
+
   --success: #22c55e;
-  --danger: #ef4444;
-  --danger-hover: #f87171;
+  --danger: #ef5350;
+  --danger-hover: #f47571;
   /* `--danger` as *text* lands at 3.7:1 on a card - below AA, on precisely
      the sentences a user most needs to read (every error note in the app).
      Fills, dots and borders keep `--danger`, where the ratio that matters is
      3:1 for a non-text indicator and it passes. */
-  --danger-text: #f26666;
-  --warning: #f59e0b;
+  --danger-text: #f47571;
+  --warning: #eabf00;
 
   /* Matches Voltius's own --r-sm/--r-md/--r-lg (0.625rem/0.875rem/1.125rem
      at their 15px root font-size) - softer, larger rounding than this
@@ -166,11 +174,11 @@
   --t-bg-terminal: var(--surface-bg);
   --t-bg-base: var(--surface-0);
   --t-bg-card: var(--surface-1);
-  --t-bg-card-hover: color-mix(in srgb, var(--surface-1) 75%, var(--accent) 12%);
+  --t-bg-card-hover: var(--surface-3);
   --t-bg-elevated: var(--surface-2);
-  --t-bg-input: #141d2b;
-  --t-bg-modal: #1a2437;
-  --t-bg-card-avatar: #5fe2f746;
+  --t-bg-input: #101216;
+  --t-bg-modal: var(--surface-2);
+  --t-bg-card-avatar: color-mix(in srgb, var(--accent) 24%, transparent);
   --t-border: var(--border);
   --t-border-hover: var(--border-hover);
   /* Form controls only. `--t-border` sits at about 1.1:1 against the
@@ -179,12 +187,12 @@
      text field begins (WCAG 1.4.11 wants 3:1 for that). Raised here rather
      than raising `--t-border` globally, which would put a hard outline
      around every card in the app to fix a problem cards do not have. */
-  --t-border-control: #4f77ae;
-  --t-text-dim: #7fa7b8;
+  --t-border-control: #4a4f58;
+  --t-text-dim: #8b8e97;
   --t-text-secondary: var(--text-secondary);
   --t-text-muted: var(--text-tertiary);
   --t-text-primary: var(--text-primary);
-  --t-text-bright: #e2ebf8;
+  --t-text-bright: #f4f5f7;
   --t-accent: var(--accent);
   --t-accent-hover: var(--accent-hover);
   --t-status-connected: var(--success);
@@ -256,18 +264,17 @@
    far more expensively than Chromium does, and the cost is per card - a node
    list of any length multiplied it. A person on Fedora reported an interface
    at roughly five frames per second; this was half of why. */
+/* Flat graphite, a thin edge and a delicate shadow - not glass. The gradient
+   sheen and the inset white gloss were the "premium card" recipe; the design
+   direction here builds depth from surface lightness and a soft shadow only. */
 .surface-glass {
-  background:
-    linear-gradient(140deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 45%, transparent 100%),
-    color-mix(in srgb, var(--t-bg-card) 68%, transparent);
-  box-shadow: var(--t-ring), var(--t-elev-1), var(--t-highlight);
+  background: var(--t-bg-card);
+  box-shadow: var(--t-ring), var(--t-card-shadow);
   transition: background 150ms ease, box-shadow 150ms ease;
 }
 .surface-glass:hover {
-  background:
-    linear-gradient(140deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.03) 45%, transparent 100%),
-    color-mix(in srgb, var(--t-bg-card) 80%, transparent);
-  box-shadow: var(--t-ring-strong), var(--t-elev-1-hover), var(--t-highlight-strong);
+  background: var(--t-bg-card-hover);
+  box-shadow: var(--t-ring-strong), var(--t-elev-1);
 }
 
 /* Glossy macOS-app-icon-style tile: light-to-dark diagonal sheen + a colored

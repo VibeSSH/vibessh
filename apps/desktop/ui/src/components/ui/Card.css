@@ -34,3 +34,23 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
+
+/*
+ * Vertical rhythm for the loose blocks a card body stacks directly.
+ *
+ * A `.form-note` used as a standalone description at the top level of a card
+ * (not one tucked inside a `.form-field`, which stays tight to its input) is a
+ * paragraph whatever follows it must clear, and a top-level `.form-actions`
+ * bar is a control the content above it must not butt against. Both carry
+ * `margin: 0` / `margin-top: 4px` of their own because most of their uses sit
+ * inside a form that already spaces them; at the bare top level of a card they
+ * had nothing giving them room, so a description and the switch, grid or button
+ * under it ran together. Scoped to direct children so nested form layouts keep
+ * their own tighter spacing.
+ */
+.card-body > .form-note:not(:last-child) {
+  margin-bottom: var(--space-3);
+}
+.card-body > .form-actions {
+  margin-top: var(--space-3);
+}

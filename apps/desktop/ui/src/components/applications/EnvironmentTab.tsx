@@ -6,42 +6,22 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
-import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { recreateApplication, refreshApplicationStatus, setApplicationEnvironment } from "@/services/applicationService";
+import { useContainerApply } from "@/hooks/useContainerApply";
+import { setApplicationEnvironment } from "@/services/applicationService";
 import type { ApplicationDetail, Blueprint, EnvironmentVariable } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
-
-/** A Docker container's environment is baked in at `docker create` time
- * (see `runtime::docker`'s own doc comment) - a plain restart reuses the
- * same, now-stale container, so an edited/added/removed variable would
- * silently never take effect. Same Pterodactyl-matching "change it, it just
- * works" auto-recreate `ApplicationConfigCard`/`ResourceLimitsCard`/`PortsTab`
- * already do for their own saves - a stopped app is left stopped.
- *
- * Checks the *real*, freshly-probed status (`refreshApplicationStatus`)
- * rather than trusting `application.status` as passed down - that prop is
- * only ever updated by an explicit start/stop/restart/recreate/kill action
- * or the next 5s poll tick (see `models::ApplicationStatus`'s own "never
- * trusted as sole truth" doc comment), so it can still say "stopped" for a
- * few seconds right after the app was actually started - long enough to
- * silently skip the recreate this save depends on. */
-async function recreateIfRunningDocker(application: ApplicationDetail) {
-  if (application.runtimeType !== "docker") return;
-  const status = await refreshApplicationStatus(application.id);
-  if (status === "running") {
-    await recreateApplication(application.id);
-  }
-}
 
 interface EnvironmentTabProps {
   application: ApplicationDetail;
   /** Only for the note below - `null` while it loads, and absent for a
    *  blueprint that points at nothing, which is most of them. */
   blueprint?: Blueprint | null;
-  onSaved: () => void;
+  /** Writes the mutation's own returned application straight into the cache,
+   *  so the list updates at once instead of waiting on a second SSH refetch. */
+  onApplied: (updated: ApplicationDetail) => void;
 }
 
 /**
@@ -67,8 +47,9 @@ export function connectionNote(application: ApplicationDetail, blueprint: Bluepr
   return { host: connection.hostEnv, port: connection.portEnv };
 }
 
-export function EnvironmentTab({ application, blueprint, onSaved }: EnvironmentTabProps) {
+export function EnvironmentTab({ application, blueprint, onApplied }: EnvironmentTabProps) {
   const { t } = useTranslation();
+  const applyToContainer = useContainerApply();
   const [formOpen, setFormOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -80,9 +61,12 @@ export function EnvironmentTab({ application, blueprint, onSaved }: EnvironmentT
     setBusy(true);
     setError(null);
     try {
-      await setApplicationEnvironment(application.id, next);
-      await recreateIfRunningDocker(application);
-      onSaved();
+      // The write itself is a quick DB update that returns the fresh
+      // application - show it at once, then let the container recreate (the
+      // slow part) run in the background rather than freezing the list on it.
+      const updated = await setApplicationEnvironment(application.id, next);
+      onApplied(updated);
+      void applyToContainer(updated);
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {
@@ -127,9 +111,7 @@ export function EnvironmentTab({ application, blueprint, onSaved }: EnvironmentT
       {connection && <p className="form-note">{t("applicationDetail.connectionEnvNote", { host: connection.host, port: connection.port })}</p>}
 
       <Card>
-        {busy ? (
-          <SkeletonRows />
-        ) : application.environment.length === 0 ? (
+        {application.environment.length === 0 ? (
           <EmptyState icon="settings" title={t("applicationDetail.environmentEmptyTitle")} description={t("applicationDetail.environmentEmpty")} />
         ) : (
           <ul className="server-list">

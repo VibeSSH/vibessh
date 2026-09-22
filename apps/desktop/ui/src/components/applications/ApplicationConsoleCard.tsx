@@ -5,6 +5,7 @@ import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useContextMenu } from "@/components/ui/ContextMenu";
 import { copyToClipboard } from "@/utils/copyToClipboard";
 import { loadHistory, NOT_BROWSING, rememberCommand, stepThroughHistory, type HistoryPosition } from "./consoleHistory";
@@ -28,9 +29,17 @@ import { ClipboardAddon } from "@xterm/addon-clipboard";
 import "@xterm/xterm/css/xterm.css";
 import { logLevelOf } from "./logLevel";
 
+type LifecycleVerb = "start" | "stop" | "restart";
+
 interface ApplicationConsoleCardProps {
   applicationId: string;
   isRunning: boolean;
+  /** Runs a lifecycle verb through the page's own confirmation and refresh
+   *  path, so the three console dots start/stop/restart the application the
+   *  same way the header buttons do. Absent means the dots stay inert. */
+  onVerb?: (verb: LifecycleVerb) => void;
+  /** A lifecycle action is already in flight, so the dots hold until it lands. */
+  actionBusy?: boolean;
 }
 
 const TAIL_LINES = 200;
@@ -59,9 +68,9 @@ function readConsoleTheme() {
   const styles = getComputedStyle(document.documentElement);
   const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
   return {
-    background: token("--surface-2", "#0e1626"),
-    foreground: token("--text-primary", "#dbe6f5"),
-    selectionBackground: token("--surface-3", "#2a3f5a"),
+    background: token("--surface-2", "#191b20"),
+    foreground: token("--text-primary", "#ecedef"),
+    selectionBackground: token("--surface-3", "#1d2026"),
   };
 }
 
@@ -142,7 +151,7 @@ export function isCopyChord(event: Pick<KeyboardEvent, "type" | "ctrlKey" | "met
   return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
 }
 
-export function ApplicationConsoleCard({ applicationId, isRunning }: ApplicationConsoleCardProps) {
+export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actionBusy }: ApplicationConsoleCardProps) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
@@ -469,10 +478,38 @@ export function ApplicationConsoleCard({ applicationId, isRunning }: Application
   return (
     <Card>
       <div className="card-header application-console-header">
-        <span className="application-console-dots" aria-hidden="true">
-          <span className="application-console-dot application-console-dot-red" />
-          <span className="application-console-dot application-console-dot-yellow" />
-          <span className="application-console-dot application-console-dot-green" />
+        {/* The three macOS traffic-light dots, but wired: red stops, yellow
+            restarts, green starts. Each dims to inert when its verb does not
+            apply to the current state (green while running, red/yellow while
+            stopped), which doubles as an at-a-glance status. */}
+        <span className="application-console-dots">
+          <Tooltip label={t("applicationDetail.verb.stop")} placement="top">
+            <button
+              type="button"
+              className="application-console-dot application-console-dot-red"
+              onClick={() => onVerb?.("stop")}
+              disabled={!onVerb || !isRunning || actionBusy}
+              aria-label={t("applicationDetail.verb.stop")}
+            />
+          </Tooltip>
+          <Tooltip label={t("applicationDetail.verb.restart")} placement="top">
+            <button
+              type="button"
+              className="application-console-dot application-console-dot-yellow"
+              onClick={() => onVerb?.("restart")}
+              disabled={!onVerb || !isRunning || actionBusy}
+              aria-label={t("applicationDetail.verb.restart")}
+            />
+          </Tooltip>
+          <Tooltip label={t("applicationDetail.verb.start")} placement="top">
+            <button
+              type="button"
+              className="application-console-dot application-console-dot-green"
+              onClick={() => onVerb?.("start")}
+              disabled={!onVerb || isRunning || actionBusy}
+              aria-label={t("applicationDetail.verb.start")}
+            />
+          </Tooltip>
         </span>
         <h3 className="card-title">{t("applicationConsole.title")}</h3>
         <span className="application-console-mode">

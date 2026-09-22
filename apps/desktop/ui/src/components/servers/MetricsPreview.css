@@ -31,9 +31,16 @@
 
 .metrics-gauge-fill {
   height: 100%;
+  width: 100%;
+  transform-origin: left center;
   background: var(--accent);
   border-radius: 999px;
-  transition: width 400ms ease;
+  /* Scaled on the X axis rather than resized: a width change reflows and
+     repaints every frame, a transform is a compositor-only operation, so a
+     live metric that ticks constantly stays cheap. The fill is full-width and
+     scaled down to the reading via `scaleX` from the JS. */
+  transition: transform 400ms ease;
+  will-change: transform;
 }
 
 .metrics-preview-stats {

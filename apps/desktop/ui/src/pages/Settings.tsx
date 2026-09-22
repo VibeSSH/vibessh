@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
+import { Details } from "@/components/ui/Details";
 import { Card } from "@/components/ui/Card";
 import { ThemePicker } from "@/components/settings/ThemePicker";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -78,8 +79,8 @@ export function Settings() {
             <p className="settings-preference-label">{t("theme.title")}</p>
             <p className="settings-muted">{t("theme.description")}</p>
           </div>
+          <ThemePicker />
         </div>
-        <ThemePicker />
 
         <MinimizeToTrayRow />
       </Card>
@@ -303,7 +304,9 @@ function AiCard() {
               </label>
                 </>
               )}
-              <p className="form-note">{t("settings.aiPrivacyNote")}</p>
+              <Details>
+                <p className="form-note">{t("settings.aiPrivacyNote")}</p>
+              </Details>
             </>
           )}
           <div className="form-actions form-actions-split">
@@ -553,7 +556,9 @@ function CloudBackendCard() {
             <span className="form-label">{t("settings.cloudBackendLabel")}</span>
             <input className="form-input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://vibessh.example.com" />
           </label>
-          <p className="form-note">{t("settings.cloudBackendNote")}</p>
+          <Details>
+            <p className="form-note">{t("settings.cloudBackendNote")}</p>
+          </Details>
           <div className="form-actions">
             <Button type="submit" size="sm" disabled={saving || url.trim() === "" || url.trim() === current}>
               {saving ? t("common.saving") : t("common.save")}

@@ -161,6 +161,38 @@ pub async fn remove_team_application(state: &CloudState, team_id: uuid::Uuid, ap
     inner.client.remove_team_application(&token, team_id, application_id).await
 }
 
+pub async fn list_application_members(
+    state: &CloudState,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+) -> AppResult<Vec<crate::models::CloudApplicationMember>> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.list_application_members(&token, team_id, application_id).await
+}
+
+pub async fn add_application_member(
+    state: &CloudState,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.add_application_member(&token, team_id, application_id, user_id).await
+}
+
+pub async fn remove_application_member(
+    state: &CloudState,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> AppResult<()> {
+    let token = ensure_valid_access_token(state).await?;
+    let inner = state.inner.lock().await;
+    inner.client.remove_application_member(&token, team_id, application_id, user_id).await
+}
+
 /// Registers this device's public key with the backend.
 pub async fn publish_device_key(state: &CloudState, public_key: &str, label: &str) -> AppResult<crate::models::CloudDeviceKey> {
     let token = ensure_valid_access_token(state).await?;

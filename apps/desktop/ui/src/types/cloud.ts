@@ -38,6 +38,14 @@ export interface CloudTeamMember {
   isOwner: boolean;
 }
 
+/** One member allowed to see a shared application, joined to their account. */
+export interface CloudApplicationMember {
+  userId: string;
+  email: string;
+  displayName: string;
+  grantedAt: string;
+}
+
 export interface CloudRole {
   id: string;
   teamId: string;

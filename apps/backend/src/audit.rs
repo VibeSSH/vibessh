@@ -35,6 +35,10 @@ pub const INVITATION_CREATED: &str = "invitation.created";
 pub const INVITATION_REVOKED: &str = "invitation.revoked";
 pub const APPLICATION_SHARED: &str = "application.shared";
 pub const APPLICATION_UNSHARED: &str = "application.unshared";
+/// A member was allowed to, or stopped from, seeing one shared Application -
+/// the per-application allow-list, distinct from the whole-team share above.
+pub const APPLICATION_ACCESS_GRANTED: &str = "application.access_granted";
+pub const APPLICATION_ACCESS_REVOKED: &str = "application.access_revoked";
 /// Recorded when a member's account actually came off a Node, not when its
 /// removal was asked for - the asking is part of `MEMBER_REMOVED`.
 pub const ACCESS_REVOKED: &str = "access.revoked";

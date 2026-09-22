@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    CloudApplication, CloudApplicationEnvironment, CloudApplicationPort, EnvironmentVariable, PortProtocol, PortVisibility,
+    CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, EnvironmentVariable, PortProtocol, PortVisibility,
 };
 use crate::state::CloudState;
 use crate::storage::application_repository::ApplicationRepository;
@@ -102,6 +102,23 @@ pub async fn list_shared_applications(cloud: &CloudState, team_id: Uuid) -> AppR
 /// own record - only the team's copy goes.
 pub async fn unshare_application(cloud: &CloudState, team_id: Uuid, application_id: Uuid) -> AppResult<()> {
     crate::services::cloud_service::remove_team_application(cloud, team_id, application_id).await
+}
+
+/// Who, of a team's members, may see one shared Application.
+pub async fn list_application_members(cloud: &CloudState, team_id: Uuid, application_id: Uuid) -> AppResult<Vec<CloudApplicationMember>> {
+    crate::services::cloud_service::list_application_members(cloud, team_id, application_id).await
+}
+
+/// Grants one member access. The first grant restricts the Application to its
+/// allow-list; before that a shared Application is visible to the whole team.
+pub async fn add_application_member(cloud: &CloudState, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {
+    crate::services::cloud_service::add_application_member(cloud, team_id, application_id, user_id).await
+}
+
+/// Revokes one member's access. Emptying the list returns the Application to
+/// being visible to the whole team.
+pub async fn remove_application_member(cloud: &CloudState, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {
+    crate::services::cloud_service::remove_application_member(cloud, team_id, application_id, user_id).await
 }
 
 #[cfg(test)]

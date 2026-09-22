@@ -222,9 +222,11 @@ fn expect_success(output: crate::transport::CommandOutput, what: &str) -> AppRes
     let detail = if detail.is_empty() { format!("docker exited with {}", output.exit_code) } else { detail };
     // A daemon that is not running is the single most common way this fails,
     // and the CLI's own words for it are about a named pipe - see
-    // `daemon_unreachable`.
-    if let Some(message) = super::docker_command::daemon_unreachable(&detail) {
-        return Err(AppError::Connection(message));
+    // `daemon_unreachable`. Give it the localized `docker_unavailable` code so
+    // the user reads one clear sentence in their own language rather than a
+    // translated frame wrapped around raw CLI prose.
+    if super::docker_command::daemon_unreachable(&detail).is_some() {
+        return Err(AppError::DockerUnavailable);
     }
     Err(AppError::Connection(format!("couldn't {what}: {detail}")))
 }
@@ -551,6 +553,12 @@ async fn ensure_network(runner: &dyn DockerCommandRunner, name: &str, internal: 
                  networks with 'docker network prune', or widen 'default-address-pools' in /etc/docker/daemon.json. Docker said: {detail}"
             )));
         }
+        // The daemon being down surfaces here as a raw named-pipe/socket
+        // error; give it the localized `docker_unavailable` code rather than
+        // leaking the CLI's own prose through a generic connection error.
+        if super::docker_command::daemon_unreachable(detail).is_some() {
+            return Err(AppError::DockerUnavailable);
+        }
         let detail = if detail.is_empty() { "docker network create failed".to_string() } else { detail.to_string() };
         return Err(AppError::Connection(format!("couldn't create the '{name}' network: {detail}")));
     }
@@ -607,6 +615,9 @@ async fn reconcile_networks(runner: &dyn DockerCommandRunner, ctx: &RuntimeConte
         let output = runner.docker(&["network", "connect", "--alias", &alias, name, container]).await?;
         if output.exit_code != 0 {
             let detail = output.stderr.trim();
+            if super::docker_command::daemon_unreachable(detail).is_some() {
+                return Err(AppError::DockerUnavailable);
+            }
             let detail = if detail.is_empty() { "docker network connect failed".to_string() } else { detail.to_string() };
             return Err(AppError::Connection(format!("couldn't join the '{name}' network: {detail}")));
         }
@@ -990,12 +1001,26 @@ fn map_container_status(status: &str, exit_code: &str) -> ApplicationStatus {
         "restarting" => ApplicationStatus::Starting,
         "removing" | "paused" => ApplicationStatus::Stopping,
         "dead" => ApplicationStatus::Failed,
-        "exited" if exit_code != "0" => ApplicationStatus::Failed,
-        // "exited" with code 0, "created" (made but never started), or
-        // anything unrecognized (including the container not existing yet)
-        // - Stopped is the honest default.
+        // A non-zero exit is a crash - except when the code is one a deliberate
+        // stop produces: `docker stop` sends SIGTERM (143) then SIGKILL (137),
+        // and Ctrl-C is SIGINT (130). A server told to stop that way is off,
+        // not failed - which is exactly what a Minecraft network's idle
+        // sub-servers (a lobby, a limbo) are, and why they were being flagged
+        // as errors when nothing had gone wrong.
+        "exited" if exit_code != "0" && !is_deliberate_stop(exit_code) => ApplicationStatus::Failed,
+        // "exited" with code 0 or a stop signal, "created" (made but never
+        // started), or anything unrecognized (including the container not
+        // existing yet) - Stopped is the honest default.
         _ => ApplicationStatus::Stopped,
     }
+}
+
+/// Whether an exit code is one a deliberate stop leaves behind rather than a
+/// crash: 143 = 128 + SIGTERM, 137 = 128 + SIGKILL (what `docker stop` uses),
+/// 130 = 128 + SIGINT (Ctrl-C). A container that ended on one of these was
+/// stopped, not failed.
+fn is_deliberate_stop(exit_code: &str) -> bool {
+    matches!(exit_code, "130" | "137" | "143")
 }
 
 /// Parses `docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}'`.
@@ -1750,6 +1775,15 @@ second
         assert_eq!(map_container_status("running", "0"), ApplicationStatus::Running);
         assert_eq!(map_container_status("exited", "0"), ApplicationStatus::Stopped);
         assert_eq!(map_container_status("exited", "1"), ApplicationStatus::Failed);
+        // Signal exit codes from a deliberate stop are not a crash: SIGTERM
+        // (143) and SIGKILL (137) are what `docker stop` leaves, SIGINT (130) a
+        // Ctrl-C. A container that exited on one of these is Stopped, not
+        // Failed - the fix for idle Minecraft sub-servers shown as errors.
+        assert_eq!(map_container_status("exited", "143"), ApplicationStatus::Stopped);
+        assert_eq!(map_container_status("exited", "137"), ApplicationStatus::Stopped);
+        assert_eq!(map_container_status("exited", "130"), ApplicationStatus::Stopped);
+        // "dead" is always Failed - its arm matches before the exit code is
+        // ever consulted, so a killed-and-dead container is still an error.
         assert_eq!(map_container_status("dead", "137"), ApplicationStatus::Failed);
         assert_eq!(map_container_status("restarting", "0"), ApplicationStatus::Starting);
         assert_eq!(map_container_status("created", ""), ApplicationStatus::Stopped);

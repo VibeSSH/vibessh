@@ -52,10 +52,15 @@ interface ApplicationFileEditorPanelProps {
   entry: RemoteFileEntry;
   onClose: () => void;
   onSaved: () => void;
+  /** Reports unsaved-changes state up, so the file list beside the editor can
+   *  guard a file switch with the same discard confirmation the back button
+   *  uses - the parent owns which file is open, and only it can intercept a
+   *  click on a different one before the editor is torn down. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /** A full-tab editor view, same "swap the whole content area" shape as the older Node Files editor (FileEditorPanel.tsx) - this is a separate component (not a generalization of that one) because it needs real dirty-state tracking, Ctrl+S, a close-confirmation, a backup-before-save toggle, and Version History, none of which the simpler Node Files editor needs. Reuses the same CodeMirror theme/language wiring and CSS directly rather than re-deriving them. */
-export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSaved }: ApplicationFileEditorPanelProps) {
+export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSaved, onDirtyChange }: ApplicationFileEditorPanelProps) {
   const { t } = useTranslation();
   // The live editor, so the header button can reach the same panel
   // Ctrl+F opens. Null until CodeMirror has mounted, which is why the
@@ -90,6 +95,11 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   // Read inside a callback that outlives the render it was made in.
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  // Keep the parent's copy of the dirty flag current, so the file list beside
+  // the editor knows whether switching files needs a discard confirmation.
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   // A config file that does not parse is not a file worth writing: the
   // service reading it fails minutes later, somewhere else, with the
   // cause out of sight. Save is refused while that is true.

@@ -1,0 +1,5 @@
+node_modules/
+.env
+# The self-setup writes discovered role/channel ids here at runtime.
+config.runtime.json
+*.log

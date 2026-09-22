@@ -19,6 +19,7 @@ import { Sparkline } from "@/components/ui/Sparkline";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
+import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -49,7 +50,9 @@ import { useServersStore } from "@/stores/serversStore";
 import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
-import type { ApplicationStatus, Blueprint } from "@/types/application";
+import type { ApplicationDetail, ApplicationStatus, Blueprint } from "@/types/application";
+import { useIsApplying } from "@/stores/applicationApplyStore";
+import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import "@/components/applications/CreateApplicationWizard.css";
@@ -66,7 +69,7 @@ const LOG_TAIL_LINES = 500;
 
 /** Every tab, and the values the `?tab=` parameter accepts. One list, so a
  * tab cannot exist without being linkable to. */
-const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "settings"] as const;
+const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
@@ -254,6 +257,24 @@ export function ApplicationDetail() {
   }, [id, queryClient]);
 
   /**
+   * Writes a mutation's own returned application straight into the cache,
+   * instead of `reload`'s invalidate-and-refetch.
+   *
+   * The config mutations (environment, blueprint fields, resource limits) all
+   * return the freshly-updated application, so painting from it is both
+   * instant and authoritative - it drops an entire SSH round trip that used to
+   * sit between the save and the user seeing it. The container recreate those
+   * changes need runs separately in the background (see `useContainerApply`).
+   */
+  const applyUpdate = useCallback(
+    (updated: ApplicationDetail) => {
+      queryClient.setQueryData(queryKeys.application(updated.id), updated);
+    },
+    [queryClient],
+  );
+  const applying = useIsApplying(id);
+
+  /**
    * One chart sample per reading that arrives, not per render.
    *
    * Keyed on `dataUpdatedAt` rather than on the data: two identical
@@ -351,10 +372,19 @@ export function ApplicationDetail() {
       setConfirming(null);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("applicationDetail.couldntDo", { verb: t(`applicationDetail.verb.${verb}`) }));
+      setActionError(errorMessage(err, t));
     } finally {
       setActionBusy(false);
     }
+  }
+
+  // The console's three traffic-light dots dispatch through here, so they
+  // behave exactly like the header buttons: Start runs straight away (it risks
+  // nothing and undoes itself), Stop and Restart raise the same confirmation,
+  // since they drop whoever is connected.
+  function requestVerb(verb: "start" | "stop" | "restart") {
+    if (verb === "start") void runAction("start");
+    else setConfirming(verb);
   }
 
   async function handleConfirmAction() {
@@ -374,7 +404,7 @@ export function ApplicationDetail() {
       setConfirming(null);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : t("applicationDetail.couldntDo", { verb: t(`applicationDetail.verb.${confirming}`) }));
+      setActionError(errorMessage(err, t));
     } finally {
       setActionBusy(false);
     }
@@ -520,6 +550,12 @@ export function ApplicationDetail() {
         <div key={application.id} className="page-switch-fade">
           <div className="application-detail-header-row">
             <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
+            {applying && (
+              <span className="application-detail-applying" role="status">
+                <Icon name="refresh-cw" size={13} className="application-detail-applying-spin" />
+                {t("applicationDetail.applyingChanges")}
+              </span>
+            )}
             <div className="application-detail-actions">
               {/* The quick action from the brief: a failed Application is the
                   case where somebody most wants an explanation, and this is
@@ -616,6 +652,10 @@ export function ApplicationDetail() {
               {t("applicationDetail.tabBackups")}
             {tab === "backups" && <TabUnderline group="application" />}
               </button>
+            <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
+              {t("applicationDetail.tabMembers")}
+            {tab === "members" && <TabUnderline group="application" />}
+              </button>
             <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
               {t("applicationDetail.tabSettings")}
             {tab === "settings" && <TabUnderline group="application" />}
@@ -625,7 +665,14 @@ export function ApplicationDetail() {
           {tab === "overview" && (
             <div className="application-detail-overview-grid">
               <div className="application-detail-overview">
-                {features.includes("console") && <ApplicationConsoleCard applicationId={id} isRunning={application.status === "running"} />}
+                {features.includes("console") && (
+                  <ApplicationConsoleCard
+                    applicationId={id}
+                    isRunning={application.status === "running"}
+                    onVerb={requestVerb}
+                    actionBusy={actionBusy}
+                  />
+                )}
 
                 {/* Where the stdin console would be, for the kinds that have
                     no stdin console. A database ignores stdin, so it gets a
@@ -738,7 +785,7 @@ export function ApplicationDetail() {
           {tab === "settings" && (
             <div className="application-detail-overview">
 
-              <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onSaved={reload} />
+              <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onApplied={applyUpdate} />
 
               {/* Directly under the fields it changes the meaning of: this is
                   what decides whether the card above asks for a Paper version
@@ -752,7 +799,7 @@ export function ApplicationDetail() {
                   directly after the blueprint fields and before the health
                   check and limits, which watch the result rather than
                   decide it. */}
-              {features.includes("environment") && <EnvironmentTab application={application} blueprint={blueprint} onSaved={reload} />}
+              {features.includes("environment") && <EnvironmentTab application={application} blueprint={blueprint} onApplied={applyUpdate} />}
 
               {application.runtimeType === "docker" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
 
@@ -761,7 +808,7 @@ export function ApplicationDetail() {
               )}
 
               {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (
-                <ResourceLimitsCard applicationId={id} application={application} onSaved={reload} />
+                <ResourceLimitsCard applicationId={id} application={application} onApplied={applyUpdate} />
               )}
             </div>
           )}
@@ -800,6 +847,7 @@ export function ApplicationDetail() {
 
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
+          {tab === "members" && <ApplicationMembersTab applicationId={id} />}
         </div>
       )}
 
@@ -839,7 +887,13 @@ export function ApplicationDetail() {
               {actionBusy && (confirming === "stop" || confirming === "restart") && (
                 <p className="form-note">{t("applicationDetail.gracefulNote")}</p>
               )}
-              {actionError && <p className="form-note form-note-danger form-note-spaced">{actionError}</p>}
+              {actionError && (
+                <ErrorCallout
+                  className="form-note-spaced"
+                  message={actionError}
+                  ai={application ? { context: { kind: "application", id: application.id }, contextLabel: application.name } : undefined}
+                />
+              )}
               <div className="form-actions">
                 <Button variant="secondary" onClick={() => setConfirming(null)} disabled={actionBusy}>
                   {t("common.cancel")}
@@ -872,7 +926,13 @@ export function ApplicationDetail() {
                 options={migrationTargets.map((s) => serverRowPickerOption(s, t))}
               />
               {migrateTargetWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
-              {migrateError && <p className="form-note form-note-danger form-note-spaced">{migrateError}</p>}
+              {migrateError && (
+                <ErrorCallout
+                  className="form-note-spaced"
+                  message={migrateError}
+                  ai={application ? { context: { kind: "application", id: application.id }, contextLabel: application.name } : undefined}
+                />
+              )}
               <div className="form-actions">
                 <Button variant="secondary" onClick={() => setMigrateOpen(false)} disabled={migrateBusy}>
                   {t("common.cancel")}

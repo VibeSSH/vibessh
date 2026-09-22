@@ -131,3 +131,25 @@
   align-items: center;
   gap: 4px;
 }
+
+/* The quiet "applying changes" indicator beside the status badge, shown while
+   a saved config change is being recreated onto the container in the
+   background. Muted, with a slowly spinning glyph - it is progress, not an
+   alert, and it sits next to the status it will shortly change. */
+.application-detail-applying {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.application-detail-applying-spin {
+  color: var(--accent);
+  animation: application-detail-apply-spin 0.9s linear infinite;
+}
+@keyframes application-detail-apply-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

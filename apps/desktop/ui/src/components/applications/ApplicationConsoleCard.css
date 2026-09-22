@@ -9,20 +9,42 @@
   gap: 6px;
 }
 
+/* The macOS traffic-light dots, brought back as real controls: red stops,
+   yellow restarts, green starts. The colour earns its place here because it is
+   a signal now, not decoration - each dot's hue says what pressing it does. */
 .application-console-dot {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+.application-console-dot:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: scale(1.12);
+}
+.application-console-dot:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.application-console-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* A verb that does not apply to the current state (green while running,
+   red/yellow while stopped) dims to inert - which doubles as a status light. */
+.application-console-dot:disabled {
+  cursor: default;
+  opacity: 0.28;
 }
 
 .application-console-dot-red {
   background: #ff5f57;
 }
-
 .application-console-dot-yellow {
   background: #febc2e;
 }
-
 .application-console-dot-green {
   background: #28c840;
 }
