@@ -29,6 +29,11 @@ export interface ChannelSpec {
   topic?: string;
   /** The one channel per language where gifs/stickers/links are tolerated. */
   chatChannel?: boolean;
+  /** Members may post here. Everything without this (and without `chatChannel`)
+   * is read-only for `@everyone` - welcome, rules, releases and announcements
+   * are things the team and the bot post, not things members write into. Staff
+   * roles keep the ability to post everywhere regardless. */
+  writable?: boolean;
   /** Post the language picker here (the `choose-language` channel). */
   languagePanel?: boolean;
   /** Post a ticket panel for this language here. */
@@ -139,7 +144,7 @@ export const blueprint: Blueprint = {
         { key: "pl-announcements", name: "📢-ogłoszenia", kind: "announcement" },
         { key: "pl-general", name: "💬-pogadanki", chatChannel: true },
         { key: "pl-support", name: "🆘-pomoc", ticketPanel: "pl" },
-        { key: "pl-suggestions", name: "💡-propozycje" },
+        { key: "pl-suggestions", name: "💡-propozycje", writable: true },
       ],
     },
     {
@@ -150,7 +155,7 @@ export const blueprint: Blueprint = {
         { key: "en-announcements", name: "📢-announcements", kind: "announcement" },
         { key: "en-general", name: "💬-general", chatChannel: true },
         { key: "en-support", name: "🆘-support", ticketPanel: "en" },
-        { key: "en-suggestions", name: "💡-suggestions" },
+        { key: "en-suggestions", name: "💡-suggestions", writable: true },
       ],
     },
     {

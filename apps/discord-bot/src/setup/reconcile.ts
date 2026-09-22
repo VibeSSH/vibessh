@@ -114,13 +114,9 @@ async function ensureChannel(
 ): Promise<GuildBasedChannel> {
   const type = spec.kind === "voice" ? ChannelType.GuildVoice : spec.kind === "announcement" ? ChannelType.GuildAnnouncement : ChannelType.GuildText;
 
-  // Every channel's overwrites are set explicitly to the category's, so
-  // visibility never depends on Discord's category-sync being intact. A status
-  // voice channel is public to see but not to join.
-  const overwrites: OverwriteResolvable[] = [...categoryOverwrites(guild, visibility, config)];
-  if (spec.status) {
-    overwrites.push({ id: guild.id, deny: [PermissionFlagsBits.Connect] });
-  }
+  // Every channel's overwrites are set explicitly, so visibility and who may
+  // post never depend on Discord's category-sync being intact.
+  const overwrites = channelOverwrites(guild, spec, visibility, config);
 
   let channel = trackedChannel(guild, config.channels[spec.key]);
   if (!channel) {
@@ -152,6 +148,67 @@ function sameChannelFamily(a: ChannelType, b: ChannelType): boolean {
   const textLike = new Set<ChannelType>([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
   if (b === ChannelType.GuildVoice) return a === ChannelType.GuildVoice;
   return textLike.has(a);
+}
+
+/**
+ * A channel's full overwrites: who can see it (from its category's visibility)
+ * and who may post in it. Read-only is the default - only a `chatChannel` or a
+ * channel marked `writable` lets `@everyone` post, so welcome, rules, releases
+ * and announcements stay things the team and the bot write, not things members
+ * type into. Staff (the team roles) keep the ability to post everywhere, and
+ * the bot posts through its own Administrator regardless. Built as one entry
+ * per role so `permissionOverwrites.set` never receives two rows for one id.
+ */
+function channelOverwrites(guild: Guild, spec: ChannelSpec, visibility: Visibility, config: RuntimeConfig): OverwriteResolvable[] {
+  const everyone = guild.id;
+  const view = PermissionFlagsBits.ViewChannel;
+  // Granted together with view, and never denied: seeing a channel is only
+  // useful if you can read what was already said in it - the past releases,
+  // the pinned rules - so read-only never means "arrives blank". Set
+  // explicitly rather than left to the server's default `@everyone`, which an
+  // owner can have turned off.
+  const read = PermissionFlagsBits.ReadMessageHistory;
+  const teamRoleIds = TEAM_ROLE_KEYS.map((key) => config.roles[key]).filter((id): id is string => Boolean(id));
+  const langRoleId = visibility.kind === "language" ? config.roles[languageRoleKey(visibility.lang)] : undefined;
+
+  const perRole = new Map<string, { allow: bigint[]; deny: bigint[] }>();
+  const at = (id: string) => {
+    let entry = perRole.get(id);
+    if (!entry) perRole.set(id, (entry = { allow: [], deny: [] }));
+    return entry;
+  };
+
+  // Visibility, mirroring `categoryOverwrites` so a channel and its category agree.
+  if (visibility.kind === "public") {
+    at(everyone).allow.push(view, read);
+  } else {
+    at(everyone).deny.push(view);
+    if (langRoleId) at(langRoleId).allow.push(view, read);
+    for (const id of teamRoleIds) at(id).allow.push(view, read);
+  }
+
+  if (spec.kind === "voice") {
+    // A status voice channel is public to see but not to join.
+    if (spec.status) at(everyone).deny.push(PermissionFlagsBits.Connect);
+  } else {
+    const writable = spec.chatChannel === true || spec.writable === true;
+    if (!writable) {
+      const post = [
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.SendMessagesInThreads,
+        PermissionFlagsBits.CreatePublicThreads,
+        PermissionFlagsBits.CreatePrivateThreads,
+      ];
+      at(everyone).deny.push(...post);
+      for (const id of teamRoleIds) at(id).allow.push(...post);
+    }
+  }
+
+  return [...perRole].map(([id, entry]) => ({
+    id,
+    ...(entry.allow.length ? { allow: entry.allow } : {}),
+    ...(entry.deny.length ? { deny: entry.deny } : {}),
+  }));
 }
 
 function categoryOverwrites(guild: Guild, visibility: Visibility, config: RuntimeConfig): OverwriteResolvable[] {
