@@ -379,6 +379,7 @@
     "notSharedNote": "This application is not shared with this team yet. Adding the first person shares it and limits it to exactly the people you pick.",
     "teamWideNote": "Shared with the whole team. Add someone to limit it to just the people you choose.",
     "restrictedNote": "Visible only to the people listed below (and whoever shared it).",
+    "pendingBackendNote": "This needs the updated backend. Once it is deployed you will be able to choose who sees this application here.",
     "noPermissionNote": "You do not have permission to change who can see this application in this team.",
     "aloneTitle": "You are the only member",
     "aloneDescription": "Invite people to this team to grant them access to applications.",

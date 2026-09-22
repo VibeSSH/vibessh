@@ -379,6 +379,7 @@
     "notSharedNote": "Ta aplikacja nie jest jeszcze udostępniona temu zespołowi. Dodanie pierwszej osoby udostępni ją i ograniczy widoczność tylko do wybranych osób.",
     "teamWideNote": "Widoczna dla całego zespołu. Dodaj osobę, aby ograniczyć widoczność tylko do wybranych.",
     "restrictedNote": "Widoczna tylko dla osób z listy poniżej (oraz osoby, która ją udostępniła).",
+    "pendingBackendNote": "To wymaga zaktualizowanego backendu. Gdy zostanie wdrożony, wybierzesz tutaj, kto widzi tę aplikację.",
     "noPermissionNote": "Nie masz uprawnień, aby zmieniać, kto widzi tę aplikację w tym zespole.",
     "aloneTitle": "Jesteś jedynym członkiem",
     "aloneDescription": "Zaproś osoby do tego zespołu, aby nadać im dostęp do aplikacji.",

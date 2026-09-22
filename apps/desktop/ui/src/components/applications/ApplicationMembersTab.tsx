@@ -20,10 +20,25 @@ import {
   shareApplicationWithTeam,
   type CloudApplication,
 } from "@/services/cloudService";
-import { errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage } from "@/services/tauri";
 import { toastError } from "@/stores/toastStore";
 import type { CloudApplicationMember, CloudTeam, CloudTeamMember } from "@/types/cloud";
 import "./ApplicationMembersTab.css";
+
+/**
+ * A bare "not found" with no backend error code - the member endpoints do not
+ * exist on the backend this install is talking to yet.
+ *
+ * The backend names every real refusal (an application genuinely not shared
+ * comes back as `application_not_shared`, carried in `params.backendCode`), so
+ * a not-found with no code is not a refusal at all: it is a route that isn't
+ * there, which is what an older or not-yet-updated backend returns. Telling the
+ * two apart is what lets the tab say "the backend needs updating" instead of
+ * showing a blank red "not found".
+ */
+function isEndpointMissing(error: unknown): boolean {
+  return error instanceof CommandError && error.code === "not_found" && typeof error.params.backendCode !== "string";
+}
 
 /**
  * Who, of a team, may see this application.
@@ -58,6 +73,9 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
   const [allowed, setAllowed] = useState<CloudApplicationMember[]>([]);
   /** The user id currently being toggled, so only its own switch shows busy. */
   const [busy, setBusy] = useState<string | null>(null);
+  /** The backend does not have the per-application member endpoints yet.
+   * Not an error - it becomes false the moment the updated backend ships. */
+  const [pendingBackend, setPendingBackend] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +108,7 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
   const loadTeam = useCallback(
     async (tid: string) => {
       setError(null);
+      setPendingBackend(false);
       try {
         const [loadedMembers, permissions, shared] = await Promise.all([
           cloudListMembers(tid),
@@ -100,7 +119,23 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
         setCanManage(permissions.includes(APPLICATIONS_CREATE));
         const projection = shared.find((entry) => entry.localId === applicationId) ?? null;
         setSharedApp(projection);
-        setAllowed(projection ? await listApplicationMembers(tid, projection.id) : []);
+        if (!projection) {
+          setAllowed([]);
+          return;
+        }
+        // The one call that hits a route the backend may not have yet. A bare
+        // not-found here means "backend not updated", which is a calm state,
+        // not the red error every other failure deserves.
+        try {
+          setAllowed(await listApplicationMembers(tid, projection.id));
+        } catch (err) {
+          if (isEndpointMissing(err)) {
+            setPendingBackend(true);
+            setAllowed([]);
+          } else {
+            throw err;
+          }
+        }
       } catch (err) {
         setError(errorMessage(err, t));
       }
@@ -135,9 +170,13 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
       }
       await loadTeam(teamId);
     } catch (err) {
-      const message = errorMessage(err, t);
-      setError(message);
-      toastError(message);
+      if (isEndpointMissing(err)) {
+        setPendingBackend(true);
+      } else {
+        const message = errorMessage(err, t);
+        setError(message);
+        toastError(message);
+      }
     } finally {
       setBusy(null);
     }
@@ -208,12 +247,19 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
         </div>
       )}
 
-      <p className={`application-members-note application-members-note-${sharedApp ? (allowed.length === 0 ? "wide" : "restricted") : "unshared"}`}>
-        <Icon name={sharedApp && allowed.length > 0 ? "lock" : "eye"} size={14} />
-        {visibilityNote}
-      </p>
+      {pendingBackend ? (
+        <p className="application-members-note application-members-note-pending">
+          <Icon name="refresh-cw" size={14} />
+          {t("applicationMembers.pendingBackendNote")}
+        </p>
+      ) : (
+        <p className={`application-members-note application-members-note-${sharedApp ? (allowed.length === 0 ? "wide" : "restricted") : "unshared"}`}>
+          <Icon name={sharedApp && allowed.length > 0 ? "lock" : "eye"} size={14} />
+          {visibilityNote}
+        </p>
+      )}
 
-      {!canManage && <p className="application-members-note">{t("applicationMembers.noPermissionNote")}</p>}
+      {!pendingBackend && !canManage && <p className="application-members-note">{t("applicationMembers.noPermissionNote")}</p>}
 
       {members.length === 0 ? (
         <EmptyState icon="users" title={t("applicationMembers.aloneTitle")} description={t("applicationMembers.aloneDescription")} />
@@ -232,7 +278,7 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
                 </div>
                 <Switch
                   checked={granted}
-                  disabled={!canManage || busy === member.userId}
+                  disabled={!canManage || pendingBackend || busy === member.userId}
                   ariaLabel={t(granted ? "applicationMembers.revokeAria" : "applicationMembers.grantAria", {
                     name: member.displayName || member.email,
                   })}

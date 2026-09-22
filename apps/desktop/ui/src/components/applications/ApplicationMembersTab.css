@@ -48,6 +48,13 @@
   color: var(--accent);
 }
 
+/* The backend does not have the endpoints yet. A quiet "come back after the
+   deploy" state, deliberately not the red of a real error - nothing is broken,
+   something is just not shipped. */
+.application-members-note-pending {
+  color: var(--text-secondary);
+}
+
 .application-members-list {
   margin: 0;
   padding: 0;
