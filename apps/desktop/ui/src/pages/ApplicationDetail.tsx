@@ -20,6 +20,8 @@ import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
+import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCard";
+import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -69,7 +71,7 @@ const LOG_TAIL_LINES = 500;
 
 /** Every tab, and the values the `?tab=` parameter accepts. One list, so a
  * tab cannot exist without being linkable to. */
-const TABS = ["overview", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
+const TABS = ["overview", "minecraft", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
@@ -90,6 +92,9 @@ export function ApplicationDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const servers = useServersStore((s) => s.servers);
+  // Live Minecraft status - present only for a server running the ServerPulse plugin. It
+  // decides whether the Minecraft tab is shown, and fills it.
+  const minecraft = useMinecraftStatus(id ?? "");
 
   const queryClient = useQueryClient();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
@@ -618,6 +623,15 @@ export function ApplicationDetail() {
               {t("applicationDetail.tabOverview")}
             {tab === "overview" && <TabUnderline group="application" />}
               </button>
+            {/* Shown only for a server running the ServerPulse plugin, which is
+                what writes the status file this reads. Placed second because on
+                a game server it is the tab you reach for most. */}
+            {minecraft.status && (
+              <button className={`modal-tab ${tab === "minecraft" ? "modal-tab-active" : ""}`} onClick={() => setTab("minecraft")}>
+                {t("minecraft.title")}
+              {tab === "minecraft" && <TabUnderline group="application" />}
+              </button>
+            )}
             {/* Files sits second, right after the console.
                 It is the tab an operator reaches for most once something is
                 running - a config to edit, a plugin to drop in, a world to
@@ -848,6 +862,7 @@ export function ApplicationDetail() {
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
           {tab === "members" && <ApplicationMembersTab applicationId={id} />}
+          {tab === "minecraft" && minecraft.status && <MinecraftStatusCard status={minecraft.status} history={minecraft.history} />}
         </div>
       )}
 

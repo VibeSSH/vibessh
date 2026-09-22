@@ -1,0 +1,127 @@
+.mc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.mc-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.mc-metric-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.mc-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-unit {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.mc-metric-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Each metric's own session history, so the tile reads as a monitor, not a
+   frozen number. Fills over the first few minutes the tab is open. */
+.mc-metric-spark {
+  margin-top: 8px;
+}
+
+/* The TPS tile carries the health of the whole server, so it is the one that
+   takes a colour - green while healthy, amber under strain, red when it drops. */
+.mc-tps-ok .mc-metric-value {
+  color: var(--success, #34d399);
+}
+.mc-tps-warn .mc-metric-value {
+  color: var(--warning, #fbbf24);
+}
+.mc-tps-bad .mc-metric-value {
+  color: var(--danger, #f87171);
+}
+
+/* Kept compact rather than stretched across the whole card: a handful of
+   worlds with three small counts each does not want the full width. */
+.mc-worlds {
+  width: 100%;
+  max-width: 620px;
+  margin-top: 16px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+/* Every cell right-aligned so the header and its numbers line up; the name
+   column is the one exception. */
+.mc-worlds th,
+.mc-worlds td {
+  padding: 7px 14px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.mc-worlds th {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.mc-worlds td {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-worlds th:first-child,
+.mc-worlds td:first-child {
+  text-align: left;
+}
+
+.mc-worlds tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.mc-worlds tbody tr:hover td {
+  background: var(--surface-2);
+}
+
+.mc-world-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.mc-players-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 0;
+}
+
+.mc-player {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mc-stale {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-size: 12px;
+}

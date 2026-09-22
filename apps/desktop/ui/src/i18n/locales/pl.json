@@ -1099,6 +1099,21 @@
     "goToServers": "Przejdź do Serwerów",
     "pickServer": "Wybierz serwer"
   },
+  "minecraft": {
+    "title": "Minecraft",
+    "stale": "Ten odczyt jest lekko nieświeży - serwer może lagować albo plugin przestał pisać.",
+    "tps": "TPS",
+    "mspt": "MSPT",
+    "players": "Gracze",
+    "ram": "RAM",
+    "tpsHistory": "TPS z ostatnich minut",
+    "msptHistory": "MSPT z ostatnich minut",
+    "playersHistory": "Gracze z ostatnich minut",
+    "ramHistory": "RAM z ostatnich minut",
+    "world": "Świat",
+    "entities": "Byty",
+    "chunks": "Chunki"
+  },
   "monitorPage": {
     "resources": "Zasoby",
     "refreshesEvery": "Odświeża co {{seconds}}s",

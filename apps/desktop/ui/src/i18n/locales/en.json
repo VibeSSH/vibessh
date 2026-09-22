@@ -1092,6 +1092,21 @@
     "goToServers": "Go to Servers",
     "pickServer": "Pick a server"
   },
+  "minecraft": {
+    "title": "Minecraft",
+    "stale": "This snapshot is a little old - the server may be lagging or the plugin stopped.",
+    "tps": "TPS",
+    "mspt": "MSPT",
+    "players": "Players",
+    "ram": "RAM",
+    "tpsHistory": "TPS over the last minutes",
+    "msptHistory": "MSPT over the last minutes",
+    "playersHistory": "Players over the last minutes",
+    "ramHistory": "RAM over the last minutes",
+    "world": "World",
+    "entities": "Entities",
+    "chunks": "Chunks"
+  },
   "monitorPage": {
     "resources": "Resources",
     "refreshesEvery": "Refreshes every {{seconds}}s",
