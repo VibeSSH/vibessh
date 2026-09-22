@@ -11,7 +11,7 @@ members = ["apps/desktop/src-tauri", "apps/agent", "apps/backend", "crates/proto
 # network rather than only the one that happens to be built alongside it.
 # This table only pins shared dependency versions so they don't drift.
 [workspace.package]
-version = "0.1.0-beta.18"
+version = "0.1.0-beta.19"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 

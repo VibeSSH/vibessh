@@ -6,6 +6,29 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.19
+
+### New
+
+- **Choose who on your team can see an application.** An application has a new
+  **Users** tab. Turn on the switch beside a teammate and they can see that
+  application; leave somebody off and it does not appear in their list at all.
+  A shared application with nobody added stays visible to the whole team, and
+  the first person you add narrows it to exactly the people you pick. Like the
+  rest of a team's permissions this hides rather than walls off - somebody who
+  can reach the server over SSH sees the application regardless - which the tab
+  says plainly.
+
+- **A new app icon.** The mark on the window, the taskbar and the installer is
+  the redrawn VibeSSH "V" with a terminal prompt inside it.
+
+### Fixed
+
+- **The CPU, memory and disk bars on the dashboard are visible again.** The
+  reskin had left the filled part of each meter the same shade as the card
+  behind it, so the bars all but disappeared. They now sit in a visible track
+  with a bright fill.
+
 ## 0.1.0-beta.18
 
 ### New
