@@ -92,7 +92,7 @@ export function ApplicationDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const servers = useServersStore((s) => s.servers);
-  // Live Minecraft status - present only for a server running the ServerPulse plugin. It
+  // Live Minecraft status - present only for a server running the VibeSSH Metrics plugin. It
   // decides whether the Minecraft tab is shown, and fills it.
   const minecraft = useMinecraftStatus(id ?? "");
 
@@ -623,7 +623,7 @@ export function ApplicationDetail() {
               {t("applicationDetail.tabOverview")}
             {tab === "overview" && <TabUnderline group="application" />}
               </button>
-            {/* Shown only for a server running the ServerPulse plugin, which is
+            {/* Shown only for a server running the VibeSSH Metrics plugin, which is
                 what writes the status file this reads. Placed second because on
                 a game server it is the tab you reach for most. */}
             {minecraft.status && (

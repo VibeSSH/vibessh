@@ -4,7 +4,7 @@ import { POLL_INTERVALS } from "@/hooks/usePolling";
 import { readApplicationFile } from "@/services/applicationFilesService";
 import { bytesToText } from "@/services/filesService";
 
-/** Mirrors the ServerPulse plugin's `status.json` - see the plugin's `ServerStatus`. */
+/** Mirrors the VibeSSH Metrics plugin's `status.json` - see the plugin's `ServerStatus`. */
 export interface McStatus {
   schema: number;
   updatedAt: string;
@@ -24,14 +24,14 @@ export interface McSample {
   ramPercent: number;
 }
 
-/** Where the ServerPulse plugin writes, relative to the application's working directory. */
+/** Where the VibeSSH Metrics plugin writes, relative to the application's working directory. */
 const STATUS_PATH = ".vibessh/status.json";
 /** How many samples the sparklines keep - five minutes at the detail poll. */
 const HISTORY = 60;
 
 /**
  * The live Minecraft status of an application, or null when it is not running the
- * ServerPulse plugin.
+ * VibeSSH Metrics plugin.
  *
  * Drives both whether the Minecraft tab is shown at all and what it renders, so the tab
  * appears exactly for the servers that can fill it. Reads `status.json` over the same SSH

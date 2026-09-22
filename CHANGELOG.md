@@ -10,8 +10,8 @@ their contents are in the git history between the tags.
 
 ### New
 
-- **A live Minecraft tab for a server running the ServerPulse plugin.** An
-  application grows a Minecraft tab whenever it is running ServerPulse - a small
+- **A live Minecraft tab for a server running the VibeSSH Metrics plugin.** An
+  application grows a Minecraft tab whenever it is running VibeSSH Metrics - a small
   companion plugin that writes a status file VibeSSH reads over its own SSH
   connection. The tab is a monitor: TPS, MSPT, players and memory, each with its
   own history, alongside a per-world table of players, entities and chunks and

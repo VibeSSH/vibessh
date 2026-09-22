@@ -8,7 +8,7 @@ import "./MinecraftStatusCard.css";
 const STALE_AFTER_MS = 30_000;
 
 /**
- * The Minecraft tab's body: a live view of a server running the ServerPulse plugin.
+ * The Minecraft tab's body: a live view of a server running the VibeSSH Metrics plugin.
  *
  * Presentation only - {@link import("@/hooks/useMinecraftStatus").useMinecraftStatus} does the
  * reading and decides whether the tab is shown at all, so this is only ever handed a status
