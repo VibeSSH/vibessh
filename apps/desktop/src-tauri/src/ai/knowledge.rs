@@ -185,6 +185,8 @@ impl KeywordKnowledgeService {
             ("Poradnik - Aplikacje", include_str!("../../../../../shared/guide/applications.pl.md")),
             ("Guide - Application files", include_str!("../../../../../shared/guide/application-files.en.md")),
             ("Poradnik - Pliki aplikacji", include_str!("../../../../../shared/guide/application-files.pl.md")),
+            ("Guide - Who can see an application", include_str!("../../../../../shared/guide/application-access.en.md")),
+            ("Poradnik - Kto widzi aplikację", include_str!("../../../../../shared/guide/application-access.pl.md")),
             ("Guide - Ports", include_str!("../../../../../shared/guide/ports.en.md")),
             ("Poradnik - Porty", include_str!("../../../../../shared/guide/ports.pl.md")),
             ("Guide - Vibe Network", include_str!("../../../../../shared/guide/vibe-network.en.md")),
