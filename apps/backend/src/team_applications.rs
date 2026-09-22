@@ -21,7 +21,7 @@ use crate::audit;
 use crate::auth::AuthUser;
 use crate::authorize::authorize;
 use crate::errors::{ApiError, ApiResult, Detail};
-use crate::models::{PushTeamApplicationRequest, TeamApplication};
+use crate::models::{AddApplicationMemberRequest, ApplicationMember, PushTeamApplicationRequest, TeamApplication};
 use crate::teams::team_for_member;
 use crate::{permissions, AppState};
 
@@ -42,15 +42,160 @@ pub async fn list_applications(
 ) -> ApiResult<Json<Vec<TeamApplication>>> {
     team_for_member(&state.db, team_id, user_id).await?;
 
+    // The allow-list is opt-in: an Application with no `application_members`
+    // rows is visible to the whole team (the behaviour that shipped before
+    // the list existed), and one with rows is visible only to those members
+    // and whoever pushed it. Written as EXISTS/NOT EXISTS rather than a join
+    // so an Application with several allowed members still yields one row.
     let applications: Vec<TeamApplication> = sqlx::query_as(
-        "SELECT id, team_id, team_server_id, local_id, name, blueprint_id, runtime_type, working_directory, \
-                ports, environment, updated_at \
-         FROM team_applications WHERE team_id = $1 ORDER BY name",
+        "SELECT ta.id, ta.team_id, ta.team_server_id, ta.local_id, ta.name, ta.blueprint_id, ta.runtime_type, \
+                ta.working_directory, ta.ports, ta.environment, ta.updated_at \
+         FROM team_applications ta \
+         WHERE ta.team_id = $1 \
+           AND ( \
+             ta.pushed_by = $2 \
+             OR NOT EXISTS (SELECT 1 FROM application_members am WHERE am.application_id = ta.id) \
+             OR EXISTS (SELECT 1 FROM application_members am WHERE am.application_id = ta.id AND am.user_id = $2) \
+           ) \
+         ORDER BY ta.name",
     )
     .bind(team_id)
+    .bind(user_id)
     .fetch_all(&state.db)
     .await?;
     Ok(Json(applications))
+}
+
+/// Confirms an Application is shared with this team, so a member call fails
+/// with a clear `application_not_shared` instead of quietly touching nothing.
+async fn application_in_team(state: &AppState, team_id: Uuid, application_id: Uuid) -> ApiResult<()> {
+    let shared: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM team_applications WHERE id = $1 AND team_id = $2)")
+        .bind(application_id)
+        .bind(team_id)
+        .fetch_one(&state.db)
+        .await?;
+    if !shared {
+        return Err(ApiError::NotFound(Detail::new("application_not_shared", "that application is not shared with this team")));
+    }
+    Ok(())
+}
+
+/// Who may see one shared Application. Reading needs only team membership, the
+/// same as listing the Applications themselves.
+pub async fn list_members(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((team_id, application_id)): Path<(Uuid, Uuid)>,
+) -> ApiResult<Json<Vec<ApplicationMember>>> {
+    team_for_member(&state.db, team_id, user_id).await?;
+    application_in_team(&state, team_id, application_id).await?;
+
+    let members: Vec<ApplicationMember> = sqlx::query_as(
+        "SELECT am.user_id, u.email, u.display_name, am.granted_at \
+         FROM application_members am \
+         JOIN users u ON u.id = am.user_id \
+         WHERE am.application_id = $1 AND am.team_id = $2 \
+         ORDER BY u.display_name",
+    )
+    .bind(application_id)
+    .bind(team_id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(members))
+}
+
+/// Allows one member to see a shared Application.
+///
+/// Managing who sees an Application is part of sharing it, so this takes the
+/// same `applications.create` the push does rather than a permission of its
+/// own. The first grant on an Application flips it from team-wide to
+/// restricted - see `list_applications`.
+pub async fn add_member(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((team_id, application_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<AddApplicationMemberRequest>,
+) -> ApiResult<impl IntoResponse> {
+    authorize(&state.db, team_id, user_id, permissions::APPLICATIONS_CREATE).await?;
+    application_in_team(&state, team_id, application_id).await?;
+
+    let target_is_member: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2)")
+        .bind(team_id)
+        .bind(body.user_id)
+        .fetch_one(&state.db)
+        .await?;
+    if !target_is_member {
+        return Err(ApiError::NotFound(Detail::new("not_a_team_member", "that user isn't a member of this team")));
+    }
+
+    let mut tx = state.db.begin().await?;
+    let insert = sqlx::query(
+        "INSERT INTO application_members (application_id, team_id, user_id, granted_by, granted_at) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(application_id)
+    .bind(team_id)
+    .bind(body.user_id)
+    .bind(user_id)
+    .bind(Utc::now())
+    .execute(&mut *tx)
+    .await;
+    if let Err(sqlx::Error::Database(db_err)) = &insert {
+        if db_err.is_unique_violation() {
+            return Err(ApiError::Conflict(Detail::new("application_member_exists", "that member can already see this application")));
+        }
+    }
+    insert?;
+
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::APPLICATION_ACCESS_GRANTED,
+        "application",
+        Some(application_id),
+        serde_json::json!({ "userId": body.user_id }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::CREATED)
+}
+
+/// Stops one member from seeing a shared Application.
+///
+/// When this removes the last row for an Application, that Application returns
+/// to being visible to the whole team - the opt-in list is empty again. The
+/// caller has to say so, because "remove access" reading as "now everyone can
+/// see it" would be a surprise.
+pub async fn remove_member(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((team_id, application_id, target_user_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> ApiResult<impl IntoResponse> {
+    authorize(&state.db, team_id, user_id, permissions::APPLICATIONS_CREATE).await?;
+
+    let mut tx = state.db.begin().await?;
+    let affected = sqlx::query("DELETE FROM application_members WHERE application_id = $1 AND team_id = $2 AND user_id = $3")
+        .bind(application_id)
+        .bind(team_id)
+        .bind(target_user_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if affected == 0 {
+        return Err(ApiError::NotFound(Detail::new("application_member_not_added", "that member could not already see this application")));
+    }
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::APPLICATION_ACCESS_REVOKED,
+        "application",
+        Some(application_id),
+        serde_json::json!({ "userId": target_user_id }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Trims and bounds, and leaves the refusal to the caller.

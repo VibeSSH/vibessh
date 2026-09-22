@@ -371,6 +371,23 @@ pub struct PushTeamApplicationRequest {
     pub environment: Vec<TeamApplicationEnvironment>,
 }
 
+/// One member on a shared Application's allow-list, joined to their account so
+/// the tab can name them without a second lookup.
+#[derive(sqlx::FromRow, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationMember {
+    pub user_id: Uuid,
+    pub email: String,
+    pub display_name: String,
+    pub granted_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddApplicationMemberRequest {
+    pub user_id: Uuid,
+}
+
 /// Metadata only - no password/private-key-path/passphrase fields exist
 /// here or in the table behind it (see migrations/0006). Secrets stay in
 /// whichever device's OS keyring already has them.

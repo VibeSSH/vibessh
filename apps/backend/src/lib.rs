@@ -108,6 +108,17 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         // that owns each one, never the record a runtime acts on.
         .route("/teams/:team_id/applications", get(team_applications::list_applications).post(team_applications::push_application))
         .route("/teams/:team_id/applications/:application_id", delete(team_applications::remove_application))
+        // The allow-list of who may see one shared Application. Reading needs
+        // team membership; granting and revoking need `applications.create`,
+        // the same as sharing.
+        .route(
+            "/teams/:team_id/applications/:application_id/members",
+            get(team_applications::list_members).post(team_applications::add_member),
+        )
+        .route(
+            "/teams/:team_id/applications/:application_id/members/:user_id",
+            delete(team_applications::remove_member),
+        )
         // The hosted Vibe AI assistant. Authenticated, because the
         // allowance it spends is per account and VibeSSH pays for it.
         .route("/ai/chat", post(ai::chat))
