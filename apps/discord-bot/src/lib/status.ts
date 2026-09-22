@@ -11,6 +11,12 @@ export interface AppStatus {
  * being kept running. */
 const RELEASES_LATEST = "https://api.github.com/repos/VibeSSH/vibessh-releases/releases/latest";
 
+/** How long to wait for a version fetch. Generous on purpose: from the server
+ * the bot runs on, GitHub sometimes answers in well over the few seconds a
+ * desktop would, and a timeout here means the status channel drops back to the
+ * stale env fallback for a whole interval. Better a slow read than a wrong one. */
+const FETCH_TIMEOUT_MS = 20000;
+
 function reason(error: unknown): string {
   return error instanceof Error ? error.message : "unknown";
 }
@@ -20,7 +26,7 @@ function reason(error: unknown): string {
 async function fetchFromReleases(): Promise<AppStatus | null> {
   const response = await fetch(RELEASES_LATEST, {
     headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   const data = (await response.json()) as { tag_name?: string; assets?: { download_count?: number }[] };
@@ -33,7 +39,7 @@ async function fetchFromReleases(): Promise<AppStatus | null> {
 /** Version from `STATUS_URL`, when it is set and answers `{ version }`. */
 async function fetchFromStatusUrl(): Promise<AppStatus | null> {
   if (!env.statusUrl) return null;
-  const response = await fetch(env.statusUrl, { signal: AbortSignal.timeout(8000) });
+  const response = await fetch(env.statusUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!response.ok) return null;
   const data = (await response.json()) as Partial<AppStatus>;
   if (typeof data.version !== "string" || data.version.length === 0) return null;
