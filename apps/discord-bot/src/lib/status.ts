@@ -127,26 +127,40 @@ export async function getStatus(): Promise<AppStatus> {
 }
 
 /** The backend's public numbers. Installations are counted there, anonymously - see the
- * backend's `migrations/0013_update_checks.sql` for what it keeps and what it refuses to. */
+ * backend's `migrations/0013_update_checks.sql` and `0015_update_check_weeks.sql` for what
+ * it keeps and what it refuses to. */
 const STATS_URL = "https://api.vibessh.dev/updates/stats";
 
+export interface Installations {
+  /** Distinct installations that checked for an update yesterday. */
+  daily: number | null;
+  /** Distinct installations that checked during the last full calendar week. */
+  weekly: number | null;
+}
+
+function count(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 /**
- * Distinct installations that checked for an update yesterday, or null when the backend
- * cannot be reached or has no number yet.
+ * Distinct installations yesterday and last week, each null when the backend cannot be
+ * reached or has no number yet.
  *
- * Always one complete day, never a sum: the backend's per-machine hash is not comparable
- * across days, so there is no honest weekly figure to show. Null rather than zero on a
- * failure, so the status channel keeps its last real number instead of announcing nobody.
+ * The weekly figure is a calendar week, never a sum of days: a machine's daily hash is not
+ * comparable across days, so adding days together would count it once per day. It stays
+ * null until the backend has recorded one whole week with weekly hashes. Null rather than
+ * zero on a failure, so a status channel keeps its last real number instead of announcing
+ * nobody.
  */
-export async function getInstallations(): Promise<number | null> {
+export async function getInstallations(): Promise<Installations> {
   try {
     const response = await fetch(STATS_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { installations?: unknown };
-    return typeof data.installations === "number" && Number.isFinite(data.installations) ? data.installations : null;
+    if (!response.ok) return { daily: null, weekly: null };
+    const data = (await response.json()) as { installations?: unknown; weeklyInstallations?: unknown };
+    return { daily: count(data.installations), weekly: count(data.weeklyInstallations) };
   } catch (error) {
-    log.warn(`stats endpoint unreachable, keeping the installations figure as it is (${reason(error)})`);
-    return null;
+    log.warn(`stats endpoint unreachable, keeping the installations figures as they are (${reason(error)})`);
+    return { daily: null, weekly: null };
   }
 }
 

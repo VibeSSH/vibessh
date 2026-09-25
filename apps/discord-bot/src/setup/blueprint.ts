@@ -39,7 +39,7 @@ export interface ChannelSpec {
   /** Post a ticket panel for this language here. */
   ticketPanel?: Lang;
   /** A read-only voice channel whose name the bot keeps updated with live stats. */
-  status?: "downloads" | "version" | "installs";
+  status?: "downloads" | "version" | "installs" | "installsWeek";
 }
 
 export interface CategorySpec {
@@ -134,7 +134,8 @@ export const blueprint: Blueprint = {
       channels: [
         { key: "status-version", name: "🏷️ Wersja: ...", kind: "voice", status: "version" },
         { key: "status-downloads", name: "📥 Pobrania: ...", kind: "voice", status: "downloads" },
-        { key: "status-installs", name: "💻 Aktywne instalacje: ...", kind: "voice", status: "installs" },
+        { key: "status-installs", name: "💻 Aktywne wczoraj: ...", kind: "voice", status: "installs" },
+        { key: "status-installs-week", name: "📅 Aktywne w tygodniu: ...", kind: "voice", status: "installsWeek" },
       ],
     },
     {

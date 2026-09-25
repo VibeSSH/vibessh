@@ -80,7 +80,9 @@ export function buildTermsPanel() {
  */
 export async function buildAboutPanel() {
   const [status, installations] = await Promise.all([getStatus(), getInstallations()]);
-  const installsLine = installations !== null ? `\n**Aktywne instalacje · Active installs:** **${installations.toLocaleString("pl-PL")}**` : "";
+  const installsLine =
+    (installations.daily !== null ? `\n**Aktywne wczoraj · Active yesterday:** **${installations.daily.toLocaleString("pl-PL")}**` : "") +
+    (installations.weekly !== null ? `\n**Aktywne w tygodniu · Active last week:** **${installations.weekly.toLocaleString("pl-PL")}**` : "");
   const small = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small);
   const banner = (url: string) => new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(normalizeImageUrl(url)));
 
