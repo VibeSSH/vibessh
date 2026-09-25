@@ -40,6 +40,15 @@ function isEndpointMissing(error: unknown): boolean {
   return error instanceof CommandError && error.code === "not_found" && typeof error.params.backendCode !== "string";
 }
 
+/** Up to two letters for an avatar: first and last word of a name, or the start of an address. */
+function initialsOf(name: string): string {
+  const words = name.split(/[\s@._-]+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = words[0][0] ?? "";
+  const last = words.length > 1 ? (words[words.length - 1][0] ?? "") : (words[0][1] ?? "");
+  return `${first}${last}`.toUpperCase();
+}
+
 /**
  * Who, of a team, may see this application.
  *
@@ -227,7 +236,23 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
       : t("applicationMembers.restrictedNote");
 
   return (
-    <Card title={t("applicationMembers.title")} subtitle={t("applicationMembers.subtitle")}>
+    <Card
+      title={t("applicationMembers.title")}
+      subtitle={t("applicationMembers.subtitle")}
+      actions={
+        <>
+          {members.length > 0 && (
+            <span className="application-members-count">
+              {t("applicationMembers.accessCount", { granted: members.filter((member) => allowedIds.has(member.userId)).length, total: members.length })}
+            </span>
+          )}
+          <Button variant="secondary" size="sm" onClick={() => navigate("/teams")}>
+            <Icon name="users" size={14} />
+            {t("applicationMembers.manageTeam")}
+          </Button>
+        </>
+      }
+    >
       {error && <p className="page-error-note">{error}</p>}
 
       {teams.length > 1 && (
@@ -269,6 +294,9 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
             const granted = allowedIds.has(member.userId);
             return (
               <li key={member.userId} className="application-members-item">
+                <span className="application-members-avatar" aria-hidden>
+                  {initialsOf(member.displayName || member.email)}
+                </span>
                 <div className="application-members-main">
                   <span className="application-members-name">
                     {member.displayName || member.email}
@@ -276,6 +304,12 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
                   </span>
                   <span className="application-members-email">{member.email}</span>
                 </div>
+                {/* Said in words beside the switch: it sits at the far edge
+                    of a wide row, and a switch alone is easy to misread from
+                    across the screen. */}
+                <span className={`application-members-access${granted ? " application-members-access-granted" : ""}`}>
+                  {granted ? t("applicationMembers.hasAccess") : t("applicationMembers.noAccess")}
+                </span>
                 <Switch
                   checked={granted}
                   disabled={!canManage || pendingBackend || busy === member.userId}

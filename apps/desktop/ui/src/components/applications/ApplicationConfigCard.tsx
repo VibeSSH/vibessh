@@ -93,7 +93,17 @@ export function ApplicationConfigCard({ applicationId, application, blueprint, o
   }
 
   return (
-    <Card title={t("applicationConfig.title")}>
+    <Card
+      title={t("applicationConfig.title")}
+      actions={
+        !editing && !runtimeTypeUnsupported ? (
+          <Button variant="secondary" size="sm" onClick={startEditing}>
+            <Icon name="edit" size={14} />
+            {t("applicationConfig.edit")}
+          </Button>
+        ) : undefined
+      }
+    >
       {runtimeTypeUnsupported ? (
         <p className="form-note">{t("applicationConfig.runtimeTypeUnsupportedNote", { blueprint: blueprint.name })}</p>
       ) : (
@@ -141,14 +151,6 @@ export function ApplicationConfigCard({ applicationId, application, blueprint, o
               </Fragment>
             ))}
           </div>
-          {!runtimeTypeUnsupported && (
-            <div className="form-actions">
-              <Button variant="secondary" size="sm" onClick={startEditing}>
-                <Icon name="edit" size={14} />
-                {t("applicationConfig.edit")}
-              </Button>
-            </div>
-          )}
         </>
       )}
     </Card>

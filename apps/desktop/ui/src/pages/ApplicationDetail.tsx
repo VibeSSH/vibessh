@@ -15,7 +15,8 @@ import { ApplicationTabs } from "@/components/applications/ApplicationTabs";
 import { useApplicationTabsStore } from "@/stores/applicationTabsStore";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
-import { Sparkline } from "@/components/ui/Sparkline";
+import { LivePill } from "@/components/ui/LivePill";
+import { MetricTile, MetricTileGrid } from "@/components/ui/MetricTile";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
@@ -24,6 +25,8 @@ import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCa
 import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
 import { SchedulerStatusCard } from "@/components/applications/SchedulerStatusCard";
 import { useSchedulerStatus } from "@/hooks/useSchedulerStatus";
+import { useLiveResourceStats } from "@/hooks/useLiveResourceStats";
+import type { ResourceStatsSample } from "@/services/applicationService";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -65,9 +68,14 @@ import "./ApplicationDetail.css";
 import { errorMessage } from "@/services/tauri";
 import { BlueprintIcon } from "@/components/applications/BlueprintIcon";
 
-/** How many resource samples the charts keep - five minutes at
- * `POLL_INTERVALS.applicationDetail`. */
-const HISTORY_SAMPLES = 60;
+/** How far back the charts reach. A span of time rather than a sample count,
+ * because samples now arrive at two rates: about one a second from the live
+ * stream, one every few seconds from the poll it falls back to. */
+const HISTORY_WINDOW_MS = 5 * 60 * 1000;
+
+/** How often the usage poll runs while the live stream carries CPU and
+ * memory - it is then only there for uptime, which the stream lacks. */
+const USAGE_POLL_WHILE_STREAMING_MS = 30_000;
 
 const LOG_TAIL_LINES = 500;
 
@@ -115,7 +123,11 @@ export function ApplicationDetail() {
    * bargain any live meter makes, and better than implying a past this app
    * does not have.
    */
-  const [history, setHistory] = useState<{ cpu: number; ram: number }[]>([]);
+  const [history, setHistory] = useState<{ cpu: number; ram: number; at: number }[]>([]);
+  const appendSample = useCallback((cpu: number, ram: number) => {
+    const now = Date.now();
+    setHistory((previous) => [...previous.filter((sample) => now - sample.at <= HISTORY_WINDOW_MS), { cpu, ram, at: now }]);
+  }, []);
   /**
    * Which tab is open, held in the URL rather than in component state.
    *
@@ -233,16 +245,43 @@ export function ApplicationDetail() {
    * Only while the Application is running: `docker stats` on a stopped
    * container is a round trip whose answer is always nothing.
    */
+  /**
+   * CPU and memory as a live stream while a Docker Application runs - one
+   * reading a second, over one held-open SSH channel, the way Pterodactyl's
+   * panel gets them from Wings. The poll below stays as the fallback (and
+   * for uptime), so anything that cannot stream behaves exactly as before.
+   */
+  const [liveSample, setLiveSample] = useState<ResourceStatsSample | null>(null);
+  const { streaming } = useLiveResourceStats(
+    id,
+    // Overview only - the charts and the usage card live there. Held open on
+    // the other tabs it was one more channel on a connection whose `sshd`
+    // allows ten, while the file editor needed them.
+    application?.status === "running" && application.runtimeType === "docker" && tab === "overview",
+    (sample) => {
+      setLiveSample(sample);
+      appendSample(sample.cpuPercent ?? 0, sample.ramBytes ?? 0);
+    },
+  );
+
   const usageQuery = useQuery({
     queryKey: [...queryKeys.application(id ?? ""), "usage"],
     queryFn: () => getApplicationResourceUsage(id as string),
     enabled: Boolean(id) && application?.status === "running",
-    refetchInterval: POLL_INTERVALS.applicationDetail,
+    refetchInterval: streaming ? USAGE_POLL_WHILE_STREAMING_MS : POLL_INTERVALS.applicationDetail,
   });
   // Gated on the status, not on the query. A disabled query keeps its last
   // answer, so without this a container you just stopped would keep showing
   // the CPU and memory it was using while it ran.
-  const resourceUsage = application?.status === "running" ? (usageQuery.data ?? null) : null;
+  const polledUsage = application?.status === "running" ? (usageQuery.data ?? null) : null;
+  const resourceUsage =
+    streaming && liveSample && application?.status === "running"
+      ? {
+          uptimeSeconds: polledUsage?.uptimeSeconds,
+          cpuPercent: liveSample.cpuPercent ?? undefined,
+          ramBytes: liveSample.ramBytes ?? undefined,
+        }
+      : polledUsage;
 
   const loadError = applicationQuery.error ? errorMessage(applicationQuery.error, t) : null;
 
@@ -292,15 +331,15 @@ export function ApplicationDetail() {
    * is none.
    */
   useEffect(() => {
+    // The stream already adds a sample a second; the slow poll it leaves
+    // running for uptime would otherwise add a second, stale one.
+    if (streaming) return;
     const usage = usageQuery.data;
     if (!usage) return;
-    setHistory((previous) => {
-      const next = [...previous, { cpu: usage.cpuPercent ?? 0, ram: usage.ramBytes ?? 0 }];
-      // Five minutes at the page's own refresh interval. Long enough to show
-      // a spike settling, short enough that the window is about now rather
-      // than about the whole session.
-      return next.length > HISTORY_SAMPLES ? next.slice(next.length - HISTORY_SAMPLES) : next;
-    });
+    // Five minutes (`HISTORY_WINDOW_MS`). Long enough to show a spike
+    // settling, short enough that the window is about now rather than about
+    // the whole session.
+    appendSample(usage.cpuPercent ?? 0, usage.ramBytes ?? 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usageQuery.dataUpdatedAt]);
 
@@ -461,6 +500,21 @@ export function ApplicationDetail() {
      fresh array literal on every render, which is enough on its own to make
      the memoised rows inside the Files tab miss every time. */
   const knownFiles = useMemo(() => blueprint?.knownFiles ?? [], [blueprint]);
+  // The Settings tab's sections - only the ones that apply to this kind of
+  // Application, so the list never offers a page with nothing on it.
+  type SettingsSection = "general" | "environment" | "image" | "health" | "limits";
+  const settingsSections: { key: SettingsSection; icon: string; label: string }[] = [
+    { key: "general", icon: "settings", label: "applicationDetail.settingsGeneral" },
+    ...(features.includes("environment") ? [{ key: "environment" as const, icon: "key", label: "applicationDetail.settingsEnvironment" }] : []),
+    ...(application?.runtimeType === "docker" ? [{ key: "image" as const, icon: "box", label: "applicationDetail.settingsImage" }] : []),
+    ...(features.includes("healthCheck") ? [{ key: "health" as const, icon: "activity", label: "applicationDetail.settingsHealth" }] : []),
+    ...(application && ["docker", "systemd", "remoteProcess"].includes(application.runtimeType)
+      ? [{ key: "limits" as const, icon: "server", label: "applicationDetail.settingsLimits" }]
+      : []),
+  ];
+  const requestedSection = searchParams.get("section");
+  const settingsSection: SettingsSection = settingsSections.find((entry) => entry.key === requestedSection)?.key ?? "general";
+  const setSettingsSection = (next: SettingsSection) => setSearchParams({ tab: "settings", section: next }, { replace: true });
   const migrationTargets = servers.filter((s) => s.id !== application?.serverId);
   const migrateTargetWarning =
     migrateTargetServerId &&
@@ -707,98 +761,138 @@ export function ApplicationDetail() {
                     for a blueprint that declares none, which is most. */}
                 <CommandConsoleCard applicationId={id} blueprint={blueprint} />
 
-                {/* Under the console rather than beside it: these are worth
-                    a glance, and the console is worth the width. Only while
-                    there is something to plot - two empty boxes under a
-                    stopped Application say less than nothing. */}
-                {history.length > 0 && (
-                  <div className="application-detail-charts">
-                    <Card title={t("applicationDetail.cpu")}>
-                      <p className="application-detail-chart-value">{resourceUsage?.cpuPercent?.toFixed(1) ?? "\u2014"}%</p>
-                      <Sparkline
-                        values={history.map((sample) => sample.cpu)}
-                        label={t("applicationDetail.cpuChartLabel", { value: resourceUsage?.cpuPercent?.toFixed(1) ?? "0" })}
+                {/* One card for what the process is using right now, in the
+                    same tiles as the Minecraft tab. It used to be two chart
+                    cards here and, in the column beside them, a third card
+                    repeating the same two numbers. */}
+                <Card
+                  title={t("applicationDetail.resourcesTitle")}
+                  actions={streaming ? <LivePill stale={false} liveLabel={t("minecraft.live")} staleLabel="" /> : undefined}
+                >
+                  {application.status === "running" ? (
+                    <MetricTileGrid>
+                      <MetricTile
+                        label={t("applicationDetail.cpu")}
+                        value={resourceUsage?.cpuPercent != null ? resourceUsage.cpuPercent.toFixed(1) : "—"}
+                        unit="%"
+                        sub={t("applicationDetail.cpuSub")}
+                        spark={
+                          history.length > 0
+                            ? {
+                                values: history.map((sample) => sample.cpu),
+                                label: t("applicationDetail.cpuChartLabel", { value: resourceUsage?.cpuPercent?.toFixed(1) ?? "0" }),
+                              }
+                            : undefined
+                        }
                       />
-                    </Card>
-                    <Card title={t("applicationDetail.ram")}>
-                      <p className="application-detail-chart-value">
-                        {resourceUsage?.ramBytes ? `${(resourceUsage.ramBytes / 1024 / 1024).toFixed(0)} MB` : "\u2014"}
-                      </p>
-                      <Sparkline
-                        values={history.map((sample) => sample.ram / 1024 / 1024)}
-                        label={t("applicationDetail.ramChartLabel", {
-                          value: resourceUsage?.ramBytes ? (resourceUsage.ramBytes / 1024 / 1024).toFixed(0) : "0",
-                        })}
+                      <MetricTile
+                        label={t("applicationDetail.ram")}
+                        value={resourceUsage?.ramBytes ? (resourceUsage.ramBytes / 1024 / 1024).toFixed(0) : "—"}
+                        unit="MB"
+                        sub={t("applicationDetail.ramSub")}
+                        spark={
+                          history.length > 0
+                            ? {
+                                values: history.map((sample) => sample.ram / 1024 / 1024),
+                                label: t("applicationDetail.ramChartLabel", {
+                                  value: resourceUsage?.ramBytes ? (resourceUsage.ramBytes / 1024 / 1024).toFixed(0) : "0",
+                                }),
+                              }
+                            : undefined
+                        }
                       />
-                    </Card>
-                  </div>
-                )}
-              </div>
-
-              <aside className="application-detail-aside">
-                <Card title={t("applicationDetail.resourceUsageTitle")}>
-                  {application.status === "running" && resourceUsage ? (
-                    <div className="application-detail-facts">
-                      <div className="application-detail-fact">
-                        <span className="form-label">{t("applicationDetail.cpu")}</span>
-                        <p className="application-detail-stat-value">{resourceUsage.cpuPercent?.toFixed(1) ?? "\u2014"}%</p>
-                      </div>
-                      <div className="application-detail-fact">
-                        <span className="form-label">{t("applicationDetail.ram")}</span>
-                        <p className="application-detail-stat-value">
-                          {resourceUsage.ramBytes ? `${(resourceUsage.ramBytes / 1024 / 1024).toFixed(0)} MB` : "\u2014"}
-                        </p>
-                      </div>
-                      <div className="application-detail-fact">
-                        <span className="form-label">{t("applicationDetail.uptime")}</span>
-                        <p className="application-detail-stat-value">
-                          {resourceUsage.uptimeSeconds ? formatUptime(resourceUsage.uptimeSeconds) : "\u2014"}
-                        </p>
-                      </div>
-                    </div>
+                      <MetricTile
+                        label={t("applicationDetail.uptime")}
+                        value={resourceUsage?.uptimeSeconds ? formatUptime(resourceUsage.uptimeSeconds) : "—"}
+                        sub={
+                          resourceUsage?.uptimeSeconds
+                            ? t("applicationDetail.runningSince", {
+                                time: new Date(Date.now() - resourceUsage.uptimeSeconds * 1000).toLocaleString(i18n.language, {
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                }),
+                              })
+                            : undefined
+                        }
+                      />
+                    </MetricTileGrid>
                   ) : (
                     <p className="form-note">{t("applicationDetail.notRunning")}</p>
                   )}
                 </Card>
+              </div>
 
+              <aside className="application-detail-aside">
                 <Card title={t("applicationDetail.whereTitle")}>
-                  <div className="application-detail-facts">
-                    <div className="application-detail-fact">
-                      <span className="form-label">{t("applicationDetail.node")}</span>
-                      <p className="application-detail-fact-value">{serverName ?? t("applicationCard.local")}</p>
+                  <div className="overview-facts">
+                    <div className="overview-fact">
+                      <Icon name="server" size={14} />
+                      <div className="overview-fact-text">
+                        <span className="overview-fact-label">{t("applicationDetail.node")}</span>
+                        <span className="overview-fact-value">{serverName ?? t("applicationCard.local")}</span>
+                      </div>
                     </div>
-                    <div className="application-detail-fact">
-                      <span className="form-label">{t("applicationDetail.runtime")}</span>
-                      <p className="application-detail-fact-value">{application.runtimeType}</p>
+                    <div className="overview-fact">
+                      <Icon name="box" size={14} />
+                      <div className="overview-fact-text">
+                        <span className="overview-fact-label">{t("applicationDetail.runtime")}</span>
+                        <span className="overview-fact-value">{application.runtimeType}</span>
+                      </div>
                     </div>
-                    <div className="application-detail-fact">
-                      <span className="form-label">{t("applicationDetail.workingDirectory")}</span>
-                      <p className="application-detail-fact-value">{application.workingDirectory}</p>
+                    <div className="overview-fact">
+                      <Icon name="folder" size={14} />
+                      <div className="overview-fact-text">
+                        <span className="overview-fact-label">{t("applicationDetail.workingDirectory")}</span>
+                        <span className="overview-fact-value overview-fact-mono" title={application.workingDirectory}>
+                          {application.workingDirectory}
+                        </span>
+                      </div>
+                      <IconButton
+                        icon="copy"
+                        size="sm"
+                        title={t("applicationDetail.copyPath")}
+                        onClick={() => {
+                          navigator.clipboard
+                            .writeText(application.workingDirectory)
+                            .then(() => toastSuccess(t("applicationDetail.pathCopied")))
+                            .catch(() => {});
+                        }}
+                      />
                     </div>
-                    {/* The last fact the removed Details card carried that
-                        this column did not. Moved rather than kept as a
-                        reason for a whole duplicate card to survive. */}
-                    <div className="application-detail-fact">
-                      <span className="form-label">{t("applicationDetail.createdAt")}</span>
-                      <p className="application-detail-fact-value">{new Date(application.createdAt).toLocaleString()}</p>
+                    <div className="overview-fact">
+                      <Icon name="history" size={14} />
+                      <div className="overview-fact-text">
+                        <span className="overview-fact-label">{t("applicationDetail.createdAt")}</span>
+                        <span className="overview-fact-value">
+                          {new Date(application.createdAt).toLocaleString(i18n.language, { dateStyle: "medium", timeStyle: "short" })}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </Card>
 
                 {features.includes("ports") && (
-                  <Card title={t("applicationDetail.tabPorts")}>
+                  <Card
+                    title={t("applicationDetail.tabPorts")}
+                    actions={
+                      <Button variant="secondary" size="sm" onClick={() => setTab("ports")}>
+                        {t("applicationDetail.managePorts")}
+                      </Button>
+                    }
+                  >
                     {application.ports.length === 0 ? (
                       <p className="form-note">{t("applicationDetail.noPorts")}</p>
                     ) : (
-                      <div className="application-detail-facts">
+                      <div className="overview-ports">
                         {application.ports.map((port) => (
-                          <div key={port.id} className="application-detail-port">
-                            <span className="application-detail-port-name">{port.name}</span>
-                            <span className="application-detail-port-map">
-                              {port.externalPort ? `${port.externalPort} \u2192 ${port.internalPort}` : `\u2014 \u2192 ${port.internalPort}`}
-                              {" "}
-                              {port.protocol}
+                          <div key={port.id} className="overview-port">
+                            <span className="overview-port-name">{port.name}</span>
+                            <span className="overview-port-map">
+                              {port.externalPort ? `${port.externalPort} → ${port.internalPort}` : `— → ${port.internalPort}`}
                             </span>
+                            <span className="overview-port-protocol">{port.protocol.toUpperCase()}</span>
                           </div>
                         ))}
                       </div>
@@ -809,61 +903,84 @@ export function ApplicationDetail() {
             </div>
           )}
 
+          {/* One section at a time, picked from the list on the left. It was
+              every card stacked on one page - configuration, type, variables,
+              image, health check, limits - which made the one somebody came
+              for a scroll away and the rest noise around it. The section is
+              in the address like the tab is, so it survives a reload and can
+              be linked to. */}
           {tab === "settings" && (
-            <div className="application-detail-overview">
+            <div className="application-settings">
+              <nav className="application-settings-nav" aria-label={t("applicationDetail.tabSettings")}>
+                {settingsSections.map((entry) => (
+                  <button
+                    key={entry.key}
+                    className={`application-settings-nav-item ${settingsSection === entry.key ? "application-settings-nav-item-active" : ""}`}
+                    onClick={() => setSettingsSection(entry.key)}
+                    aria-current={settingsSection === entry.key ? "page" : undefined}
+                  >
+                    <Icon name={entry.icon} size={15} />
+                    <span>{t(entry.label)}</span>
+                  </button>
+                ))}
+              </nav>
 
-              <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onApplied={applyUpdate} />
-
-              {/* Directly under the fields it changes the meaning of: this is
-                  what decides whether the card above asks for a Paper version
-                  or a container image. */}
-              <BlueprintSwitchCard applicationId={id} application={application} current={blueprint} onChanged={reload} />
-
-              {/* Folded in from its own tab. Environment variables and the
-                  blueprint's own fields answer one question between them -
-                  how this process comes up - and splitting that across two
-                  tabs meant opening both to know the answer. Placed
-                  directly after the blueprint fields and before the health
-                  check and limits, which watch the result rather than
-                  decide it. */}
-              {features.includes("environment") && <EnvironmentTab application={application} blueprint={blueprint} onApplied={applyUpdate} />}
-
-              {application.runtimeType === "docker" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
-
-              {features.includes("healthCheck") && (
-                <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />
-              )}
-
-              {(application.runtimeType === "docker" || application.runtimeType === "systemd" || application.runtimeType === "remoteProcess") && (
-                <ResourceLimitsCard applicationId={id} application={application} onApplied={applyUpdate} />
-              )}
+              <div className="application-settings-content">
+                {settingsSection === "general" && (
+                  <>
+                    <ApplicationConfigCard applicationId={id} application={application} blueprint={blueprint} onApplied={applyUpdate} />
+                    {/* Directly under the fields it changes the meaning of:
+                        this is what decides whether the card above asks for
+                        a Paper version or a container image. */}
+                    <BlueprintSwitchCard applicationId={id} application={application} current={blueprint} onChanged={reload} />
+                  </>
+                )}
+                {settingsSection === "environment" && <EnvironmentTab application={application} blueprint={blueprint} onApplied={applyUpdate} />}
+                {settingsSection === "image" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
+                {settingsSection === "health" && <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />}
+                {settingsSection === "limits" && <ResourceLimitsCard applicationId={id} application={application} onApplied={applyUpdate} />}
+              </div>
             </div>
           )}
 
           {tab === "logs" && (
-            <Card>
+            <Card
+              title={t("applicationDetail.tabLogs")}
+              subtitle={t("applicationDetail.logsSubtitle", { lines: LOG_TAIL_LINES })}
+              actions={
+                <>
+                  {/* In the header rather than under the log: 500 lines of
+                      output put the buttons a long scroll away from where
+                      somebody opening the tab starts reading. */}
+                  <IconButton
+                    icon="chevron-up"
+                    size="sm"
+                    title={t("applicationDetail.logsToTop")}
+                    onClick={() => scrollLogsTo("top")}
+                    disabled={logsLoading || logs.length === 0}
+                  />
+                  <IconButton
+                    icon="chevron-down"
+                    size="sm"
+                    title={t("applicationDetail.logsToBottom")}
+                    onClick={() => scrollLogsTo("bottom")}
+                    disabled={logsLoading || logs.length === 0}
+                  />
+                  <Button variant="secondary" size="sm" onClick={() => setClearingLogs(true)} disabled={logsLoading}>
+                    <Icon name="trash" size={14} />
+                    {t("applicationDetail.logsClear")}
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={loadLogs} disabled={logsLoading}>
+                    <Icon name="refresh-cw" size={14} />
+                    {t("common.refresh")}
+                  </Button>
+                </>
+              }
+            >
               {logsError && <p className="form-note form-note-danger form-note-spaced">{logsError}</p>}
               <pre className="container-logs-output" ref={logsRef}>
                 {logsLoading ? t("applicationDetail.logsLoading") : logs.join("\n") || t("applicationDetail.logsEmpty")}
               </pre>
-              <div className="form-actions">
-                <Button variant="secondary" onClick={() => scrollLogsTo("top")} disabled={logsLoading || logs.length === 0}>
-                  <Icon name="chevron-up" size={14} />
-                  {t("applicationDetail.logsToTop")}
-                </Button>
-                <Button variant="secondary" onClick={() => scrollLogsTo("bottom")} disabled={logsLoading || logs.length === 0}>
-                  <Icon name="chevron-down" size={14} />
-                  {t("applicationDetail.logsToBottom")}
-                </Button>
-                <Button variant="secondary" onClick={() => setClearingLogs(true)} disabled={logsLoading}>
-                  <Icon name="trash" size={14} />
-                  {t("applicationDetail.logsClear")}
-                </Button>
-                <Button variant="secondary" onClick={loadLogs} disabled={logsLoading}>
-                  <Icon name="refresh-cw" size={14} />
-                  {t("common.refresh")}
-                </Button>
-              </div>
             </Card>
           )}
 

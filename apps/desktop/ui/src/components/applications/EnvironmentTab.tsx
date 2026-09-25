@@ -13,6 +13,7 @@ import type { ApplicationDetail, Blueprint, EnvironmentVariable } from "@/types/
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
 import { errorMessage } from "@/services/tauri";
+import { toastSuccess } from "@/stores/toastStore";
 
 interface EnvironmentTabProps {
   application: ApplicationDetail;
@@ -47,11 +48,26 @@ export function connectionNote(application: ApplicationDetail, blueprint: Bluepr
   return { host: connection.hostEnv, port: connection.portEnv };
 }
 
+/** A variable whose name says it holds a credential - masked until revealed. */
+function looksSensitive(key: string): boolean {
+  return /(PASS|SECRET|TOKEN|PRIVATE|CREDENTIAL|API_?KEY|_KEY$)/i.test(key);
+}
+
 export function EnvironmentTab({ application, blueprint, onApplied }: EnvironmentTabProps) {
   const { t } = useTranslation();
   const applyToContainer = useContainerApply();
   const [formOpen, setFormOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  // Sensitive-looking values shown on request, one row at a time, and only
+  // for as long as this screen is open.
+  const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
+  const toggleRevealed = (key: string) =>
+    setRevealed((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,37 +101,43 @@ export function EnvironmentTab({ application, blueprint, onApplied }: Environmen
 
   return (
     <div className="application-detail-overview">
-      <div className="application-detail-header-row">
-        <p className="form-note">
-          {application.runtimeType === "docker"
+      {error && <p className="page-error-note">{error}</p>}
+
+      <Card
+        title={t("applicationDetail.environmentTitle")}
+        subtitle={
+          application.runtimeType === "docker"
             ? application.status === "running"
               ? t("applicationConfig.recreateAutoNote")
               : t("applicationConfig.recreateStoppedNote")
-            : t("applicationConfig.restartNote")}
-        </p>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditingKey(null);
-            setFormOpen(true);
-          }}
-          disabled={busy}
-        >
-          <Icon name="plus" size={14} />
-          {t("applicationDetail.addEnvVar")}
-        </Button>
-      </div>
-
-      {error && <p className="page-error-note">{error}</p>}
-
-      {connection && <p className="form-note">{t("applicationDetail.connectionEnvNote", { host: connection.host, port: connection.port })}</p>}
-
-      <Card>
+            : t("applicationConfig.restartNote")
+        }
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingKey(null);
+              setFormOpen(true);
+            }}
+            disabled={busy}
+          >
+            <Icon name="plus" size={14} />
+            {t("applicationDetail.addEnvVar")}
+          </Button>
+        }
+      >
+        {connection && <p className="form-note">{t("applicationDetail.connectionEnvNote", { host: connection.host, port: connection.port })}</p>}
         {application.environment.length === 0 ? (
           <EmptyState icon="settings" title={t("applicationDetail.environmentEmptyTitle")} description={t("applicationDetail.environmentEmpty")} />
         ) : (
           <ul className="server-list">
-            {application.environment.map((row) => (
+            {application.environment.map((row) => {
+              // Masked unless asked: a stored secret always, and anything
+              // whose name says it is one - a DB password added as a plain
+              // variable used to sit on this screen in the clear, and so on
+              // every screenshot of it.
+              const masked = row.isSecret || (looksSensitive(row.key) && !revealed.has(row.key));
+              return (
               <li key={row.key} className="server-list-item">
                 <div className="server-list-main">
                   <span className="server-list-name" title={row.key}>
@@ -126,8 +148,29 @@ export function EnvironmentTab({ application, blueprint, onApplied }: Environmen
                       </span>
                     )}
                   </span>
-                  <span className="server-list-host">{row.isSecret ? t("applicationDetail.envSecretMasked") : row.value}</span>
+                  <span className="server-list-host env-value">{masked ? t("applicationDetail.envSecretMasked") : row.value}</span>
                 </div>
+                {!row.isSecret && looksSensitive(row.key) && (
+                  <IconButton
+                    icon={revealed.has(row.key) ? "eye-off" : "eye"}
+                    size="sm"
+                    title={revealed.has(row.key) ? t("applicationDetail.envHide", { name: row.key }) : t("applicationDetail.envReveal", { name: row.key })}
+                    onClick={() => toggleRevealed(row.key)}
+                  />
+                )}
+                {!row.isSecret && (
+                  <IconButton
+                    icon="copy"
+                    size="sm"
+                    title={t("applicationDetail.envCopy", { name: row.key })}
+                    onClick={() => {
+                      navigator.clipboard
+                        .writeText(row.value)
+                        .then(() => toastSuccess(t("applicationDetail.envCopied", { name: row.key })))
+                        .catch(() => {});
+                    }}
+                  />
+                )}
                 <IconButton
                   icon="edit"
                   size="sm"
@@ -147,7 +190,8 @@ export function EnvironmentTab({ application, blueprint, onApplied }: Environmen
                   disabled={busy}
                 />
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Card>

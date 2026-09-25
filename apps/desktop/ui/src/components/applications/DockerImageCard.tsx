@@ -80,7 +80,23 @@ export function DockerImageCard({ applicationId, application, onSaved }: DockerI
   }
 
   return (
-    <Card title={t("dockerImage.title")}>
+    <Card
+      title={t("dockerImage.title")}
+      actions={
+        !editing ? (
+          <>
+            <Button variant="secondary" size="sm" onClick={handleUpdate} disabled={updating || !currentImage} title={t("dockerImage.updateAria", { image: currentImage })}>
+              <Icon name="refresh-cw" size={14} />
+              {updating ? t("dockerImage.updating") : t("dockerImage.update")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={startEditing} disabled={updating}>
+              <Icon name="edit" size={14} />
+              {t("dockerImage.change")}
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
       <p className="form-note">{t("dockerImage.dockerNote")}</p>
 
       {editing ? (
@@ -105,16 +121,6 @@ export function DockerImageCard({ applicationId, application, onSaved }: DockerI
           <div className="wizard-review-grid">
             <span className="wizard-review-label">{t("dockerImage.currentImage")}</span>
             <span className="wizard-review-value">{currentImage || "-"}</span>
-          </div>
-          <div className="form-actions">
-            <Button variant="secondary" size="sm" onClick={handleUpdate} disabled={updating || !currentImage} title={t("dockerImage.updateAria", { image: currentImage })}>
-              <Icon name="refresh-cw" size={14} />
-              {updating ? t("dockerImage.updating") : t("dockerImage.update")}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={startEditing} disabled={updating}>
-              <Icon name="edit" size={14} />
-              {t("dockerImage.change")}
-            </Button>
           </div>
         </>
       )}

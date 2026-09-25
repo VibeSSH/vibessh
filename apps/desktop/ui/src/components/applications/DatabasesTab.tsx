@@ -8,6 +8,7 @@ import { formatReachableDatabaseAddress, isLoopback, reachableDatabaseAddress } 
 import { open } from "@tauri-apps/plugin-shell";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
@@ -191,6 +192,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     <div className="application-detail-overview">
       {error && <p className="page-error-note">{error}</p>}
 
+      <Card title={t("databasesTab.title")} subtitle={t("databasesTab.subtitle")}>
       {loading ? (
         <SkeletonRows />
       ) : databases.length === 0 ? (
@@ -260,7 +262,9 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
       )}
 
       {rowError && <p className="form-note form-note-danger form-note-spaced">{rowError}</p>}
+      </Card>
 
+      <Card title={t("databasesTab.createTitle")}>
       {installHostId && (
         <div className="application-detail-header-row">
           <p className="form-note">{t("databasesTab.installServerOffer", { name: hostFor(installHostId)?.name ?? "" })}</p>
@@ -293,6 +297,7 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
           <p className="form-note">{t("databasesTab.generatedNote")}</p>
         </form>
       )}
+      </Card>
 
       {deletingDatabase && (
         <div className="modal-backdrop" {...deleteBackdrop.backdropProps}>

@@ -48,7 +48,7 @@ function formatSize(bytes: number): string {
  * doc comment for why a schedule only actually runs while VibeSSH is open,
  * surfaced here via `scheduleNote` rather than left implicit. */
 export function ApplicationBackupsTab({ applicationId, applicationStatus }: ApplicationBackupsTabProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isStopped = applicationStatus === "stopped" || applicationStatus === "unknown" || applicationStatus === "failed";
 
   const queryClient = useQueryClient();
@@ -71,6 +71,10 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
   const [schedule, setSchedule] = useState<BackupSchedule | null>(null);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  // Shown as a summary until somebody asks to change it; the saved copy is
+  // what Cancel goes back to.
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [savedSchedule, setSavedSchedule] = useState<BackupSchedule | null>(null);
 
   const {
     data: backups = [],
@@ -87,7 +91,12 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     void queryClient.invalidateQueries({ queryKey: queryKeys.applicationBackups(applicationId) });
   };
   useEffect(() => {
-    getApplicationBackupSchedule(applicationId).then(setSchedule).catch(() => {});
+    getApplicationBackupSchedule(applicationId)
+      .then((loaded) => {
+        setSchedule(loaded);
+        setSavedSchedule(loaded);
+      })
+      .catch(() => {});
   }, [applicationId]);
 
   async function handleCreate() {
@@ -154,7 +163,10 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     setScheduleBusy(true);
     setScheduleError(null);
     try {
-      setSchedule(await setApplicationBackupSchedule(applicationId, schedule));
+      const saved = await setApplicationBackupSchedule(applicationId, schedule);
+      setSchedule(saved);
+      setSavedSchedule(saved);
+      setEditingSchedule(false);
       toastSuccess(t("applicationBackups.scheduleSavedToast"));
     } catch (err) {
       setScheduleError(errorMessage(err, t));
@@ -163,130 +175,219 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     }
   }
 
+  const totalBytes = backups.reduce((sum, backup) => sum + backup.sizeBytes, 0);
+  const newest = backups.reduce<ApplicationBackup | null>((latest, backup) => (!latest || backup.createdAt > latest.createdAt ? backup : latest), null);
+
   return (
     <div className="application-detail-overview">
-      <Card title={t("applicationBackups.scheduleTitle")}>
-        {schedule && (
-          <form className="server-form" onSubmit={handleSaveSchedule}>
-            {scheduleError && <p className="form-note form-note-danger form-note-spaced">{scheduleError}</p>}
-            <Switch
-              checked={schedule.enabled}
-              onChange={(enabled) => setSchedule({ ...schedule, enabled })}
-              label={t("applicationBackups.scheduleEnable")}
-            />
-            {schedule.enabled && (
-              <div className="form-row">
-                <label className="form-field">
-                  <span className="form-label">{t("applicationBackups.scheduleInterval")}</span>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min={1}
-                    value={schedule.intervalHours}
-                    onChange={(e) => setSchedule({ ...schedule, intervalHours: Number(e.target.value) })}
-                  />
-                </label>
-                <label className="form-field">
-                  <span className="form-label">{t("applicationBackups.scheduleRetention")}</span>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min={1}
-                    value={schedule.retentionCount}
-                    onChange={(e) => setSchedule({ ...schedule, retentionCount: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-            )}
-            {schedule.enabled && (
-              <div className="form-row">
-                <label className="form-field">
-                  <span className="form-label">{t("applicationBackups.scheduleMaxAge")}</span>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min={1}
-                    value={schedule.retentionMaxAgeDays ?? ""}
-                    onChange={(e) => setSchedule({ ...schedule, retentionMaxAgeDays: e.target.value ? Number(e.target.value) : undefined })}
-                    placeholder={t("applicationBackups.scheduleMaxAgePlaceholder")}
-                  />
-                </label>
-                <label className="form-field">
-                  <span className="form-label">{t("applicationBackups.scheduleMaxSize")}</span>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min={1}
-                    value={schedule.retentionMaxTotalBytes ? Math.round(schedule.retentionMaxTotalBytes / (1024 * 1024)) : ""}
-                    onChange={(e) =>
-                      setSchedule({ ...schedule, retentionMaxTotalBytes: e.target.value ? Number(e.target.value) * 1024 * 1024 : undefined })
-                    }
-                    placeholder={t("applicationBackups.scheduleMaxSizePlaceholder")}
-                  />
-                </label>
-              </div>
-            )}
-            {schedule.enabled && <p className="form-note">{t("applicationBackups.scheduleRetentionNote")}</p>}
-            <p className="form-note">{t("applicationBackups.scheduleNote")}</p>
-            <div className="form-actions">
-              <Button type="submit" size="sm" disabled={scheduleBusy}>
-                {scheduleBusy ? t("common.saving") : t("common.save")}
-              </Button>
-            </div>
-          </form>
-        )}
-      </Card>
-
-      <Card title={t("applicationBackups.title")}>
-        <div className="application-backups-toolbar">
-          <GuideLink topic="backups" />
-          <Button size="sm" onClick={handleCreate} disabled={creating}>
-            <Icon name="archive" size={14} />
-            {creating ? t("applicationBackups.creating") : t("applicationBackups.createNow")}
-          </Button>
-        </div>
-        {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
-        {loading ? (
-          <SkeletonRows />
-        ) : backups.length === 0 ? (
-          <EmptyState icon="archive" title={t("applicationBackups.emptyTitle")} description={t("applicationBackups.emptyDescription")} />
-        ) : (
-          <ul className="server-list">
-            {backups.map((backup) => (
-              <li key={backup.id} className="server-list-item">
-                <div className="server-list-icon">
-                  <Icon name="archive" size={16} />
+      {/* The copies are what this tab is for, so they take the width; the
+          schedule that makes them sits beside them as a summary, opened for
+          editing on request. It used to be a form spread out above the list
+          whether or not anybody meant to change it. */}
+      <div className="application-detail-overview-grid">
+        <div className="application-detail-overview">
+          <Card
+            title={t("applicationBackups.title")}
+            subtitle={
+              backups.length > 0
+                ? t("applicationBackups.listSummary", {
+                    count: backups.length,
+                    size: formatSize(totalBytes),
+                    when: newest ? new Date(newest.createdAt).toLocaleString(i18n.language, { dateStyle: "medium", timeStyle: "short" }) : "",
+                  })
+                : undefined
+            }
+            actions={
+              <>
+                <GuideLink topic="backups" />
+                <Button size="sm" onClick={handleCreate} disabled={creating}>
+                  <Icon name="archive" size={14} />
+                  {creating ? t("applicationBackups.creating") : t("applicationBackups.createNow")}
+                </Button>
+              </>
+            }
+          >
+            {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
+            {!isStopped && backups.length > 0 && <p className="backups-restore-note">{t("applicationBackups.restoreNeedsStop")}</p>}
+            {loading ? (
+              <SkeletonRows />
+            ) : backups.length === 0 ? (
+              <EmptyState icon="archive" title={t("applicationBackups.emptyTitle")} description={t("applicationBackups.emptyDescription")} />
+            ) : (
+              <>
+                <div className="backup-row backup-row-head" role="presentation">
+                  <span />
+                  <span className="backup-head-cell">{t("applicationBackups.columnDate")}</span>
+                  <span className="backup-head-cell">{t("applicationBackups.columnKind")}</span>
+                  <span className="backup-head-cell backup-cell-end">{t("applicationBackups.columnSize")}</span>
+                  <span className="backup-head-cell">{t("applicationBackups.columnWhere")}</span>
+                  <span />
                 </div>
-                <span className="files-entry-name">{new Date(backup.createdAt).toLocaleString()}</span>
-                <Badge tone={backup.kind === "manual" ? "neutral" : "success"}>
-                  {backup.kind === "manual" ? t("applicationBackups.kindManual") : t("applicationBackups.kindScheduled")}
+                <ul className="backup-rows">
+                  {backups.map((backup) => (
+                    <li key={backup.id} className="backup-row">
+                      <span className="backup-row-icon">
+                        <Icon name="archive" size={15} />
+                      </span>
+                      <span className="backup-row-date">
+                        {new Date(backup.createdAt).toLocaleString(i18n.language, { dateStyle: "medium", timeStyle: "short" })}
+                      </span>
+                      <span>
+                        <Badge tone={backup.kind === "manual" ? "neutral" : "success"}>
+                          {backup.kind === "manual" ? t("applicationBackups.kindManual") : t("applicationBackups.kindScheduled")}
+                        </Badge>
+                      </span>
+                      <span className="backup-cell backup-cell-end">{formatSize(backup.sizeBytes)}</span>
+                      <span className="backup-cell backup-where">
+                        {backup.s3Key ? (
+                          <>
+                            <Icon name="cloud" size={13} />
+                            {t("applicationBackups.whereLocalAndCloud")}
+                          </>
+                        ) : (
+                          t("applicationBackups.whereLocal")
+                        )}
+                      </span>
+                      <span className="backup-row-actions">
+                        <IconButton
+                          icon="download"
+                          size="sm"
+                          title={t("applicationBackups.downloadAria")}
+                          disabled={downloadingId === backup.id}
+                          onClick={() => handleDownload(backup)}
+                        />
+                        <IconButton
+                          icon="refresh-cw"
+                          size="sm"
+                          title={isStopped ? t("applicationBackups.restoreAria") : t("applicationBackups.restoreDisabledAria")}
+                          disabled={!isStopped}
+                          onClick={() => setRestoreTarget(backup)}
+                        />
+                        <IconButton icon="trash" size="sm" danger title={t("applicationBackups.deleteAria")} onClick={() => setDeleteTarget(backup)} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
+        </div>
+
+        <aside className="application-detail-aside">
+          <Card
+            title={t("applicationBackups.scheduleTitle")}
+            className="backups-schedule-card"
+            actions={
+              schedule && !editingSchedule ? (
+                <Button variant="secondary" size="sm" onClick={() => setEditingSchedule(true)}>
+                  <Icon name="edit" size={14} />
+                  {t("applicationBackups.scheduleEdit")}
+                </Button>
+              ) : undefined
+            }
+          >
+            {schedule && !editingSchedule && (
+              <div className="backups-schedule-summary">
+                <Badge tone={schedule.enabled ? "success" : "neutral"}>
+                  {schedule.enabled ? t("applicationBackups.scheduleOn") : t("applicationBackups.scheduleOff")}
                 </Badge>
-                {backup.s3Key && (
-                  <span title={t("applicationBackups.uploadedToDestination")}>
-                    <Icon name="cloud" size={14} />
-                  </span>
+                {schedule.enabled ? (
+                  <dl className="backups-schedule-facts">
+                    <dt>{t("applicationBackups.scheduleInterval")}</dt>
+                    <dd>{t("applicationBackups.everyHours", { count: schedule.intervalHours })}</dd>
+                    <dt>{t("applicationBackups.scheduleRetention")}</dt>
+                    <dd>{schedule.retentionCount}</dd>
+                    <dt>{t("applicationBackups.scheduleMaxAge")}</dt>
+                    <dd>{schedule.retentionMaxAgeDays ? t("applicationBackups.days", { count: schedule.retentionMaxAgeDays }) : "—"}</dd>
+                    <dt>{t("applicationBackups.scheduleMaxSize")}</dt>
+                    <dd>{schedule.retentionMaxTotalBytes ? formatSize(schedule.retentionMaxTotalBytes) : "—"}</dd>
+                  </dl>
+                ) : (
+                  <p className="form-note">{t("applicationBackups.scheduleOffNote")}</p>
                 )}
-                <span className="files-entry-size">{formatSize(backup.sizeBytes)}</span>
-                <IconButton
-                  icon="download"
-                  size="sm"
-                  title={t("applicationBackups.downloadAria")}
-                  disabled={downloadingId === backup.id}
-                  onClick={() => handleDownload(backup)}
+              </div>
+            )}
+            {schedule && editingSchedule && (
+              <form className="server-form" onSubmit={handleSaveSchedule}>
+                {scheduleError && <p className="form-note form-note-danger form-note-spaced">{scheduleError}</p>}
+                <Switch
+                  checked={schedule.enabled}
+                  onChange={(enabled) => setSchedule({ ...schedule, enabled })}
+                  label={t("applicationBackups.scheduleEnable")}
                 />
-                <IconButton
-                  icon="refresh-cw"
-                  size="sm"
-                  title={isStopped ? t("applicationBackups.restoreAria") : t("applicationBackups.restoreDisabledAria")}
-                  disabled={!isStopped}
-                  onClick={() => setRestoreTarget(backup)}
-                />
-                <IconButton icon="trash" size="sm" title={t("applicationBackups.deleteAria")} onClick={() => setDeleteTarget(backup)} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+                {schedule.enabled && (
+                  <>
+                    <label className="form-field">
+                      <span className="form-label">{t("applicationBackups.scheduleInterval")}</span>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={1}
+                        value={schedule.intervalHours}
+                        onChange={(e) => setSchedule({ ...schedule, intervalHours: Number(e.target.value) })}
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span className="form-label">{t("applicationBackups.scheduleRetention")}</span>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={1}
+                        value={schedule.retentionCount}
+                        onChange={(e) => setSchedule({ ...schedule, retentionCount: Number(e.target.value) })}
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span className="form-label">{t("applicationBackups.scheduleMaxAge")}</span>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={1}
+                        value={schedule.retentionMaxAgeDays ?? ""}
+                        onChange={(e) => setSchedule({ ...schedule, retentionMaxAgeDays: e.target.value ? Number(e.target.value) : undefined })}
+                        placeholder={t("applicationBackups.scheduleMaxAgePlaceholder")}
+                      />
+                    </label>
+                    <label className="form-field">
+                      <span className="form-label">{t("applicationBackups.scheduleMaxSize")}</span>
+                      <input
+                        className="form-input"
+                        type="number"
+                        min={1}
+                        value={schedule.retentionMaxTotalBytes ? Math.round(schedule.retentionMaxTotalBytes / (1024 * 1024)) : ""}
+                        onChange={(e) =>
+                          setSchedule({ ...schedule, retentionMaxTotalBytes: e.target.value ? Number(e.target.value) * 1024 * 1024 : undefined })
+                        }
+                        placeholder={t("applicationBackups.scheduleMaxSizePlaceholder")}
+                      />
+                    </label>
+                    <p className="form-note">{t("applicationBackups.scheduleRetentionNote")}</p>
+                  </>
+                )}
+                <p className="form-note">{t("applicationBackups.scheduleNote")}</p>
+                <div className="form-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={scheduleBusy}
+                    onClick={() => {
+                      setSchedule(savedSchedule);
+                      setScheduleError(null);
+                      setEditingSchedule(false);
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button type="submit" size="sm" disabled={scheduleBusy}>
+                    {scheduleBusy ? t("common.saving") : t("common.save")}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </Card>
+        </aside>
+      </div>
 
       {restoreTarget && (
         <div className="modal-backdrop" {...restoreBackdrop.backdropProps}>

@@ -19,14 +19,6 @@
   gap: 14px;
 }
 
-.application-detail-stat-value {
-  margin: 4px 0 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
 /* The Overview tab: console beside the facts, not above them.
  *
  * The right column holds what somebody watching a console keeps switching
@@ -57,67 +49,6 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-}
-
-.application-detail-facts {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.application-detail-fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.application-detail-fact-value {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-primary);
-  word-break: break-word;
-}
-
-/* Ports are the densest thing here, so they get the compact treatment:
- * name on the left, mapping on the right, monospaced so the numbers line
- * up down the column. */
-.application-detail-port {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.application-detail-port-name {
-  color: var(--text-secondary);
-}
-
-.application-detail-port-map {
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-}
-
-/* Two meters side by side under the console.
- *
- * `auto-fit` with a floor rather than a fixed pair of columns, so they
- * stack on a narrow window instead of squeezing into strips too thin for
- * the shape to read. */
-.application-detail-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-/* The number stays the primary reading; the chart is context for it. A
- * sparkline answers "is this normal" and only a number answers "what is
- * it". */
-.application-detail-chart-value {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
 }
 
 /*
@@ -152,4 +83,187 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- Settings: sections on the left, one section's cards on the right ----
+   Muted throughout; the accent is only the thin rule and the icon of the
+   section that is open. */
+.application-settings {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.application-settings-nav {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--t-bg-card);
+  box-shadow: var(--t-ring), var(--t-elev-1);
+}
+
+.application-settings-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.application-settings-nav-item svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.application-settings-nav-item:hover,
+.application-settings-nav-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.application-settings-nav-item-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.application-settings-nav-item-active::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.application-settings-nav-item-active svg {
+  color: var(--accent);
+}
+
+.application-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.env-value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .application-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .application-settings-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}
+
+/* ---- Overview: the facts column ----
+   Icon, label and value per row, so the column reads as a list instead of a
+   stack of loose labels; the working directory is monospaced and can be
+   copied, since it is what somebody opens a terminal to cd into. */
+.overview-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.overview-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.overview-fact > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+}
+
+.overview-fact-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.overview-fact-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.overview-fact-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.overview-fact-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+/* Ports: name, mapping, protocol in three columns that line up down the list. */
+.overview-ports {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-port {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.overview-port:last-child {
+  border-bottom: none;
+}
+
+.overview-port-name {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-port-map {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-port-protocol {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }

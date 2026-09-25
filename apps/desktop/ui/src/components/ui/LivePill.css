@@ -1,0 +1,24 @@
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.live-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success, #34d399);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #34d399) 18%, transparent);
+}
+
+.live-pill-stale .live-pill-dot {
+  background: var(--warning, #fbbf24);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning, #fbbf24) 18%, transparent);
+}

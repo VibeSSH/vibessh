@@ -165,13 +165,11 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     <div className="application-detail-overview">
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card>
-        <div className="card-header application-detail-header-row ports-card-header">
-          <div className="ports-card-heading">
-            <h3 className="card-title">{t("portsTab.title")}</h3>
-            <p className="card-subtitle">{t("portsTab.description")}</p>
-          </div>
-          <div className="application-detail-actions">
+      <Card
+        title={t("portsTab.title")}
+        subtitle={t("portsTab.description")}
+        actions={
+          <>
             {/* Next to the feature, not buried in a menu: somebody who does
                 not know what "Vibe Network only" means is looking at the
                 thing, not searching for its name. */}
@@ -188,29 +186,48 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                 {t("portsTab.addPort")}
               </Button>
             )}
-          </div>
-        </div>
+          </>
+        }
+      >
 
         {loading ? (
           <SkeletonRows />
         ) : ports.length === 0 ? (
           <EmptyState icon="wifi" title={t("portsTab.emptyTitle")} description={t("portsTab.emptyDescription")} />
         ) : (
-          <ul className="server-list">
+          <>
+          {/* A table rather than a line of prose per port: the protocol, the
+              two port numbers, who can reach it and whether the firewall
+              agrees each get a column, so a server with a dozen ports can be
+              read down a column instead of parsed row by row. */}
+          <div className="port-row port-row-head" role="presentation">
+            <span className="port-head-cell">{t("portsTab.columnName")}</span>
+            <span className="port-head-cell">{t("portsTab.columnProtocol")}</span>
+            <span className="port-head-cell">{t("portsTab.columnInternal")}</span>
+            <span className="port-head-cell">{t("portsTab.columnExternal")}</span>
+            <span className="port-head-cell">{t("portsTab.columnAccess")}</span>
+            <span className="port-head-cell">{t("portsTab.columnProtection")}</span>
+            <span />
+          </div>
+          <ul className="port-rows">
             {ports.map((port) => (
-              <li key={port.id} className="server-list-item">
-                <div className="server-list-main">
-                  <span className="server-list-name" title={port.name}>
-                    {port.name}
-                  </span>
-                  <span className="server-list-host">
-                    {port.protocol.toUpperCase()} · {port.bindAddress}:{port.internalPort}
-                    {port.externalPort ? ` → ${port.externalPort}` : ""}
-                  </span>
-                </div>
-                <Badge tone={visibilityTone(port.visibility)}>{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
-                <ProtectionBadge state={portProtection(port, firewall)} />
-                {port.required && <Badge tone="neutral">{t("portsTab.required")}</Badge>}
+              <li key={port.id} className="port-row">
+                <span className="port-name" title={port.name}>
+                  <span className="port-name-text">{port.name}</span>
+                  {port.required && <span className="port-required">{t("portsTab.required")}</span>}
+                </span>
+                <span className="port-protocol">{port.protocol.toUpperCase()}</span>
+                <span className="port-cell port-mono">
+                  {port.bindAddress}:{port.internalPort}
+                </span>
+                <span className="port-cell port-mono">{port.externalPort ?? "—"}</span>
+                <span>
+                  <Badge tone={visibilityTone(port.visibility)}>{t(`applicationNetwork.visibility.${port.visibility}`)}</Badge>
+                </span>
+                <span>
+                  <ProtectionBadge state={portProtection(port, firewall)} />
+                </span>
+                <span className="port-row-actions">
                 {canEditPorts && (
                 <IconButton
                   icon="edit"
@@ -234,9 +251,11 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
                     }}
                   />
                 )}
+                </span>
               </li>
             ))}
           </ul>
+          </>
         )}
 
         <div className="ports-firewall">

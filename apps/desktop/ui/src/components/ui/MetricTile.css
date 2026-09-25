@@ -1,0 +1,71 @@
+.metric-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+/* Every tile has the same rows, so charts in one row start at one height. */
+.metric-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 14px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.metric-tile-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.metric-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-tile-unit {
+  margin-left: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.metric-tile-sub {
+  min-height: 16px;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-tile-ok {
+  color: var(--success, #34d399);
+}
+.metric-tile-warn {
+  color: var(--warning, #fbbf24);
+}
+.metric-tile-bad {
+  color: var(--danger, #f87171);
+}
+
+/* Shorter than the shared sparkline, with only a whisper of fill under the
+   line: a reading pinned at its ceiling - TPS at 20 - otherwise draws a solid
+   block of accent colour. */
+.metric-tile-spark {
+  margin-top: 10px;
+}
+
+.metric-tile-spark .sparkline,
+.metric-tile-spark .sparkline-empty {
+  height: 42px;
+}
+
+.metric-tile-spark .sparkline-area {
+  opacity: 0.05;
+}

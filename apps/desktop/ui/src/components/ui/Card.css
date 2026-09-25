@@ -22,6 +22,24 @@
   margin-bottom: 12px;
 }
 
+.card-header-with-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-header-text {
+  min-width: 0;
+}
+
+.card-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
 .card-title {
   margin: 0;
   font-size: 14px;

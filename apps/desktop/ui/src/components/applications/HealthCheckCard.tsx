@@ -48,12 +48,10 @@ export function HealthCheckCard({ applicationId, application, onConfigChanged }:
   const port = application.ports.find((p) => p.id === application.healthCheckPortId);
 
   return (
-    <Card title={t("healthCheck.title")}>
-      <div className="application-detail-header-row">
-        <Badge tone={status ? HEALTH_TONE[status.status] : "neutral"}>
-          {status ? t(`healthCheck.status.${status.status}`) : t("healthCheck.status.unknown")}
-        </Badge>
-        <div className="application-detail-actions">
+    <Card
+      title={t("healthCheck.title")}
+      actions={
+        <>
           <Button variant="secondary" size="sm" onClick={runCheck} disabled={checking}>
             <Icon name="refresh-cw" size={14} />
             {t("healthCheck.checkNow")}
@@ -62,7 +60,13 @@ export function HealthCheckCard({ applicationId, application, onConfigChanged }:
             <Icon name="edit" size={14} />
             {t("healthCheck.configure")}
           </Button>
-        </div>
+        </>
+      }
+    >
+      <div className="application-detail-header-row">
+        <Badge tone={status ? HEALTH_TONE[status.status] : "neutral"}>
+          {status ? t(`healthCheck.status.${status.status}`) : t("healthCheck.status.unknown")}
+        </Badge>
       </div>
 
       {status?.status === "unhealthy" && <p className="form-note form-note-danger form-note-spaced">{status.reason}</p>}

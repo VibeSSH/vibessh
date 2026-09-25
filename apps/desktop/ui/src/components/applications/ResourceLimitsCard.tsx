@@ -65,7 +65,17 @@ export function ResourceLimitsCard({ applicationId, application, onApplied }: Re
   }
 
   return (
-    <Card title={t("resourceLimits.title")}>
+    <Card
+      title={t("resourceLimits.title")}
+      actions={
+        !editing ? (
+          <Button variant="secondary" size="sm" onClick={startEditing}>
+            <Icon name="edit" size={14} />
+            {t("resourceLimits.edit")}
+          </Button>
+        ) : undefined
+      }
+    >
       {application.runtimeType === "docker" && (
         <p className="form-note">
           {application.status === "running" ? t("applicationConfig.recreateAutoNote") : t("applicationConfig.recreateStoppedNote")}
@@ -125,12 +135,6 @@ export function ResourceLimitsCard({ applicationId, application, onApplied }: Re
             <span className="wizard-review-value">
               {config.cpuLimitCores ? t("resourceLimits.cores", { count: config.cpuLimitCores }) : t("resourceLimits.unlimited")}
             </span>
-          </div>
-          <div className="form-actions">
-            <Button variant="secondary" size="sm" onClick={startEditing}>
-              <Icon name="edit" size={14} />
-              {t("resourceLimits.edit")}
-            </Button>
           </div>
         </>
       )}

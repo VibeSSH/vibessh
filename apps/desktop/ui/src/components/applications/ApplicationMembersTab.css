@@ -44,8 +44,49 @@
   line-height: 1.4;
 }
 
+/* Restricted is worth a signal, but a small one: the accent on the icon and a
+   thin rule, not on a whole line of text. */
 .application-members-note-restricted {
+  border-left: 3px solid var(--accent);
+}
+
+.application-members-note-restricted svg {
   color: var(--accent);
+}
+
+.application-members-count {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.application-members-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-3, var(--surface-2));
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.application-members-access {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.application-members-access-granted {
+  color: var(--text-secondary);
 }
 
 /* The backend does not have the endpoints yet. A quiet "come back after the
