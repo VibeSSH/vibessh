@@ -12,11 +12,12 @@
 //! and platform, which the updater puts in the query string so it can be
 //! given the right manifest.
 //!
-//! **What is kept.** A day, a hash, a version, a platform, a count. The hash
-//! is of the address together with a salt that changes daily, so the same
-//! machine is one row within a day and is unlinkable across days - see
-//! `migrations/0013_update_checks.sql` for why that trade is the right one
-//! and what it costs.
+//! **What is kept.** A day, two hashes, a version, a platform, a count. Each
+//! hash is of the address together with a salt: one changes daily, the other
+//! weekly, so the same machine is one row within a day, can be counted once
+//! within a calendar week, and is unlinkable across weeks - see
+//! `migrations/0013_update_checks.sql` and `0015_update_check_weeks.sql` for
+//! why those trades are the right ones and what they cost.
 //!
 //! **The day-by-day numbers are not readable over HTTP.** Anyone entitled to
 //! that breakdown already has SSH to this machine, and a route for it would
@@ -41,7 +42,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Redirect, Response};
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
@@ -157,6 +158,48 @@ async fn salt_for(db: &sqlx::PgPool, day: NaiveDate) -> Result<Vec<u8>, sqlx::Er
     Ok(salt)
 }
 
+/// The Monday of the calendar week `day` falls in.
+fn week_start(day: NaiveDate) -> NaiveDate {
+    day - chrono::Days::new(u64::from(day.weekday().num_days_from_monday()))
+}
+
+/// The salt for this week - see `migrations/0015_update_check_weeks.sql`.
+///
+/// Making the week's salt is also when last week's are deleted. A salt is only
+/// needed while checks can still be hashed with it; once its week is over,
+/// deleting it is what makes that week's hashes unmatchable to any address,
+/// even by whoever holds this database. The count for a finished week needs
+/// only the hashes, never the salt.
+async fn week_salt_for(db: &sqlx::PgPool, week: NaiveDate) -> Result<Vec<u8>, sqlx::Error> {
+    if let Some((salt,)) = sqlx::query_as::<_, (Vec<u8>,)>("SELECT salt FROM update_check_week_salts WHERE week_start = $1")
+        .bind(week)
+        .fetch_optional(db)
+        .await?
+    {
+        return Ok(salt);
+    }
+
+    let fresh: [u8; 32] = rand::random();
+    sqlx::query("INSERT INTO update_check_week_salts (week_start, salt) VALUES ($1, $2) ON CONFLICT (week_start) DO NOTHING")
+        .bind(week)
+        .bind(&fresh[..])
+        .execute(db)
+        .await?;
+    sqlx::query("DELETE FROM update_check_week_salts WHERE week_start < $1").bind(week).execute(db).await?;
+    let (salt,) = sqlx::query_as::<_, (Vec<u8>,)>("SELECT salt FROM update_check_week_salts WHERE week_start = $1")
+        .bind(week)
+        .fetch_one(db)
+        .await?;
+    Ok(salt)
+}
+
+fn salted_hash(salt: &[u8], address: &str) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(salt);
+    hasher.update(address.as_bytes());
+    hasher.finalize().to_vec()
+}
+
 /// Writes down that somebody checked, and never fails the caller.
 ///
 /// Errors are logged and dropped on purpose: this is a counter attached to an
@@ -174,22 +217,30 @@ async fn record(state: &AppState, address: &str, version: Option<String>, platfo
         }
     };
 
-    let mut hasher = Sha256::new();
-    hasher.update(&salt);
-    hasher.update(address.as_bytes());
-    let client_day_hash = hasher.finalize().to_vec();
+    let client_day_hash = salted_hash(&salt, address);
+    // Without the week's hash the check is still counted for the day; the
+    // week it falls in then reports as unknown rather than too low.
+    let client_week_hash = match week_salt_for(&state.db, week_start(day)).await {
+        Ok(week_salt) => Some(salted_hash(&week_salt, address)),
+        Err(err) => {
+            log::warn!("couldn't read this week's update-check salt: {err}");
+            None
+        }
+    };
 
     let written = sqlx::query(
-        "INSERT INTO update_checks (day, client_day_hash, version, platform, checks, last_seen_at) \
-         VALUES ($1, $2, $3, $4, 1, $5) \
+        "INSERT INTO update_checks (day, client_day_hash, version, platform, checks, last_seen_at, client_week_hash) \
+         VALUES ($1, $2, $3, $4, 1, $5, $6) \
          ON CONFLICT (day, client_day_hash, version, platform) \
-         DO UPDATE SET checks = update_checks.checks + 1, last_seen_at = $5",
+         DO UPDATE SET checks = update_checks.checks + 1, last_seen_at = $5, \
+         client_week_hash = COALESCE(EXCLUDED.client_week_hash, update_checks.client_week_hash)",
     )
     .bind(day)
     .bind(&client_day_hash)
     .bind(version.unwrap_or_else(|| "unknown".to_string()))
     .bind(platform.unwrap_or_else(|| "unknown".to_string()))
     .bind(now)
+    .bind(client_week_hash)
     .execute(&state.db)
     .await;
 
@@ -261,6 +312,15 @@ pub struct Stats {
     /// Which day `installations` is for - yesterday, because today is half
     /// over and a partial day shown as a total always reads low.
     pub day: Option<NaiveDate>,
+    /// Distinct installations that checked for an update during `week`.
+    ///
+    /// `null` while that week holds checks recorded before week hashes
+    /// existed - an incomplete week would add up to a number that is simply
+    /// too small, and would read as a drop.
+    pub weekly_installations: Option<i64>,
+    /// The Monday of the last full calendar week, for the same reason
+    /// `installations` is yesterday's.
+    pub week: Option<NaiveDate>,
 }
 
 #[derive(Default)]
@@ -355,7 +415,26 @@ pub async fn stats(State(state): State<AppState>) -> Response {
         None => None,
     };
 
-    let stats = Stats { downloads, installations, day };
+    let week = week_start(Utc::now().date_naive()).checked_sub_days(chrono::Days::new(7));
+    let weekly_installations = match week {
+        Some(week) => match sqlx::query_as::<_, (i64, i64)>(
+            "SELECT count(DISTINCT client_week_hash), count(*) FILTER (WHERE client_week_hash IS NULL) \
+             FROM update_checks WHERE day >= $1 AND day < $1 + 7",
+        )
+        .bind(week)
+        .fetch_one(&state.db)
+        .await
+        {
+            Ok((count, without_week_hash)) => (without_week_hash == 0).then_some(count),
+            Err(err) => {
+                log::warn!("couldn't count last week's update checks: {err}");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let stats = Stats { downloads, installations, day, weekly_installations, week };
     // Cached even when a number is missing, so an outage at GitHub costs one
     // failed call every fifteen minutes rather than one per visitor.
     *state.stats_cache.inner.lock().await = Some((Instant::now(), stats.clone()));
@@ -407,6 +486,26 @@ mod tests {
         // Same day, different machines: still distinguishable, which is what
         // makes a daily count mean anything.
         assert_ne!(hash(&today, "ip:203.0.113.7"), hash(&today, "ip:203.0.113.8"));
+    }
+
+    #[test]
+    fn a_week_starts_on_the_monday_of_the_day_it_contains() {
+        let date = |d: u32| NaiveDate::from_ymd_opt(2026, 9, d).unwrap();
+        // 2026-09-21 is a Monday.
+        assert_eq!(week_start(date(21)), date(21));
+        assert_eq!(week_start(date(25)), date(21));
+        assert_eq!(week_start(date(27)), date(21));
+        assert_eq!(week_start(date(28)), date(28));
+    }
+
+    /// The weekly figure rests on the same property one level up: a machine
+    /// is one hash within a week and a different, unmatchable one the next.
+    #[test]
+    fn the_same_address_is_one_hash_within_a_week_and_another_the_next() {
+        let this_week = [3u8; 32];
+        let next_week = [4u8; 32];
+        assert_eq!(salted_hash(&this_week, "ip:203.0.113.7"), salted_hash(&this_week, "ip:203.0.113.7"));
+        assert_ne!(salted_hash(&this_week, "ip:203.0.113.7"), salted_hash(&next_week, "ip:203.0.113.7"));
     }
 
     /// The published figure says "downloads", and a reader takes that to mean
