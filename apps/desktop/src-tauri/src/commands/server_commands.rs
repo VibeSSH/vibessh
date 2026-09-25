@@ -56,6 +56,13 @@ pub fn remember_session_password(server_id: Uuid, password: String) -> AppResult
     Ok(())
 }
 
+/// Replaces a server's SSH password after the Node rejected it - what the
+/// "wrong password" prompt submits. See `services::replace_ssh_password`.
+#[tauri::command]
+pub fn replace_ssh_password(repo: State<'_, ServerRepository>, server_id: Uuid, password: String) -> AppResult<()> {
+    services::replace_ssh_password(&repo, server_id, &password)
+}
+
 /// Drops a remembered password - called when one turned out to be wrong, so
 /// the next attempt asks again instead of failing the same way forever.
 #[tauri::command]

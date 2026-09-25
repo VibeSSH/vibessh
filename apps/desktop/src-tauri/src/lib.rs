@@ -357,6 +357,7 @@ pub fn run() {
             commands::server_commands::set_server_icon,
             commands::server_commands::delete_server,
             commands::server_commands::remember_session_password,
+            commands::server_commands::replace_ssh_password,
             commands::server_commands::forget_session_password,
             commands::server_commands::scan_for_servers,
             commands::server_commands::get_server,

@@ -62,6 +62,10 @@ pub enum ErrorCode {
     /// one error where the right UI is a warning, not a retry button.
     HostKeyMismatch,
     PasswordRequired,
+    /// The Node answered and refused the login. Not `InvalidInput`: nothing
+    /// typed into a form was malformed - the credentials are the wrong ones,
+    /// and the sentence has to name the account that was refused.
+    SshAuthRejected,
 
     // ---- Vibe AI ----
     //
@@ -188,6 +192,18 @@ pub enum AppError {
     #[error("a password is needed to connect to this Node")]
     PasswordRequired { server_id: uuid::Uuid },
 
+    /// The Node refused the SSH login for `username`. It was `InvalidInput`,
+    /// which printed "invalid input: ..." in English under a translated
+    /// frame - wrong on both counts, since nothing was malformed.
+    ///
+    /// `method` is "password" or "key", because the remedy differs: a password
+    /// can be typed again on the spot, a key has to be fixed in the server's
+    /// settings. `server_id` is filled in by `ssh_service::get_or_connect` -
+    /// the connect itself does not know it, and a connection test from the
+    /// Add Server form has none.
+    #[error("the Node rejected the SSH login for {username} - check the username, password or key")]
+    SshAuthRejected { username: String, method: &'static str, server_id: Option<uuid::Uuid> },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -270,6 +286,7 @@ impl AppError {
             AppError::Timeout { .. } => ErrorCode::Timeout,
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
             AppError::PasswordRequired { .. } => ErrorCode::PasswordRequired,
+            AppError::SshAuthRejected { .. } => ErrorCode::SshAuthRejected,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -309,6 +326,9 @@ impl AppError {
             AppError::Timeout { operation, seconds } => serde_json::json!({ "operation": operation, "seconds": seconds }),
             AppError::HostKeyMismatch { host } => serde_json::json!({ "host": host }),
             AppError::PasswordRequired { server_id } => serde_json::json!({ "serverId": server_id }),
+            AppError::SshAuthRejected { username, method, server_id } => {
+                serde_json::json!({ "username": username, "method": method, "serverId": server_id })
+            }
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -374,6 +394,9 @@ impl Serialize for AppError {
             ErrorCode::Timeout | ErrorCode::HostKeyMismatch => "connection",
             // Coarsely an input problem: something the person can supply.
             ErrorCode::PasswordRequired => "invalid_input",
+            // Was literally `InvalidInput` until it had a code of its own, so
+            // a `kind` reader keeps seeing exactly what it saw before.
+            ErrorCode::SshAuthRejected => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

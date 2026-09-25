@@ -1,4 +1,5 @@
 import { callCommand } from "./tauri";
+import { clearRejectedPromptDismissal } from "@/stores/sessionPasswordStore";
 import type { ManagedServer } from "@/stores/serversStore";
 import type { AuthenticationType, NodeCapabilities, ServerSummary } from "@/types/server";
 
@@ -193,8 +194,12 @@ export function setServerIcon(id: string, icon: string | null): Promise<ServerSu
   return callCommand<ServerSummary>("set_server_icon", { id, icon });
 }
 
-export function updateServer(id: string, input: ServerFormInput): Promise<ServerSummary> {
-  return callCommand<ServerSummary>("update_server", { id, input });
+export async function updateServer(id: string, input: ServerFormInput): Promise<ServerSummary> {
+  const updated = await callCommand<ServerSummary>("update_server", { id, input });
+  // Editing a server is where refused credentials get fixed, so a dismissed
+  // "wrong password" prompt may come back for it after this.
+  clearRejectedPromptDismissal(id);
+  return updated;
 }
 
 export function deleteServer(id: string): Promise<void> {

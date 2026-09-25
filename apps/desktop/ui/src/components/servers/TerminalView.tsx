@@ -16,6 +16,7 @@ import {
   resizeTerminal,
   writeToTerminal,
 } from "@/services/terminalService";
+import { errorMessage } from "@/services/tauri";
 import "./TerminalView.css";
 
 interface TerminalViewProps {
@@ -140,7 +141,10 @@ export function TerminalView({ serverId, onClosed }: TerminalViewProps) {
           onClosed?.(reason);
         });
       } catch (err) {
-        term.writeln(`\x1b[31m${t("terminalPage.failedToOpen", { error: err instanceof Error ? err.message : String(err) })}\x1b[0m`);
+        // Through `errorMessage`, like every other surface: the raw message
+        // is the backend's English, which is what printed "invalid input:
+        // SSH authentication was rejected" under a Polish frame.
+        term.writeln(`\x1b[31m${t("terminalPage.failedToOpen", { error: errorMessage(err, t) })}\x1b[0m`);
       }
     }
     start();

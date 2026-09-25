@@ -204,6 +204,36 @@ pub async fn install_ufw(repo: &ServerRepository, sessions: &SshSessionManager, 
     Ok(capabilities)
 }
 
+/// Replaces a server's SSH password after the Node rejected the one it had.
+///
+/// Goes where Edit Server puts a password - the OS credential store - because
+/// that is read *first* on connect: holding the new one only in memory would
+/// leave the rejected one winning on every attempt. Where there is no store
+/// to write to, it falls back to this run's memory, exactly as the
+/// missing-password prompt does, and says so in the log rather than failing
+/// the one path that gets somebody back in.
+pub fn replace_ssh_password(repo: &ServerRepository, id: Uuid, password: &str) -> AppResult<()> {
+    if password.is_empty() {
+        return Err(AppError::InvalidInput("the password is empty".into()));
+    }
+    let server = repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("server {id}")))?;
+    if server.authentication_type != AuthenticationType::Password {
+        return Err(AppError::InvalidInput("this server signs in with a key, not a password".into()));
+    }
+    match credentials::store_secret(id, SecretKind::SshPassword, password) {
+        Ok(()) => {
+            // A password remembered for this run would now be the stale one.
+            crate::state::session_passwords::forget(id);
+            Ok(())
+        }
+        Err(err) => {
+            log::warn!("couldn't store the replacement SSH password for {id}, keeping it for this run only: {err}");
+            crate::state::session_passwords::remember(id, password.to_string());
+            Ok(())
+        }
+    }
+}
+
 fn persist_secrets(id: Uuid, input: &ServerInput) -> AppResult<()> {
     if let Some(password) = non_blank(&input.password) {
         credentials::store_secret(id, SecretKind::SshPassword, password)?;

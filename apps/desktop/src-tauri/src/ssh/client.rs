@@ -130,7 +130,27 @@ pub struct SshSession {
     /// prior point to compare against.
     metrics_sample: Mutex<Option<MetricsSample>>,
     forward_registry: ForwardRegistry,
+    /// Short-lived commands allowed on this connection at once - see
+    /// `MAX_CONCURRENT_COMMANDS`.
+    command_slots: tokio::sync::Semaphore,
 }
+
+/// How many `execute_command`s may hold a channel on one connection at once.
+///
+/// `sshd` allows ten sessions per connection by default (`MaxSessions`), and
+/// past that every new channel is refused with `ConnectFailed` - which is how
+/// a file editor ended up unable to open a config while the page around it
+/// polled. Long-lived channels share that budget: the SFTP subsystem, a
+/// console's log follow, the resource stream, any open terminal. Capping the
+/// short ones below the limit leaves them room, and a command beyond the cap
+/// waits a moment for a slot instead of failing.
+const MAX_CONCURRENT_COMMANDS: usize = 6;
+
+/// Pauses before retrying a refused channel open. Short commands finish in a
+/// fraction of a second, so a refusal caused by a momentary crowd clears
+/// quickly; the steps stop at a couple of seconds so a Node that is refusing
+/// for a lasting reason still answers with its error rather than hanging.
+const CHANNEL_OPEN_RETRY_DELAYS_MS: [u64; 5] = [100, 250, 500, 1000, 2000];
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct MetricsSample {
@@ -171,30 +191,44 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
         .map_err(|_| AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() })?
         .map_err(|err| classify_connect_error(&err, &seen, &credentials.host))?;
 
-    let auth_result = match &credentials.auth {
-        SshAuth::Password(password) => handle
-            .authenticate_password(&credentials.username, password)
-            .await
-            .map_err(|err| AppError::Connection(format!("SSH authentication failed: {err}")))?,
-        SshAuth::PrivateKey { path, passphrase } => {
-            let key_pair = load_secret_key(Path::new(path), passphrase.as_deref())
-                .map_err(|err| AppError::InvalidInput(format!("couldn't load the private key at {path}: {err}")))?;
-            let hash_alg = handle
-                .best_supported_rsa_hash()
+    // The handshake above has a deadline; the login used to have none. A Node
+    // that accepts the connection and then stalls on authentication - sshd
+    // doing a reverse DNS lookup while its network is still coming up after a
+    // reboot, say - left the terminal on "connecting..." for as long as the
+    // Node cared to wait. Reported as the same "connecting" timeout, because
+    // to the person watching it is one step.
+    let authenticate = async {
+        let result = match &credentials.auth {
+            SshAuth::Password(password) => handle
+                .authenticate_password(&credentials.username, password)
                 .await
-                .map_err(|err| AppError::Connection(format!("SSH negotiation failed: {err}")))?
-                .flatten();
-            handle
-                .authenticate_publickey(&credentials.username, PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg))
-                .await
-                .map_err(|err| AppError::Connection(format!("SSH authentication failed: {err}")))?
-        }
+                .map_err(|err| AppError::Connection(format!("SSH authentication failed: {err}")))?,
+            SshAuth::PrivateKey { path, passphrase } => {
+                let key_pair = load_secret_key(Path::new(path), passphrase.as_deref())
+                    .map_err(|err| AppError::InvalidInput(format!("couldn't load the private key at {path}: {err}")))?;
+                let hash_alg = handle
+                    .best_supported_rsa_hash()
+                    .await
+                    .map_err(|err| AppError::Connection(format!("SSH negotiation failed: {err}")))?
+                    .flatten();
+                handle
+                    .authenticate_publickey(&credentials.username, PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg))
+                    .await
+                    .map_err(|err| AppError::Connection(format!("SSH authentication failed: {err}")))?
+            }
+        };
+        Ok::<_, AppError>(result)
     };
+    let auth_result = tokio::time::timeout(CONNECT_TIMEOUT, authenticate)
+        .await
+        .map_err(|_| AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() })??;
 
     if !auth_result.success() {
-        return Err(AppError::InvalidInput(
-            "SSH authentication was rejected - check the username, password, or key".into(),
-        ));
+        let method = match credentials.auth {
+            SshAuth::Password(_) => "password",
+            SshAuth::PrivateKey { .. } => "key",
+        };
+        return Err(AppError::SshAuthRejected { username: credentials.username.clone(), method, server_id: None });
     }
 
     let host_key_fingerprint = seen
@@ -211,6 +245,7 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
             id: NEXT_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             metrics_sample: Mutex::new(None),
             forward_registry,
+            command_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_COMMANDS),
         },
         host_key_fingerprint,
     })
@@ -222,24 +257,74 @@ impl SshSession {
         self.id
     }
 
+    /// Opens a session channel, riding out a momentary refusal.
+    ///
+    /// `ConnectFailed` or `ResourceShortage` on a channel open is almost
+    /// always `sshd`'s per-connection session limit, reached for the moment
+    /// by commands about to finish. It is retried after a short pause, a few
+    /// times, before being reported - it used to surface straight away as
+    /// "couldn't open an SSH channel" over a config somebody was opening.
+    async fn open_session_channel(&self) -> Result<Channel<client::Msg>, russh::Error> {
+        let mut delays = CHANNEL_OPEN_RETRY_DELAYS_MS.iter();
+        loop {
+            let result = self.handle.channel_open_session().await;
+            let refused_for_now = matches!(
+                &result,
+                Err(russh::Error::ChannelOpenFailure(russh::ChannelOpenFailure::ConnectFailed | russh::ChannelOpenFailure::ResourceShortage))
+            );
+            match (refused_for_now, delays.next()) {
+                (true, Some(delay_ms)) => tokio::time::sleep(Duration::from_millis(*delay_ms)).await,
+                _ => return result,
+            }
+        }
+    }
+
     /// Bounded by `COMMAND_TIMEOUT` - see that constant for why there is a
     /// bound at all, and why it is as generous as it is.
     pub async fn execute_command(&self, command: &str) -> AppResult<CommandOutput> {
-        tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command))
+        tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command, None))
             .await
             .unwrap_or_else(|_| Err(AppError::Timeout { operation: "the command", seconds: COMMAND_TIMEOUT.as_secs() }))
     }
 
-    async fn execute_command_inner(&self, command: &str) -> AppResult<CommandOutput> {
+    /// `execute_command`, with `input` sent to the command's stdin and then
+    /// closed.
+    ///
+    /// For content that must not go through the command line: a command
+    /// string is visible in `ps` to every local account for as long as it
+    /// runs (AGENTS.md, rule 2), and a config file being saved is exactly
+    /// the kind of thing that holds a database password.
+    pub async fn execute_command_with_input(&self, command: &str, input: &[u8]) -> AppResult<CommandOutput> {
+        tokio::time::timeout(COMMAND_TIMEOUT, self.execute_command_inner(command, Some(input)))
+            .await
+            .unwrap_or_else(|_| Err(AppError::Timeout { operation: "the command", seconds: COMMAND_TIMEOUT.as_secs() }))
+    }
+
+    async fn execute_command_inner(&self, command: &str, input: Option<&[u8]>) -> AppResult<CommandOutput> {
+        // Held until the channel is done - see `MAX_CONCURRENT_COMMANDS`.
+        let _slot = self
+            .command_slots
+            .acquire()
+            .await
+            .map_err(|_| AppError::Connection("the SSH connection is closing".into()))?;
         let mut channel = self
-            .handle
-            .channel_open_session()
+            .open_session_channel()
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel: {err}")))?;
         channel
             .exec(true, command)
             .await
             .map_err(|err| AppError::Connection(format!("couldn't run the command: {err}")))?;
+        if let Some(input) = input {
+            channel
+                .data(input)
+                .await
+                .map_err(|err| AppError::Connection(format!("couldn't send the command its input: {err}")))?;
+            channel
+                .eof()
+                .await
+                .map_err(|err| AppError::Connection(format!("couldn't finish sending the command its input: {err}")))?;
+        }
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -288,8 +373,7 @@ impl SshSession {
         self.sftp
             .get_or_try_init(|| async {
                 let channel = self
-                    .handle
-                    .channel_open_session()
+            .open_session_channel()
                     .await
                     .map_err(|err| AppError::Connection(format!("couldn't open an SFTP channel: {err}")))?;
                 channel
@@ -316,8 +400,7 @@ impl SshSession {
         on_closed: impl FnOnce(Option<String>) + Send + 'static,
     ) -> AppResult<TerminalHandle> {
         let channel = self
-            .handle
-            .channel_open_session()
+            .open_session_channel()
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open a terminal channel: {err}")))?;
         channel
@@ -396,8 +479,7 @@ impl SshSession {
         on_closed: impl FnOnce(Option<String>) + Send + 'static,
     ) -> AppResult<FollowHandle> {
         let mut channel = self
-            .handle
-            .channel_open_session()
+            .open_session_channel()
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open a log channel: {err}")))?;
         channel

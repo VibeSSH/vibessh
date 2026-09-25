@@ -79,7 +79,7 @@ where
             };
             sessions.remove(server_id).await;
             // Surface the *second* error, not the first. A reconnect that
-            // fails for a new reason ("SSH authentication was rejected") is
+            // fails for a new reason (`SshAuthRejected`) is
             // far more actionable than repeating the stale transport error
             // that triggered the retry - which is what `map_err(|_| first_err)`
             // used to do.
@@ -527,7 +527,12 @@ pub(super) async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessio
     let credentials = credentials_from_server(&server)?;
     let known_fingerprint = repo.get_known_host_fingerprint(server_id)?;
 
-    let outcome = ssh::connect(&credentials, known_fingerprint.clone()).await?;
+    // The connect does not know which server it is for; the UI needs to, so
+    // it can ask for that server's password again rather than show a dead end.
+    let outcome = ssh::connect(&credentials, known_fingerprint.clone()).await.map_err(|err| match err {
+        AppError::SshAuthRejected { username, method, .. } => AppError::SshAuthRejected { username, method, server_id: Some(server_id) },
+        other => other,
+    })?;
     if known_fingerprint.is_none() {
         repo.set_known_host_fingerprint(server_id, &outcome.host_key_fingerprint)?;
     }
@@ -672,13 +677,12 @@ mod tests {
             if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(AppError::Connection("connection reset".into()))
             } else {
-                Err(AppError::InvalidInput("SSH authentication was rejected".into()))
+                Err(AppError::SshAuthRejected { username: "root".into(), method: "password", server_id: None })
             }
         })
         .await;
 
-        let message = result.unwrap_err().to_string();
-        assert!(message.contains("authentication was rejected"), "{message}");
+        assert!(matches!(result, Err(AppError::SshAuthRejected { .. })), "{result:?}");
     }
 
     /// Without a server id there is no session to drop and nothing to

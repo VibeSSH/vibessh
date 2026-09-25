@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useSessionPasswordStore } from "@/stores/sessionPasswordStore";
+import { isRejectedPromptDismissed, useSessionPasswordStore } from "@/stores/sessionPasswordStore";
 import { recordCommandTiming } from "./commandTiming";
 
 /**
@@ -26,6 +26,7 @@ export type ErrorCode =
   | "timeout"
   | "host_key_mismatch"
   | "password_required"
+  | "ssh_auth_rejected"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"
@@ -100,7 +101,51 @@ export async function callCommand<T>(command: string, args?: Record<string, unkn
       }
     }
 
+    // The Node refused the login. Handled here for the same reason as a
+    // missing password - every screen reaches a Node through this function -
+    // and it used to surface only as a line of English wherever the failure
+    // happened to land.
+    if (!isRetry && normalized instanceof CommandError && normalized.code === "ssh_auth_rejected") {
+      return retryAfterRejectedLogin<T>(normalized, command, args);
+    }
+
     throw normalized;
+  }
+}
+
+/**
+ * Asks for the right password and tries again, for as long as the person
+ * keeps typing one.
+ *
+ * Unlike the missing-password case this does not stop after one attempt: a
+ * typo is the usual reason a password is refused, and sending somebody back
+ * to the screen after one would be the dead end this exists to remove. Cancel
+ * ends it - and keeps it ended on the next poll, see
+ * `isRejectedPromptDismissed`. A refused key cannot be retyped, so for one the
+ * prompt only points at the server's settings and the error goes on to the
+ * caller.
+ */
+async function retryAfterRejectedLogin<T>(first: CommandError, command: string, args?: Record<string, unknown>): Promise<T> {
+  let error: Error = first;
+  for (;;) {
+    if (!(error instanceof CommandError) || error.code !== "ssh_auth_rejected") throw error;
+    const serverId = typeof error.params.serverId === "string" ? error.params.serverId : null;
+    if (!serverId || isRejectedPromptDismissed(serverId)) throw error;
+    const username = typeof error.params.username === "string" ? error.params.username : undefined;
+
+    if (error.params.method !== "password") {
+      await useSessionPasswordStore.getState().request(serverId, { reason: "rejectedKey", username });
+      throw error;
+    }
+
+    const password = await useSessionPasswordStore.getState().request(serverId, { reason: "rejected", username });
+    if (!password) throw error;
+    await callCommand<void>("replace_ssh_password", { serverId, password }, true);
+    try {
+      return await callCommand<T>(command, args, true);
+    } catch (retryError) {
+      error = normalizeError(retryError);
+    }
   }
 }
 

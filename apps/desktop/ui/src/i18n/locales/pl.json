@@ -796,6 +796,7 @@
     "port_in_use": "Port {{port}}/{{protocol}} jest już zajęty na tym Node. Wybierz inny port.",
     "docker_unavailable": "Docker jest tu niedostępny - albo nie działa, albo nie jest zainstalowany. Uruchom Dockera (na Windows i macOS to Docker Desktop) lub zainstaluj go i spróbuj ponownie.",
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
+    "ssh_auth_rejected": "Serwer odrzucił logowanie SSH jako {{username}}. Sprawdź nazwę użytkownika, hasło lub klucz w ustawieniach serwera.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
     "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora.",
@@ -1480,7 +1481,13 @@
     "body": "Ten Node łączy się hasłem, a na tej maszynie żadne nie jest zapisane.",
     "placeholder": "Hasło SSH",
     "connect": "Połącz",
-    "note": "Trzymane w pamięci do zamknięcia VibeSSH i nigdy nie zapisywane na dysk. Żeby zachować je na stałe, ta maszyna potrzebuje działającego pęku kluczy."
+    "note": "Trzymane w pamięci do zamknięcia VibeSSH i nigdy nie zapisywane na dysk. Żeby zachować je na stałe, ta maszyna potrzebuje działającego pęku kluczy.",
+    "rejectedTitle": "Niepoprawne hasło",
+    "rejectedBody": "Serwer {{server}} odrzucił hasło dla {{username}}. Wpisz poprawne, a VibeSSH od razu połączy się ponownie.",
+    "rejectedNote": "Nowe hasło zastąpi stare w systemowym pęku kluczy - tak samo jak przy edycji serwera.",
+    "rejectedKeyTitle": "Klucz SSH odrzucony",
+    "rejectedKeyBody": "Serwer {{server}} odrzucił klucz SSH dla {{username}}. Sprawdź ścieżkę do klucza i nazwę użytkownika w ustawieniach serwera.",
+    "editServer": "Edytuj serwer"
   },
   "servers": {
     "title": "Serwery",

@@ -790,6 +790,7 @@
     "port_in_use": "Port {{port}}/{{protocol}} is already taken on this Node. Pick a different port.",
     "docker_unavailable": "Docker isn't available here - it's either not running or not installed. Start Docker (on Windows and macOS, that's Docker Desktop) or install it, then try again.",
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
+    "ssh_auth_rejected": "The server rejected the SSH login as {{username}}. Check the username, password or key in the server's settings.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
     "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account.",
@@ -1472,7 +1473,13 @@
     "body": "This Node connects with a password, and none is saved on this machine.",
     "placeholder": "SSH password",
     "connect": "Connect",
-    "note": "Kept in memory until VibeSSH closes and never written to disk. To save it permanently, this machine needs a working keyring."
+    "note": "Kept in memory until VibeSSH closes and never written to disk. To save it permanently, this machine needs a working keyring.",
+    "rejectedTitle": "Wrong password",
+    "rejectedBody": "{{server}} rejected the password for {{username}}. Enter the right one and VibeSSH will reconnect straight away.",
+    "rejectedNote": "The new password replaces the old one in your system keyring, just as editing the server would.",
+    "rejectedKeyTitle": "SSH key rejected",
+    "rejectedKeyBody": "{{server}} rejected the SSH key for {{username}}. Check the key path and username in the server's settings.",
+    "editServer": "Edit server"
   },
   "servers": {
     "title": "Servers",
