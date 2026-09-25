@@ -1595,10 +1595,17 @@
     "couldntRemove": "Nie udało się usunąć serwera."
   },
   "settings": {
+    "aboutVersion": "Wersja",
+    "aboutAuthor": "Autor",
+    "aboutContact": "Kontakt",
+    "aboutWrite": "Napisz",
+    "aboutCopyEmail": "Kopiuj adres e-mail",
+    "aboutEmailCopied": "Skopiowano adres e-mail",
+    "aboutWebsite": "Strona",
     "title": "Ustawienia",
     "subtitle": "Preferencje aplikacji i diagnostyka.",
     "about": "O aplikacji",
-    "aboutSubtitle": "Sprawdzenie połączenia z backendem",
+    "aboutSubtitle": "Wersja, autor i kontakt",
     "backendWaiting": "Oczekiwanie na backend Rust...",
     "preferences": "Preferencje",
     "preferencesSubtitle": "Ustawienia osobiste, tylko na tym urządzeniu",

@@ -84,3 +84,51 @@
      character a guess when somebody compares it against their config. */
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+
+/* O aplikacji: etykieta po lewej, wartość po prawej, jak w podsumowaniu
+   harmonogramu backupów. */
+.settings-about {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 24px;
+  align-items: center;
+  margin: 0;
+  font-size: 13px;
+}
+
+.settings-about dt {
+  color: var(--text-tertiary);
+}
+
+.settings-about dd {
+  margin: 0;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.settings-about-contact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-about-email {
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  user-select: text;
+}
+
+.settings-about-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-about-link:hover {
+  text-decoration: underline;
+}

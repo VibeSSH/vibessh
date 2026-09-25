@@ -1587,10 +1587,17 @@
     "couldntRemove": "Couldn't remove the server."
   },
   "settings": {
+    "aboutVersion": "Version",
+    "aboutAuthor": "Author",
+    "aboutContact": "Contact",
+    "aboutWrite": "Write",
+    "aboutCopyEmail": "Copy the email address",
+    "aboutEmailCopied": "Email address copied",
+    "aboutWebsite": "Website",
     "title": "Settings",
     "subtitle": "Application preferences and diagnostics.",
     "about": "About",
-    "aboutSubtitle": "Backend connectivity check",
+    "aboutSubtitle": "Version, author and contact",
     "backendWaiting": "Waiting for Rust backend...",
     "preferences": "Preferences",
     "preferencesSubtitle": "Personal, device-only settings",

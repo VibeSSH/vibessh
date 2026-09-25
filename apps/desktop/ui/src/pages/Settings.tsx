@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { open } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/Button";
 import { Details } from "@/components/ui/Details";
 import { Card } from "@/components/ui/Card";
@@ -97,16 +98,63 @@ export function Settings() {
 
       <DnsSuffixCard />
 
-      <Card title={t("settings.about")} subtitle={t("settings.aboutSubtitle")}>
-        {appInfo ? (
-          <p className="settings-row">
-            {appInfo.name} <span className="settings-muted">v{appInfo.version}</span>
-          </p>
-        ) : (
-          <p className="settings-muted">{t("settings.backendWaiting")}</p>
-        )}
-      </Card>
+      <AboutCard appInfo={appInfo} />
     </div>
+  );
+}
+
+const AUTHOR_NAME = "Krystian Michalski";
+const AUTHOR_EMAIL = "kryspekxd@gmail.com";
+const WEBSITE_URL = "https://vibessh.dev";
+
+/** Who made VibeSSH and how to reach them, under the version it reports. */
+function AboutCard({ appInfo }: { appInfo: { name: string; version: string } | null }) {
+  const { t } = useTranslation();
+
+  async function copyEmail() {
+    try {
+      await navigator.clipboard.writeText(AUTHOR_EMAIL);
+      toastSuccess(t("settings.aboutEmailCopied"));
+    } catch (err) {
+      console.warn("copying the contact address failed", err);
+    }
+  }
+
+  return (
+    <Card title={t("settings.about")} subtitle={t("settings.aboutSubtitle")}>
+      <dl className="settings-about">
+        <dt>{t("settings.aboutVersion")}</dt>
+        <dd>
+          {appInfo ? (
+            <>
+              {appInfo.name} <span className="settings-muted">v{appInfo.version}</span>
+            </>
+          ) : (
+            <span className="settings-muted">{t("settings.backendWaiting")}</span>
+          )}
+        </dd>
+
+        <dt>{t("settings.aboutAuthor")}</dt>
+        <dd>{AUTHOR_NAME}</dd>
+
+        <dt>{t("settings.aboutContact")}</dt>
+        <dd className="settings-about-contact">
+          <span className="settings-about-email">{AUTHOR_EMAIL}</span>
+          <Button variant="secondary" size="sm" onClick={() => open(`mailto:${AUTHOR_EMAIL}`).catch((err) => console.warn("opening the mail client failed", err))}>
+            <Icon name="send" size={14} />
+            {t("settings.aboutWrite")}
+          </Button>
+          <IconButton icon="copy" size="sm" title={t("settings.aboutCopyEmail")} onClick={copyEmail} />
+        </dd>
+
+        <dt>{t("settings.aboutWebsite")}</dt>
+        <dd>
+          <button type="button" className="settings-about-link" onClick={() => open(WEBSITE_URL).catch((err) => console.warn("opening the website failed", err))}>
+            vibessh.dev
+          </button>
+        </dd>
+      </dl>
+    </Card>
   );
 }
 
