@@ -1,66 +1,64 @@
-.mc-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
-}
+/* The Minecraft tab. Muted surfaces throughout; colour is kept for small
+   signals - a value under strain, the live dot - never for large fills. */
 
-.mc-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+.mc-stale {
+  margin: 0 0 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  border-left: 3px solid var(--warning, #fbbf24);
+  color: var(--text-secondary);
+  font-size: 12.5px;
 }
 
-.mc-metric-label {
-  font-size: 12px;
+/* ---- Worlds and players, side by side ---- */
+.mc-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mc-panel {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mc-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mc-panel-title svg {
   color: var(--text-tertiary);
 }
 
-.mc-metric-value {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--text-primary);
+.mc-panel-count {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
-.mc-unit {
-  font-size: 13px;
-  font-weight: 500;
+.mc-panel-empty {
+  margin: 6px 0 2px;
+  font-size: 12.5px;
   color: var(--text-tertiary);
 }
 
-.mc-metric-sub {
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-/* Each metric's own session history, so the tile reads as a monitor, not a
-   frozen number. Fills over the first few minutes the tab is open. */
-.mc-metric-spark {
-  margin-top: 8px;
-}
-
-/* The TPS tile carries the health of the whole server, so it is the one that
-   takes a colour - green while healthy, amber under strain, red when it drops. */
-.mc-tps-ok .mc-metric-value {
-  color: var(--success, #34d399);
-}
-.mc-tps-warn .mc-metric-value {
-  color: var(--warning, #fbbf24);
-}
-.mc-tps-bad .mc-metric-value {
-  color: var(--danger, #f87171);
-}
-
-/* Kept compact rather than stretched across the whole card: a handful of
-   worlds with three small counts each does not want the full width. */
 .mc-worlds {
   width: 100%;
-  max-width: 620px;
-  margin-top: 16px;
   border-collapse: collapse;
   font-size: 12.5px;
 }
@@ -69,7 +67,7 @@
    column is the one exception. */
 .mc-worlds th,
 .mc-worlds td {
-  padding: 7px 14px;
+  padding: 7px 10px;
   text-align: right;
   border-bottom: 1px solid var(--border);
 }
@@ -77,6 +75,7 @@
 .mc-worlds th {
   color: var(--text-tertiary);
   font-weight: 500;
+  font-size: 11.5px;
 }
 
 .mc-worlds td {
@@ -86,6 +85,7 @@
 
 .mc-worlds th:first-child,
 .mc-worlds td:first-child {
+  padding-left: 4px;
   text-align: left;
 }
 
@@ -102,26 +102,28 @@
   font-weight: 500;
 }
 
+/* A world with somebody in it: the count is the thing worth seeing. */
+.mc-cell-active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .mc-players-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 14px 0 0;
 }
 
 .mc-player {
-  padding: 2px 9px;
+  padding: 3px 10px;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text-secondary);
   font-size: 12px;
 }
 
-.mc-stale {
-  margin: 0 0 10px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text-tertiary);
-  font-size: 12px;
+@media (max-width: 900px) {
+  .mc-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

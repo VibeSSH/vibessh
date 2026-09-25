@@ -18,6 +18,8 @@ export interface SchedulerStatus {
 
 /** Where the VibeSSH Scheduler plugin writes, relative to the application's working directory. */
 const STATUS_PATH = ".vibessh/scheduler.json";
+/** How often to look again for the plugin on a server that did not have it last time. */
+const ABSENT_RECHECK_MS = 60_000;
 
 /**
  * The live restart schedule of an application, or null when it is not running the VibeSSH
@@ -40,7 +42,9 @@ export function useSchedulerStatus(applicationId: string): { status: SchedulerSt
       }
     },
     enabled: applicationId.length > 0,
-    refetchInterval: POLL_INTERVALS.applicationDetail,
+    // A server without the plugin is looked at again once a minute rather
+    // than every few seconds - see `useMinecraftStatus` for why the churn matters.
+    refetchInterval: (query) => (query.state.data ? POLL_INTERVALS.applicationDetail : ABSENT_RECHECK_MS),
     retry: false,
   });
 

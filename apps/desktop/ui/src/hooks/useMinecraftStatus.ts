@@ -26,6 +26,8 @@ export interface McSample {
 
 /** Where the VibeSSH Metrics plugin writes, relative to the application's working directory. */
 const STATUS_PATH = ".vibessh/status.json";
+/** How often to look again for the plugin on a server that did not have it last time. */
+const ABSENT_RECHECK_MS = 60_000;
 /** How many samples the sparklines keep - five minutes at the detail poll. */
 const HISTORY = 60;
 
@@ -49,7 +51,11 @@ export function useMinecraftStatus(applicationId: string): { status: McStatus | 
       }
     },
     enabled: applicationId.length > 0,
-    refetchInterval: POLL_INTERVALS.applicationDetail,
+    // Every read is a full file-helper round trip - sudo, a staged copy, an
+    // SFTP read - so a server without the plugin is not asked every few
+    // seconds for a file it does not have. That churn is channels on the
+    // same connection the console and the file editor need.
+    refetchInterval: (query) => (query.state.data ? POLL_INTERVALS.applicationDetail : ABSENT_RECHECK_MS),
     retry: false,
   });
 

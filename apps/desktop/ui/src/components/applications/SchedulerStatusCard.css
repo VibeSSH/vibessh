@@ -1,36 +1,58 @@
-/* The countdown block. Kept a muted surface on purpose - the teal accent is a
-   signal for the small left rule, not a fill for the whole panel. The number
-   and that rule are the only things that take colour, and only as the clock
-   runs down. */
+/* The Restarts tab, in the Minecraft tab's language: muted surfaces, colour
+   only on the thin rule and the number as the restart gets close. */
+
+.restart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+/* ---- The countdown ---- */
 .restart-hero {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 18px 20px;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 22px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   border-left: 3px solid var(--accent, #4dd9f5);
 }
 
 .restart-hero-label {
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--text-tertiary);
 }
 
 .restart-hero-value {
-  font-size: 34px;
+  font-size: 40px;
   font-weight: 700;
   line-height: 1.05;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
-.restart-hero-reason {
-  font-size: 13px;
+.restart-reason {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.restart-reason svg {
   color: var(--text-tertiary);
 }
 
-/* The left rule and the number redden as the restart nears; everything else
+/* The rule and the number redden as the restart nears; everything else
    stays muted. */
 .restart-tone-warn {
   border-left-color: var(--warning, #fbbf24);
@@ -45,36 +67,51 @@
   color: var(--danger, #f87171);
 }
 
+/* ---- When and how, stacked beside it ---- */
 .restart-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .restart-fact {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
 }
 
 .restart-fact-label {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--text-tertiary);
 }
 
 .restart-fact-value {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
+.restart-fact-sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
 .restart-empty {
   margin: 0;
-  padding: 14px;
+  padding: 16px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text-tertiary);
@@ -82,10 +119,17 @@
 }
 
 .restart-stale {
-  margin: 0 0 10px;
-  padding: 6px 10px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  color: var(--text-tertiary);
-  font-size: 12px;
+  border-left: 3px solid var(--warning, #fbbf24);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .restart-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

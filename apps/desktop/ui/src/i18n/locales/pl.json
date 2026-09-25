@@ -1193,7 +1193,12 @@
     "methodSpigot": "Skrypt restartu serwera",
     "reasonScheduled": "zaplanowany",
     "reasonManual": "uruchomiony przez operatora",
-    "reasonLowTps": "niski TPS ({{tps}})"
+    "reasonLowTps": "niski TPS ({{tps}})",
+    "subtitle": "Harmonogram z pluginu VibeSSH Scheduler na tym serwerze.",
+    "today": "dziś, {{time}}",
+    "tomorrow": "jutro, {{time}}",
+    "methodShutdownHelp": "Serwer się zatrzymuje, a VibeSSH albo systemd uruchamia go z powrotem.",
+    "methodSpigotHelp": "Serwer uruchamia się ponownie własnym skryptem (restart-script w spigot.yml)."
   },
   "monitorPage": {
     "resources": "Zasoby",
