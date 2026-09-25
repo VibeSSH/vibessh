@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnsiLog } from "@/components/ui/AnsiLog";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { IconButton } from "@/components/ui/IconButton";
@@ -45,9 +46,11 @@ export function ContainerLogsPanel({ serverId, containerName, onClose }: Contain
         </div>
         <div className="modal-body">
           {error && <p className="form-note form-note-danger form-note-spaced">{error}</p>}
-          <pre className="container-logs-output">
-            {loading ? t("containerLogs.loading") : logs || t("containerLogs.noOutput", { lines: TAIL_LINES })}
-          </pre>
+          <AnsiLog
+            className="container-logs-output"
+            lines={loading || !logs ? [] : logs.replace(/\n$/, "").split("\n")}
+            placeholder={loading ? t("containerLogs.loading") : t("containerLogs.noOutput", { lines: TAIL_LINES })}
+          />
 
           <div className="form-actions form-actions-spaced">
             <Button variant="secondary" onClick={onClose}>

@@ -1,0 +1,25 @@
+/* One block per line, kept one line tall even when the line is empty. */
+.ansi-log-line {
+  min-height: 1.5em;
+}
+
+.ansi-log-time {
+  margin-right: 4px;
+  color: var(--text-tertiary);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Level shading for lines the server left uncoloured - the same three the
+   application console uses. */
+.ansi-log-error {
+  color: var(--danger-text);
+}
+
+.ansi-log-warn {
+  color: var(--warning);
+}
+
+.ansi-log-debug {
+  color: var(--text-tertiary);
+}

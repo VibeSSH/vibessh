@@ -16,6 +16,7 @@ import { useApplicationTabsStore } from "@/stores/applicationTabsStore";
 import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { LivePill } from "@/components/ui/LivePill";
+import { AnsiLog } from "@/components/ui/AnsiLog";
 import { MetricTile, MetricTileGrid } from "@/components/ui/MetricTile";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
@@ -978,9 +979,12 @@ export function ApplicationDetail() {
               }
             >
               {logsError && <p className="form-note form-note-danger form-note-spaced">{logsError}</p>}
-              <pre className="container-logs-output" ref={logsRef}>
-                {logsLoading ? t("applicationDetail.logsLoading") : logs.join("\n") || t("applicationDetail.logsEmpty")}
-              </pre>
+              <AnsiLog
+                ref={logsRef}
+                className="container-logs-output"
+                lines={logsLoading ? [] : logs}
+                placeholder={logsLoading ? t("applicationDetail.logsLoading") : t("applicationDetail.logsEmpty")}
+              />
             </Card>
           )}
 
