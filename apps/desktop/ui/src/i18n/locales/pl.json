@@ -1114,6 +1114,20 @@
     "entities": "Byty",
     "chunks": "Chunki"
   },
+  "restarts": {
+    "title": "Restarty",
+    "stale": "Ten harmonogram jest lekko nieświeży - serwer może lagować albo plugin przestał pisać.",
+    "none": "Brak zaplanowanych restartów.",
+    "nextIn": "Następny restart za",
+    "now": "teraz",
+    "when": "Kiedy",
+    "method": "Metoda",
+    "methodShutdown": "Zatrzymanie, host wznawia",
+    "methodSpigot": "Skrypt restartu serwera",
+    "reasonScheduled": "zaplanowany",
+    "reasonManual": "uruchomiony przez operatora",
+    "reasonLowTps": "niski TPS ({{tps}})"
+  },
   "monitorPage": {
     "resources": "Zasoby",
     "refreshesEvery": "Odświeża co {{seconds}}s",

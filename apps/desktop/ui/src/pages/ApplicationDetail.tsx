@@ -22,6 +22,8 @@ import { ApplicationBackupsTab } from "@/components/applications/ApplicationBack
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCard";
 import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
+import { SchedulerStatusCard } from "@/components/applications/SchedulerStatusCard";
+import { useSchedulerStatus } from "@/hooks/useSchedulerStatus";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -71,7 +73,7 @@ const LOG_TAIL_LINES = 500;
 
 /** Every tab, and the values the `?tab=` parameter accepts. One list, so a
  * tab cannot exist without being linkable to. */
-const TABS = ["overview", "minecraft", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
+const TABS = ["overview", "minecraft", "restarts", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
@@ -95,6 +97,9 @@ export function ApplicationDetail() {
   // Live Minecraft status - present only for a server running the VibeSSH Metrics plugin. It
   // decides whether the Minecraft tab is shown, and fills it.
   const minecraft = useMinecraftStatus(id ?? "");
+  // Live restart schedule - present only for a server running the VibeSSH Scheduler plugin. It
+  // decides whether the Restarts tab is shown, and fills it.
+  const scheduler = useSchedulerStatus(id ?? "");
 
   const queryClient = useQueryClient();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
@@ -632,6 +637,14 @@ export function ApplicationDetail() {
               {tab === "minecraft" && <TabUnderline group="application" />}
               </button>
             )}
+            {/* Shown only for a server running the VibeSSH Scheduler plugin, which is what
+                writes the schedule file this reads. */}
+            {scheduler.status && (
+              <button className={`modal-tab ${tab === "restarts" ? "modal-tab-active" : ""}`} onClick={() => setTab("restarts")}>
+                {t("restarts.title")}
+              {tab === "restarts" && <TabUnderline group="application" />}
+              </button>
+            )}
             {/* Files sits second, right after the console.
                 It is the tab an operator reaches for most once something is
                 running - a config to edit, a plugin to drop in, a world to
@@ -863,6 +876,7 @@ export function ApplicationDetail() {
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
           {tab === "members" && <ApplicationMembersTab applicationId={id} />}
           {tab === "minecraft" && minecraft.status && <MinecraftStatusCard status={minecraft.status} history={minecraft.history} />}
+          {tab === "restarts" && scheduler.status && <SchedulerStatusCard status={scheduler.status} fetchedAt={scheduler.fetchedAt} />}
         </div>
       )}
 

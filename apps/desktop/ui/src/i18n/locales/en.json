@@ -1107,6 +1107,20 @@
     "entities": "Entities",
     "chunks": "Chunks"
   },
+  "restarts": {
+    "title": "Restarts",
+    "stale": "This schedule is a little old - the server may be lagging or the plugin stopped.",
+    "none": "No restarts scheduled.",
+    "nextIn": "Next restart in",
+    "now": "now",
+    "when": "When",
+    "method": "Method",
+    "methodShutdown": "Stop, host restarts it",
+    "methodSpigot": "Server restart script",
+    "reasonScheduled": "scheduled",
+    "reasonManual": "started by an operator",
+    "reasonLowTps": "low TPS ({{tps}})"
+  },
   "monitorPage": {
     "resources": "Resources",
     "refreshesEvery": "Refreshes every {{seconds}}s",
