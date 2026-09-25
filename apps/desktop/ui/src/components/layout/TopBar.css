@@ -228,3 +228,70 @@
   background: color-mix(in srgb, #ffffff 4%, transparent);
   color: var(--text-primary);
 }
+
+/* ---- Background tasks ----
+   One row per task, the whole row a button that brings its dialog back. The
+   state icon is the only coloured thing, like the notification rows above. */
+.topbar-task {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.topbar-task:hover,
+.topbar-task:focus-visible {
+  background: var(--surface-2);
+}
+.topbar-task-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.topbar-task-label {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-task-state {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.topbar-task-open {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+.topbar-task-icon-running {
+  color: var(--accent);
+}
+.topbar-task-icon-done {
+  color: var(--success);
+}
+.topbar-task-icon-failed {
+  color: var(--danger);
+}
+.topbar-task-spin {
+  animation: topbar-task-spin 0.9s linear infinite;
+}
+@keyframes topbar-task-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar-task-spin {
+    animation: none;
+  }
+}

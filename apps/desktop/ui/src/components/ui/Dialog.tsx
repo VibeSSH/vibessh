@@ -8,7 +8,7 @@ import "./Dialog.css";
 
 interface DialogProps {
   open: boolean;
-  /** Called for every way out: the close button, Escape, a click on the backdrop. */
+  /** Called for every way out: the close button and Escape. A click on the backdrop is not one. */
   onClose: () => void;
   title: ReactNode;
   /** Matches the `.modal-panel-*` widths the hand-built modals already use. */
@@ -18,8 +18,9 @@ interface DialogProps {
   /** Rendered between the header and the body - the tab strip, in practice. */
   belowHeader?: ReactNode;
   /**
-   * Off while something destructive is in flight: a stray Escape or a click
-   * on the backdrop should not abandon a delete that is already running.
+   * Off while something destructive is in flight: a stray Escape should not
+   * abandon a delete that is already running. (A click on the backdrop never
+   * closes a dialog at all.)
    */
   dismissable?: boolean;
   children: ReactNode;
@@ -95,8 +96,11 @@ export function Dialog({ open, onClose, title, size = "md", headerActions, below
         <RadixDialog.Content
           asChild
           onEscapeKeyDown={(event) => !dismissable && event.preventDefault()}
-          onPointerDownOutside={(event) => !dismissable && event.preventDefault()}
-          onInteractOutside={(event) => !dismissable && event.preventDefault()}
+          // Never closed by a click outside, whatever `dismissable` says - the
+          // same rule as `useModalDialog`: that click was usually meant for
+          // something behind the dialog, and it cost whatever was on it.
+          onPointerDownOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
         >
           <motion.div
             className={`modal-panel dialog-panel ${SIZE_CLASS[size]}`.trim()}

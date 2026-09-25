@@ -9,6 +9,7 @@ import {
   type ServerFormInput,
 } from "@/services/serverService";
 import { useServersStore, type ManagedServer } from "@/stores/serversStore";
+import type { ServerModalActivity } from "@/stores/serverModalStore";
 import { toastSuccess } from "@/stores/toastStore";
 import type { AuthenticationType } from "@/types/server";
 import "./forms.css";
@@ -20,9 +21,12 @@ interface SshServerFormProps {
   /** Present in edit mode - prefills the form and calls updateServer instead of createServer. */
   editingServer?: ManagedServer;
   onSaved: (server: ManagedServer) => void;
+  /** Told when a connection starts and ends, so the dialog around this form
+   *  can move it to the background rather than drop it if it is closed. */
+  onActivity?: (activity: Partial<ServerModalActivity>) => void;
 }
 
-export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
+export function SshServerForm({ editingServer, onSaved, onActivity }: SshServerFormProps) {
   const { t } = useTranslation();
   const isEditing = Boolean(editingServer);
   const upsertServer = useServersStore((s) => s.upsertServer);
@@ -66,16 +70,25 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
     };
   }
 
+  /** What the background task is called if the dialog is closed mid-connect. */
+  function taskTarget() {
+    return name.trim() || host.trim();
+  }
+
   async function handleTestConnection() {
     setTestStatus("testing");
     setTestMessage(null);
+    onActivity?.({ busy: true, label: t("backgroundTasks.testingConnection", { name: taskTarget() }), error: null });
     try {
       await testSshConnection(buildInput());
       setTestStatus("success");
       setTestMessage(t("sshForm.testSuccess"));
+      onActivity?.({ busy: false, error: null });
     } catch (err) {
+      const message = errorMessage(err, t);
       setTestStatus("error");
-      setTestMessage(errorMessage(err, t));
+      setTestMessage(message);
+      onActivity?.({ busy: false, error: message });
     }
   }
 
@@ -85,6 +98,11 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
     submitting.current = true;
     setBusy(true);
     setError(null);
+    onActivity?.({
+      busy: true,
+      label: isEditing ? t("backgroundTasks.savingServer", { name: taskTarget() }) : t("backgroundTasks.connectingTo", { name: taskTarget() }),
+      error: null,
+    });
     try {
       const input = buildInput();
       const saved = isEditing && editingServer
@@ -92,10 +110,15 @@ export function SshServerForm({ editingServer, onSaved }: SshServerFormProps) {
         : await createServer(input);
       const managed = serverSummaryToManagedServer(saved);
       upsertServer(managed);
+      // Before `onSaved`, which may close the dialog: closed while still
+      // "busy", it would hide into the background instead of closing.
+      onActivity?.({ busy: false, error: null });
       toastSuccess(isEditing ? t("sshForm.savedChangesToast", { name: saved.name }) : t("sshForm.addedToast", { name: saved.name }));
       onSaved(managed);
     } catch (err) {
-      setError(errorMessage(err, t));
+      const message = errorMessage(err, t);
+      setError(message);
+      onActivity?.({ busy: false, error: message });
     } finally {
       submitting.current = false;
       setBusy(false);

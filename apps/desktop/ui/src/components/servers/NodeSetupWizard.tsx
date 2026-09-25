@@ -23,11 +23,16 @@ import { AgentPairingFlow } from "./AgentPairingFlow";
 import "./AddServerModal.css";
 import "./forms.css";
 import { errorMessage } from "@/services/tauri";
+import type { ServerModalActivity } from "@/stores/serverModalStore";
 
 interface NodeSetupWizardProps {
   serverId: string;
   serverName: string;
   onClose: () => void;
+  /** Told while an install, the firewall step or joining the network is
+   *  running, so the dialog around this can move it to the background if it
+   *  is closed mid-way instead of leaving nobody knowing whether it finished. */
+  onActivity?: (activity: Partial<ServerModalActivity>) => void;
 }
 
 type Requirement = "docker" | "wireguard" | "ufw";
@@ -56,7 +61,7 @@ function ruleLabel(t: (key: string, opts?: Record<string, unknown>) => string, r
  * Node specifically, since pairing one is exactly how it *becomes*
  * Agent-mode.
  */
-export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWizardProps) {
+export function NodeSetupWizard({ serverId, serverName, onClose, onActivity }: NodeSetupWizardProps) {
   const { t } = useTranslation();
   const backdrop = useModalDialog(onClose, { labelledBy: "nodesetupwizard-dialog-title-1" });
   const server = useServersStore((s) => s.servers.find((srv) => srv.id === serverId));
@@ -75,6 +80,12 @@ export function NodeSetupWizard({ serverId, serverName, onClose }: NodeSetupWiza
   const [joiningNetwork, setJoiningNetwork] = useState(false);
   const [networkJoined, setNetworkJoined] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
+
+  const working = installing !== null || securing || joiningNetwork;
+  const failure = installError ?? securingError ?? networkError;
+  useEffect(() => {
+    onActivity?.({ busy: working, label: t("backgroundTasks.settingUp", { name: serverName }), error: failure });
+  }, [working, failure, serverName, onActivity, t]);
 
   async function refresh() {
     setLoading(true);

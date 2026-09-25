@@ -10,6 +10,7 @@ import { sidebarGroups } from "@/config/navigation";
 import { cloudLogout } from "@/services/cloudService";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useBackgroundTasksStore, type BackgroundTaskState } from "@/stores/backgroundTasksStore";
 import { useToastStore, toastSuccess } from "@/stores/toastStore";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import { UpdateButton } from "./UpdateButton";
@@ -66,16 +67,89 @@ function useOutsideClose(open: boolean, onClose: () => void) {
   return ref;
 }
 
-function TopBarIconButton({ icon, label, onClick, badge }: { icon: string; label: string; onClick?: () => void; badge?: number }) {
+function TopBarIconButton({
+  icon,
+  label,
+  onClick,
+  badge,
+  iconClassName,
+}: {
+  icon: string;
+  label: string;
+  onClick?: () => void;
+  badge?: number;
+  iconClassName?: string;
+}) {
   const { createRipple, rippleEls } = useRipple();
   return (
     <Tooltip label={label} placement="bottom">
       <button className="topbar-action ripple-host" onPointerDown={createRipple} onClick={onClick} aria-label={label}>
         {rippleEls}
-        <Icon name={icon} size={16} />
+        <Icon name={icon} size={16} className={iconClassName} />
         {badge ? <span className="topbar-action-badge">{badge > 9 ? "9+" : badge}</span> : null}
       </button>
     </Tooltip>
+  );
+}
+
+const TASK_ICON: Record<BackgroundTaskState, string> = { running: "refresh-cw", done: "check", failed: "x" };
+
+/**
+ * Work that was stepped away from rather than cancelled - see
+ * `backgroundTasksStore`. Only there while there is something in it, so the
+ * top bar does not carry an empty tray; spins while anything is running.
+ * Picking a task brings its dialog back in the state it was left.
+ */
+function BackgroundTasksMenu() {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const tasks = useBackgroundTasksStore((s) => s.tasks);
+  const ref = useOutsideClose(open, () => setOpen(false));
+
+  if (tasks.length === 0) return null;
+  const running = tasks.some((task) => task.state === "running");
+
+  return (
+    <div className="topbar-menu-anchor" ref={ref}>
+      <TopBarIconButton
+        icon={running ? "refresh-cw" : "check"}
+        iconClassName={running ? "topbar-task-spin" : undefined}
+        label={t("backgroundTasks.title")}
+        onClick={() => setOpen((o) => !o)}
+        badge={tasks.length}
+      />
+      {open && (
+        <div className="topbar-popover">
+          <div className="topbar-popover-header">
+            <span>{t("backgroundTasks.title")}</span>
+          </div>
+          <ul className="topbar-popover-list">
+            {tasks.map((task) => (
+              <li key={task.id}>
+                <button
+                  className="topbar-task"
+                  onClick={() => {
+                    setOpen(false);
+                    task.open();
+                  }}
+                >
+                  <Icon
+                    name={TASK_ICON[task.state]}
+                    size={13}
+                    className={`topbar-task-icon topbar-task-icon-${task.state}${task.state === "running" ? " topbar-task-spin" : ""}`}
+                  />
+                  <span className="topbar-task-text">
+                    <span className="topbar-task-label">{task.label}</span>
+                    <span className="topbar-task-state">{task.detail ?? t(`backgroundTasks.state.${task.state}`)}</span>
+                  </span>
+                  <span className="topbar-task-open">{t("backgroundTasks.open")}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -217,6 +291,7 @@ export function TopBar() {
         <EarlyAccessBadge />
         <div className="topbar-actions">
           <UpdateButton />
+          <BackgroundTasksMenu />
           <NotificationsMenu />
           <AccountMenu />
         </div>

@@ -9,6 +9,7 @@ import { SshServerForm } from "./SshServerForm";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import { NodeSetupWizard } from "./NodeSetupWizard";
 import type { ManagedServer } from "@/stores/serversStore";
+import type { ServerModalActivity } from "@/stores/serverModalStore";
 import "./AddServerModal.css";
 
 type Tab = "ssh" | "agent";
@@ -17,13 +18,22 @@ interface AddServerModalProps {
   onClose: () => void;
   /** Present => edit an existing SSH-mode server instead of adding a new one; hides the tabs. */
   editingServer?: ManagedServer;
+  /** Passed down to each step so the dialog knows when closing it must hide
+   *  work in flight rather than drop it - see `GlobalServerModal`. */
+  onActivity?: (activity: Partial<ServerModalActivity>) => void;
 }
 
-export function AddServerModal({ onClose, editingServer }: AddServerModalProps) {
+export function AddServerModal({ onClose, editingServer, onActivity }: AddServerModalProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("ssh");
   const isEditing = Boolean(editingServer);
   const upsertServer = useServersStore((s) => s.upsertServer);
+  // The live row rather than `editingServer`, which is a snapshot taken when
+  // the modal opened. The icon picker saves straight away, so reading the
+  // snapshot left its preview on the old icon until the modal was reopened -
+  // and spreading it back into the store overwrote anything that had changed
+  // in the meantime.
+  const liveServer = useServersStore((s) => s.servers.find((server) => server.id === editingServer?.id)) ?? editingServer;
   const backdrop = useModalDialog(onClose, { labelledBy: "addservermodal-dialog-title-1" });
   // A freshly created SSH-mode Node still needs Docker/WireGuard/ufw/Vibe
   // Network - the design doc's own "Setup Page" - so a brand new server
@@ -33,7 +43,7 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
   const [justCreatedServer, setJustCreatedServer] = useState<ManagedServer | null>(null);
 
   if (justCreatedServer) {
-    return <NodeSetupWizard serverId={justCreatedServer.id} serverName={justCreatedServer.name} onClose={onClose} />;
+    return <NodeSetupWizard serverId={justCreatedServer.id} serverName={justCreatedServer.name} onClose={onClose} onActivity={onActivity} />;
   }
 
   return (
@@ -68,15 +78,16 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
               icon, and the picker saves immediately rather than waiting for
               the form's own Save - it writes a different column through a
               different command. */}
-          {isEditing && editingServer && (
+          {isEditing && liveServer && (
             <ServerIconPicker
-              server={editingServer}
-              onChanged={(icon) => upsertServer({ ...editingServer, icon: icon ?? undefined })}
+              server={liveServer}
+              onChanged={(icon) => upsertServer({ ...liveServer, icon: icon ?? undefined })}
             />
           )}
           {isEditing || tab === "ssh" ? (
             <SshServerForm
               editingServer={editingServer}
+              onActivity={onActivity}
               onSaved={(server) => {
                 if (isEditing) {
                   onClose();
@@ -86,7 +97,7 @@ export function AddServerModal({ onClose, editingServer }: AddServerModalProps) 
               }}
             />
           ) : (
-            <AgentPairingFlow onPaired={onClose} />
+            <AgentPairingFlow onPaired={onClose} onActivity={onActivity} />
           )}
         </div>
       </div>

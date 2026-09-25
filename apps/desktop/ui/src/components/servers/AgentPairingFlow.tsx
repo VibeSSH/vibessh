@@ -4,6 +4,7 @@ import { copyToClipboard } from "@/utils/copyToClipboard";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useServersStore } from "@/stores/serversStore";
+import type { ServerModalActivity } from "@/stores/serverModalStore";
 import {
   cancelAgentPairing,
   generatePairingCode,
@@ -34,19 +35,25 @@ interface AgentPairingFlowProps {
   onPaired: () => void;
   /** When set, a successful pairing upgrades this already-known SSH-mode server in place (same id, `host` pre-filled and locked - we already know exactly which machine this is) instead of creating a brand new row - the Setup Page's own "also install the Vibe Agent" step. */
   upgradeExistingServer?: { id: string; host: string };
+  /** Told while a code is out and the agent has not called in yet, so the
+   *  dialog around this can move the wait to the background if it is closed
+   *  rather than unmount it - which is what cancels the pairing. */
+  onActivity?: (activity: Partial<ServerModalActivity>) => void;
 }
 
 /**
  * The WebSocket connection this opens lives only as long as this component
  * is mounted - unmounting calls cancelAgentPairing(), including when the
- * user clicks "Done" and the parent modal closes. The live MetricsPreview
+ * user clicks "Done" and the parent modal closes. (Closing the Add Server
+ * dialog mid-wait hides it instead, so the wait carries on - see
+ * `GlobalServerModal`.) The live MetricsPreview
  * below is real, pushed data (Etap J), but it's a preview of the pipeline
  * working, not a persistent per-server session - there's no Dashboard/
  * session-manager to hand this connection off to yet (that's downstream of
  * server storage, Etap 2). Reopening "Add Server" reconnects from scratch.
  */
 
-export function AgentPairingFlow({ onPaired, upgradeExistingServer }: AgentPairingFlowProps) {
+export function AgentPairingFlow({ onPaired, upgradeExistingServer, onActivity }: AgentPairingFlowProps) {
   const { t } = useTranslation();
   const [host, setHost] = useState(upgradeExistingServer?.host ?? "");
   const [port, setPort] = useState("7420");
@@ -144,6 +151,12 @@ export function AgentPairingFlow({ onPaired, upgradeExistingServer }: AgentPairi
     }, 1000);
     return () => window.clearInterval(id);
   }, [remainingSeconds, connectionState]);
+
+  const waitingForAgent =
+    busy || (code !== null && connectionState?.status !== "connected" && (remainingSeconds ?? 0) > 0);
+  useEffect(() => {
+    onActivity?.({ busy: waitingForAgent, label: t("backgroundTasks.pairingAgent"), error: backendError });
+  }, [waitingForAgent, backendError, onActivity, t]);
 
   async function handleGenerate() {
     setBusy(true);

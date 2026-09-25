@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent } from "react";
 
 /**
  * Makes a modal actually behave like one for a keyboard.
@@ -13,10 +13,9 @@ import type { KeyboardEvent, MouseEvent } from "react";
  * dialog. Every one of those is a real block for somebody who does not use
  * a mouse - on an app whose destructive actions all live in modals.
  *
- * Returns props to spread onto the backdrop and the panel. The backdrop
- * half keeps the existing click-outside behaviour, which had a subtle fix
- * in it worth preserving (see `useBackdropClose`); it lives here too so a
- * modal has only one thing to wire up.
+ * Returns props to spread onto the backdrop and the panel, so a modal has
+ * only one thing to wire up. A click on the backdrop does not close the
+ * dialog - see the note on `backdropProps`.
  *
  * ```tsx
  * const dialog = useModalDialog(onClose, { labelledBy: "delete-title" });
@@ -27,7 +26,6 @@ import type { KeyboardEvent, MouseEvent } from "react";
  */
 export function useModalDialog(onClose: () => void, options: { labelledBy?: string; label?: string } = {}) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const startedOnBackdrop = useRef(false);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -88,19 +86,12 @@ export function useModalDialog(onClose: () => void, options: { labelledBy?: stri
       // to Lenis and scrolls the page behind the open dialog. Same opt-out,
       // one level up, so the whole overlay holds the scroll.
       "data-lenis-prevent": true,
-      onMouseDown: (event: MouseEvent<HTMLDivElement>) => {
-        // Tracking where the mousedown landed, not just the click: a drag
-        // that starts inside the panel and ends on the backdrop synthesizes
-        // a click targeting the backdrop, so `target === currentTarget`
-        // alone would close the dialog when somebody merely selected text
-        // and released outside it.
-        startedOnBackdrop.current = event.target === event.currentTarget;
-      },
-      onClick: (event: MouseEvent<HTMLDivElement>) => {
-        if (event.target === event.currentTarget && startedOnBackdrop.current) {
-          onClose();
-        }
-      },
+      // No click-outside close, deliberately. It threw away whatever was on
+      // the panel - a half-filled server form, a connection in progress -
+      // for a click that was usually meant for the sidebar behind it, and
+      // left no way to tell whether the connection had gone through. The
+      // close button and Escape are the ways out; a dialog with work in
+      // flight can hand that work to the background instead of dropping it.
     },
     panelProps: {
       ref: panelRef,
@@ -118,8 +109,6 @@ export function useModalDialog(onClose: () => void, options: { labelledBy?: stri
       // itself. Read as the dialog simply refusing to scroll.
       "data-lenis-prevent": true,
       onKeyDown,
-      // Clicks inside must not reach the backdrop's close handler.
-      onClick: (event: MouseEvent<HTMLDivElement>) => event.stopPropagation(),
     },
   };
 }

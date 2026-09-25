@@ -1462,7 +1462,7 @@
   },
   "serverIcon": {
     "title": "Ikona węzła",
-    "hint": "Wybierz obrazek, żeby odróżnić ten węzeł na pasku bocznym. Przycięty do kwadratu i przeskalowany do 64×64. PNG, JPEG albo WebP, do 8 MB.",
+    "hint": "Wybierz obrazek, żeby odróżnić ten węzeł na pasku bocznym. Dowolny rozmiar - sami przytniemy go do kwadratu i zmniejszymy. PNG, JPEG albo WebP, do 8 MB.",
     "choose": "Wybierz obrazek",
     "clear": "Usuń",
     "noSvg": "SVG nie jest przyjmowany - może wnieść skrypt na stronę, która go wyświetla. Użyj PNG, JPEG albo WebP.",
@@ -1475,6 +1475,22 @@
     "offline": "Offline",
     "connecting": "Łączenie",
     "unknown": "Nieznany"
+  },
+  "backgroundTasks": {
+    "title": "Zadania w tle",
+    "open": "Wróć",
+    "addServer": "Dodawanie serwera",
+    "movedToBackground": "Nadal trwa - przeniesione do zadań w tle na górnym pasku. Kliknij je, żeby wrócić.",
+    "testingConnection": "Test połączenia z {{name}}",
+    "connectingTo": "Dodawanie i łączenie z {{name}}",
+    "savingServer": "Zapisywanie {{name}}",
+    "pairingAgent": "Parowanie Vibe Agenta",
+    "settingUp": "Konfiguracja {{name}}",
+    "state": {
+      "running": "w toku…",
+      "done": "gotowe - kliknij, żeby wrócić",
+      "failed": "nie powiodło się"
+    }
   },
   "sessionPassword": {
     "title": "Potrzebne hasło",

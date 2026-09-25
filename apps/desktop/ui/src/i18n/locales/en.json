@@ -1454,7 +1454,7 @@
   },
   "serverIcon": {
     "title": "Node icon",
-    "hint": "Pick an image to tell this node apart in the sidebar. Cropped to a square and resized to 64×64. PNG, JPEG or WebP, up to 8 MB.",
+    "hint": "Pick an image to tell this node apart in the sidebar. Any size works - we crop it to a square and scale it down for you. PNG, JPEG or WebP, up to 8 MB.",
     "choose": "Choose image",
     "clear": "Remove",
     "noSvg": "SVG isn't accepted - an SVG can carry script into the page that renders it. Use a PNG, JPEG or WebP.",
@@ -1467,6 +1467,22 @@
     "offline": "Offline",
     "connecting": "Connecting",
     "unknown": "Unknown"
+  },
+  "backgroundTasks": {
+    "title": "Background tasks",
+    "open": "Open",
+    "addServer": "Adding a server",
+    "movedToBackground": "Still running - moved to Background tasks on the top bar. Click it to come back.",
+    "testingConnection": "Testing the connection to {{name}}",
+    "connectingTo": "Adding and connecting to {{name}}",
+    "savingServer": "Saving {{name}}",
+    "pairingAgent": "Pairing the Vibe Agent",
+    "settingUp": "Setting up {{name}}",
+    "state": {
+      "running": "in progress…",
+      "done": "done - click to go back",
+      "failed": "failed"
+    }
   },
   "sessionPassword": {
     "title": "Password needed",
