@@ -44,6 +44,9 @@ interface ApplicationConsoleCardProps {
 
 const TAIL_LINES = 200;
 
+/** How long a live stream has to last before it counts as working, not as one that died on arrival. */
+const HEALTHY_STREAM_MS = 10_000;
+
 /**
  * A console on the Overview tab, not buried in the read-only Logs tab.
  *
@@ -222,11 +225,27 @@ export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actio
   usePolling(poll, POLL_INTERVALS.console, { enabled: source === "poll" });
 
   useEffect(() => {
+    // A stopped container has no live output to follow: `docker logs -f`
+    // on it prints the tail and exits at once, and a missing one exits with
+    // an error. Polling shows the same tail without opening a channel every
+    // time. The stream opens when the application starts.
+    if (!isRunning) {
+      setSource("poll");
+      return;
+    }
+    // Coming from polling, the window holds the polled tail - which the
+    // stream below is about to replay. Starting empty is what keeps every
+    // line from appearing twice.
+    setLines([]);
+    lineCountRef.current = 0;
+
     let cancelled = false;
     let live: string | null = null;
     let unlisteners: UnlistenFn[] = [];
     let attempt = 0;
     let retryTimer: number | undefined;
+    /** When the current stream started, for telling a healthy one from one that dies on arrival. */
+    let openedAt = 0;
 
     const dropListeners = () => {
       unlisteners.forEach((off) => off());
@@ -290,7 +309,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actio
           void stopFollowingApplicationLogs(applicationId).catch(() => {});
           return;
         }
-        attempt = 0;
+        openedAt = Date.now();
         setSource("stream");
       } catch (err) {
         // A runtime with no follow is normal and permanent - a local
@@ -313,6 +332,12 @@ export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actio
      */
     function reconnect() {
       dropListeners();
+      // Only a stream that lasted earns a fresh set of attempts. Resetting
+      // on every successful start meant a follow that starts fine and ends
+      // at once - a container that is gone - never used any up, and the
+      // console reopened itself twice a second for as long as it was open.
+      if (openedAt > 0 && Date.now() - openedAt >= HEALTHY_STREAM_MS) attempt = 0;
+      openedAt = 0;
       if (attempt >= 4) {
         setSource("poll");
         return;
@@ -337,7 +362,7 @@ export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actio
       void stopFollowingApplicationLogs(applicationId).catch(() => {});
       setSource("deciding");
     };
-  }, [applicationId]);
+  }, [applicationId, isRunning]);
 
   // The terminal itself, created once. Everything about colour, selection,
   // scrollback and following the tail is xterm's job now - the same library
