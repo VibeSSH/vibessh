@@ -401,26 +401,35 @@ pub(crate) async fn ensure_helper_installed(connection: &SshSession) -> AppResul
     let staging = format!(".vibessh-helper-{}", Uuid::new_v4());
     connection.write_file(&staging, expected.as_bytes()).await?;
 
-    let runas_group = format!("%{}", dedicated_user::GROUP);
-    let script = format!(
-        "sudo groupadd --system {group} 2>/dev/null; \
-         sudo install -D -o root -g root -m 0755 {staging} {helper}; \
-         rc=$?; rm -f {staging}; [ $rc -eq 0 ] || exit $rc; \
-         printf '%s ALL=({runas_group}) NOPASSWD: %s\\n' \"$(whoami)\" {helper} | sudo tee {sudoers} >/dev/null && \
-         sudo chmod 440 {sudoers} && \
-         sudo visudo -c -f {sudoers} >/dev/null || {{ sudo rm -f {sudoers}; exit 9; }}",
-        group = dedicated_user::GROUP,
-        staging = shell_quote(&staging),
-        helper = shell_quote(HELPER_PATH),
-        sudoers = shell_quote(SUDOERS_PATH),
-    );
-    let output = connection.execute_command(&script).await?;
+    let output = connection.execute_command(&install_script(&staging)).await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
         let detail = if detail.is_empty() { "couldn't install the file-operation helper".to_string() } else { detail.to_string() };
         return Err(AppError::Connection(detail));
     }
     Ok(())
+}
+
+/// The shell that moves the staged helper into place and writes its sudoers rule.
+fn install_script(staging: &str) -> String {
+    // An argument to printf, never part of its format: the sudoers group
+    // syntax starts with `%`, and `%vibessh-apps` in the format string was
+    // read as an (invalid) `%v` directive - printf stopped at `ALL=(`,
+    // visudo rejected the half-line, and the rule was rolled back on every
+    // install.
+    let runas_group = shell_quote(&format!("%{}", dedicated_user::GROUP));
+    format!(
+        "sudo groupadd --system {group} 2>/dev/null; \
+         sudo install -D -o root -g root -m 0755 {staging} {helper}; \
+         rc=$?; rm -f {staging}; [ $rc -eq 0 ] || exit $rc; \
+         printf '%s ALL=(%s) NOPASSWD: %s\\n' \"$(whoami)\" {runas_group} {helper} | sudo tee {sudoers} >/dev/null && \
+         sudo chmod 440 {sudoers} && \
+         sudo visudo -c -f {sudoers} >/dev/null || {{ sudo rm -f {sudoers}; exit 9; }}",
+        group = dedicated_user::GROUP,
+        staging = shell_quote(staging),
+        helper = shell_quote(HELPER_PATH),
+        sudoers = shell_quote(SUDOERS_PATH),
+    )
 }
 
 fn staging_path(application_id: Uuid) -> String {
@@ -899,6 +908,17 @@ fn release_staging_command(username: &str, staging: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sudoers_rule_passes_the_group_as_an_argument_not_as_printf_format() {
+        // `%vibessh-apps` inside the format string was read as a `%v`
+        // directive, which cut the rule off at `ALL=(` on every install.
+        let script = install_script(".vibessh-helper-x");
+        let format_start = script.find("printf '").expect("printf") + "printf '".len();
+        let format_end = format_start + script[format_start..].find('\'').expect("closing quote");
+        assert_eq!(&script[format_start..format_end], "%s ALL=(%s) NOPASSWD: %s\\n");
+        assert!(script.contains("'%vibessh-apps'"));
+    }
 
     #[test]
     fn parse_entry_line_reads_every_field_and_relativizes_the_path() {
