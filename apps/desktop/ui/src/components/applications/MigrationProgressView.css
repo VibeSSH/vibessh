@@ -1,0 +1,95 @@
+.migration-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.migration-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.migration-progress-phase {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.migration-progress-step {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.migration-progress-track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3, var(--border));
+}
+
+/* The accent is the signal here, and the bar is small enough to carry it. */
+.migration-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* The steps around the copy have nothing to measure - a moving stripe says
+   "working" without inventing a percentage. */
+.migration-progress-track-indeterminate .migration-progress-fill {
+  position: absolute;
+  width: 30%;
+  animation: migration-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes migration-progress-slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .migration-progress-track-indeterminate .migration-progress-fill {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+.migration-progress-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.migration-progress-current {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.migration-progress-note {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}

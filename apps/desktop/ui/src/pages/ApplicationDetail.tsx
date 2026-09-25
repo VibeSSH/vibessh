@@ -17,6 +17,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { RowPicker, serverRowPickerOption } from "@/components/ui/RowPicker";
 import { LivePill } from "@/components/ui/LivePill";
 import { AnsiLog } from "@/components/ui/AnsiLog";
+import { MigrationProgressView } from "@/components/applications/MigrationProgressView";
 import { MetricTile, MetricTileGrid } from "@/components/ui/MetricTile";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
@@ -48,6 +49,8 @@ import {
   killApplication,
   listBlueprints,
   migrateApplication,
+  onMigrationProgress,
+  type MigrationProgress,
   recreateApplication,
   renameApplication,
   restartApplication,
@@ -167,6 +170,7 @@ export function ApplicationDetail() {
   const [migrateTargetServerId, setMigrateTargetServerId] = useState("");
   const [migrateBusy, setMigrateBusy] = useState(false);
   const [migrateError, setMigrateError] = useState<string | null>(null);
+  const [migrateProgress, setMigrateProgress] = useState<MigrationProgress | null>(null);
   const migrateBackdrop = useModalDialog(() => !migrateBusy && setMigrateOpen(false), { labelledBy: "applicationdetail-dialog-title-2" });
   const clearLogsBackdrop = useModalDialog(() => !clearLogsBusy && setClearingLogs(false), { labelledBy: "applicationdetail-dialog-title-3" });
 
@@ -464,6 +468,9 @@ export function ApplicationDetail() {
     if (!id || !migrateTargetServerId) return;
     setMigrateBusy(true);
     setMigrateError(null);
+    setMigrateProgress(null);
+    // Subscribed before the call starts, so the first report cannot be missed.
+    const unlisten = await onMigrationProgress(id, setMigrateProgress);
     try {
       const result = await migrateApplication(id, migrateTargetServerId);
       // A migration that copied the data but left the old container running,
@@ -481,7 +488,9 @@ export function ApplicationDetail() {
     } catch (err) {
       setMigrateError(errorMessage(err, t));
     } finally {
+      unlisten();
       setMigrateBusy(false);
+      setMigrateProgress(null);
     }
   }
 
@@ -1062,7 +1071,7 @@ export function ApplicationDetail() {
           <div className="modal-panel modal-panel-sm" {...migrateBackdrop.panelProps}>
             <div className="modal-header">
               <h2 className="modal-title" id="applicationdetail-dialog-title-2">{t("applicationDetail.migrateTitle")}</h2>
-              <IconButton icon="x" size="sm" onClick={() => setMigrateOpen(false)} title={t("common.close")} />
+              <IconButton icon="x" size="sm" onClick={() => setMigrateOpen(false)} title={t("common.close")} disabled={migrateBusy} />
             </div>
             <div className="modal-body">
               <p className="dialog-body-text">{t("applicationDetail.migrateBody", { name: application?.name ?? "" })}</p>
@@ -1076,6 +1085,7 @@ export function ApplicationDetail() {
                 options={migrationTargets.map((s) => serverRowPickerOption(s, t))}
               />
               {migrateTargetWarning && <p className="form-note form-note-danger">{t("createApplicationWizard.dockerNotDetected")}</p>}
+              {migrateBusy && <MigrationProgressView progress={migrateProgress} />}
               {migrateError && (
                 <ErrorCallout
                   className="form-note-spaced"

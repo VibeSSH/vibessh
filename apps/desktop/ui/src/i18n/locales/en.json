@@ -210,6 +210,20 @@
     "connecting": "connecting…"
   },
   "applicationDetail": {
+    "migrateStep": "step {{step}} of {{total}}",
+    "migrateBytes": "{{done}} of {{total}}",
+    "migrateFiles": "files: {{done}} of {{total}}",
+    "migrateRate": "{{rate}}/s",
+    "migrateRemaining": "about {{time}} left",
+    "migrateKeepOpen": "Keep VibeSSH open until it finishes - the files go through this computer.",
+    "migratePhase": {
+      "stopping": "Stopping the application",
+      "preparing": "Preparing the target Node",
+      "scanning": "Counting the files to copy",
+      "copying": "Copying files",
+      "starting": "Starting on the new Node",
+      "finishing": "Tidying up the old Node"
+    },
     "applyingChanges": "Applying changes…",
     "loadError": "Couldn't load this application.",
     "logsError": "Couldn't load logs.",
@@ -299,7 +313,7 @@
     "migrateButton": "Migrate to another Node",
     "migrateTitle": "Migrate to another Node",
     "migrateBody": "Move \"{{name}}\" to a different Node, files included. It will be briefly offline while its files copy over.",
-    "migrateBodyNote": "Its old copy is stopped, not deleted - remove it by hand once you've confirmed the move worked.",
+    "migrateBodyNote": "The old application and its container are removed, but its files stay on the old Node - delete them by hand once you've confirmed the move worked.",
     "migrateTargetLabel": "Target Node",
     "migrateConfirm": "Migrate",
     "migrating": "Migrating...",

@@ -210,6 +210,20 @@
     "connecting": "łączę…"
   },
   "applicationDetail": {
+    "migrateStep": "krok {{step}} z {{total}}",
+    "migrateBytes": "{{done}} z {{total}}",
+    "migrateFiles": "pliki: {{done}} z {{total}}",
+    "migrateRate": "{{rate}}/s",
+    "migrateRemaining": "zostało ok. {{time}}",
+    "migrateKeepOpen": "Nie zamykaj VibeSSH do końca - pliki idą przez ten komputer.",
+    "migratePhase": {
+      "stopping": "Zatrzymywanie aplikacji",
+      "preparing": "Przygotowywanie docelowego Node'a",
+      "scanning": "Liczenie plików do skopiowania",
+      "copying": "Kopiowanie plików",
+      "starting": "Uruchamianie na nowym Nodzie",
+      "finishing": "Porządkowanie starego Node'a"
+    },
     "applyingChanges": "Stosuję zmiany…",
     "loadError": "Nie udało się wczytać tej aplikacji.",
     "logsError": "Nie udało się wczytać logów.",
@@ -299,7 +313,7 @@
     "migrateButton": "Migruj do innego Node'a",
     "migrateTitle": "Migruj do innego Node'a",
     "migrateBody": "Przenieś \"{{name}}\" na inny Node, razem z plikami. Aplikacja będzie chwilowo niedostępna na czas kopiowania.",
-    "migrateBodyNote": "Stara kopia zostaje zatrzymana, nie usunięta - usuń ją ręcznie, gdy potwierdzisz, że przeniesienie się udało.",
+    "migrateBodyNote": "Stara aplikacja i jej kontener są usuwane, ale pliki na starym Nodzie zostają - usuń je ręcznie, gdy potwierdzisz, że przeniesienie się udało.",
     "migrateTargetLabel": "Docelowy Node",
     "migrateConfirm": "Migruj",
     "migrating": "Migrowanie...",

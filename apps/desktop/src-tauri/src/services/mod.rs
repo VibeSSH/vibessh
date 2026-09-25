@@ -82,7 +82,7 @@ pub use database_service::{
     reveal_application_database_password, set_database_host_phpmyadmin, update_database_host,
 };
 pub use java_service::{detect_java_installations, JavaInstallation};
-pub use migration_service::{migrate_application, MigrationResult};
+pub use migration_service::{migrate_application, MigrationProgress, MigrationResult};
 pub use papermc_service::PapermcBuild;
 pub use purpur_service::PurpurBuild;
 

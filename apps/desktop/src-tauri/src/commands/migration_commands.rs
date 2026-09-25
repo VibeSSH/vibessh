@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 use crate::errors::AppResult;
 use crate::runtime::local_process::LocalProcessManager;
-use crate::services::{self, MigrationResult};
+use crate::services::{self, MigrationProgress, MigrationResult};
 use crate::state::{DnsSuffixState, MigrationLockManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::database_repository::DatabaseRepository;
@@ -21,6 +21,10 @@ use crate::storage::server_repository::ServerRepository;
 /// an identical instance there, copies its working directory over, cuts its
 /// DNS alias (if any) to the new instance, then retires the old one. See
 /// `services::migration_service`'s own doc comment for the full step order.
+///
+/// Progress goes out as `migration://<id>/progress` events while it runs,
+/// keyed by the source Application - one migration per Application at a
+/// time is already enforced by `MigrationLockManager`.
 #[tauri::command]
 // Fourteen managed dependencies, because migrating an Application touches
 // almost every subsystem at once: both Nodes, the applications/servers/DNS/
@@ -30,6 +34,7 @@ use crate::storage::server_repository::ServerRepository;
 // paper over by bundling unrelated dependencies into a context struct.
 #[allow(clippy::too_many_arguments)]
 pub async fn migrate_application(
+    app: AppHandle,
     app_repo: State<'_, ApplicationRepository>,
     server_repo: State<'_, ServerRepository>,
     network_repo: State<'_, NodeNetworkRepository>,
@@ -45,6 +50,12 @@ pub async fn migrate_application(
     id: Uuid,
     target_server_id: Uuid,
 ) -> AppResult<MigrationResult> {
+    let event = format!("migration://{id}/progress");
+    let report = move |progress: MigrationProgress| {
+        if let Err(err) = app.emit(&event, progress) {
+            log::warn!("couldn't send migration progress to the window: {err}");
+        }
+    };
     services::migrate_application(
         &app_repo,
         &server_repo,
@@ -60,6 +71,7 @@ pub async fn migrate_application(
         &local_process_manager,
         id,
         target_server_id,
+        &report,
     )
     .await
 }

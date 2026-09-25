@@ -321,6 +321,24 @@ export function migrateApplication(id: string, targetServerId: string): Promise<
   return callCommand<MigrationResult>("migrate_application", { id, targetServerId });
 }
 
+/** Mirrors the Rust `MigrationPhase`, in the order a migration goes through them. */
+export type MigrationPhase = "stopping" | "preparing" | "scanning" | "copying" | "starting" | "finishing";
+
+/** Mirrors the Rust `MigrationProgress`. The byte counts come from the directory listing. */
+export interface MigrationProgress {
+  phase: MigrationPhase;
+  filesDone: number;
+  filesTotal: number;
+  bytesDone: number;
+  bytesTotal: number;
+  current: string | null;
+}
+
+/** Progress of a running `migrateApplication` for `applicationId`. Listen before starting it. */
+export function onMigrationProgress(applicationId: string, handler: (progress: MigrationProgress) => void): Promise<UnlistenFn> {
+  return listen<MigrationProgress>(`migration://${applicationId}/progress`, (event) => handler(event.payload)).catch(() => () => {});
+}
+
 /**
  * Opens a live output stream for an Application.
  *

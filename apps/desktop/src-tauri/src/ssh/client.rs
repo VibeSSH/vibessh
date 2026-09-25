@@ -355,6 +355,112 @@ impl SshSession {
         Ok(CommandOutput { exit_code: exit_code.unwrap_or(-1), stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr })
     }
 
+    /// Runs `command` here and `target_command` on `target`, with this
+    /// command's stdout fed into that one's stdin as it arrives - a pipe
+    /// between two Nodes that runs through this process, since the Nodes
+    /// cannot be assumed to reach each other.
+    ///
+    /// Built for moving a whole directory as one `tar` stream: one channel
+    /// each way instead of several SSH round trips per file. `on_chunk` sees
+    /// every chunk on its way through, which is how the caller reports
+    /// progress. Backpressure is the SSH window: a slow target stops this
+    /// side reading, so nothing piles up in memory.
+    ///
+    /// Not under `COMMAND_TIMEOUT`, because a large directory legitimately
+    /// takes longer than any fixed bound. Succeeds only if both commands
+    /// exit 0; otherwise the error carries whatever each wrote to stderr.
+    pub async fn pipe_into(&self, command: &str, target: &SshSession, target_command: &str, mut on_chunk: impl FnMut(&[u8]) + Send) -> AppResult<()> {
+        let closing = |_| AppError::Connection("the SSH connection is closing".into());
+        let _slot = self.command_slots.acquire().await.map_err(closing)?;
+        let _target_slot = target.command_slots.acquire().await.map_err(closing)?;
+
+        let target_channel = target
+            .open_session_channel()
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel on the target: {err}")))?;
+        target_channel
+            .exec(true, target_command)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't start the receiving command: {err}")))?;
+        // Read concurrently with the writes below: the target's messages
+        // (its stderr, its exit status) queue on a bounded channel, and one
+        // left unread while this side blocks on the window would stall both.
+        let (mut target_read, target_write) = target_channel.split();
+        let target_done = tokio::spawn(async move {
+            let mut output = Vec::new();
+            let mut truncated = false;
+            let mut exit_code = None;
+            while let Some(msg) = target_read.wait().await {
+                match msg {
+                    ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => append_capped(&mut output, &data, &mut truncated),
+                    ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
+                    _ => {}
+                }
+            }
+            (exit_code, String::from_utf8_lossy(&output).trim().to_string())
+        });
+
+        let mut source_channel = self
+            .open_session_channel()
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel on the source: {err}")))?;
+        source_channel
+            .exec(true, command)
+            .await
+            .map_err(|err| AppError::Connection(format!("couldn't start the sending command: {err}")))?;
+
+        let mut source_stderr = Vec::new();
+        let mut truncated = false;
+        let mut source_exit = None;
+        let mut write_error = None;
+        while let Some(msg) = source_channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => {
+                    on_chunk(&data);
+                    if let Err(err) = target_write.data(&data[..]).await {
+                        write_error = Some(err);
+                        break;
+                    }
+                }
+                ChannelMsg::ExtendedData { data, ext } if ext == SSH_EXTENDED_DATA_STDERR => append_capped(&mut source_stderr, &data, &mut truncated),
+                ChannelMsg::ExitStatus { exit_status } => source_exit = Some(exit_status),
+                _ => {}
+            }
+        }
+
+        if let Some(err) = write_error {
+            // The target stopped taking data - it failed, and its own stderr
+            // says why far better than the broken write does.
+            if let Err(close_err) = source_channel.close().await {
+                log::warn!("couldn't close the sending side of a pipe after the target failed: {close_err}");
+            }
+            let why = match tokio::time::timeout(Duration::from_secs(5), target_done).await {
+                Ok(Ok((_, stderr))) if !stderr.is_empty() => stderr,
+                _ => err.to_string(),
+            };
+            return Err(AppError::Connection(format!("the receiving side stopped: {why}")));
+        }
+        if let Err(err) = target_write.eof().await {
+            log::warn!("couldn't signal the end of the stream to the receiving side: {err}");
+        }
+        let (target_exit, target_stderr) = target_done
+            .await
+            .map_err(|err| AppError::Internal(format!("the task reading the receiving side failed: {err}")))?;
+
+        let source_stderr = String::from_utf8_lossy(&source_stderr).trim().to_string();
+        match (source_exit, target_exit) {
+            (Some(0), Some(0)) => Ok(()),
+            (source_exit, Some(0)) => Err(AppError::Connection(format!(
+                "the sending command failed (exit {}): {source_stderr}",
+                source_exit.map_or("unknown".to_string(), |code| code.to_string())
+            ))),
+            (_, target_exit) => Err(AppError::Connection(format!(
+                "the receiving command failed (exit {}): {target_stderr}",
+                target_exit.map_or("unknown".to_string(), |code| code.to_string())
+            ))),
+        }
+    }
+
     pub async fn close(&self) {
         let _ = self.handle.disconnect(Disconnect::ByApplication, "", "en").await;
     }

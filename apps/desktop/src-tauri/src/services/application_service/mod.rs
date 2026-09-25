@@ -1172,6 +1172,7 @@ mod tests {
                 &local_process_manager,
                 id,
                 target_node,
+                &|_| {},
             )
             .await;
 
