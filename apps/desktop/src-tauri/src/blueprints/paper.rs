@@ -4,7 +4,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{Blueprint, BlueprintFeature, BlueprintField, BlueprintFieldType, DefaultPort, KnownFile, PortProtocol, RuntimeType};
 use crate::services::latest_paper_build;
 
-use super::{JAVA_PATH_KEY, with_forced_ansi, ensure_java_for, bool_input, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
+use super::{JAVA_PATH_KEY, chosen_server_jar, with_forced_ansi, ensure_java_for, bool_input, render_java_config, text_input, text_list_input, validate_inputs, BlueprintHandler, ProvisionContext};
 // The one shared implementation - every module that builds a remote
 // command used to carry its own byte-identical copy of this.
 use crate::ssh::command::quote as shell_quote;
@@ -88,6 +88,7 @@ impl PaperBlueprint {
                         default_value: Some(serde_json::json!(["nogui"])),
                         help_text: Some("Arguments passed to the server jar itself.".to_string()),
                     },
+                    super::server_jar_field(),
                 ],
                 known_files: vec![
                     KnownFile { path: "server.properties".to_string(), label: "server.properties".to_string() },
@@ -151,7 +152,8 @@ impl BlueprintHandler for PaperBlueprint {
         // process: the path to a JVM on this machine. Absent for Docker,
         // where the image brings its own.
         let java_path = inputs.get(JAVA_PATH_KEY).and_then(serde_json::Value::as_str);
-        render_java_config(&java_version, jvm_args, jar_filename.to_string(), program_args, java_path, Some("stop"))
+        let jar = chosen_server_jar(inputs, jar_filename)?;
+        render_java_config(&java_version, jvm_args, jar, program_args, java_path, Some("stop"))
     }
 
     async fn provision(

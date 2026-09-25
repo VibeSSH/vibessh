@@ -68,6 +68,7 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       },
       jvmArgs: { label: "Argumenty JVM", helpText: "Flagi przekazywane do samego JVM, przed -jar - np. -Xmx2G." },
       programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane do pliku jar serwera." },
+      serverJar: { label: "Plik JAR serwera", helpText: "Zostaw puste, żeby uruchamiać jar pobrany przez VibeSSH. Wpisz nazwę pliku - albo ścieżkę w katalogu serwera, np. custom/server.jar - żeby uruchamiać własny, wgrany jar." },
     },
   },
   velocity: {
@@ -80,6 +81,7 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       },
       jvmArgs: { label: "Argumenty JVM", helpText: "Flagi przekazywane do samego JVM, przed -jar - np. -Xmx1G." },
       programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane do samego jara proxy." },
+      serverJar: { label: "Plik JAR serwera", helpText: "Zostaw puste, żeby uruchamiać jar pobrany przez VibeSSH. Wpisz nazwę pliku - albo ścieżkę w katalogu serwera, np. custom/server.jar - żeby uruchamiać własny, wgrany jar." },
     },
   },
   nats: {
@@ -174,6 +176,7 @@ const PL_BLUEPRINT_TRANSLATIONS: Record<string, BlueprintTranslation> = {
       },
       jvmArgs: { label: "Argumenty JVM", helpText: "Flagi przekazywane samej maszynie wirtualnej, przed -jar - np. -Xmx2G." },
       programArgs: { label: "Argumenty programu", helpText: "Argumenty przekazywane serwerowi." },
+      serverJar: { label: "Plik JAR serwera", helpText: "Zostaw puste, żeby uruchamiać jar pobrany przez VibeSSH. Wpisz nazwę pliku - albo ścieżkę w katalogu serwera, np. custom/server.jar - żeby uruchamiać własny, wgrany jar." },
     },
   },
   waterfall: {

@@ -238,6 +238,53 @@ pub(crate) fn temurin_image(java_version: &str) -> String {
 
 /// Builds the Docker-shape `runtime_config` (`{"image": ..., "command":
 /// [...]}`, what `runtime::docker::DockerConfig` deserializes from) for a
+/// The optional "start from this jar" field on the blueprints whose jar
+/// VibeSSH downloads itself - Paper, Purpur, Velocity.
+pub(crate) const SERVER_JAR_KEY: &str = "serverJar";
+
+/// That field, described once so the three blueprints offer it identically.
+///
+/// The downloaded jar's name was the only thing those blueprints would ever
+/// start, with no way to change it: a server that runs its own fork, or a jar
+/// uploaded by hand, could not be started from it at all.
+pub(crate) fn server_jar_field() -> BlueprintField {
+    BlueprintField {
+        key: SERVER_JAR_KEY.to_string(),
+        label: "Server jar".to_string(),
+        field_type: BlueprintFieldType::Text,
+        required: false,
+        default_value: Some(serde_json::Value::String(String::new())),
+        help_text: Some(
+            "Leave empty to start the jar VibeSSH downloaded. Enter a file name - or a path inside the server's directory, e.g. custom/server.jar - to start a jar you uploaded yourself instead."
+                .to_string(),
+        ),
+    }
+}
+
+/// The jar to start: the one named in `serverJar` when somebody named one,
+/// otherwise the one `provision` downloaded.
+///
+/// A chosen name is held to the shape of a jar inside the server's directory:
+/// relative, no `..`, ending in `.jar`, and only characters that mean the same
+/// thing in a Docker argument list, a systemd unit and a shell - so it cannot
+/// be read differently by whichever runtime ends up starting it.
+pub(crate) fn chosen_server_jar(inputs: &HashMap<String, serde_json::Value>, downloaded: &str) -> AppResult<String> {
+    let chosen = inputs.get(SERVER_JAR_KEY).and_then(serde_json::Value::as_str).map(str::trim).unwrap_or("");
+    if chosen.is_empty() {
+        return Ok(downloaded.to_string());
+    }
+    let relative = crate::files::sandbox::sanitize_relative_path(chosen)?;
+    if relative.is_empty() || !relative.to_ascii_lowercase().ends_with(".jar") {
+        return Err(AppError::InvalidInput(format!("the server jar '{chosen}' has to be a .jar file inside the server's directory")));
+    }
+    if let Some(bad) = relative.chars().find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+' | '/'))) {
+        return Err(AppError::InvalidInput(format!(
+            "the server jar '{chosen}' contains '{bad}' - use letters, digits and . _ - + / only"
+        )));
+    }
+    Ok(relative)
+}
+
 /// Java application: `java`, then JVM args, then `-jar <jar>`, then program
 /// args - the same argument ordering the pre-Etap-M1 process-shape config
 /// used, just as the container's own `command` override instead of a
@@ -378,6 +425,29 @@ impl Default for BlueprintRegistry {
 
 #[cfg(test)]
 mod tests {
+
+    fn jar_inputs(value: &str) -> std::collections::HashMap<String, serde_json::Value> {
+        std::collections::HashMap::from([(super::SERVER_JAR_KEY.to_string(), serde_json::json!(value))])
+    }
+
+    #[test]
+    fn no_chosen_jar_starts_the_downloaded_one() {
+        assert_eq!(super::chosen_server_jar(&std::collections::HashMap::new(), "paper-1.21.jar").unwrap(), "paper-1.21.jar");
+        assert_eq!(super::chosen_server_jar(&jar_inputs("   "), "paper-1.21.jar").unwrap(), "paper-1.21.jar");
+    }
+
+    #[test]
+    fn a_chosen_jar_inside_the_directory_is_started() {
+        assert_eq!(super::chosen_server_jar(&jar_inputs("royalmc-paper.jar"), "paper.jar").unwrap(), "royalmc-paper.jar");
+        assert_eq!(super::chosen_server_jar(&jar_inputs("./custom/server.JAR"), "paper.jar").unwrap(), "custom/server.JAR");
+    }
+
+    #[test]
+    fn a_chosen_jar_that_could_mean_something_else_is_refused() {
+        for bad in ["../outside.jar", "server.txt", "my server.jar", "$(id).jar", "a;b.jar", "x\n.jar"] {
+            assert!(super::chosen_server_jar(&jar_inputs(bad), "paper.jar").is_err(), "{bad:?} should be refused");
+        }
+    }
 
     /// Without this the console is grey whatever it can parse: Paper's logger
     /// checks whether it is writing to a terminal, finds a pipe - a container
