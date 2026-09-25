@@ -12,7 +12,7 @@ import {
 } from "discord.js";
 import { normalizeImageUrl } from "../lib/components.js";
 import { COLOR } from "../lib/theme.js";
-import { getStatus } from "../lib/status.js";
+import { getInstallations, getStatus } from "../lib/status.js";
 import { strings } from "../i18n.js";
 
 /** When these documents were last published - shown in each panel's footer, as
@@ -79,7 +79,8 @@ export function buildTermsPanel() {
  * interleaves media and text per language, which the flat helper doesn't do.
  */
 export async function buildAboutPanel() {
-  const status = await getStatus();
+  const [status, installations] = await Promise.all([getStatus(), getInstallations()]);
+  const installsLine = installations !== null ? `\n**Aktywne instalacje · Active installs:** **${installations.toLocaleString("pl-PL")}**` : "";
   const small = () => new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small);
   const banner = (url: string) => new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(normalizeImageUrl(url)));
 
@@ -94,7 +95,7 @@ export async function buildAboutPanel() {
     .addSeparatorComponents(small())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `**Wersja · Version:** \`${status.version}\`\n**Pobrania · Downloads:** **${status.downloads.toLocaleString("pl-PL")}**`,
+        `**Wersja · Version:** \`${status.version}\`\n**Pobrania · Downloads:** **${status.downloads.toLocaleString("pl-PL")}**${installsLine}`,
       ),
     )
     .addActionRowComponents(

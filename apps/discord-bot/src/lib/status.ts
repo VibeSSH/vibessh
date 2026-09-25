@@ -75,6 +75,30 @@ export async function getStatus(): Promise<AppStatus> {
   return { version: env.statusFallbackVersion, downloads: env.statusFallbackDownloads };
 }
 
+/** The backend's public numbers. Installations are counted there, anonymously - see the
+ * backend's `migrations/0013_update_checks.sql` for what it keeps and what it refuses to. */
+const STATS_URL = "https://api.vibessh.dev/updates/stats";
+
+/**
+ * Distinct installations that checked for an update yesterday, or null when the backend
+ * cannot be reached or has no number yet.
+ *
+ * Always one complete day, never a sum: the backend's per-machine hash is not comparable
+ * across days, so there is no honest weekly figure to show. Null rather than zero on a
+ * failure, so the status channel keeps its last real number instead of announcing nobody.
+ */
+export async function getInstallations(): Promise<number | null> {
+  try {
+    const response = await fetch(STATS_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { installations?: unknown };
+    return typeof data.installations === "number" && Number.isFinite(data.installations) ? data.installations : null;
+  } catch (error) {
+    log.warn(`stats endpoint unreachable, keeping the installations figure as it is (${reason(error)})`);
+    return null;
+  }
+}
+
 /**
  * Just the current version, and only when it came from a live source - never
  * the static `STATUS_FALLBACK_VERSION`.

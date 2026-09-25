@@ -1,5 +1,5 @@
 import { ChannelType, type Client } from "discord.js";
-import { getStatus } from "../lib/status.js";
+import { getInstallations, getStatus } from "../lib/status.js";
 import { ids } from "../store.js";
 import { log } from "../lib/logger.js";
 
@@ -21,12 +21,16 @@ async function renameIfChanged(client: Client, channelId: string | undefined, na
   }
 }
 
-/** Writes the current version and download count into the two STATUS voice
- *  channels' names. Reads from `STATUS_URL` when set, otherwise the fallbacks. */
+/** Writes the current version, download count and yesterday's active installations
+ *  into the STATUS voice channels' names. */
 export async function updateStatusChannels(client: Client): Promise<void> {
-  const status = await getStatus();
+  const [status, installations] = await Promise.all([getStatus(), getInstallations()]);
   await renameIfChanged(client, ids.channel("status-version"), `🏷️ Wersja: ${status.version}`);
   await renameIfChanged(client, ids.channel("status-downloads"), `📥 Pobrania: ${status.downloads.toLocaleString("pl-PL")}`);
+  // Null means the backend didn't answer: leave the channel on its last real number.
+  if (installations !== null) {
+    await renameIfChanged(client, ids.channel("status-installs"), `💻 Aktywne instalacje: ${installations.toLocaleString("pl-PL")}`);
+  }
 }
 
 /** Starts the periodic refresh - once on boot, then on the interval. */
