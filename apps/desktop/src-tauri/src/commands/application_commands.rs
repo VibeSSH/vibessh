@@ -14,7 +14,7 @@ use crate::runtime::local_process::LocalProcessManager;
 use vibessh_protocol::DesktopCommand;
 use crate::runtime::{HealthStatus, ResourceUsage};
 use crate::services::{self, JavaInstallation};
-use crate::state::{AgentSessionManager, DnsSuffixState, LogFollow, LogFollowManager, SshSessionManager};
+use crate::state::{AgentSessionManager, DnsSuffixState, LogFollow, LogFollowManager, SshSessionManager, StatsFollowManager};
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
@@ -393,6 +393,74 @@ pub async fn follow_application_logs(
     }
     log::info!("live console streaming over SSH for application {id}");
     Ok(())
+}
+
+/// Opens a live stream of an Application's CPU and memory. Returns once the
+/// stream is running; readings arrive on `appstats://{stream_id}/sample`,
+/// roughly once a second, and its end on `appstats://{stream_id}/closed`.
+///
+/// Replaces the page polling `docker stats --no-stream` every few seconds:
+/// one channel held open instead of one opened per reading, and numbers that
+/// move with the container rather than in steps - what Pterodactyl's panel
+/// gets from Wings over its websocket.
+///
+/// SSH-mode Docker only for now. An Agent-mode Node would push these over its
+/// own connection the way it does logs, but the Agent has no stats follow
+/// yet; until it does this refuses, and the page keeps polling - the old
+/// behaviour, not a failure.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn follow_application_stats(
+    app: AppHandle,
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    stats_follows: State<'_, StatsFollowManager>,
+    id: Uuid,
+    stream_id: String,
+) -> AppResult<()> {
+    let sample_event = format!("appstats://{stream_id}/sample");
+    let closed_event = format!("appstats://{stream_id}/closed");
+
+    let detail = services::get_application(&repo, id)?;
+    if let Some(server_id) = detail.application.server_id {
+        let server = server_repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
+        if server.connection_mode == ConnectionMode::Agent {
+            return Err(AppError::InvalidInput("live resource usage isn't streamed from Agent-mode Nodes yet".to_string()));
+        }
+    }
+
+    let app_for_samples = app.clone();
+    let handle = services::follow_application_stats(
+        &repo,
+        &server_repo,
+        &sessions,
+        &local_process_manager,
+        id,
+        move |sample| {
+            if let Err(err) = app_for_samples.emit(&sample_event, sample) {
+                log::warn!("couldn't deliver a resource reading to the UI: {err}");
+            }
+        },
+        move |reason| {
+            if let Err(err) = app.emit(&closed_event, reason) {
+                log::warn!("couldn't tell the UI the resource stream ended: {err}");
+            }
+        },
+    )
+    .await?;
+
+    stats_follows.replace(id, stream_id, handle).await;
+    Ok(())
+}
+
+/// Stops the resource stream on an Application, if it is still the one
+/// named. `false` means it was already gone or replaced - a race, not an
+/// error. See `StatsFollowManager` for why the stream id is needed.
+#[tauri::command]
+pub async fn stop_following_application_stats(stats_follows: State<'_, StatsFollowManager>, id: Uuid, stream_id: String) -> AppResult<bool> {
+    Ok(stats_follows.stop(id, &stream_id).await)
 }
 
 /// Stops the console stream on an Application. `false` means there was

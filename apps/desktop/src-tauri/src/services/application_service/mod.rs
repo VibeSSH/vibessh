@@ -36,6 +36,7 @@ mod logs;
 mod ports;
 mod provisioning;
 mod registry;
+mod stats;
 mod teardown;
 
 pub use config::*;
@@ -48,6 +49,7 @@ pub use ports::*;
 pub(crate) use provisioning::{ensure_working_directory_exists, resolve_environment_secrets, store_secret_environment_values};
 pub use provisioning::*;
 pub use registry::*;
+pub use stats::*;
 pub use teardown::*;
 
 pub fn list_applications(repo: &ApplicationRepository) -> AppResult<Vec<Application>> {

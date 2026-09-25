@@ -112,6 +112,30 @@ impl SshSession {
         self.follow_command(&format!("sudo docker logs --tail {tail} -f {container} 2>&1"), filtered, on_closed).await
     }
 
+    /// Follows a container's CPU and memory as docker samples them - about
+    /// once a second - over one long-lived channel.
+    ///
+    /// Replaces polling `docker stats --no-stream` every few seconds, which
+    /// opened a channel per reading and still only moved the numbers in
+    /// steps. Lines arrive raw, redraw escapes included; the caller reads
+    /// them with `runtime::docker::parse_stats_stream_line`. stderr is
+    /// dropped so "no such container" cannot pass for a reading - a container
+    /// that stops simply ends the stream.
+    pub async fn follow_container_stats(
+        &self,
+        container: &str,
+        on_line: impl FnMut(String) + Send + 'static,
+        on_closed: impl FnOnce(Option<String>) + Send + 'static,
+    ) -> AppResult<crate::ssh::client::FollowHandle> {
+        validate_container_ref(container)?;
+        self.follow_command(
+            &format!("sudo docker stats --format '{{{{.CPUPerc}}}}|{{{{.MemUsage}}}}' {container} 2>/dev/null"),
+            on_line,
+            on_closed,
+        )
+        .await
+    }
+
     /// `docker kill` sends SIGKILL immediately, bypassing the container's
     /// own stop timeout - the Docker equivalent of `kill -9`, for when
     /// `stop_container`'s normal graceful stop isn't what's wanted

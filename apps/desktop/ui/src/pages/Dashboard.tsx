@@ -375,13 +375,17 @@ export function Dashboard() {
     return () => window.clearInterval(id);
   }, []);
 
+  // Only said when it means something. A fresh reading used to be labelled
+  // too, so the line counted "just now, 2s ago ... 6s ago" around every poll
+  // - motion that carried no information. It now appears once a reading is
+  // more than two polls late, which is exactly when the numbers above it
+  // should stop being trusted.
+  const metricsStaleSeconds =
+    metricsUpdatedAt == null ? null : Math.max(0, Math.round((Date.now() - metricsUpdatedAt) / 1000));
   const metricsUpdatedLabel =
-    metricsUpdatedAt == null
-      ? null
-      : (() => {
-          const seconds = Math.max(0, Math.round((Date.now() - metricsUpdatedAt) / 1000));
-          return seconds < 2 ? t("dashboard.updatedNow") : t("dashboard.updatedAgo", { s: seconds });
-        })();
+    metricsStaleSeconds != null && metricsStaleSeconds * 1000 > POLL_INTERVALS.serverMetrics * 2
+      ? t("dashboard.updatedAgo", { s: metricsStaleSeconds })
+      : null;
 
   return (
     <div className="page dashboard-page">

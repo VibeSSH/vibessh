@@ -46,7 +46,7 @@ pub use ai_service::{
 pub use application_service::{
     add_application_port, application_console_write, change_application_blueprint, application_health_check, application_logs, application_resource_usage, clear_application_logs, run_application_command,
     rename_application,
-    follow_application_logs,
+    follow_application_logs, follow_application_stats, StatsSample,
     refresh_vibe_network_bind_addresses,
     create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
     ApplicationDeleteOptions, ApplicationTeardownReport,

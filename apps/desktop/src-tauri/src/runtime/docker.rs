@@ -1040,6 +1040,51 @@ fn parse_stats_output(output: &str) -> (Option<f32>, Option<u64>) {
     (cpu_percent, ram_bytes)
 }
 
+/// One line of a *streaming* `docker stats --format '{{.CPUPerc}}|{{.MemUsage}}'`,
+/// or `None` for a line that carries no reading.
+///
+/// Without `--no-stream`, docker redraws its table the way it would on a
+/// terminal - every sample is preceded by "clear screen, cursor home" escape
+/// sequences, whether or not there is a terminal at the other end - so the
+/// reading has to be dug out from behind them. A line with no `|` left after
+/// that (a bare redraw, a blank) is not a sample, and is dropped rather than
+/// reported as a reading of nothing.
+pub(crate) fn parse_stats_stream_line(line: &str) -> Option<(Option<f32>, Option<u64>)> {
+    let cleaned = strip_ansi_escapes(line);
+    if !cleaned.contains('|') {
+        return None;
+    }
+    let reading = parse_stats_output(&cleaned);
+    if reading.0.is_none() && reading.1.is_none() {
+        return None;
+    }
+    Some(reading)
+}
+
+/// Drops `ESC [ ... <final byte>` control sequences. Enough for what docker
+/// stats writes (`ESC[2J`, `ESC[H`), not a general terminal emulator.
+fn strip_ansi_escapes(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        if chars.peek() == Some(&'[') {
+            chars.next();
+            // Parameters and intermediates, up to and including the final
+            // byte, which is always in `@`..=`~`.
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Docker's `go-units.BytesSize` formatting - a number immediately followed
 /// by a unit suffix, no space between them (`"45.6MiB"`). IEC units
 /// (`KiB`/`MiB`/`GiB`/`TiB`) are what modern Docker actually emits; decimal
@@ -1801,6 +1846,19 @@ second
         assert_eq!(parse_docker_byte_size("512B"), Some(512));
         assert_eq!(parse_docker_byte_size("1.5GiB"), Some((1.5 * 1024.0 * 1024.0 * 1024.0) as u64));
         assert_eq!(parse_docker_byte_size("bogus"), None);
+    }
+
+    #[test]
+    fn a_streamed_stats_line_is_read_from_behind_the_redraw_escapes() {
+        let reading = parse_stats_stream_line("\u{1b}[2J\u{1b}[H1.23%|45.6MiB / 512MiB");
+        assert_eq!(reading, Some((Some(1.23), Some((45.6 * 1024.0 * 1024.0) as u64))));
+    }
+
+    #[test]
+    fn a_streamed_line_without_a_reading_is_not_a_sample() {
+        assert_eq!(parse_stats_stream_line("\u{1b}[2J\u{1b}[H"), None);
+        assert_eq!(parse_stats_stream_line(""), None);
+        assert_eq!(parse_stats_stream_line("--|--"), None);
     }
 
     #[test]

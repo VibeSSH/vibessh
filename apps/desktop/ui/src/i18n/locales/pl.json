@@ -637,7 +637,6 @@
     "sectionNodes": "Node'y ({{count}})",
     "loadFoot": "obciążenie {{load}}",
     "updatedAgo": "zaktualizowano {{s}}s temu",
-    "updatedNow": "zaktualizowano teraz",
     "editLayout": "Dostosuj układ",
     "lockLayout": "Zablokuj układ",
     "resetLayout": "Resetuj układ",

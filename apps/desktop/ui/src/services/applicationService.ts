@@ -356,3 +356,37 @@ export function onApplicationLogLine(followId: string, handler: (line: string) =
 export function onApplicationLogClosed(followId: string, handler: (reason: string | null) => void): Promise<UnlistenFn> {
   return listen<string | null>(`applog://${followId}/closed`, (event) => handler(event.payload)).catch(() => () => {});
 }
+
+/** One reading off the live resource stream - no uptime, which `docker stats` does not report. */
+export interface ResourceStatsSample {
+  cpuPercent: number | null;
+  ramBytes: number | null;
+}
+
+/**
+ * Starts streaming an Application's CPU and memory, about once a second.
+ *
+ * Same shape as the log follow: listen on `streamId` first, then start, so
+ * the first reading cannot be missed. Rejects for anything it cannot stream
+ * - not Docker, an Agent-mode Node - and the caller keeps polling.
+ */
+export function followApplicationStats(applicationId: string, streamId: string): Promise<void> {
+  return callCommand<void>("follow_application_stats", { id: applicationId, streamId });
+}
+
+/**
+ * Ends the stream - if it is still `streamId`, so a remount's new stream is
+ * not ended by the old one's cleanup. Not optional bookkeeping: it is what
+ * closes the SSH channel.
+ */
+export function stopFollowingApplicationStats(applicationId: string, streamId: string): Promise<boolean> {
+  return callCommand<boolean>("stop_following_application_stats", { id: applicationId, streamId });
+}
+
+export function onApplicationStatsSample(streamId: string, handler: (sample: ResourceStatsSample) => void): Promise<UnlistenFn> {
+  return listen<ResourceStatsSample>(`appstats://${streamId}/sample`, (event) => handler(event.payload)).catch(() => () => {});
+}
+
+export function onApplicationStatsClosed(streamId: string, handler: (reason: string | null) => void): Promise<UnlistenFn> {
+  return listen<string | null>(`appstats://${streamId}/closed`, (event) => handler(event.payload)).catch(() => () => {});
+}

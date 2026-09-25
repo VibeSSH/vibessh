@@ -125,6 +125,7 @@ pub fn run() {
         .manage(state::FileTransferManager::new())
         .manage(state::AiTurnManager::new())
         .manage(state::LogFollowManager::new())
+        .manage(state::StatsFollowManager::new())
         .manage(state::MigrationLockManager::new())
         .manage(state::MetricsStreamManager::new())
         // Arc-wrapped (unlike the two managers above) because
@@ -284,6 +285,8 @@ pub fn run() {
             commands::application_commands::clear_application_logs,
             commands::application_commands::follow_application_logs,
             commands::application_commands::stop_following_application_logs,
+            commands::application_commands::follow_application_stats,
+            commands::application_commands::stop_following_application_stats,
             commands::application_backup_commands::list_application_backups,
             commands::application_backup_commands::create_application_backup,
             commands::application_backup_commands::delete_application_backup,

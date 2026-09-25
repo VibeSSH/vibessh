@@ -633,7 +633,6 @@
     "sectionNodes": "Nodes ({{count}})",
     "loadFoot": "load {{load}}",
     "updatedAgo": "updated {{s}}s ago",
-    "updatedNow": "updated just now",
     "editLayout": "Customize layout",
     "lockLayout": "Lock layout",
     "resetLayout": "Reset layout",
