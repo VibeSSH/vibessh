@@ -14,6 +14,8 @@ import { Card } from "@/components/ui/Card";
 import { useContextMenu, type ContextMenuItem } from "@/components/ui/ContextMenu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { SelectionActionBar } from "@/components/ui/SelectionActionBar";
+import { CompressModal } from "@/components/files/CompressModal";
 import { IconButton } from "@/components/ui/IconButton";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
@@ -22,6 +24,7 @@ import { useFileDrop } from "@/hooks/useFileDrop";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { restartApplication } from "@/services/applicationService";
 import {
+  compressApplicationFiles,
   copyApplicationFile,
   createApplicationDirectory,
   deleteApplicationFile,
@@ -41,6 +44,7 @@ import { useFileTransferStore } from "@/stores/fileTransferStore";
 import { toastSuccess } from "@/stores/toastStore";
 import type { ApplicationDetail, KnownFile } from "@/types/application";
 import type { RemoteFileEntry } from "@/types/files";
+import { discardFileDraft, rememberFilesView, rememberedFilesView } from "@/stores/applicationFilesStore";
 import { ApplicationFileEditorPanel } from "./ApplicationFileEditorPanel";
 import { ChmodModal } from "./ChmodModal";
 import { JarReplaceWarningModal } from "./JarReplaceWarningModal";
@@ -88,37 +92,92 @@ const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, languag
   const { t } = useTranslation();
   const icon = fileIcon(entry.name, entry.isDir);
   return (
-    <li className={`server-list-item ${selected ? "files-entry-selected" : ""}`.trim()} onContextMenu={(event) => onContextMenu(event, entry)}>
+    // A row of a table rather than a tile: size, date and permissions in
+    // columns that line up with the header, so a folder of backups reads as a
+    // list that can be compared and sorted instead of a stack of cards.
+    <li className={`files-row ${selected ? "files-row-selected" : ""}`.trim()} onContextMenu={(event) => onContextMenu(event, entry)}>
       <Checkbox checked={selected} onChange={() => onToggleSelect(entry.path)} label={null} />
-      <div className={`server-list-icon file-icon-${icon.tone}`}>
-        <Icon name={icon.name} size={16} />
-      </div>
+      <span className={`files-row-icon file-icon-${icon.tone}`}>
+        <Icon name={icon.name} size={15} />
+      </span>
       <button className="files-entry-name" title={entry.name} onClick={() => onOpen(entry)}>
-        {entry.name}
+        <span className="files-entry-name-text">{entry.name}</span>
         {entry.isSymlink && <Badge tone="neutral">{t("applicationFilesTab.symlink")}</Badge>}
       </button>
-      <div className="application-files-entry-meta">
-        {!entry.isDir && <span>{formatSize(entry.size)}</span>}
-        {entry.modifiedAt && <span>{formatShortDate(entry.modifiedAt, language)}</span>}
-        {entry.permissions !== undefined && <span>{formatOctal(entry.permissions)}</span>}
-      </div>
-      {!entry.isDir && (
-        <IconButton
-          icon="download"
-          size="sm"
-          title={t("applicationFilesTab.downloadAria", { name: entry.name })}
-          onClick={() => onDownload(entry)}
-        />
-      )}
-      {/* Built on open, not on render - see OverflowMenu's own note. This
-          list can be two hundred rows, each with six translated menu labels
-          nobody has asked to see. */}
-      <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={() => buildMenuItems(entry)} />
+      <span className="files-row-cell files-row-end">{entry.isDir ? "—" : formatSize(entry.size)}</span>
+      <span className="files-row-cell files-row-end">{entry.modifiedAt ? formatShortDate(entry.modifiedAt, language) : "—"}</span>
+      <span className="files-row-cell files-row-end files-row-mono">{entry.permissions !== undefined ? formatOctal(entry.permissions) : "—"}</span>
+      <span className="files-row-actions">
+        {!entry.isDir && (
+          <IconButton
+            icon="download"
+            size="sm"
+            title={t("applicationFilesTab.downloadAria", { name: entry.name })}
+            onClick={() => onDownload(entry)}
+          />
+        )}
+        {/* Built on open, not on render - see OverflowMenu's own note. This
+            list can be two hundred rows, each with six translated menu labels
+            nobody has asked to see. */}
+        <OverflowMenu ariaLabel={t("applicationFilesTab.moreAria", { name: entry.name })} items={() => buildMenuItems(entry)} />
+      </span>
     </li>
   );
 });
 
 const ROOT_PATH = ".";
+
+type FileSortKey = "name" | "size" | "modified";
+interface FileSort {
+  key: FileSortKey;
+  descending: boolean;
+}
+
+const NAME_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * Folders first whatever the column, then the chosen order. Names compare
+ * naturally - `world2` before `world10` - which is how people number them.
+ */
+function sortEntries(entries: RemoteFileEntry[], sort: FileSort): RemoteFileEntry[] {
+  const direction = sort.descending ? -1 : 1;
+  return [...entries].sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    let order = 0;
+    if (sort.key === "size") order = a.size - b.size;
+    else if (sort.key === "modified") order = Date.parse(a.modifiedAt ?? "") - Date.parse(b.modifiedAt ?? "") || 0;
+    if (order === 0) order = NAME_ORDER.compare(a.name, b.name);
+    return order * direction;
+  });
+}
+
+/** A column title that sorts the listing, and shows which way it is sorted. */
+function SortHeader({
+  label,
+  column,
+  sort,
+  onSort,
+  align,
+}: {
+  label: string;
+  column: FileSortKey;
+  sort: FileSort;
+  onSort: (column: FileSortKey) => void;
+  align?: "end";
+}) {
+  const active = sort.key === column;
+  return (
+    <button
+      type="button"
+      className={`files-row-head-cell files-sort ${align === "end" ? "files-row-end" : ""} ${active ? "files-sort-active" : ""}`}
+      onClick={() => onSort(column)}
+      aria-pressed={active}
+    >
+      {label}
+      {active && <Icon name={sort.descending ? "chevron-down" : "chevron-up"} size={12} />}
+    </button>
+  );
+}
 
 function joinPath(dir: string, name: string): string {
   return dir === ROOT_PATH ? name : `${dir}/${name}`;
@@ -147,10 +206,16 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const currentJarName = extractCurrentJarName(application.runtimeConfig);
   const isRunning = application.status === "running";
 
-  const [path, setPath] = useState(ROOT_PATH);
+  // Where this Application's tab was left - see `applicationFilesStore`. The
+  // page remounts on every switch between Applications, so without this a
+  // trip to another server landed back at the top with the file closed.
+  const [path, setPath] = useState(() => rememberedFilesView(applicationId)?.path ?? ROOT_PATH);
   const [filter, setFilter] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(null);
+  const [openFile, setOpenFile] = useState<RemoteFileEntry | null>(() => rememberedFilesView(applicationId)?.openFile ?? null);
+  useEffect(() => {
+    rememberFilesView(applicationId, { path, openFile });
+  }, [applicationId, path, openFile]);
   // Split-view editing: whether the open editor has unsaved changes (reported
   // up by the editor), and a file the user asked to switch to while it did -
   // held until they confirm discarding, so a click in the side list never
@@ -159,6 +224,9 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [pendingSwitch, setPendingSwitch] = useState<RemoteFileEntry | null>(null);
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ entry: RemoteFileEntry; mode: "rename" | "move" | "copy" } | null>(null);
+  // Acting on a whole selection from the bar at the bottom of the list.
+  const [compressTargets, setCompressTargets] = useState<RemoteFileEntry[] | null>(null);
+  const [movingEntries, setMovingEntries] = useState<RemoteFileEntry[] | null>(null);
   const [chmodTarget, setChmodTarget] = useState<RemoteFileEntry | null>(null);
   const [deletingEntries, setDeletingEntries] = useState<RemoteFileEntry[] | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -240,19 +308,26 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
    */
   const deferredFilter = useDeferredValue(filter);
 
+  const [sort, setSort] = useState<FileSort>({ key: "name", descending: false });
   const matchingEntries = useMemo(() => {
     const needle = deferredFilter.trim().toLowerCase();
-    if (!needle) return entries;
-    return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
-  }, [entries, deferredFilter]);
+    const filtered = needle ? entries.filter((entry) => entry.name.toLowerCase().includes(needle)) : entries;
+    return sortEntries(filtered, sort);
+  }, [entries, deferredFilter, sort]);
+  // A click on the column already sorted flips it; a new column starts in its
+  // natural direction - names A to Z, the largest and the newest first.
+  const toggleSort = (key: FileSortKey) =>
+    setSort((current) => (current.key === key ? { key, descending: !current.descending } : { key, descending: key !== "name" }));
+  const folderCount = matchingEntries.filter((entry) => entry.isDir).length;
+  const fileCount = matchingEntries.length - folderCount;
   const visibleEntries = matchingEntries.slice(0, MAX_ROWS_SHOWN);
   const allSelected = matchingEntries.length > 0 && matchingEntries.every((entry) => selectedPaths.has(entry.path));
   const truncated = matchingEntries.length > visibleEntries.length;
 
-  // Back to the top when the application changes - the previous one's tree
-  // says nothing about this one.
+  // To wherever this Application was left when the application changes - the
+  // previous one's tree says nothing about this one.
   useEffect(() => {
-    setPath(ROOT_PATH);
+    setPath(rememberedFilesView(applicationId)?.path ?? ROOT_PATH);
   }, [applicationId]);
 
   const segments = path === ROOT_PATH ? [] : path.split("/").filter(Boolean);
@@ -575,6 +650,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
             onCancel={() => setPendingSwitch(null)}
             onDiscard={() => {
               const next = pendingSwitch;
+              discardFileDraft(applicationId, openFile.path);
               setPendingSwitch(null);
               setEditorDirty(false);
               setOpenFile(next);
@@ -587,39 +663,56 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
 
   return (
     <div className="application-detail-overview">
-      {knownFiles.length > 0 && (
-        <div className="application-files-quick">
-          <span className="application-files-quick-label">{t("applicationFilesTab.quickFiles")}</span>
-          {knownFiles.map((quickFile) => (
-            <button key={quickFile.path} className="application-files-quick-button" onClick={() => openQuickFile(quickFile)}>
-              {quickFile.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="application-files-breadcrumb-row">
-        <Breadcrumbs segments={segments} onNavigate={load} rootPath={ROOT_PATH} />
-        <div className="application-files-toolbar">
-          <GuideLink topic="application-files" />
-          <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
-            <Icon name="folder-plus" size={14} />
-            {t("applicationFilesTab.newFolder")}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setCreateModal("file")}>
-            <Icon name="file-plus" size={14} />
-            {t("applicationFilesTab.newFile")}
-          </Button>
-          <Button size="sm" onClick={handleUpload}>
-            <Icon name="upload" size={14} />
-            {t("applicationFilesTab.upload")}
-          </Button>
-        </div>
-      </div>
-
       {error && <p className="page-error-note">{error}</p>}
 
-      <Card className={`application-files-card ${dragging ? "application-files-card-dropping" : ""}`.trim()}>
+      {/* One card for the whole browser: where you are, what you can do
+          here, and the listing. The quick files, the breadcrumb and the
+          buttons used to be three separate strips stacked above it. */}
+      <Card
+        title={t("applicationDetail.tabFiles")}
+        subtitle={path === ROOT_PATH ? application.workingDirectory : `${application.workingDirectory}/${path}`}
+        className={`application-files-card ${dragging ? "application-files-card-dropping" : ""}`.trim()}
+        actions={
+          <>
+            <GuideLink topic="application-files" />
+            <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
+              <Icon name="folder-plus" size={14} />
+              {t("applicationFilesTab.newFolder")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setCreateModal("file")}>
+              <Icon name="file-plus" size={14} />
+              {t("applicationFilesTab.newFile")}
+            </Button>
+            <Button size="sm" onClick={handleUpload}>
+              <Icon name="upload" size={14} />
+              {t("applicationFilesTab.upload")}
+            </Button>
+          </>
+        }
+      >
+        <div className="application-files-nav">
+          <IconButton
+            icon="chevron-up"
+            size="sm"
+            title={t("applicationFilesTab.upOneLevel")}
+            onClick={() => load(segments.length > 1 ? segments.slice(0, -1).join("/") : ROOT_PATH)}
+            disabled={path === ROOT_PATH}
+          />
+          <Breadcrumbs segments={segments} onNavigate={load} rootPath={ROOT_PATH} />
+        </div>
+
+        {knownFiles.length > 0 && (
+          <div className="application-files-quick">
+            <span className="application-files-quick-label">{t("applicationFilesTab.quickFiles")}</span>
+            {knownFiles.map((quickFile) => (
+              <button key={quickFile.path} className="application-files-quick-button" onClick={() => openQuickFile(quickFile)}>
+                <Icon name="file" size={12} />
+                {quickFile.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* The drop target is the whole card rather than the list, so a drop
             still lands when the directory is empty and the list is an empty
             state instead of rows. */}
@@ -653,23 +746,22 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               placeholder={t("filesPage.filterPlaceholder")}
               aria-label={t("filesPage.filterPlaceholder")}
             />
-            {selectedPaths.size > 0 && (
-              <>
-                <span className="files-selection-count">{t("filesPage.selectedCount", { count: selectedPaths.size })}</span>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => setDeletingEntries(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}
-                >
-                  {t("filesPage.deleteSelectedAria", { count: selectedPaths.size })}
-                </Button>
-              </>
-            )}
+            <span className="application-files-summary">{t("applicationFilesTab.summary", { folders: folderCount, files: fileCount })}</span>
           </div>
           {visibleEntries.length === 0 ? (
             <EmptyState icon="search" title={t("filesPage.noMatchesTitle")} description={t("filesPage.noMatchesDescription")} />
           ) : (
-          <ul className="server-list">
+          <>
+          <div className="files-row files-row-head" role="presentation">
+            <span />
+            <span />
+            <SortHeader label={t("applicationFilesTab.columnName")} column="name" sort={sort} onSort={toggleSort} />
+            <SortHeader label={t("applicationFilesTab.columnSize")} column="size" sort={sort} onSort={toggleSort} align="end" />
+            <SortHeader label={t("applicationFilesTab.columnModified")} column="modified" sort={sort} onSort={toggleSort} align="end" />
+            <span className="files-row-head-cell files-row-end">{t("applicationFilesTab.columnPermissions")}</span>
+            <span />
+          </div>
+          <ul className="files-rows">
             {visibleEntries.map((entry) => (
               <FileRow
                 key={entry.path}
@@ -684,10 +776,29 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               />
             ))}
           </ul>
+          </>
           )}
           {truncated && (
             <p className="form-note">{t("filesPage.showingFirst", { shown: visibleEntries.length, total: matchingEntries.length })}</p>
           )}
+          <SelectionActionBar count={selectedPaths.size} onClear={() => setSelectedPaths(new Set())}>
+            <Button variant="secondary" size="sm" onClick={() => setCompressTargets(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}>
+              <Icon name="archive" size={14} />
+              {t("filesPage.compressSelectedShort")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setMovingEntries(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}>
+              <Icon name="move" size={14} />
+              {t("filesPage.moveSelectedShort")}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setDeletingEntries(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}
+            >
+              <Icon name="trash" size={14} />
+              {t("filesPage.deleteSelectedShort")}
+            </Button>
+          </SelectionActionBar>
           </>
         )}
       </Card>
@@ -701,6 +812,55 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           mode={createModal}
           onClose={() => setCreateModal(null)}
           onCreate={createModal === "folder" ? handleCreateFolder : handleCreateFile}
+        />
+      )}
+
+      {compressTargets && (
+        <CompressModal
+          targets={compressTargets}
+          onClose={() => setCompressTargets(null)}
+          onConfirm={async (archiveName) => {
+            await compressApplicationFiles(
+              applicationId,
+              compressTargets.map((entry) => entry.path),
+              joinPath(path, archiveName),
+            );
+            toastSuccess(t("filesPage.compressedToast", { name: archiveName }));
+            setSelectedPaths(new Set());
+            load(path);
+          }}
+        />
+      )}
+
+      {movingEntries && (
+        <RenameOrMoveModal
+          mode="move"
+          currentPath={path}
+          currentName=""
+          destinationHelp={{
+            note: t("applicationFilesTab.moveManyNote", { count: movingEntries.length }),
+            placeholder: t("applicationFilesTab.moveManyPlaceholder"),
+          }}
+          onClose={() => setMovingEntries(null)}
+          onConfirm={async (to) => {
+            // One at a time, and every failure kept: a move that stops at
+            // the first error leaves the rest silently where they were.
+            const directory = to.replace(/\/+$/, "") || ROOT_PATH;
+            const failed: string[] = [];
+            for (const entry of movingEntries) {
+              try {
+                await renameApplicationFile(applicationId, entry.path, joinPath(directory, entry.name));
+              } catch (err) {
+                failed.push(`${entry.name}: ${errorMessage(err, t)}`);
+              }
+            }
+            setSelectedPaths(new Set());
+            load(path);
+            if (failed.length > 0) {
+              throw new Error(t("applicationFilesTab.moveManyFailed", { count: failed.length, details: failed.join("; ") }));
+            }
+            toastSuccess(t("applicationFilesTab.movedManyToast", { count: movingEntries.length }));
+          }}
         />
       )}
 

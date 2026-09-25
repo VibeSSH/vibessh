@@ -17,6 +17,9 @@ tauri-build = { version = "2", features = [] }
 # `tray-icon` is what puts VibeSSH beside the clock - see `tray.rs` for why
 # closing the window no longer ends the process.
 tauri = { version = "2", features = ["tray-icon"] }
+# Decodes what the file helper prints for a one-call read (`readsmall` in
+# `files::sudo_user`). Already in the lockfile through other crates.
+base64 = "0.22"
 tauri-plugin-log = "2"
 # Native open/save file dialogs for Files module upload/download.
 tauri-plugin-dialog = "2"

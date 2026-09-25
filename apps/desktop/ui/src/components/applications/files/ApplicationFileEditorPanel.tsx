@@ -15,6 +15,7 @@ import { languageExtensionFor } from "@/components/servers/editorLanguage";
 import { useBlockingProblems } from "@/components/servers/fileProblems";
 import { bytesToText, textToBytes } from "@/services/filesService";
 import { getApplicationFileMetadata, readApplicationFile, readApplicationFileWindow, saveApplicationFile } from "@/services/applicationFilesService";
+import { discardFileDraft, dropFileDraft, fileDraft, keepFileDraft } from "@/stores/applicationFilesStore";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { formatBytes } from "@/utils/formatBytes";
 import { toastSuccess } from "@/stores/toastStore";
@@ -95,6 +96,38 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   // Read inside a callback that outlives the render it was made in.
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const savedContentRef = useRef(savedContent);
+  savedContentRef.current = savedContent;
+  // Whether this editor has written the file, so a later change on disk that
+  // undoes the write can be named instead of quietly loaded over the top.
+  const savedHere = useRef(false);
+  const [overwrittenAfterSave, setOverwrittenAfterSave] = useState(false);
+  // No read has ever succeeded. The editor stays locked until one does: a
+  // failed read used to leave an empty, editable editor, and saving that
+  // would have written an empty file over the real one.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const hasLoaded = useRef(false);
+  // An unsaved edit left behind by a previous editor on this file is put back
+  // on the first read only.
+  const draftChecked = useRef(false);
+  // Only the latest read may land. Two in flight - StrictMode's double mount,
+  // a focus check overlapping a reload - would otherwise finish in whatever
+  // order the Node answered and the older one could win.
+  const loadGeneration = useRef(0);
+
+  // Leaving with unsaved changes - a switch to another Application remounts
+  // this page - keeps them for when the file is opened again, instead of
+  // dropping somebody's edit without a word. A deliberate discard is marked
+  // first (`discardFileDraft`) and is not kept.
+  useEffect(
+    () => () => {
+      if (tooLarge || contentRef.current === savedContentRef.current) return;
+      keepFileDraft(applicationId, entry.path, { base: savedContentRef.current, content: contentRef.current });
+    },
+    [applicationId, entry.path, tooLarge],
+  );
   // Keep the parent's copy of the dirty flag current, so the file list beside
   // the editor knows whether switching files needs a discard confirmation.
   useEffect(() => {
@@ -161,21 +194,73 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     }
   }, [applicationId, entry.path]);
 
-  const load = useCallback(() => {
-    if (tooLarge) return;
-    setLoading(true);
-    setError(null);
-    readApplicationFile(applicationId, entry.path)
-      .then((bytes) => {
-        const text = bytesToText(bytes);
-        setContent(text);
-        setSavedContent(text);
-        setChangedOnDisk(false);
-        void refreshBaseline();
-      })
-      .catch((err) => setError(errorMessage(err, t)))
-      .finally(() => setLoading(false));
-  }, [applicationId, entry.path, tooLarge, refreshBaseline, t]);
+  /**
+   * Reads the file into the editor.
+   *
+   * `full` is an explicit (re)load: the editor makes way for a loading note
+   * and whatever is on disk replaces what is here. `quiet` is catching up with
+   * a change made somewhere else while nothing here was edited - it used to be
+   * a full reload, which unmounted the editor for a moment (the "loading"
+   * that kept flashing up, taking the cursor and scroll with it) and, worse,
+   * landed its answer over anything typed while the read was in flight. A
+   * quiet read keeps the editor where it is and never overwrites an edit: one
+   * made meanwhile turns into the "changed on disk" question instead.
+   */
+  const load = useCallback(
+    (mode: "full" | "quiet" = "full") => {
+      if (tooLarge) return;
+      const generation = ++loadGeneration.current;
+      if (mode === "full") setLoading(true);
+      setError(null);
+      readApplicationFile(applicationId, entry.path)
+        .then((bytes) => {
+          if (generation !== loadGeneration.current) return;
+          const text = bytesToText(bytes);
+          hasLoaded.current = true;
+          setLoadFailed(false);
+          void refreshBaseline();
+
+          if (!draftChecked.current) {
+            draftChecked.current = true;
+            const draft = fileDraft(applicationId, entry.path);
+            if (draft) {
+              dropFileDraft(applicationId, entry.path);
+              setSavedContent(text);
+              setContent(draft.content);
+              // The file moved on while the edit was parked: both versions
+              // are somebody's, so the bar asks rather than picking one.
+              setChangedOnDisk(draft.base !== text);
+              return;
+            }
+          }
+
+          if (mode === "quiet") {
+            if (dirtyRef.current) {
+              setChangedOnDisk(true);
+              return;
+            }
+            if (text === savedContentRef.current) return;
+            // Changed on disk after this editor saved it: most often a
+            // running server or plugin writing its own settings back.
+            if (savedHere.current) setOverwrittenAfterSave(true);
+          } else {
+            setOverwrittenAfterSave(false);
+          }
+          setContent(text);
+          setSavedContent(text);
+          setChangedOnDisk(false);
+        })
+        .catch((err) => {
+          if (generation !== loadGeneration.current) return;
+          setError(errorMessage(err, t));
+          if (!hasLoaded.current) setLoadFailed(true);
+        })
+        .finally(() => {
+          if (mode === "full" && generation === loadGeneration.current) setLoading(false);
+        });
+    },
+    [applicationId, entry.path, tooLarge, refreshBaseline, t],
+  );
 
   /**
    * Looks for an edit made somewhere else.
@@ -194,9 +279,10 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     getApplicationFileMetadata(applicationId, entry.path)
       .then((meta) => {
         if (meta.size === baseline.current.size && meta.modifiedAt === baseline.current.modifiedAt) return;
-        // Nothing of the user's to lose, so this just catches up quietly.
+        // Nothing of the user's to lose, so this just catches up quietly -
+        // in place, and without winning over anything typed meanwhile.
         if (!dirtyRef.current) {
-          load();
+          load("quiet");
           return;
         }
         setChangedOnDisk(true);
@@ -206,15 +292,17 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
 
   useWindowFocus(checkForExternalEdit);
 
-  useEffect(load, [load]);
+  useEffect(() => load(), [load]);
 
   const handleSave = useCallback(async () => {
-    if (loading || saving || tooLarge || blocking.length > 0) return;
+    if (loading || loadFailed || saving || tooLarge || blocking.length > 0) return;
     setSaving(true);
     setError(null);
     try {
       await saveApplicationFile(applicationId, entry.path, textToBytes(content), backupBeforeSave);
       setSavedContent(content);
+      savedHere.current = true;
+      setOverwrittenAfterSave(false);
       setChangedOnDisk(false);
       void refreshBaseline();
       toastSuccess(t("applicationFileEditor.savedToast", { name: entry.name }));
@@ -224,7 +312,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     } finally {
       setSaving(false);
     }
-  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, saving, tooLarge, blocking.length, onSaved, refreshBaseline, t]);
+  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, loadFailed, saving, tooLarge, blocking.length, onSaved, refreshBaseline, t]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -278,9 +366,9 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
             disabled={loading || tooLarge}
           />
           <IconButton icon="history" size="sm" onClick={() => setHistoryOpen(true)} title={t("applicationFileEditor.historyAria")} />
-          <IconButton icon="refresh-cw" size="sm" onClick={load} title={t("applicationFileEditor.reloadAria")} disabled={loading} />
+          <IconButton icon="refresh-cw" size="sm" onClick={() => load()} title={t("applicationFileEditor.reloadAria")} disabled={loading} />
           {!tooLarge && (
-            <Button onClick={handleSave} disabled={loading || saving || !dirty || blocking.length > 0}>
+            <Button onClick={handleSave} disabled={loading || loadFailed || saving || !dirty || blocking.length > 0}>
               {saving ? t("applicationFileEditor.saving") : t("applicationFileEditor.save")}
             </Button>
           )}
@@ -298,8 +386,18 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
         <p className="file-editor-tab-changed">
           <Icon name="alert-triangle" size={14} />
           <span>{t("applicationFileEditor.changedOnDisk")}</span>
-          <Button variant="secondary" size="sm" onClick={load}>
+          <Button variant="secondary" size="sm" onClick={() => load()}>
             {t("applicationFileEditor.reloadFromDisk")}
+          </Button>
+        </p>
+      )}
+
+      {overwrittenAfterSave && !changedOnDisk && (
+        <p className="file-editor-tab-changed">
+          <Icon name="alert-triangle" size={14} />
+          <span>{t("applicationFileEditor.overwrittenAfterSave")}</span>
+          <Button variant="secondary" size="sm" onClick={() => setOverwrittenAfterSave(false)}>
+            {t("common.close")}
           </Button>
         </p>
       )}
@@ -339,6 +437,13 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
           </>
         ) : loading ? (
           <p className="form-note">{t("applicationFileEditor.loading")}</p>
+        ) : loadFailed ? (
+          <div className="file-editor-load-failed">
+            <p className="form-note form-note-danger">{t("applicationFileEditor.loadFailed")}</p>
+            <Button variant="secondary" size="sm" onClick={() => load()}>
+              {t("applicationFileEditor.retryLoad")}
+            </Button>
+          </div>
         ) : (
           <CodeMirror
             className="file-editor-tab-codemirror"
@@ -376,7 +481,15 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
       )}
 
       {confirmDiscard && (
-        <DiscardChangesDialog fileName={entry.name} onCancel={() => setConfirmDiscard(false)} onDiscard={onClose} />
+        <DiscardChangesDialog
+          fileName={entry.name}
+          onCancel={() => setConfirmDiscard(false)}
+          onDiscard={() => {
+            // Thrown away on purpose - not kept as a draft when this closes.
+            discardFileDraft(applicationId, entry.path);
+            onClose();
+          }}
+        />
       )}
       {editorMenu.element}
     </div>

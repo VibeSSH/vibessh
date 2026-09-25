@@ -152,6 +152,20 @@ pub async fn copy_application_file(
     services::copy_application_file(&app_repo, &server_repo, &sessions, application_id, &from, &to).await
 }
 
+/// Compresses the given files and folders into a new `.zip`, inside the
+/// Application's root - the Files tab's "Compress" for a selection.
+#[tauri::command]
+pub async fn compress_application_files(
+    app_repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    application_id: Uuid,
+    paths: Vec<String>,
+    destination_path: String,
+) -> AppResult<()> {
+    services::compress_application_files(&app_repo, &server_repo, &sessions, application_id, &paths, &destination_path).await
+}
+
 #[tauri::command]
 pub async fn set_application_file_permissions(
     app_repo: State<'_, ApplicationRepository>,

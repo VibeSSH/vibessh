@@ -344,6 +344,7 @@ pub fn run() {
             commands::application_file_commands::delete_application_file,
             commands::application_file_commands::rename_application_file,
             commands::application_file_commands::copy_application_file,
+            commands::application_file_commands::compress_application_files,
             commands::application_file_commands::set_application_file_permissions,
             commands::application_file_commands::download_application_file,
             commands::application_file_commands::upload_application_file,

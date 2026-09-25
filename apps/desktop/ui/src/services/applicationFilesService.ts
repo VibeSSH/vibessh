@@ -42,6 +42,11 @@ export function copyApplicationFile(applicationId: string, from: string, to: str
   return callCommand<void>("copy_application_file", { applicationId, from, to });
 }
 
+/** Zips `paths` into a new archive at `destinationPath`, all relative to the Application's root. */
+export function compressApplicationFiles(applicationId: string, paths: string[], destinationPath: string): Promise<void> {
+  return callCommand<void>("compress_application_files", { applicationId, paths, destinationPath });
+}
+
 export function setApplicationFilePermissions(applicationId: string, path: string, mode: number): Promise<void> {
   return callCommand<void>("set_application_file_permissions", { applicationId, path, mode });
 }

@@ -56,6 +56,13 @@ use super::sandbox::{relativize, sanitize_relative_path};
 use super::{ApplicationFileProvider, ProgressFn};
 
 const HELPER_PATH: &str = "/usr/local/lib/vibessh/file-helper.sh";
+
+/// `canonical_root` answers, keyed by SSH session and configured root - a
+/// new session (a reconnect) asks again.
+static CANONICAL_ROOTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(u64, String), String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+/// Far more Applications than one person has open; past it the map starts over.
+const CANONICAL_ROOTS_CAP: usize = 256;
 const SUDOERS_PATH: &str = "/etc/sudoers.d/vibessh-file-helper";
 /// Every staging file lives under this directory - the helper script itself
 /// refuses to `read`/`write` a staging argument that doesn't start with it
@@ -153,6 +160,42 @@ require_within_root() {{
     within_root "$1" || {{ echo "vibessh-file-helper: '$1' is outside the application root" >&2; exit 5; }}
 }}
 
+# Creates the directory $1 and whatever parents it is missing, one level at a
+# time from the application root. Every level that already exists must
+# resolve to a directory inside the root - a symlinked component cannot lead
+# the creation elsewhere - and '..' is refused outright. Globbing is off while
+# the path is split, so a name with '*' in it stays a name.
+make_dirs_within_root() {{
+    case "$1" in
+        "$canon_root"/*) rel="${{1#"$canon_root"/}}" ;;
+        "$root_arg"/*) rel="${{1#"$root_arg"/}}" ;;
+        *) return 1 ;;
+    esac
+    cur="$canon_root"
+    status=0
+    set -f
+    saved_ifs="$IFS"
+    IFS=/
+    for part in $rel; do
+        case "$part" in
+            ''|.) continue ;;
+            ..) status=1; break ;;
+        esac
+        next="$cur/$part"
+        if [ -e "$next" ] || [ -L "$next" ]; then
+            real=$(realpath -e -- "$next") || {{ status=1; break; }}
+            if ! within_root "$real" || [ ! -d "$real" ]; then status=1; break; fi
+            cur="$real"
+        else
+            mkdir -- "$next" || {{ status=1; break; }}
+            cur="$next"
+        fi
+    done
+    IFS="$saved_ifs"
+    set +f
+    return "$status"
+}}
+
 require_staging() {{
     case "$1" in
         {staging_root}/*) return 0 ;;
@@ -240,6 +283,63 @@ case "$op" in
         ''|*[!0-7]*) echo "vibessh-file-helper: invalid mode" >&2; exit 7 ;;
     esac
     chmod "$mode" -- "$target"
+    ;;
+  readsmall)
+    # The editor's read in one call: the same checks as `read`, a size cap,
+    # and the contents on stdout as base64 - no staged copy to create,
+    # claim, fetch and clean up, each of which was its own SSH channel.
+    target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such path" >&2; exit 4; }}
+    require_within_root "$target"
+    [ -f "$target" ] || {{ echo "vibessh-file-helper: not a regular file" >&2; exit 4; }}
+    case "${{2:-}}" in
+        ''|*[!0-9]*) echo "vibessh-file-helper: the size limit must be a number" >&2; exit 6 ;;
+    esac
+    size=$(stat -c %s -- "$target")
+    if [ "$size" -gt "$2" ]; then
+        echo "vibessh-file-helper: too large ($size bytes)" >&2
+        exit 9
+    fi
+    base64 -w 0 -- "$target"
+    ;;
+  writein)
+    # The editor's save in one call: the new contents come in on stdin, go
+    # to a temporary file beside the target and are renamed over it - atomic
+    # like the old write-then-rename, keeping the file's mode, and with no
+    # staged copy to shuttle through /run/vibessh.
+    target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such directory" >&2; exit 4; }}
+    require_within_root "$target"
+    if [ -d "$target" ]; then
+        echo "vibessh-file-helper: '$target' is a directory" >&2
+        exit 4
+    fi
+    # Optional second argument: where to keep the version being replaced.
+    # Done here rather than as its own call - that was a second `sudo` round
+    # trip on every save. Exit 10 means the backup could not be made, and it
+    # is always decided before anything is written, so the caller can make
+    # the history directory and simply ask again.
+    if [ -n "${{2:-}}" ] && [ -f "$target" ]; then
+        # A file's first save has no history directory yet. Made here, in
+        # this same call - it used to be a `stat` and a `mkdir` per level,
+        # each its own `sudo`, which is what made the first save of every
+        # file slow when the ones after it were not.
+        backup_dir=$(dirname -- "$2")
+        if [ ! -d "$backup_dir" ]; then
+            make_dirs_within_root "$backup_dir" || {{ echo "vibessh-file-helper: could not make the backup directory" >&2; exit 10; }}
+        fi
+        backup=$(resolve_target "$2") || {{ echo "vibessh-file-helper: no backup directory" >&2; exit 10; }}
+        require_within_root "$backup"
+        cp -- "$target" "$backup" || {{ echo "vibessh-file-helper: could not keep a backup" >&2; exit 10; }}
+    fi
+    tmp=$(mktemp -- "$(dirname -- "$target")/.vibessh-save.XXXXXX") || {{ echo "vibessh-file-helper: could not create a temporary file" >&2; exit 1; }}
+    if ! cat > "$tmp"; then
+        rm -f -- "$tmp"
+        echo "vibessh-file-helper: could not write the new contents" >&2
+        exit 1
+    fi
+    if [ -f "$target" ]; then
+        chmod --reference="$target" -- "$tmp" 2>/dev/null || true
+    fi
+    mv -f -- "$tmp" "$target" || {{ rm -f -- "$tmp"; exit 1; }}
     ;;
   cleanup)
     require_staging "$1"
@@ -482,8 +582,43 @@ impl SudoUserApplicationFileProvider {
         Ok(output.stdout)
     }
 
+    /// The Application's root as the Node resolves it, asked once per SSH
+    /// session.
+    ///
+    /// It was asked on every listing and every `metadata` - a full `sudo`
+    /// helper round trip on its own channel, for an answer that does not
+    /// change while the session lasts. Only what paths are *displayed*
+    /// relative to depends on it; the helper itself re-checks every path it
+    /// is handed against the root on the Node, so a stale entry cannot widen
+    /// what is reachable.
+    /// One `writein`: the new contents on stdin, and the backup path if any.
+    async fn write_in(&self, resolved: &str, backup: Option<&str>, contents: &[u8]) -> AppResult<vibessh_protocol::CommandOutput> {
+        let mut command = format!(
+            "sudo -u {} {} {} writein {}",
+            shell_quote(&self.username),
+            shell_quote(HELPER_PATH),
+            shell_quote(&self.root),
+            shell_quote(resolved),
+        );
+        if let Some(backup) = backup {
+            command.push(' ');
+            command.push_str(&shell_quote(backup));
+        }
+        self.connection.execute_command_with_input(&command, contents).await
+    }
+
     async fn canonical_root(&self) -> AppResult<String> {
-        Ok(self.run_helper("realpath", &[&self.root]).await?.trim().to_string())
+        let key = (self.connection.id(), self.root.clone());
+        if let Some(root) = CANONICAL_ROOTS.lock().expect("canonical root mutex poisoned").get(&key).cloned() {
+            return Ok(root);
+        }
+        let root = self.run_helper("realpath", &[&self.root]).await?.trim().to_string();
+        let mut roots = CANONICAL_ROOTS.lock().expect("canonical root mutex poisoned");
+        if roots.len() >= CANONICAL_ROOTS_CAP {
+            roots.clear();
+        }
+        roots.insert(key, root.clone());
+        Ok(root)
     }
 }
 
@@ -526,6 +661,111 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
         };
         self.discard_staging(&staging).await;
         result
+    }
+
+    /// The editor's read as one `sudo` call instead of about seven SSH
+    /// channels: `metadata` was the helper's `realpath` and `stat`, and
+    /// `read_file` then made the staging directory, had the helper copy the
+    /// file into it, claimed the copy, fetched it over SFTP and removed it.
+    /// For a 19-line config that was most of a second of pure round trips.
+    ///
+    /// A Node whose installed helper predates `readsmall` answers "unknown
+    /// operation" (exit 2) until the next readiness check reinstalls it; the
+    /// old two-step read still works there, so that is what it falls back to.
+    async fn read_file_capped(&self, path: &str, max_bytes: u64) -> AppResult<Vec<u8>> {
+        use base64::Engine as _;
+
+        let resolved = self.resolve(path)?;
+        let command = format!(
+            "sudo -u {} {} {} readsmall {} {}",
+            shell_quote(&self.username),
+            shell_quote(HELPER_PATH),
+            shell_quote(&self.root),
+            shell_quote(&resolved),
+            shell_quote(&max_bytes.to_string()),
+        );
+        let output = self.connection.execute_command(&command).await?;
+        match output.exit_code {
+            0 => base64::engine::general_purpose::STANDARD
+                .decode(output.stdout.trim())
+                .map_err(|err| AppError::Connection(format!("the file helper sent contents that could not be decoded: {err}"))),
+            2 => {
+                let meta = self.metadata(path).await?;
+                if meta.size > max_bytes {
+                    return Err(super::too_large_to_edit(path, meta.size));
+                }
+                self.read_file(path).await
+            }
+            9 => {
+                let size = output
+                    .stderr
+                    .split(|c: char| !c.is_ascii_digit())
+                    .find(|part| !part.is_empty())
+                    .and_then(|digits| digits.parse().ok())
+                    .unwrap_or(max_bytes + 1);
+                Err(super::too_large_to_edit(path, size))
+            }
+            _ => {
+                let detail = output.stderr.trim();
+                Err(AppError::Connection(if detail.is_empty() { "'readsmall' failed".to_string() } else { detail.to_string() }))
+            }
+        }
+    }
+
+    /// The editor's save as one `sudo` call, the contents on stdin.
+    ///
+    /// The usual path - `write_file` to a temporary name, then `rename` - was
+    /// the staging dance (make the directory, reserve a file, upload it over
+    /// SFTP, hand it over, have the helper copy it, clean up) plus a rename:
+    /// around seven SSH channels for a few lines of YAML. On stdin the
+    /// contents also stay out of the command line, where `ps` would show
+    /// them (AGENTS.md, rule 2).
+    ///
+    /// `None` for a Node whose installed helper predates `writein` (exit 2,
+    /// "unknown operation"), so the caller falls back to the usual path.
+    async fn save_in_one_call(&self, path: &str, contents: &[u8], backup_path: Option<&str>) -> Option<AppResult<()>> {
+        let resolved = match self.resolve(path) {
+            Ok(resolved) => resolved,
+            Err(err) => return Some(Err(err)),
+        };
+        let resolved_backup = match backup_path.map(|backup| self.resolve(backup)).transpose() {
+            Ok(resolved) => resolved,
+            Err(err) => return Some(Err(err)),
+        };
+
+        let mut backup = resolved_backup.as_deref();
+        // At most three calls, and one in the usual case. A first save of a
+        // file has no history directory yet: the helper refuses before
+        // writing anything (exit 10), the directory is made the careful way,
+        // and the save is asked again. If the backup still cannot be made,
+        // the save goes ahead without it - it always was best-effort - and
+        // the log says so.
+        for attempt in 0..3 {
+            let output = match self.write_in(&resolved, backup, contents).await {
+                Ok(output) => output,
+                Err(err) => return Some(Err(err)),
+            };
+            match output.exit_code {
+                0 => return Some(Ok(())),
+                2 => return None,
+                10 if attempt == 0 => {
+                    if let Some(dir) = backup_path.and_then(|path| path.rsplit_once('/')).map(|(dir, _)| dir) {
+                        if let Err(err) = super::archive::create_directory_all(self, dir).await {
+                            log::warn!("couldn't make the history directory for {path}: {err}");
+                        }
+                    }
+                }
+                10 => {
+                    log::warn!("couldn't keep a history copy of {path} before saving it: {}", output.stderr.trim());
+                    backup = None;
+                }
+                _ => {
+                    let detail = output.stderr.trim();
+                    return Some(Err(AppError::Connection(if detail.is_empty() { "'writein' failed".to_string() } else { detail.to_string() })));
+                }
+            }
+        }
+        Some(Err(AppError::Connection("the save did not complete".to_string())))
     }
 
     /// The same staging dance as `read_file`, but the helper only copies the

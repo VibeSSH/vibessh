@@ -287,11 +287,7 @@ pub async fn read_file_for_editor(
     path: &str,
 ) -> AppResult<Vec<u8>> {
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
-    let meta = provider.metadata(path).await?;
-    if meta.size > MAX_EDITABLE_FILE_SIZE {
-        return Err(AppError::InvalidInput(format!("'{path}' is too large to edit directly ({} bytes) - download it instead", meta.size)));
-    }
-    provider.read_file(path).await
+    provider.read_file_capped(path, MAX_EDITABLE_FILE_SIZE).await
 }
 
 /// Plain create-or-truncate write, no atomicity/backup - used for "New
@@ -327,16 +323,43 @@ pub async fn save_file(
     backup: bool,
 ) -> AppResult<()> {
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
-    if backup {
-        if let Ok(existing) = provider.read_file(path).await {
-            let backup_path = history_entry_path(path, chrono::Utc::now());
-            if let Some(history_dir) = backup_path.rsplit_once('/').map(|(dir, _)| dir) {
-                let _ = archive::create_directory_all(provider.as_ref(), history_dir).await;
-            }
-            let _ = provider.write_file(&backup_path, &existing).await;
+    let backup_path = backup.then(|| history_entry_path(path, chrono::Utc::now()));
+    // Backup and write together, in one round trip, where the provider can.
+    if let Some(result) = provider.save_in_one_call(path, contents, backup_path.as_deref()).await {
+        return result;
+    }
+    if let Some(backup_path) = &backup_path {
+        // Best-effort, as it always was - but said, not swallowed: a save
+        // that went through without its history copy is worth a line in
+        // the log when somebody later looks for the version before it.
+        if let Err(err) = back_up_in_place(provider.as_ref(), path, backup_path).await {
+            log::warn!("couldn't keep a history copy of {path} before saving it: {err}");
         }
     }
-    atomic_write(provider.as_ref(), path, contents).await
+    atomic_write_via_temp(provider.as_ref(), path, contents).await
+}
+
+/// Copies a file to its history entry on the Node itself.
+///
+/// It used to read the old contents down to this machine and write them
+/// back up as the backup. For an Application with its own account every
+/// read and write is a staged `sudo` helper round trip of several SSH
+/// channels each, so the backup alone made a save of a 19-line config take
+/// seconds; a copy is one helper call, a single `cp` on the Node.
+///
+/// The history directory is only created when the copy fails for want of
+/// it - the first save of a file - instead of being walked segment by
+/// segment on every save.
+async fn back_up_in_place(provider: &dyn ApplicationFileProvider, path: &str, backup_path: &str) -> AppResult<()> {
+    let first = match provider.copy(path, backup_path).await {
+        Ok(()) => return Ok(()),
+        Err(err) => err,
+    };
+    let Some(history_dir) = backup_path.rsplit_once('/').map(|(dir, _)| dir) else {
+        return Err(first);
+    };
+    archive::create_directory_all(provider, history_dir).await?;
+    provider.copy(path, backup_path).await
 }
 
 pub async fn create_directory(
@@ -385,6 +408,25 @@ pub async fn copy(
 ) -> AppResult<()> {
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
     provider.copy(from, to).await
+}
+
+/// Compresses `paths` into a new `.zip` at `destination_path`, all relative
+/// to the Application's root.
+///
+/// The same `files::archive::create_zip` the Node-wide Files page uses, over
+/// this Application's own provider - so a dedicated-account Application's
+/// files are read, and the archive written, as that account, inside its
+/// root, exactly like every other file operation here.
+pub async fn compress(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    paths: &[String],
+    destination_path: &str,
+) -> AppResult<()> {
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+    archive::create_zip(provider.as_ref(), paths, destination_path).await
 }
 
 pub async fn set_permissions(
@@ -636,6 +678,15 @@ fn history_entry_path(path: &str, timestamp: chrono::DateTime<chrono::Utc>) -> S
 /// this falls back to writing `path` directly (not atomic in that case,
 /// but still correct), and always cleans up the temp file either way.
 async fn atomic_write(provider: &dyn ApplicationFileProvider, path: &str, contents: &[u8]) -> AppResult<()> {
+    if let Some(result) = provider.save_in_one_call(path, contents, None).await {
+        return result;
+    }
+    atomic_write_via_temp(provider, path, contents).await
+}
+
+/// `atomic_write` without asking the provider for its one-call save first -
+/// for a caller that has just been told it has none.
+async fn atomic_write_via_temp(provider: &dyn ApplicationFileProvider, path: &str, contents: &[u8]) -> AppResult<()> {
     let temp_path = format!("{path}.vibessh-tmp-{}", Uuid::new_v4());
     provider.write_file(&temp_path, contents).await?;
     match provider.rename(&temp_path, path).await {

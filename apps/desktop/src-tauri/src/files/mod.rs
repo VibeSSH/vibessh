@@ -57,6 +57,11 @@ use crate::ssh::SshSession;
 /// captures this reference across await points.
 pub type ProgressFn<'a> = &'a mut (dyn FnMut(u64) + Send);
 
+/// The refusal for a file too big for the editor, worded once for every provider.
+pub(crate) fn too_large_to_edit(path: &str, size: u64) -> AppError {
+    AppError::InvalidInput(format!("'{path}' is too large to edit directly ({size} bytes) - download it instead"))
+}
+
 #[async_trait::async_trait]
 pub trait ApplicationFileProvider: Send + Sync {
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>>;
@@ -65,6 +70,30 @@ pub trait ApplicationFileProvider: Send + Sync {
     /// `size` against their own limit first (the file editor does, before
     /// ever calling this - see `commands::application_file_commands`).
     async fn read_file(&self, path: &str) -> AppResult<Vec<u8>>;
+    /// Reads a whole file for the editor, refusing one over `max_bytes`.
+    ///
+    /// The default is what the editor always did: `metadata`, then
+    /// `read_file`. A provider for which each operation is a costly round
+    /// trip - `sudo_user`, where both were several SSH channels and a `sudo`
+    /// each - overrides it to do the check and the read in one.
+    async fn read_file_capped(&self, path: &str, max_bytes: u64) -> AppResult<Vec<u8>> {
+        let meta = self.metadata(path).await?;
+        if meta.size > max_bytes {
+            return Err(too_large_to_edit(path, meta.size));
+        }
+        self.read_file(path).await
+    }
+    /// Saves `path` atomically in a single operation, first keeping the
+    /// version it replaces at `backup_path` when one is given - where the
+    /// provider can.
+    ///
+    /// `None` means it cannot - the default - and the caller does the usual:
+    /// a copy for the backup, then write-to-a-temporary-name-then-rename.
+    /// `sudo_user` can: its every operation is an SSH channel and a `sudo`,
+    /// and the usual way made a save of a small config take seconds.
+    async fn save_in_one_call(&self, _path: &str, _contents: &[u8], _backup_path: Option<&str>) -> Option<AppResult<()>> {
+        None
+    }
     /// Reads at most `len` bytes from `offset`.
     ///
     /// Exists so a file too large to edit can still be *looked at*, a window
