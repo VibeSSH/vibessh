@@ -21,19 +21,70 @@ function reason(error: unknown): string {
   return error instanceof Error ? error.message : "unknown";
 }
 
-/** Version and total downloads from the latest public release, or null when the
- * feed cannot be reached. Never invents a number. */
+/** Every public release, newest first, a page at a time. */
+const RELEASES_LIST = "https://api.github.com/repos/VibeSSH/vibessh-releases/releases?per_page=100";
+
+/** Enough pages for 1,000 releases - a bound, so a misbehaving API cannot keep the bot paging. */
+const MAX_RELEASE_PAGES = 10;
+
+interface ReleaseAsset {
+  name?: string;
+  download_count?: number;
+}
+
+/**
+ * The files a person downloads to install the app. Only these are counted.
+ *
+ * Summing every asset counted mostly the app itself: `latest.json` is fetched
+ * by every installation each time it checks for an update, and on beta.20 it
+ * was 43 of the 49 "downloads". Signatures, checksums, the Vibe Agent binary
+ * and its install script are left out for the same reason - they are fetched
+ * by machines, not by somebody installing VibeSSH.
+ */
+const INSTALLER = /\.(exe|msi|AppImage|deb|rpm|dmg)$/i;
+
+export function installerDownloads(assets: ReleaseAsset[]): number {
+  return assets.reduce(
+    (sum, asset) => sum + (typeof asset.name === "string" && INSTALLER.test(asset.name) && typeof asset.download_count === "number" ? asset.download_count : 0),
+    0,
+  );
+}
+
+async function fetchJson<T>(url: string): Promise<T | null> {
+  const response = await fetch(url, { headers: { Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  return response.ok ? ((await response.json()) as T) : null;
+}
+
+/** The latest public release's version, or null when the feed cannot be reached. */
+async function fetchLatestVersion(): Promise<string | null> {
+  const data = await fetchJson<{ tag_name?: string }>(RELEASES_LATEST);
+  const version = (data?.tag_name ?? "").replace(/^v/, "");
+  return version || null;
+}
+
+/**
+ * Installer downloads summed over every release, not only the latest.
+ *
+ * Only the latest used to be counted, so the figure fell back to nearly zero
+ * each time a version shipped. It still includes updates: on Windows and in
+ * the AppImage the updater downloads the same installer a new user does, and
+ * GitHub cannot tell the two apart.
+ */
+async function fetchTotalDownloads(): Promise<number | null> {
+  let total = 0;
+  for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
+    const releases = await fetchJson<{ assets?: ReleaseAsset[] }[]>(`${RELEASES_LIST}&page=${page}`);
+    if (!releases) return null;
+    for (const release of releases) total += installerDownloads(release.assets ?? []);
+    if (releases.length < 100) break;
+  }
+  return total;
+}
+
+/** Version and installer downloads from the public releases, or null when either cannot be read. Never invents a number. */
 async function fetchFromReleases(): Promise<AppStatus | null> {
-  const response = await fetch(RELEASES_LATEST, {
-    headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) return null;
-  const data = (await response.json()) as { tag_name?: string; assets?: { download_count?: number }[] };
-  const version = (data.tag_name ?? "").replace(/^v/, "");
-  if (!version) return null;
-  const downloads = (data.assets ?? []).reduce((sum, asset) => sum + (typeof asset.download_count === "number" ? asset.download_count : 0), 0);
-  return { version, downloads };
+  const [version, downloads] = await Promise.all([fetchLatestVersion(), fetchTotalDownloads()]);
+  return version && downloads !== null ? { version, downloads } : null;
 }
 
 /** Version from `STATUS_URL`, when it is set and answers `{ version }`. */
@@ -115,8 +166,11 @@ export async function fetchLiveVersion(): Promise<string | null> {
     log.warn(`STATUS_URL unreachable for the release check (${reason(error)})`);
   }
   try {
-    const fromReleases = await fetchFromReleases();
-    if (fromReleases) return fromReleases.version;
+    // Only the version: this runs every five minutes, and paging through every
+    // release for a download count nobody reads here would spend GitHub's
+    // 60-an-hour unauthenticated limit.
+    const version = await fetchLatestVersion();
+    if (version) return version;
   } catch (error) {
     log.warn(`releases feed unreachable for the release check (${reason(error)})`);
   }
