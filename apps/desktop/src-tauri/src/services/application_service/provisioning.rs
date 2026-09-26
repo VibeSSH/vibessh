@@ -329,8 +329,52 @@ pub fn rerender_runtime_config(
         _ => return Ok(None),
     };
 
-    let rendered = handler.render_runtime_config(&inputs)?;
+    let mut rendered = handler.render_runtime_config(&inputs)?;
+    // The same answers render the same image, so whatever image the
+    // Application has now is one somebody chose after creating it.
+    let from_same_answers = rendered.clone();
+    carry_over_operator_settings(&detail.runtime_config, Some(&from_same_answers), &mut rendered);
     Ok((rendered != detail.runtime_config).then_some(rendered))
+}
+
+/// Settings made on an Application after it was created, which live only in
+/// its `runtime_config` and not in the answers a blueprint renders from.
+const OPERATOR_SETTINGS: &[&str] = &["memoryLimitMb", "cpuLimitCores", "diskLimitMb"];
+
+/// Keeps what somebody set on an Application after creating it when its
+/// `runtime_config` is rendered again from the blueprint.
+///
+/// **Why.** Recreate, reinstall and editing a blueprint field all rebuild
+/// `runtime_config` from the answers kept at creation - which never held the
+/// resource limits, the disk limit, or an image changed on the Docker image
+/// card, because those are set on `runtime_config` directly. So every
+/// rebuild threw them away and stored the result: a memory limit saved on a
+/// running server - which recreates it automatically - came back without the
+/// limit, and the disk limit vanished from the interface while the Node's
+/// cron file went on enforcing it.
+///
+/// The limits are always carried over; the blueprint never renders them. The
+/// image is carried over unless the blueprint answers themselves changed it
+/// - `rendered_before` is what the *previous* answers render, so an edit to a
+/// blueprint's own image field still wins, and a card-set image survives
+/// everything else.
+fn carry_over_operator_settings(current: &serde_json::Value, rendered_before: Option<&serde_json::Value>, rendered: &mut serde_json::Value) {
+    let Some(target) = rendered.as_object_mut() else { return };
+    for key in OPERATOR_SETTINGS {
+        match current.get(*key) {
+            Some(value) if !value.is_null() => {
+                target.insert((*key).to_string(), value.clone());
+            }
+            _ => {
+                target.remove(*key);
+            }
+        }
+    }
+    if let (Some(image), Some(before)) = (current.get("image"), rendered_before) {
+        if before.get("image") == target.get("image") {
+            target.insert("image".to_string(), image.clone());
+        }
+    }
 }
 
 /// Moves an Application to a different blueprint, in either direction.
@@ -466,7 +510,14 @@ pub async fn update_application_config(
     let discovered = handler.provision(&merged, &provision_context).await?;
     merged.extend(discovered);
 
-    let runtime_config = handler.render_runtime_config(&merged)?;
+    let mut runtime_config = handler.render_runtime_config(&merged)?;
+    // What the answers rendered *before* this edit: if the image is the same
+    // either way, the edit did not touch it, and a card-set image stays.
+    let rendered_before = match detail.metadata.get("blueprintInputs") {
+        Some(serde_json::Value::Object(map)) => handler.render_runtime_config(&map.clone().into_iter().collect()).ok(),
+        _ => None,
+    };
+    carry_over_operator_settings(&detail.runtime_config, rendered_before.as_ref(), &mut runtime_config);
 
     let update_input = UpdateApplicationInput {
         name: detail.application.name.clone(),
@@ -602,6 +653,64 @@ mod rerender_tests {
         let rebuilt = rebuilt.expect("the command should have been rebuilt");
         let command = rebuilt["command"].as_array().unwrap();
         assert!(command.iter().any(|arg| arg == "-Dterminal.ansi=true"), "{rebuilt}");
+    }
+
+    fn paper_inputs() -> serde_json::Value {
+        serde_json::json!({
+            "minecraftVersion": "1.21.11",
+            "javaVersion": "21",
+            "eulaAccepted": true,
+            "jvmArgs": [],
+            "programArgs": ["nogui"],
+            "__jarFilename": "paper-1.21.11-132.jar"
+        })
+    }
+
+    /// The data-loss bug: recreate rebuilt the config from the creation
+    /// answers and stored it, dropping every limit and a card-set image. They
+    /// have to survive the rebuild - while the rebuild still delivers a newer
+    /// command, which is what recreate is for.
+    #[test]
+    fn recreate_keeps_limits_and_a_chosen_image_while_rebuilding_the_command() {
+        let registry = BlueprintRegistry::with_builtins();
+        let current = serde_json::json!({
+            "image": "ghcr.io/example/custom-java:21",
+            "command": ["java", "-jar", "paper-1.21.11-132.jar", "nogui"],
+            "runAsDedicatedUser": true,
+            "memoryLimitMb": 4096,
+            "cpuLimitCores": 2.5,
+            "diskLimitMb": 20480
+        });
+
+        let rebuilt = rerender_runtime_config(&registry, &detail("paper", current, paper_inputs())).unwrap().expect("a stale command is rebuilt");
+
+        assert_eq!(rebuilt["memoryLimitMb"], 4096, "{rebuilt}");
+        assert_eq!(rebuilt["cpuLimitCores"], 2.5, "{rebuilt}");
+        assert_eq!(rebuilt["diskLimitMb"], 20480, "{rebuilt}");
+        assert_eq!(rebuilt["image"], "ghcr.io/example/custom-java:21", "{rebuilt}");
+        assert!(rebuilt["command"].as_array().unwrap().iter().any(|arg| arg == "-Dterminal.ansi=true"), "{rebuilt}");
+    }
+
+    /// Nothing set after creation means nothing is invented.
+    #[test]
+    fn no_limit_is_added_that_was_never_set() {
+        let mut rendered = serde_json::json!({ "image": "a" });
+        carry_over_operator_settings(&serde_json::json!({ "image": "a" }), Some(&serde_json::json!({ "image": "a" })), &mut rendered);
+        assert_eq!(rendered, serde_json::json!({ "image": "a" }));
+    }
+
+    /// An edit to the blueprint's own image answer changes the rendered image;
+    /// that edit wins over the image the Application had.
+    #[test]
+    fn an_image_changed_through_the_blueprints_answers_wins() {
+        let mut rendered = serde_json::json!({ "image": "nginx:1.27" });
+        carry_over_operator_settings(
+            &serde_json::json!({ "image": "nginx:1.25", "memoryLimitMb": 512 }),
+            Some(&serde_json::json!({ "image": "nginx:1.25" })),
+            &mut rendered,
+        );
+        assert_eq!(rendered["image"], "nginx:1.27");
+        assert_eq!(rendered["memoryLimitMb"], 512);
     }
 
     /// Nothing to say when the stored command already matches - the caller
