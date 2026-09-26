@@ -38,7 +38,7 @@ Automatyczny backup jest usuwany, gdy przekroczy którykolwiek z ustawionych lim
 4. Potwierdź.
 5. Uruchom aplikację przyciskiem **Uruchom**.
 
-Przywracanie nadpisuje obecne pliki i nie da się go cofnąć. Przycisk jest nieaktywny, dopóki aplikacja działa.
+Przywracanie ustawia katalog roboczy dokładnie tak, jak jest w backupie: pliki z backupu wracają na miejsce, a pliki utworzone po nim są usuwane. Nie da się tego cofnąć. Przycisk jest nieaktywny, dopóki aplikacja działa.
 
 ## Jak pobrać backup
 

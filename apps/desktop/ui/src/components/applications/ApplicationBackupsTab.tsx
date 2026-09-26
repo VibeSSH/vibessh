@@ -22,11 +22,11 @@ import {
   restoreApplicationBackup,
   setApplicationBackupSchedule,
 } from "@/services/applicationBackupService";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { ApplicationBackup, ApplicationStatus, BackupSchedule } from "@/types/application";
 import "@/components/servers/forms.css";
 import "./ApplicationBackupsTab.css";
-import { errorMessage } from "@/services/tauri";
+import { errorMessage, normalizeError } from "@/services/tauri";
 
 interface ApplicationBackupsTabProps {
   applicationId: string;
@@ -103,8 +103,14 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     setCreating(true);
     setActionError(null);
     try {
-      await createApplicationBackup(applicationId);
-      toastSuccess(t("applicationBackups.createdToast"));
+      const created = await createApplicationBackup(applicationId);
+      // The local copy exists either way; the off-site one failing is what
+      // the operator set a destination up to avoid finding out too late.
+      if (created.remoteError) {
+        toastError(t("applicationBackups.remoteFailed", { message: errorMessage(normalizeError(created.remoteError), t) }));
+      } else {
+        toastSuccess(t("applicationBackups.createdToast"));
+      }
       reload();
     } catch (err) {
       setActionError(errorMessage(err, t));
@@ -147,7 +153,9 @@ export function ApplicationBackupsTab({ applicationId, applicationStatus }: Appl
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await deleteApplicationBackup(applicationId, deleteTarget.id);
+      const deleted = await deleteApplicationBackup(applicationId, deleteTarget.id);
+      if (deleted.fileError) toastError(t("applicationBackups.fileLeft", { message: errorMessage(normalizeError(deleted.fileError), t) }));
+      if (deleted.remoteError) toastError(t("applicationBackups.remoteLeft", { message: errorMessage(normalizeError(deleted.remoteError), t) }));
       setDeleteTarget(null);
       reload();
     } catch (err) {

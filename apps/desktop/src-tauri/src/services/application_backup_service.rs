@@ -25,6 +25,7 @@ use crate::errors::{AppError, AppResult};
 use crate::files::archive;
 use crate::models::{ApplicationBackup, ApplicationStatus, BackupDestinationConfig, BackupKind, BackupSchedule, SetBackupDestinationInput, SetBackupScheduleInput};
 use crate::runtime::local_process::LocalProcessManager;
+use crate::files::ApplicationFileProvider;
 use crate::s3::S3Client;
 use crate::services::application_files_service::resolve_provider;
 use crate::services::application_service::refresh_application_status;
@@ -136,7 +137,7 @@ pub async fn create_backup(
     sessions: &SshSessionManager,
     application_id: Uuid,
     kind: BackupKind,
-) -> AppResult<ApplicationBackup> {
+) -> AppResult<BackupCreated> {
     let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
 
     // Everything at the working directory's own root, except VibeSSH's own
@@ -162,27 +163,61 @@ pub async fn create_backup(
 
     let created = backup_repo.create(application_id, &file_name, size_bytes, kind)?;
 
-    // Best-effort, on top of the local copy that already exists either way
-    // (see `models::ApplicationBackup::s3_key`'s own doc comment for why a
-    // failed/skipped upload here never fails the backup itself - the whole
-    // point of a *local* backup succeeding is that it doesn't depend on a
-    // remote destination being reachable right now).
-    if let Some(client) = s3_client(backup_destination).await {
-        let key = s3_object_key(application_id, &file_name);
-        match provider.read_file(&destination).await {
-            Ok(bytes) => match client.put_object(&key, &bytes).await {
+    // On top of the local copy that already exists either way (see
+    // `models::ApplicationBackup::s3_key`'s own doc comment for why a failed
+    // upload never fails the backup itself - the whole point of a *local*
+    // backup succeeding is that it doesn't depend on a remote destination
+    // being reachable right now). But the failure is returned with it: the
+    // operator set up an off-site copy, and one that has quietly stopped
+    // happening is found out on the day the Node is gone.
+    let remote_error = match s3_client(backup_destination).await {
+        None => None,
+        Some(client) => {
+            let key = s3_object_key(application_id, &file_name);
+            match upload_to_destination(provider.as_ref(), &client, &destination, &key).await {
                 Ok(()) => {
                     if let Err(err) = backup_repo.set_s3_key(created.id, &key) {
                         log::warn!("backup {} uploaded to S3 but couldn't record its key: {err}", created.id);
                     }
+                    None
                 }
-                Err(err) => log::warn!("backup {} failed to upload to the configured backup destination: {err}", created.id),
-            },
-            Err(err) => log::warn!("backup {} couldn't be read back for S3 upload: {err}", created.id),
+                Err(err) => {
+                    log::warn!("backup {} failed to upload to the configured backup destination: {err}", created.id);
+                    Some(err)
+                }
+            }
+        }
+    };
+    let backup = backup_repo.get(created.id)?.unwrap_or(created);
+    Ok(BackupCreated { backup, remote_error })
+}
+
+/// A backup, and whether its off-site copy was made.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCreated {
+    pub backup: ApplicationBackup,
+    /// Set when a destination is configured and the upload to it failed.
+    pub remote_error: Option<AppError>,
+}
+
+/// Streams the archive off the Node into a local file and from there to the
+/// destination in parts. It used to be read whole into memory and sent as
+/// one PUT, which S3 refuses above 5 GiB - so exactly the backups most
+/// worth keeping off-site were the ones that never got there.
+async fn upload_to_destination(provider: &dyn ApplicationFileProvider, client: &S3Client, remote_path: &str, key: &str) -> AppResult<()> {
+    let scratch = std::env::temp_dir().join(format!("vibessh-backup-upload-{}.zip", Uuid::new_v4()));
+    let mut no_progress = |_: u64| {};
+    let result = match provider.download_file(remote_path, &scratch, &mut no_progress).await {
+        Ok(()) => client.put_file(key, &scratch).await,
+        Err(err) => Err(err),
+    };
+    if let Err(err) = tokio::fs::remove_file(&scratch).await {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("couldn't remove the staged backup at {}: {err}", scratch.display());
         }
     }
-
-    Ok(created)
+    result
 }
 
 pub async fn delete_backup(
@@ -193,36 +228,54 @@ pub async fn delete_backup(
     sessions: &SshSessionManager,
     application_id: Uuid,
     backup_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<BackupDeleted> {
     // Read before delete - `ApplicationBackupRepository::delete` only ever
     // returns the file name (see its own doc comment), and the S3 key is
     // needed here too to also remove the remote copy, if there is one.
     let s3_key = backup_repo.get(backup_id)?.and_then(|backup| backup.s3_key);
+    let mut outcome = BackupDeleted::default();
     let Some(file_name) = backup_repo.delete(backup_id)? else {
-        return Ok(());
+        return Ok(outcome);
     };
     // Best-effort on the actual file - the DB row (the source of truth for
     // what the UI lists) is already gone either way, and a stale zip left
     // behind on disk after a failed delete is a much smaller problem than
     // a delete the user can never complete because e.g. the Node is
     // temporarily unreachable.
-    if let Ok((_, provider)) = resolve_provider(app_repo, server_repo, sessions, application_id).await {
-        if let Err(err) = provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await {
-            // Best-effort, but never silent: the UI stops listing this
-            // backup, and an operator who deleted it to reclaim disk - or
-            // because of what it contains - is entitled to know the file is
-            // still on the Node.
-            log::warn!("the '{file_name}' backup row was deleted but the file is still on the node: {err}");
-        }
+    //
+    // Best-effort, but never silent: the UI stops listing this backup, and
+    // an operator who deleted it to reclaim disk - or because of what it
+    // contains - is entitled to know the file is still there. This comment
+    // used to say "never silent" above a log line; it is returned now.
+    let deleted = match resolve_provider(app_repo, server_repo, sessions, application_id).await {
+        Ok((_, provider)) => provider.delete(&format!("{BACKUPS_DIR}/{file_name}")).await,
+        Err(err) => Err(err),
+    };
+    if let Err(err) = deleted {
+        log::warn!("the '{file_name}' backup row was deleted but the file is still on the node: {err}");
+        outcome.file_error = Some(err);
     }
     if let Some(key) = s3_key {
-        if let Some(client) = s3_client(backup_destination).await {
-            if let Err(err) = client.delete_object(&key).await {
-                log::warn!("the '{file_name}' backup row was deleted but the object is still in the bucket: {err}");
-            }
+        let removed = match s3_client(backup_destination).await {
+            Some(client) => client.delete_object(&key).await,
+            None => Err(AppError::InvalidInput("the backup destination is no longer configured, so its copy could not be removed".into())),
+        };
+        if let Err(err) = removed {
+            log::warn!("the '{file_name}' backup row was deleted but the object is still in the bucket: {err}");
+            outcome.remote_error = Some(err);
         }
     }
-    Ok(())
+    Ok(outcome)
+}
+
+/// What a backup deletion could not remove. The row is gone either way.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupDeleted {
+    /// The archive is still on the Node.
+    pub file_error: Option<AppError>,
+    /// The copy is still at the backup destination.
+    pub remote_error: Option<AppError>,
 }
 
 /// Requires the application to be stopped first - extracting on top of
@@ -266,15 +319,15 @@ pub async fn restore_backup(
         // copy if this backup has one, rather than failing outright.
         Err(local_err) => match (&backup.s3_key, s3_client(backup_destination).await) {
             (Some(key), Some(client)) => {
-                let bytes = client.get_object(key).await?;
-                tokio::fs::write(&scratch, &bytes)
-                    .await
-                    .map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
+                // Into the scratch file a chunk at a time, like the local
+                // copy - this used to hold the whole archive in memory.
+                client.get_object_to_file(key, &scratch).await?;
                 // Best-effort: heals the local copy too, so the *next*
                 // restore (or a future prune) doesn't need S3 again. The
                 // restore itself proceeds from `scratch` either way, so this
                 // failing costs a slower next restore, not this one.
-                if let Err(err) = provider.write_file(&local_path, &bytes).await {
+                let mut no_progress = |_: u64| {};
+                if let Err(err) = provider.upload_file(&scratch, &local_path, &mut no_progress).await {
                     log::warn!("restored from the remote copy, but couldn't re-create the local one: {err}");
                 }
                 Ok(())
@@ -284,11 +337,73 @@ pub async fn restore_backup(
     };
 
     let result = match fetched {
-        Ok(()) => archive::extract_zip_from_file(provider.as_ref(), &scratch, ".").await,
+        Ok(()) => restore_from(provider.as_ref(), &scratch).await,
         Err(err) => Err(err),
     };
-    let _ = tokio::fs::remove_file(&scratch).await;
+    if let Err(err) = tokio::fs::remove_file(&scratch).await {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("couldn't remove the staged restore archive at {}: {err}", scratch.display());
+        }
+    }
     result
+}
+
+/// Puts the working directory back the way the archive has it: everything
+/// in it written, then everything not in it removed.
+///
+/// **Removal is the half that used to be missing.** A restore only wrote
+/// the archive over what was there, so a region file, a plugin or a log
+/// created after the backup survived it - a world rolled back to Tuesday
+/// with Thursday's chunks still in it is not Tuesday's world, and the
+/// operator had no way to see which files were which.
+///
+/// Written first and removed second, so a restore that fails part way
+/// leaves the old files where they were rather than an emptied directory.
+/// VibeSSH's own `.vibessh-*` entries at the top - the backups themselves
+/// among them - were never in any archive and are kept, as is any symlink:
+/// a backup does not record them, so removing one would lose something no
+/// restore can put back.
+async fn restore_from(provider: &dyn ApplicationFileProvider, archive_path: &std::path::Path) -> AppResult<u32> {
+    let written = archive::extract_zip_from_file(provider, archive_path, ".").await?;
+    let keep = archive::entry_paths(archive_path)?;
+    let mut removed = 0u32;
+    remove_entries_not_in(provider, ".", "", &keep, 0, &mut removed)
+        .await
+        .map_err(|err| AppError::Connection(format!("the backup was written back, but files created after it couldn't all be removed: {err}")))?;
+    if removed > 0 {
+        log::info!("restore removed {removed} entries that were not in the backup");
+    }
+    Ok(written)
+}
+
+fn remove_entries_not_in<'a>(
+    provider: &'a dyn ApplicationFileProvider,
+    path: &'a str,
+    relative: &'a str,
+    keep: &'a std::collections::HashSet<String>,
+    depth: usize,
+    removed: &'a mut u32,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
+    Box::pin(async move {
+        // The archive refuses to go deeper than this; nothing below it can
+        // be in the archive, and a loop must not become a runaway delete.
+        if depth > 64 {
+            return Ok(());
+        }
+        for entry in provider.list_directory(path).await? {
+            if entry.is_symlink || (relative.is_empty() && entry.name.starts_with(".vibessh-")) {
+                continue;
+            }
+            let entry_relative = if relative.is_empty() { entry.name.clone() } else { format!("{relative}/{}", entry.name) };
+            if !keep.contains(&entry_relative) {
+                provider.delete(&entry_relative).await?;
+                *removed += 1;
+            } else if entry.is_dir {
+                remove_entries_not_in(provider, &entry_relative, &entry_relative, keep, depth + 1, removed).await?;
+            }
+        }
+        Ok(())
+    })
 }
 
 pub fn get_backup_schedule(backup_repo: &ApplicationBackupRepository, application_id: Uuid) -> AppResult<BackupSchedule> {
@@ -538,7 +653,7 @@ mod tests {
             .application
             .id;
 
-        let backup = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap();
+        let backup = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap().backup;
         assert!(backup.size_bytes > 0);
         assert_eq!(list_backups(&backup_repo, application_id).await.unwrap().len(), 1);
         assert!(working_directory.join(BACKUPS_DIR).join(&backup.file_name).exists());
@@ -553,6 +668,58 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(working_directory.join("server.properties")).unwrap(), "motd=hello");
         assert_eq!(std::fs::read(working_directory.join("plugins/example.jar")).unwrap(), b"not a real jar");
+    }
+
+    /// A restore used to write the backup over what was there, so anything
+    /// created after the backup survived it - a rolled-back world with newer
+    /// chunks still in it.
+    #[tokio::test]
+    async fn a_restore_removes_what_was_created_after_the_backup_and_keeps_vibesshs_own_files() {
+        let (app_repo, backup_repo, server_repo, backup_destination, sessions, working_directory) = temp_setup();
+        std::fs::write(working_directory.join("server.properties"), b"motd=hello").unwrap();
+        std::fs::create_dir_all(working_directory.join("world/region")).unwrap();
+        std::fs::write(working_directory.join("world/region/r.0.0.mca"), b"old chunk").unwrap();
+
+        let application_id = app_repo
+            .create(&CreateApplicationInput {
+                server_id: None,
+                name: "Restore Test App".into(),
+                description: None,
+                blueprint_id: "generic".into(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::LocalProcess,
+                working_directory: working_directory.to_string_lossy().into_owned(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config: serde_json::json!({ "command": "true", "args": [] }),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap()
+            .application
+            .id;
+
+        let backup = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap().backup;
+
+        // Everything that happens after the backup.
+        std::fs::write(working_directory.join("world/region/r.0.0.mca"), b"new chunk").unwrap();
+        std::fs::write(working_directory.join("world/region/r.1.0.mca"), b"chunk made later").unwrap();
+        std::fs::create_dir_all(working_directory.join("plugins/NewPlugin")).unwrap();
+        std::fs::write(working_directory.join("plugins/NewPlugin/config.yml"), b"x: 1").unwrap();
+        std::fs::write(working_directory.join("latest.log"), b"log").unwrap();
+        std::fs::write(working_directory.join(".vibessh-app-1.pid"), b"123").unwrap();
+
+        restore_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, &Arc::new(LocalProcessManager::new()), application_id, backup.id)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(working_directory.join("world/region/r.0.0.mca")).unwrap(), b"old chunk");
+        assert_eq!(std::fs::read_to_string(working_directory.join("server.properties")).unwrap(), "motd=hello");
+        for later in ["world/region/r.1.0.mca", "plugins", "latest.log"] {
+            assert!(!working_directory.join(later).exists(), "{later} was created after the backup and survived the restore");
+        }
+        // Never in any archive, and not the restore's to remove.
+        assert!(working_directory.join(BACKUPS_DIR).join(&backup.file_name).exists(), "the restore removed the backup it restored from");
+        assert!(working_directory.join(".vibessh-app-1.pid").exists());
     }
 
     #[tokio::test]
@@ -582,7 +749,7 @@ mod tests {
         // A second backup, taken after the first one already exists on disk,
         // must not fold `.vibessh-backups/` into itself - each ~doubling in
         // size on every run would be an obvious, silent bug.
-        let second = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap();
+        let second = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap().backup;
 
         let bytes = std::fs::read(working_directory.join(BACKUPS_DIR).join(&second.file_name)).unwrap();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
@@ -615,7 +782,7 @@ mod tests {
             .application
             .id;
 
-        let backup = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap();
+        let backup = create_backup(&app_repo, &backup_repo, &server_repo, &backup_destination, &sessions, application_id, BackupKind::Manual).await.unwrap().backup;
         let file_path = working_directory.join(BACKUPS_DIR).join(&backup.file_name);
         assert!(file_path.exists());
 

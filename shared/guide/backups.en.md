@@ -38,7 +38,7 @@ An automatic backup is removed once it exceeds any one of the limits you set. Th
 4. Confirm.
 5. Start the application with **Start**.
 
-Restoring overwrites the current files and cannot be undone. The button is disabled while the application is running.
+Restoring puts the working directory back exactly as the backup has it: its files are written back, and files created since the backup are removed. It cannot be undone. The button is disabled while the application is running.
 
 ## How to download a backup
 

@@ -1,11 +1,15 @@
 //! Minimal AWS SigV4 client for S3-compatible object storage (AWS S3,
 //! Cloudflare R2, MinIO, ...) - see `Cargo.toml`'s own comment on why this
 //! is hand-rolled against `hmac`/`sha2` rather than the official
-//! `aws-sdk-s3`. Only the four operations `services::application_backup_service`
-//! actually needs: put/get/delete a single object, each a plain,
-//! non-multipart request - matches `files::archive::create_zip`'s own
-//! "fine for the file sizes this UI already handles, not multi-gigabyte
-//! datasets" scope, not a general-purpose S3 SDK.
+//! `aws-sdk-s3`. Only what `services::application_backup_service` needs:
+//! put, get and delete an object, not a general-purpose S3 SDK.
+//!
+//! **Files, not byte buffers.** A backup is a world save or a database
+//! volume, so it is sent from a local file in parts (`put_file`) and
+//! fetched into one (`get_object_to_file`). It used to be read whole into
+//! memory for a single PUT, which both held gigabytes at once and hit S3's
+//! 5 GiB ceiling for a single PUT - above that no backup ever reached the
+//! bucket, and the failure was a log line.
 //!
 //! **Signing is verified against an independently-computed reference
 //! vector**, not just "looks right" - see `tests::sign_matches_an_independently_computed_reference_vector`,
@@ -26,6 +30,33 @@ use crate::errors::{AppError, AppResult};
 use crate::models::BackupDestinationConfig;
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// Every part but the last. S3 wants at least 5 MiB and at most 10,000
+/// parts, so this carries an archive of about 625 GiB while holding one part
+/// in memory at a time.
+const PART_SIZE: u64 = 64 * 1024 * 1024;
+// Checked at compile time: S3 refuses parts under 5 MiB, and the largest
+// upload this part size allows must be far past the 5 GiB single-PUT
+// ceiling it replaced.
+const _: () = assert!(PART_SIZE >= 5 * 1024 * 1024);
+const _: () = assert!(PART_SIZE * 10_000 > 100 * 5 * 1024 * 1024 * 1024);
+
+/// A SigV4 canonical query string: sorted by name, both halves encoded. The
+/// same string goes on the URL, so what is signed is what is sent.
+fn canonical_query(params: &[(&str, &str)]) -> String {
+    let mut pairs: Vec<(String, String)> = params.iter().map(|(name, value)| (uri_encode(name), uri_encode(value))).collect();
+    pairs.sort();
+    pairs.into_iter().map(|(name, value)| format!("{name}={value}")).collect::<Vec<_>>().join("&")
+}
+
+/// The text of the first `<name>` element - enough for the two S3 replies
+/// this reads, without an XML parser for them.
+fn xml_value(body: &str, name: &str) -> Option<String> {
+    let open = format!("<{name}>");
+    let start = body.find(&open)? + open.len();
+    let end = body[start..].find(&format!("</{name}>"))? + start;
+    Some(body[start..end].to_string())
+}
 
 fn hex_sha256(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -129,10 +160,11 @@ impl S3Client {
     /// why this exact shape (three headers signed: `host`,
     /// `x-amz-content-sha256`, `x-amz-date` - the minimum SigV4 requires
     /// plus what S3 itself always requires) is trustworthy.
-    fn sign(&self, method: &str, path: &str, host: &str, payload_hash: &str, amz_date: &str, date_stamp: &str) -> String {
+    #[allow(clippy::too_many_arguments)]
+    fn sign(&self, method: &str, path: &str, query: &str, host: &str, payload_hash: &str, amz_date: &str, date_stamp: &str) -> String {
         let canonical_headers = format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
-        let canonical_request = format!("{method}\n{path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
+        let canonical_request = format!("{method}\n{path}\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
         let hashed_canonical_request = hex_sha256(canonical_request.as_bytes());
 
         let credential_scope = format!("{date_stamp}/{}/s3/aws4_request", self.config.region);
@@ -152,49 +184,122 @@ impl S3Client {
         (now.format("%Y%m%dT%H%M%SZ").to_string(), now.format("%Y%m%d").to_string())
     }
 
-    pub async fn put_object(&self, key: &str, bytes: &[u8]) -> AppResult<()> {
-        let key = self.prefixed_key(key);
-        let (host, path, url) = self.request_target(&key)?;
-        let payload_hash = hex_sha256(bytes);
+    /// One signed request. `key` is already prefixed; `query` is already
+    /// canonical (`canonical_query`).
+    async fn send(&self, method: reqwest::Method, key: &str, query: &str, body: Vec<u8>) -> AppResult<reqwest::Response> {
+        let (host, path, url) = self.request_target(key)?;
+        let payload_hash = hex_sha256(&body);
         let (amz_date, date_stamp) = self.dated_headers();
-        let authorization = self.sign("PUT", &path, &host, &payload_hash, &amz_date, &date_stamp);
-
-        let response = self
-            .http
-            .put(&url)
+        let authorization = self.sign(method.as_str(), &path, query, &host, &payload_hash, &amz_date, &date_stamp);
+        let url = if query.is_empty() { url } else { format!("{url}?{query}") };
+        self.http
+            .request(method, &url)
             .header("host", &host)
             .header("x-amz-content-sha256", &payload_hash)
             .header("x-amz-date", &amz_date)
             .header("authorization", authorization)
-            .body(bytes.to_vec())
+            .body(body)
             .send()
             .await
-            .map_err(|err| AppError::Connection(format!("couldn't reach the backup destination: {err}")))?;
+            .map_err(|err| AppError::Connection(format!("couldn't reach the backup destination: {err}")))
+    }
+
+    pub async fn put_object(&self, key: &str, bytes: &[u8]) -> AppResult<()> {
+        let response = self.send(reqwest::Method::PUT, &self.prefixed_key(key), "", bytes.to_vec()).await?;
         Self::require_success(response, "upload the backup to").await
     }
 
-    pub async fn get_object(&self, key: &str) -> AppResult<Vec<u8>> {
-        let key = self.prefixed_key(key);
-        let (host, path, url) = self.request_target(&key)?;
-        let payload_hash = hex_sha256(b"");
-        let (amz_date, date_stamp) = self.dated_headers();
-        let authorization = self.sign("GET", &path, &host, &payload_hash, &amz_date, &date_stamp);
-
-        let response = self
-            .http
-            .get(&url)
-            .header("host", &host)
-            .header("x-amz-content-sha256", &payload_hash)
-            .header("x-amz-date", &amz_date)
-            .header("authorization", authorization)
-            .send()
+    /// Uploads a local file, in parts once it is larger than one part.
+    ///
+    /// A multipart upload that fails part way is aborted, because the parts
+    /// already sent are stored - and billed - until something does.
+    pub async fn put_file(&self, key: &str, local: &std::path::Path) -> AppResult<()> {
+        let size = tokio::fs::metadata(local)
             .await
-            .map_err(|err| AppError::Connection(format!("couldn't reach the backup destination: {err}")))?;
+            .map_err(|err| AppError::Internal(format!("couldn't read the backup at {}: {err}", local.display())))?
+            .len();
+        if size <= PART_SIZE {
+            let bytes = tokio::fs::read(local).await.map_err(|err| AppError::Internal(format!("couldn't read the backup at {}: {err}", local.display())))?;
+            return self.put_object(key, &bytes).await;
+        }
+
+        let key = self.prefixed_key(key);
+        let started = self.send(reqwest::Method::POST, &key, &canonical_query(&[("uploads", "")]), Vec::new()).await?;
+        let body = Self::success_body(started, "start an upload to").await?;
+        let upload_id = xml_value(&body, "UploadId")
+            .ok_or_else(|| AppError::Connection("the backup destination did not return an upload id for a multipart upload".into()))?;
+
+        let finished = match self.upload_parts(&key, &upload_id, local).await {
+            Ok(etags) => self.complete_upload(&key, &upload_id, &etags).await,
+            Err(err) => Err(err),
+        };
+        if let Err(err) = &finished {
+            let abort = self.send(reqwest::Method::DELETE, &key, &canonical_query(&[("uploadId", &upload_id)]), Vec::new()).await;
+            let aborted = match abort {
+                Ok(response) => Self::require_success(response, "abandon the upload in").await,
+                Err(abort_err) => Err(abort_err),
+            };
+            if let Err(abort_err) = aborted {
+                log::warn!("a failed backup upload ({err}) couldn't be aborted, so its parts stay in the bucket until a lifecycle rule removes them: {abort_err}");
+            }
+        }
+        finished
+    }
+
+    async fn upload_parts(&self, key: &str, upload_id: &str, local: &std::path::Path) -> AppResult<Vec<String>> {
+        use tokio::io::AsyncReadExt;
+        let mut file = tokio::fs::File::open(local).await.map_err(|err| AppError::Internal(format!("couldn't open the backup at {}: {err}", local.display())))?;
+        let mut etags = Vec::new();
+        for part_number in 1u32.. {
+            let mut chunk = Vec::with_capacity(PART_SIZE as usize);
+            (&mut file)
+                .take(PART_SIZE)
+                .read_to_end(&mut chunk)
+                .await
+                .map_err(|err| AppError::Internal(format!("couldn't read the backup at {}: {err}", local.display())))?;
+            if chunk.is_empty() {
+                break;
+            }
+            let query = canonical_query(&[("partNumber", &part_number.to_string()), ("uploadId", upload_id)]);
+            let response = self.send(reqwest::Method::PUT, key, &query, chunk).await?;
+            let etag = response.headers().get("etag").and_then(|value| value.to_str().ok()).map(str::to_string);
+            Self::require_success(response, "upload part of the backup to").await?;
+            etags.push(etag.ok_or_else(|| AppError::Connection(format!("the backup destination did not return an ETag for part {part_number}")))?);
+        }
+        Ok(etags)
+    }
+
+    async fn complete_upload(&self, key: &str, upload_id: &str, etags: &[String]) -> AppResult<()> {
+        let parts: String = etags
+            .iter()
+            .enumerate()
+            .map(|(index, etag)| format!("<Part><PartNumber>{}</PartNumber><ETag>{etag}</ETag></Part>", index + 1))
+            .collect();
+        let body = format!("<CompleteMultipartUpload>{parts}</CompleteMultipartUpload>");
+        let response = self.send(reqwest::Method::POST, key, &canonical_query(&[("uploadId", upload_id)]), body.into_bytes()).await?;
+        let reply = Self::success_body(response, "finish the upload to").await?;
+        // S3 can answer 200 and still have failed: the status is sent before
+        // the parts are joined, so a failure arrives as an <Error> body.
+        if reply.contains("<Error>") {
+            let snippet: String = reply.chars().take(300).collect();
+            return Err(AppError::Connection(format!("the backup destination couldn't assemble the upload: {snippet}")));
+        }
+        Ok(())
+    }
+
+    /// Downloads an object into a local file, a chunk at a time.
+    pub async fn get_object_to_file(&self, key: &str, local: &std::path::Path) -> AppResult<()> {
+        use tokio::io::AsyncWriteExt;
+        let mut response = self.send(reqwest::Method::GET, &self.prefixed_key(key), "", Vec::new()).await?;
         if !response.status().is_success() {
             let status = response.status();
             return Err(AppError::Connection(format!("the backup destination doesn't have this object ({status})")));
         }
-        response.bytes().await.map(|bytes| bytes.to_vec()).map_err(|err| AppError::Connection(format!("couldn't download the object: {err}")))
+        let mut file = tokio::fs::File::create(local).await.map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
+        while let Some(chunk) = response.chunk().await.map_err(|err| AppError::Connection(format!("couldn't download the object: {err}")))? {
+            file.write_all(&chunk).await.map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))?;
+        }
+        file.flush().await.map_err(|err| AppError::Internal(format!("couldn't stage the downloaded backup: {err}")))
     }
 
     /// A 404 counts as success here (same "already gone either way" stance
@@ -202,26 +307,21 @@ impl S3Client {
     /// delete already takes) - the caller wants the object gone, and it is,
     /// regardless of whether this call is what removed it.
     pub async fn delete_object(&self, key: &str) -> AppResult<()> {
-        let key = self.prefixed_key(key);
-        let (host, path, url) = self.request_target(&key)?;
-        let payload_hash = hex_sha256(b"");
-        let (amz_date, date_stamp) = self.dated_headers();
-        let authorization = self.sign("DELETE", &path, &host, &payload_hash, &amz_date, &date_stamp);
-
-        let response = self
-            .http
-            .delete(&url)
-            .header("host", &host)
-            .header("x-amz-content-sha256", &payload_hash)
-            .header("x-amz-date", &amz_date)
-            .header("authorization", authorization)
-            .send()
-            .await
-            .map_err(|err| AppError::Connection(format!("couldn't reach the backup destination: {err}")))?;
+        let response = self.send(reqwest::Method::DELETE, &self.prefixed_key(key), "", Vec::new()).await?;
         if response.status().is_success() || response.status().as_u16() == 404 {
             return Ok(());
         }
         Err(AppError::Connection(format!("couldn't delete the object from the backup destination ({})", response.status())))
+    }
+
+    async fn success_body(response: reqwest::Response, action: &str) -> AppResult<String> {
+        let status = response.status();
+        let body = response.text().await.map_err(|err| AppError::Connection(format!("couldn't read the backup destination's reply: {err}")))?;
+        if status.is_success() {
+            return Ok(body);
+        }
+        let snippet: String = body.chars().take(300).collect();
+        Err(AppError::Connection(format!("the backup destination refused to {action} it ({status}): {snippet}")))
     }
 
     async fn require_success(response: reqwest::Response, action: &str) -> AppResult<()> {
@@ -265,6 +365,7 @@ mod tests {
         let authorization = client.sign(
             "PUT",
             "/backups/app-123/2024-01-15.zip",
+            "",
             "my-bucket.s3.amazonaws.com",
             &payload_hash,
             "20240115T120000Z",
@@ -277,6 +378,21 @@ mod tests {
              SignedHeaders=host;x-amz-content-sha256;x-amz-date, \
              Signature=6aab9e8218af50a29c051857a9773c78bc185662fe1eaa3264e8b1031125ba0b"
         );
+    }
+
+    /// Multipart requests sign their query string; an unsorted or
+    /// differently encoded one is a signature S3 refuses.
+    #[test]
+    fn canonical_query_sorts_and_encodes() {
+        assert_eq!(canonical_query(&[("uploads", "")]), "uploads=");
+        assert_eq!(canonical_query(&[("uploadId", "a/b+c"), ("partNumber", "3")]), "partNumber=3&uploadId=a%2Fb%2Bc");
+    }
+
+    #[test]
+    fn xml_value_reads_the_upload_id() {
+        let reply = "<?xml version=\"1.0\"?><InitiateMultipartUploadResult><Bucket>b</Bucket><Key>k</Key><UploadId>abc.123</UploadId></InitiateMultipartUploadResult>";
+        assert_eq!(xml_value(reply, "UploadId").as_deref(), Some("abc.123"));
+        assert_eq!(xml_value(reply, "Missing"), None);
     }
 
     #[test]

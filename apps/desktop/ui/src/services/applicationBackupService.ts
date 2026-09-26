@@ -5,15 +5,27 @@ export function listApplicationBackups(id: string): Promise<ApplicationBackup[]>
   return callCommand<ApplicationBackup[]>("list_application_backups", { id });
 }
 
-export function createApplicationBackup(id: string): Promise<ApplicationBackup> {
-  return callCommand<ApplicationBackup>("create_application_backup", { id });
+/** Mirrors the Rust `BackupCreated` DTO. `remoteError` is a serialized `AppError` (for `normalizeError`), set when a backup destination is configured and the upload to it failed - the local backup exists either way. */
+export interface BackupCreated {
+  backup: ApplicationBackup;
+  remoteError: unknown;
 }
 
-export function deleteApplicationBackup(id: string, backupId: string): Promise<void> {
-  return callCommand<void>("delete_application_backup", { id, backupId });
+/** Mirrors the Rust `BackupDeleted` DTO: what could not be removed. The backup is gone from the list either way. */
+export interface BackupDeleted {
+  fileError: unknown;
+  remoteError: unknown;
 }
 
-/** Requires the application to already be stopped - see the Rust `restore_backup`'s own doc comment. Resolves to the number of files written. */
+export function createApplicationBackup(id: string): Promise<BackupCreated> {
+  return callCommand<BackupCreated>("create_application_backup", { id });
+}
+
+export function deleteApplicationBackup(id: string, backupId: string): Promise<BackupDeleted> {
+  return callCommand<BackupDeleted>("delete_application_backup", { id, backupId });
+}
+
+/** Requires the application to already be stopped - see the Rust `restore_backup`'s own doc comment. Writes the backup's files back and removes what was created after it, so the directory ends up as the backup has it. Resolves to the number of files written. */
 export function restoreApplicationBackup(id: string, backupId: string): Promise<number> {
   return callCommand<number>("restore_application_backup", { id, backupId });
 }

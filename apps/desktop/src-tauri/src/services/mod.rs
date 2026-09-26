@@ -29,7 +29,7 @@ use crate::errors::AppResult;
 
 pub use app_info_service::{get_app_info, local_docker_available};
 pub use application_backup_service::{
-    create_backup, delete_backup, get_backup_destination, get_backup_schedule, list_backups, restore_backup, run_due_backups,
+    create_backup, delete_backup, BackupCreated, BackupDeleted, get_backup_destination, get_backup_schedule, list_backups, restore_backup, run_due_backups,
     set_backup_destination, set_backup_schedule, test_backup_destination,
 };
 pub use application_files_service::{

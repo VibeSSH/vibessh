@@ -75,7 +75,7 @@ the edges.
 
 **Data**
 - ~~Database reachability repair fails on Ubuntu 22.04 / Debian 11 (MariaDB < 10.11), on MySQL, and for a non-root admin on Debian - and reports success.~~ **Fixed:** MySQL's drop-in directory and service are handled, sbin is on the script's PATH, an inactive ufw is no longer read as active, and every failure is returned - repair and install fail with it, a created database and a Pterodactyl import carry it as a warning. MariaDB < 10.11 still cannot be reached from containers (binding every address is the refused alternative); it now says so, with the fix.
-- Backups as a non-root admin abort on one unreadable file; restore overlays rather than replaces; S3 holds the whole archive in memory and fails above 5 GiB.
+- Backups as a non-root admin abort on one unreadable file; ~~restore overlays rather than replaces; S3 holds the whole archive in memory and fails above 5 GiB.~~ **Restore and S3 fixed:** a restore writes the archive back and then removes what it does not contain (VibeSSH's own `.vibessh-*` entries and symlinks, which no backup records, are kept); uploads go from a local file in 64 MiB parts and downloads stream into one; a failed upload, and a delete that left the file or the bucket copy behind, are returned and shown. The unreadable-file abort is an error, not a silent success, and belongs with the non-root admin work (reading as root through the helper).
 
 **Account backend**
 - "Active installs" and the sign-in rate limit key on `ip:unknown` unless `TRUST_FORWARDED_FOR` is set behind the tunnel - every user shares one counter. *(Check the production env.)*

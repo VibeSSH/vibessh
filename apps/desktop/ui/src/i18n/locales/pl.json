@@ -124,7 +124,7 @@
     "restoreAria": "Przywróć ten backup",
     "restoreDisabledAria": "Zatrzymaj aplikację, aby przywrócić backup",
     "restoreTitle": "Przywróć backup",
-    "restoreBody": "Przywrócić stan z backupu z {{date}}? Nadpisze to obecne pliki w katalogu roboczym. Tej operacji nie można cofnąć.",
+    "restoreBody": "Przywrócić stan z backupu z {{date}}? Katalog roboczy wróci dokładnie do stanu z backupu - jego pliki zostaną zapisane z powrotem, a pliki utworzone później usunięte. Tego nie da się cofnąć.",
     "restoreConfirm": "Przywróć",
     "restoredToast": "Przywrócono backup.",
     "restoreError": "Nie udało się przywrócić backupu.",
@@ -145,7 +145,10 @@
     "scheduleNote": "Działa tylko, gdy VibeSSH jest otwarty - nie ma tu procesu w tle działającego bez uruchomionej aplikacji desktopowej.",
     "scheduleSavedToast": "Zapisano harmonogram backupów.",
     "scheduleSaveError": "Nie udało się zapisać harmonogramu.",
-    "scheduledToast": "Utworzono automatyczne backupy ({{count}})."
+    "scheduledToast": "Utworzono automatyczne backupy ({{count}}).",
+    "remoteFailed": "Backup powstał na serwerze, ale kopia do miejsca docelowego backupów się nie udała: {{message}}",
+    "fileLeft": "Backup zniknął z listy, ale jego plik nadal jest na serwerze: {{message}}",
+    "remoteLeft": "Backup zniknął z listy, ale jego kopia nadal jest w miejscu docelowym backupów: {{message}}"
   },
   "applicationCard": {
     "local": "Lokalnie",

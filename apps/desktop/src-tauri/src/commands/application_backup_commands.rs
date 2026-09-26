@@ -25,7 +25,7 @@ pub async fn create_application_backup(
     backup_destination: State<'_, BackupDestinationState>,
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
-) -> AppResult<ApplicationBackup> {
+) -> AppResult<services::BackupCreated> {
     services::create_backup(&repo, &backup_repo, &server_repo, &backup_destination, &sessions, id, BackupKind::Manual).await
 }
 
@@ -38,7 +38,7 @@ pub async fn delete_application_backup(
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     backup_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<services::BackupDeleted> {
     services::delete_backup(&repo, &backup_repo, &server_repo, &backup_destination, &sessions, id, backup_id).await
 }
 

@@ -65,6 +65,29 @@ pub async fn extract_zip_from_file(provider: &dyn ApplicationFileProvider, archi
     extract_zip_from(provider, std::io::BufReader::new(file), destination).await
 }
 
+/// Every path an archive puts on disk, as `extract_zip_from` writes it:
+/// relative, `/`-separated, no trailing slash, with each file's parent
+/// directories included whether or not the archive lists them as entries.
+/// Names the extraction would refuse (`enclosed_name` rejects them) are
+/// left out, because they are not written either.
+pub fn entry_paths(archive_path: &Path) -> AppResult<std::collections::HashSet<String>> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|err| AppError::Internal(format!("couldn't open the archive at {}: {err}", archive_path.display())))?;
+    let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|err| AppError::InvalidInput(format!("not a valid zip archive: {err}")))?;
+    let mut paths = std::collections::HashSet::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(|err| AppError::InvalidInput(format!("couldn't read archive entry {index}: {err}")))?;
+        let Some(name) = entry.enclosed_name() else { continue };
+        let relative = name.to_string_lossy().replace('\\', "/");
+        let mut current = relative.trim_end_matches('/');
+        while !current.is_empty() {
+            paths.insert(current.to_string());
+            current = current.rsplit_once('/').map_or("", |(parent, _)| parent);
+        }
+    }
+    Ok(paths)
+}
+
 async fn extract_zip_from<R: std::io::Read + std::io::Seek>(
     provider: &dyn ApplicationFileProvider,
     source: R,

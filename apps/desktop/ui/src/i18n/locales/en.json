@@ -124,7 +124,7 @@
     "restoreAria": "Restore this backup",
     "restoreDisabledAria": "Stop the application to restore a backup",
     "restoreTitle": "Restore backup",
-    "restoreBody": "Restore the state from the {{date}} backup? This overwrites the current files in the working directory. This can't be undone.",
+    "restoreBody": "Restore the state from the {{date}} backup? The working directory is set back exactly as the backup has it - its files are written back and files created since are removed. This can't be undone.",
     "restoreConfirm": "Restore",
     "restoredToast": "Backup restored.",
     "restoreError": "Couldn't restore the backup.",
@@ -145,7 +145,10 @@
     "scheduleNote": "Only runs while VibeSSH is open - there's no background process keeping this going without the desktop app running.",
     "scheduleSavedToast": "Backup schedule saved.",
     "scheduleSaveError": "Couldn't save the schedule.",
-    "scheduledToast": "Created {{count}} scheduled backup(s)."
+    "scheduledToast": "Created {{count}} scheduled backup(s).",
+    "remoteFailed": "Backup created on the server, but the copy to the backup destination failed: {{message}}",
+    "fileLeft": "The backup was removed from the list, but its file is still on the server: {{message}}",
+    "remoteLeft": "The backup was removed from the list, but its copy is still at the backup destination: {{message}}"
   },
   "applicationCard": {
     "local": "Local",
