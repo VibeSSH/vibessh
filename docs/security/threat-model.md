@@ -201,6 +201,18 @@ root-equivalent rights on the Node, so this does not widen what they can
 reach. And `systemctl status` is only allowed with `--no-pager`: without
 it `less` runs as root, and `!sh` in `less` is a root shell.
 
+**The firewall role.** It used to be `ufw *` and `iptables *`, under a
+comment saying neither runs anything. `iptables --modprobe=<program>` runs
+that program as root, so the role was root. A sudo rule cannot narrow it:
+`*` in sudoers matches spaces, so any pattern with a wildcard for a port or
+a source also matches one with `--modprobe` inside it. `iptables` is now
+reached only through `/usr/local/lib/vibessh/docker-user`, a root-owned
+helper that takes a DOCKER-USER rule as parts (add or delete, `tcp` or
+`udp`, a port of 1 to 65535, a source of address characters - none of them
+`-`), checks each, and runs the one command shape the Firewall page needs.
+`ufw` is allowed in the five forms the page runs; ufw parses its own
+arguments and never executes them.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

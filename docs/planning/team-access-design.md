@@ -161,6 +161,13 @@ person no longer has access" and "we asked" is the entire point.
    permission written into the file as a comment, so somebody reading it on
    the machine months later can see why.
 
+   *Corrected later:* `node.firewall` did not genuinely narrow as first
+   written. Its rule was `iptables *`, and `iptables --modprobe=<program>`
+   runs that program as root. It now reaches `iptables` only through the
+   DOCKER-USER helper (`firewall::docker_user`), which takes a rule as
+   checked parts, and `ufw` only in the forms the Firewall page runs - which
+   is also what the table above asked for.
+
    Two consequences worth stating. A role earning nothing privileged now
    leaves an account with **no sudoers file at all**, which is the first
    time "view only" means anything on the Node rather than only in the app.

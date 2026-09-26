@@ -121,6 +121,13 @@ pub async fn sync_team_access(
     } else {
         Ok(())
     };
+    // The same for the firewall: a role's node.firewall reaches `iptables`
+    // only through the DOCKER-USER helper, which has to be there first.
+    let firewall_helper = if members.iter().any(needs_firewall_helper) {
+        crate::firewall::docker_user::ensure_helper_installed(&connection).await
+    } else {
+        Ok(())
+    };
 
     let mut results = Vec::new();
     for (member, rules) in members.into_iter().zip(rules_by_member) {
@@ -139,11 +146,12 @@ pub async fn sync_team_access(
             continue;
         }
 
-        let outcome = match &console_writer {
-            // Nothing is granted on top of a writer that failed to install:
-            // their console rule would name a missing file, and the rest of
-            // the rules would read as a complete grant.
-            Err(err) if needs_console_writer(&member, &rules) => Err(AppError::Connection(err.to_string())),
+        let outcome = match (&console_writer, &firewall_helper) {
+            // Nothing is granted on top of a helper that failed to install:
+            // its rule would name a missing file, and the rest of the rules
+            // would read as a complete grant.
+            (Err(err), _) if needs_console_writer(&member, &rules) => Err(AppError::Connection(err.to_string())),
+            (_, Err(err)) if needs_firewall_helper(&member) => Err(AppError::Connection(err.to_string())),
             _ => grant_one(&connection, &member, &rules).await,
         };
         results.push(MemberAccessResult {
@@ -213,6 +221,12 @@ async fn revoke_one(
 /// one Application, or through a role's team-wide console permission.
 fn needs_console_writer(member: &CloudMemberAccess, rules: &[member_sudoers::ApplicationRules]) -> bool {
     rules.iter().any(|rules| rules.console.is_some()) || member.permissions.iter().any(|key| key == "applications.console")
+}
+
+/// Whether this member's rules name the DOCKER-USER helper - a role with
+/// `node.firewall`, see `member_sudoers::privilege_for`.
+fn needs_firewall_helper(member: &CloudMemberAccess) -> bool {
+    member.permissions.iter().any(|key| key == "node.firewall")
 }
 
 /// The rules one member's per-application grants earn on this Node.

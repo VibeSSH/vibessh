@@ -136,10 +136,19 @@ pub fn privilege_for(permissions: &[String]) -> Privilege {
     }
 
     if held.contains("node.firewall") {
-        // `ufw` and `iptables` change what the machine accepts, which is the
-        // whole point of the permission, and neither runs anything.
-        commands.insert(command("ufw", "*"));
-        commands.insert(command("iptables", "*"));
+        // What the Firewall page runs, and nothing wider. This used to be
+        // `ufw *` and `iptables *`, under a comment saying neither runs
+        // anything - but `iptables --modprobe=<program>` runs that program
+        // as root, so the rule was root. `iptables` is now reached only
+        // through the DOCKER-USER helper, which takes the rule as checked
+        // parts and has no way to pass an option on (`firewall::docker_user`).
+        // `ufw` gets the forms `firewall::ufw` uses: reading, enabling, and
+        // adding or deleting an allow rule, whose arguments ufw parses
+        // itself and never runs.
+        for arguments in ["status", "show added", "--force enable", "allow *", "delete allow *"] {
+            commands.insert(command("ufw", arguments));
+        }
+        commands.insert(command(crate::firewall::docker_user::HELPER_PATH, "*"));
     }
 
     if commands.is_empty() {
@@ -429,6 +438,21 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// `iptables --modprobe=<program>` runs that program as root, and a sudo
+    /// wildcard cannot keep it out, so the firewall role must never reach
+    /// `iptables` directly - only through the DOCKER-USER helper - and gets
+    /// only the `ufw` forms the Firewall page runs.
+    #[test]
+    fn the_firewall_role_never_reaches_iptables_itself() {
+        let Privilege::Commands(commands) = privilege_for(&permissions(&["node.firewall"])) else {
+            panic!("the firewall should narrow");
+        };
+        assert!(!commands.iter().any(|allowed| allowed.binary == "iptables"), "{commands:?}");
+        assert!(commands.contains(&command(crate::firewall::docker_user::HELPER_PATH, "*")), "{commands:?}");
+        let ufw: Vec<&str> = commands.iter().filter(|allowed| allowed.binary == "ufw").map(|allowed| allowed.arguments.as_str()).collect();
+        assert_eq!(ufw, vec!["--force enable", "allow *", "delete allow *", "show added", "status"]);
     }
 
     /// Every permission that cannot be narrowed has to produce the blanket

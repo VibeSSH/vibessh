@@ -47,6 +47,16 @@
 //! rule carries an iptables comment of `MARKER`, only rules carrying it are
 //! ever removed, and nothing here flushes a chain wholesale or touches a
 //! rule some other tool put in `DOCKER-USER`.
+//!
+//! **Through a helper, not `iptables` itself.** Every change goes through
+//! `HELPER_PATH`, a root-owned script that takes the rule as parts - add or
+//! delete, protocol, port, source - checks each, and builds the one
+//! `iptables` command this module needs. That is what lets a team member be
+//! given the firewall without being given root: `iptables` accepts
+//! `--modprobe=<program>` and runs that program as root, and a sudo rule
+//! cannot keep it out, because `*` in sudoers matches spaces - any pattern
+//! with a wildcard for the port or the source also matches one with
+//! `--modprobe` in the middle. The helper has no way to pass it on.
 
 use crate::errors::{AppError, AppResult};
 use crate::models::PortProtocol;
@@ -59,6 +69,98 @@ use crate::ssh::SshSession;
 /// anything another tool added, never carry it.
 const MARKER: &str = "vibessh";
 
+/// The helper every `DOCKER-USER` change goes through - see the module doc.
+pub const HELPER_PATH: &str = "/usr/local/lib/vibessh/docker-user";
+
+/// The helper's whole source, compared against the Node's copy and
+/// installed again when they differ.
+///
+/// Each argument is checked before it reaches `iptables`: the protocol is
+/// `tcp` or `udp`, the port is 1 to 65535, the source is made of the
+/// characters an address and a prefix length use - none of which is `-`,
+/// so none of them can start an option. Arguments go to `iptables` as
+/// separate words, never through a shell.
+pub const HELPER_SCRIPT: &str = r#"#!/bin/sh
+# Installed by VibeSSH. The changes to DOCKER-USER it makes, and no others:
+#   docker-user check | list
+#   docker-user drop add|del <tcp|udp> <port> <source>
+#   docker-user established add|del
+set -eu
+marker=vibessh
+refuse() { echo "docker-user: $1" >&2; exit 2; }
+case "${1:-}" in
+  check)
+    [ $# -eq 1 ] || refuse "check takes no arguments"
+    exec iptables -n -L DOCKER-USER ;;
+  list)
+    [ $# -eq 1 ] || refuse "list takes no arguments"
+    exec iptables -S DOCKER-USER ;;
+  drop)
+    [ $# -eq 5 ] || refuse "usage: drop add|del <tcp|udp> <port> <source>"
+    case "$2" in add) flag=-I ;; del) flag=-D ;; *) refuse "drop takes add or del" ;; esac
+    case "$3" in tcp|udp) ;; *) refuse "the protocol must be tcp or udp" ;; esac
+    case "$4" in ''|*[!0-9]*) refuse "the port must be a number" ;; esac
+    [ ${#4} -le 5 ] && [ "$4" -ge 1 ] && [ "$4" -le 65535 ] || refuse "the port must be 1 to 65535"
+    case "$5" in ''|*[!0-9a-fA-F:./]*) refuse "the source must be an address or a range" ;; esac
+    [ ${#5} -le 43 ] || refuse "the source is too long"
+    exec iptables "$flag" DOCKER-USER -p "$3" --dport "$4" ! -s "$5" -m comment --comment "$marker" -j DROP ;;
+  established)
+    [ $# -eq 2 ] || refuse "usage: established add|del"
+    case "$2" in
+      add) exec iptables -I DOCKER-USER 1 -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment "$marker" -j RETURN ;;
+      del) exec iptables -D DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment "$marker" -j RETURN ;;
+      *) refuse "established takes add or del" ;;
+    esac ;;
+  *) refuse "usage: check | list | drop add|del <tcp|udp> <port> <source> | established add|del" ;;
+esac
+"#;
+
+/// Sessions whose Node already has the current helper, so a reconcile does
+/// not compare it on every call. Keyed on the session: a reconnected Node is
+/// checked again. Bounded by clearing, like the file helper's.
+static HELPER_VERIFIED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<u64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+/// Puts the helper in place when it is missing or out of date.
+///
+/// Read without `sudo` - it is world-readable, and a team member's account,
+/// which may run it but not `cat` as root, has to be able to tell it is
+/// already there. Installing does need root, which the owner's account has
+/// and the access sync uses; a member finding it missing gets the install's
+/// own refusal.
+pub async fn ensure_helper_installed(connection: &SshSession) -> AppResult<()> {
+    if HELPER_VERIFIED.lock().expect("docker-user helper mutex poisoned").contains(&connection.id()) {
+        return Ok(());
+    }
+    let helper = command::quote(HELPER_PATH);
+    let deployed = connection.execute_command(&format!("cat {helper} 2>/dev/null")).await?;
+    if deployed.stdout != HELPER_SCRIPT {
+        // Staged in the admin's own home over SFTP, then moved into place as
+        // root: nothing passes through a world-writable directory (AGENTS.md 4).
+        let staging = format!(".vibessh-docker-user-{}", uuid::Uuid::new_v4());
+        connection.write_file(&staging, HELPER_SCRIPT.as_bytes()).await?;
+        let staging = command::quote(&staging);
+        let output = connection
+            .execute_command(&format!("sudo install -D -o root -g root -m 0755 {staging} {helper}; rc=$?; rm -f {staging}; exit $rc"))
+            .await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(format!("couldn't install the firewall helper: {}", output.stderr.trim())));
+        }
+    }
+    let mut verified = HELPER_VERIFIED.lock().expect("docker-user helper mutex poisoned");
+    if verified.len() >= 512 {
+        verified.clear();
+    }
+    verified.insert(connection.id());
+    Ok(())
+}
+
+/// `sudo <helper> <arguments...>`, every argument quoted.
+fn helper_command(arguments: &[&str]) -> String {
+    let arguments: Vec<String> = arguments.iter().map(|argument| command::quote(argument)).collect();
+    format!("sudo {} {}", command::quote(HELPER_PATH), arguments.join(" "))
+}
+
 fn protocol_str(protocol: PortProtocol) -> &'static str {
     match protocol {
         PortProtocol::Tcp => "tcp",
@@ -70,7 +172,8 @@ fn protocol_str(protocol: PortProtocol) -> &'static str {
 /// Absent means either no Docker or a version old enough not to create the
 /// chain - in both cases there is nothing to restrict and nothing to do.
 pub async fn detect(connection: &SshSession) -> AppResult<bool> {
-    let output = connection.execute_command("sudo iptables -n -L DOCKER-USER >/dev/null 2>&1 && echo yes || echo no").await?;
+    ensure_helper_installed(connection).await?;
+    let output = connection.execute_command(&format!("{} >/dev/null 2>&1 && echo yes || echo no", helper_command(&["check"]))).await?;
     Ok(output.stdout.trim() == "yes")
 }
 
@@ -85,42 +188,24 @@ pub async fn detect(connection: &SshSession) -> AppResult<bool> {
 /// own ACCEPT: expressing this as "drop everything that isn't from the
 /// allowed source" is the only form that actually denies anything.
 fn drop_command(rule: &ContainerRule) -> String {
-    format!(
-        "sudo iptables -I DOCKER-USER -p {proto} --dport {port} ! -s {cidr} -m comment --comment {marker} -j DROP",
-        proto = protocol_str(rule.protocol),
-        port = rule.port,
-        cidr = command::quote(&rule.source_cidr),
-        marker = command::quote(MARKER),
-    )
+    helper_command(&["drop", "add", protocol_str(rule.protocol), &rule.port.to_string(), &rule.source_cidr])
 }
 
 /// Let the return path of an already-accepted flow through before any of
 /// the `--dport` drops below it. Inserted at position 1 so it stays ahead of
 /// them however many times this reconciles.
 fn conntrack_return_command() -> String {
-    format!(
-        "sudo iptables -I DOCKER-USER 1 -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment {marker} -j RETURN",
-        marker = command::quote(MARKER),
-    )
+    helper_command(&["established", "add"])
 }
 
 fn conntrack_delete_command() -> String {
-    format!(
-        "sudo iptables -D DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -m comment --comment {marker} -j RETURN",
-        marker = command::quote(MARKER),
-    )
+    helper_command(&["established", "del"])
 }
 
 /// Same rule shape with `-D` - iptables deletes by exact specification, so
 /// this has to match `drop_command` field for field.
 fn delete_command(rule: &ContainerRule) -> String {
-    format!(
-        "sudo iptables -D DOCKER-USER -p {proto} --dport {port} ! -s {cidr} -m comment --comment {marker} -j DROP",
-        proto = protocol_str(rule.protocol),
-        port = rule.port,
-        cidr = command::quote(&rule.source_cidr),
-        marker = command::quote(MARKER),
-    )
+    helper_command(&["drop", "del", protocol_str(rule.protocol), &rule.port.to_string(), &rule.source_cidr])
 }
 
 /// One port this chain should restrict, and to what.
@@ -238,7 +323,8 @@ pub async fn reconcile(connection: &SshSession, desired: &[ContainerRule]) -> Ap
 /// that failed, or a chain someone flushed, leaves the intention intact and
 /// the port open. Anything that wants to tell a user "protected" reads this.
 pub async fn read_owned(connection: &SshSession) -> AppResult<Vec<ContainerRule>> {
-    let listing = connection.execute_command("sudo iptables -S DOCKER-USER").await?;
+    ensure_helper_installed(connection).await?;
+    let listing = connection.execute_command(&helper_command(&["list"])).await?;
     if listing.exit_code != 0 {
         return Err(AppError::Connection("couldn't read the DOCKER-USER chain".into()));
     }
@@ -263,40 +349,40 @@ mod tests {
         ContainerRule { port, protocol, source_cidr: cidr.to_string() }
     }
 
-    /// `-I` not `-A`: `DOCKER-USER` normally ends in a blanket `RETURN`, so
-    /// an appended rule would never be evaluated.
+    /// Every change goes through the helper, as separate quoted words - never
+    /// `iptables` itself, which a narrowed account must not be able to run.
     #[test]
-    fn drop_command_inserts_at_the_top_of_the_chain() {
-        let command = drop_command(&rule(3306, PortProtocol::Tcp, "10.77.0.0/16"));
-        assert!(command.contains("-I DOCKER-USER"), "{command}");
-        assert!(!command.contains("-A DOCKER-USER"), "{command}");
-    }
-
-    /// The rule has to be a negated-source DROP. An ACCEPT for the allowed
-    /// range would deny nothing, because the chain falls through to
-    /// Docker's own ACCEPT.
-    #[test]
-    fn drop_command_denies_everything_outside_the_allowed_source() {
-        let command = drop_command(&rule(3306, PortProtocol::Tcp, "10.77.0.0/16"));
-        assert!(command.contains("! -s '10.77.0.0/16'"), "{command}");
-        assert!(command.contains("-j DROP"), "{command}");
-        assert!(command.contains("--dport 3306"), "{command}");
-        assert!(command.contains("-p tcp"), "{command}");
-    }
-
-    /// iptables deletes by exact specification, so any drift between the
-    /// two would leave rules that can never be removed.
-    #[test]
-    fn delete_command_matches_drop_command_exactly_apart_from_the_verb() {
-        let r = rule(24454, PortProtocol::Udp, "10.77.0.0/16");
-        assert_eq!(drop_command(&r).replace("-I", "-D"), delete_command(&r));
-    }
-
-    #[test]
-    fn every_rule_carries_the_ownership_marker() {
+    fn every_change_goes_through_the_helper() {
         let r = rule(3306, PortProtocol::Tcp, "10.77.0.0/16");
-        assert!(drop_command(&r).contains(&format!("--comment '{MARKER}'")));
-        assert!(delete_command(&r).contains(&format!("--comment '{MARKER}'")));
+        assert_eq!(drop_command(&r), "sudo '/usr/local/lib/vibessh/docker-user' 'drop' 'add' 'tcp' '3306' '10.77.0.0/16'");
+        assert_eq!(delete_command(&r), "sudo '/usr/local/lib/vibessh/docker-user' 'drop' 'del' 'tcp' '3306' '10.77.0.0/16'");
+        for command in [drop_command(&r), delete_command(&r), conntrack_return_command(), conntrack_delete_command()] {
+            assert!(!command.contains("iptables"), "{command}");
+        }
+    }
+
+    /// The rules the helper writes, as before: `-I` at the top of the chain,
+    /// a negated-source DROP, the marker, and `-D` the exact inverse.
+    #[test]
+    fn the_helper_writes_the_same_rules_this_module_always_did() {
+        assert!(HELPER_SCRIPT.contains(r#"add) flag=-I ;; del) flag=-D"#));
+        assert!(HELPER_SCRIPT.contains(r#"exec iptables "$flag" DOCKER-USER -p "$3" --dport "$4" ! -s "$5" -m comment --comment "$marker" -j DROP"#));
+        assert!(HELPER_SCRIPT.contains("add) exec iptables -I DOCKER-USER 1 -m conntrack --ctstate ESTABLISHED,RELATED"));
+        assert!(HELPER_SCRIPT.contains("marker=vibessh"));
+        assert_eq!(MARKER, "vibessh");
+    }
+
+    /// The helper runs as root on whatever a narrowed account passes it, so it
+    /// has to parse, and has to check every part before it is used.
+    #[test]
+    fn the_helper_parses_and_checks_what_it_is_given() {
+        if let Ok(status) = std::process::Command::new("sh").arg("-n").arg("-c").arg(HELPER_SCRIPT).status() {
+            assert!(status.success(), "the helper does not parse");
+        }
+        assert!(HELPER_SCRIPT.contains("tcp|udp)"), "the protocol is not checked");
+        assert!(HELPER_SCRIPT.contains("*[!0-9]*) refuse"), "the port is not checked");
+        assert!(HELPER_SCRIPT.contains("*[!0-9a-fA-F:./]*) refuse"), "the source is not checked");
+        assert!(!HELPER_SCRIPT.contains("eval"), "nothing may be re-parsed by a shell");
     }
 
     /// The bug this module had: `DOCKER-USER` is reached after DNAT, so a
@@ -324,11 +410,8 @@ mod tests {
     /// caught by a `--dport` drop, and the accept has to sit above them.
     #[test]
     fn established_traffic_is_returned_from_the_head_of_the_chain() {
-        let command = conntrack_return_command();
-        assert!(command.contains("-I DOCKER-USER 1"), "{command}");
-        assert!(command.contains("ESTABLISHED,RELATED"), "{command}");
-        assert!(command.contains("-j RETURN"), "{command}");
-        assert_eq!(command.replace("-I DOCKER-USER 1", "-D DOCKER-USER"), conntrack_delete_command());
+        assert_eq!(conntrack_return_command(), "sudo '/usr/local/lib/vibessh/docker-user' 'established' 'add'");
+        assert_eq!(conntrack_delete_command(), "sudo '/usr/local/lib/vibessh/docker-user' 'established' 'del'");
     }
 
     #[test]
