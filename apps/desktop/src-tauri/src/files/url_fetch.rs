@@ -104,9 +104,108 @@ pub(crate) fn validate_fetch_url(input: &str) -> AppResult<String> {
     Ok(url.to_string())
 }
 
+/// The name a server gives a download, for the "Save as" field.
+///
+/// A link's last path segment is often not the file - \`/download\`,
+/// \`/v2/resources/123/download\`, a version id - and the real name only
+/// arrives with the response: in \`Content-Disposition\`, or as the path the
+/// redirects end on. Asked from this computer with a \`HEAD\` (or, for a
+/// server that refuses one, a \`GET\` dropped after its headers), under the same
+/// rules as the download itself. \`None\` when nothing better than the link
+/// itself is on offer.
+pub(crate) async fn suggest_file_name(url: &str) -> AppResult<Option<String>> {
+    let url = validate_fetch_url(url)?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|err| AppError::Internal(format!("couldn't start the request: {err}")))?;
+    let mut response = client.head(&url).send().await.map_err(|err| AppError::Connection(format!("couldn't reach the link: {err}")))?;
+    if !response.status().is_success() {
+        response = client.get(&url).send().await.map_err(|err| AppError::Connection(format!("couldn't reach the link: {err}")))?;
+    }
+    let from_header = response
+        .headers()
+        .get(reqwest::header::CONTENT_DISPOSITION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(file_name_from_disposition);
+    let from_final_url = response.url().path_segments().and_then(|mut segments| segments.next_back()).and_then(|segment| {
+        let decoded = percent_decode(segment);
+        // Only a segment that looks like a file name - "download" is not one.
+        decoded.contains('.').then_some(decoded)
+    });
+    Ok(from_header.or(from_final_url).and_then(|name| safe_file_name(&name)))
+}
+
+/// The file name in a \`Content-Disposition\` header: the RFC 5987
+/// \`filename*=UTF-8''...\` form when there is one, the plain \`filename=\` otherwise.
+fn file_name_from_disposition(header: &str) -> Option<String> {
+    let mut plain = None;
+    for part in header.split(';').map(str::trim) {
+        let Some((key, value)) = part.split_once('=') else { continue };
+        match key.trim().to_ascii_lowercase().as_str() {
+            "filename*" => {
+                let value = value.trim().trim_matches('"');
+                let encoded = value.split_once("''").map_or(value, |(_, rest)| rest);
+                return Some(percent_decode(encoded));
+            }
+            "filename" => plain = Some(value.trim().trim_matches('"').to_string()),
+            _ => {}
+        }
+    }
+    plain
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    let hex = |byte: u8| (byte as char).to_digit(16).map(|digit| digit as u8);
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(high * 16 + low);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A name, never a path: separators and anything that could step out of the
+/// folder go, as do leading dots.
+fn safe_file_name(name: &str) -> Option<String> {
+    let cleaned: String = name.chars().filter(|c| !matches!(c, '/' | '\\') && !c.is_control()).collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').chars().take(200).collect::<String>();
+    (!cleaned.is_empty()).then_some(cleaned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_content_disposition_name_is_read_in_either_form() {
+        assert_eq!(file_name_from_disposition("attachment; filename=\"LuckPerms-Bukkit-5.4.jar\"").as_deref(), Some("LuckPerms-Bukkit-5.4.jar"));
+        assert_eq!(file_name_from_disposition("attachment; filename=plugin.jar").as_deref(), Some("plugin.jar"));
+        assert_eq!(
+            file_name_from_disposition("attachment; filename=\"fallback.jar\"; filename*=UTF-8''Mój%20plugin.jar").as_deref(),
+            Some("Mój plugin.jar")
+        );
+        assert_eq!(file_name_from_disposition("inline"), None);
+    }
+
+    #[test]
+    fn a_suggested_name_is_a_name_and_never_a_path() {
+        assert_eq!(safe_file_name("../../etc/passwd").as_deref(), Some("etcpasswd"));
+        assert_eq!(safe_file_name("..\\x.jar").as_deref(), Some("x.jar"));
+        assert_eq!(safe_file_name("   "), None);
+        assert_eq!(percent_decode("a%20b%2Ejar"), "a b.jar");
+        assert_eq!(percent_decode("100%"), "100%");
+    }
 
     #[test]
     fn an_ordinary_public_link_is_accepted() {

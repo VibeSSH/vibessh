@@ -122,6 +122,11 @@ export function onTransferProgress(transferId: string, handler: (progress: Trans
   return listen<TransferProgressEvent>(`application-files://${transferId}/progress`, (event) => handler(event.payload)).catch(() => () => {});
 }
 
+/** The file name the server behind `url` gives it, or null when it gives none better than the link. */
+export function suggestDownloadFileName(url: string): Promise<string | null> {
+  return callCommand<string | null>("suggest_download_file_name", { url });
+}
+
 /** Has the Node download `url` into `path` (relative to the Application's root). Resolves with the size in bytes. */
 export function fetchApplicationFileUrl(applicationId: string, path: string, url: string): Promise<number> {
   return callCommand<number>("fetch_application_file_url", { applicationId, path, url });

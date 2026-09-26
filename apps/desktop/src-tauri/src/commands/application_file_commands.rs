@@ -152,6 +152,13 @@ pub async fn copy_application_file(
     services::copy_application_file(&app_repo, &server_repo, &sessions, application_id, &from, &to).await
 }
 
+/// The file name the server behind a link gives it, for "Download from a
+/// link"'s Save as field - see `files::url_fetch::suggest_file_name`.
+#[tauri::command]
+pub async fn suggest_download_file_name(url: String) -> AppResult<Option<String>> {
+    crate::files::url_fetch::suggest_file_name(&url).await
+}
+
 /// Downloads a link into the Application's files, fetched by the Node itself.
 /// Returns the size of the downloaded file.
 #[tauri::command]

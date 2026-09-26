@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
+import { suggestDownloadFileName } from "@/services/applicationFilesService";
 import { errorMessage } from "@/services/tauri";
 
 /**
@@ -41,8 +42,31 @@ export function FetchUrlModal({
   const [nameEdited, setNameEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** What the server calls the file, once asked - a link's last segment is
+   *  often `download` or an id, and the real name only comes with the response. */
+  const [suggested, setSuggested] = useState<{ url: string; name: string } | null>(null);
 
-  const name = nameEdited ? fileName : fileNameFromUrl(url);
+  useEffect(() => {
+    const link = url.trim();
+    if (nameEdited || !/^https?:\/\//i.test(link)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      suggestDownloadFileName(link)
+        .then((name) => {
+          if (!cancelled && name) setSuggested({ url: link, name });
+        })
+        .catch(() => {
+          // The link may still download fine; the name from the link stands.
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [url, nameEdited]);
+
+  const name = nameEdited ? fileName : suggested?.url === url.trim() ? suggested.name : fileNameFromUrl(url);
+  const noExtension = name.trim() !== "" && !name.includes(".");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -85,6 +109,7 @@ export function FetchUrlModal({
             required
           />
           <span className="form-note">{t("applicationFilesTab.fetchWhere", { folder: folderLabel })}</span>
+          {noExtension && <span className="form-note form-note-danger">{t("applicationFilesTab.fetchNoExtension")}</span>}
         </label>
         <p className="form-note">{busy ? t("applicationFilesTab.fetchBusy") : t("applicationFilesTab.fetchNote")}</p>
         {error && <p className="form-note form-note-danger">{error}</p>}

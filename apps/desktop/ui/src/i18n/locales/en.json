@@ -366,6 +366,7 @@
     "windowLoading": "Loading…"
   },
   "applicationFilesTab": {
+    "fetchNoExtension": "This name has no extension - a plugin has to end in .jar, or the server won't load it.",
     "loadFailedTitle": "Couldn't load this folder",
     "loadFailedDescription": "The files are still there - only the connection to the Node failed. The reason is above.",
     "fetchButton": "From link",
