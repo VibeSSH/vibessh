@@ -14,7 +14,7 @@
 
 use std::sync::OnceLock;
 
-use lettre::message::{header::ContentType, Mailbox};
+use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
@@ -58,46 +58,116 @@ pub fn mailer() -> Option<&'static Mailer> {
         .as_ref()
 }
 
+
+/// One email, in both forms: the HTML a mail client shows, and the plain
+/// text it falls back on - which is also what a spam filter expects to find
+/// beside HTML, so it is always sent.
+pub struct Email {
+    pub subject: &'static str,
+    pub text: String,
+    pub html: String,
+}
+
 impl Mailer {
-    pub async fn send(&self, to: &str, subject: &str, body: String) -> Result<(), String> {
+    pub async fn send(&self, to: &str, email: &Email) -> Result<(), String> {
         let to: Mailbox = to.parse().map_err(|err| format!("not an address: {err}"))?;
         let message = Message::builder()
             .from(self.from.clone())
             .to(to)
-            .subject(subject)
-            .header(ContentType::TEXT_PLAIN)
-            .body(body)
+            .subject(email.subject)
+            .multipart(MultiPart::alternative_plain_html(email.text.clone(), email.html.clone()))
             .map_err(|err| format!("couldn't build the message: {err}"))?;
         self.transport.send(message).await.map(|_| ()).map_err(|err| format!("the SMTP server refused it: {err}"))
     }
 }
 
+/// The words of the reset email in one language.
+struct ResetWords {
+    subject: &'static str,
+    heading: &'static str,
+    intro: &'static str,
+    code_label: &'static str,
+    instructions: &'static str,
+    two_factor: &'static str,
+    not_you: &'static str,
+}
+
+const RESET_PL: ResetWords = ResetWords {
+    subject: "Kod do zmiany hasła VibeSSH",
+    heading: "Zmiana hasła",
+    intro: "Ktoś poprosił o zmianę hasła do konta VibeSSH przypisanego do tego adresu.",
+    code_label: "Twój kod",
+    instructions: "Wpisz go w VibeSSH razem z nowym hasłem. Działa raz, przez 30 minut.",
+    two_factor: "Jeśli masz włączoną weryfikację dwuetapową, przy logowaniu i tak podasz kod z aplikacji uwierzytelniającej.",
+    not_you: "Jeśli to nie Ty, zignoruj tę wiadomość - hasło zostaje bez zmian.",
+};
+
+const RESET_EN: ResetWords = ResetWords {
+    subject: "Your VibeSSH password reset code",
+    heading: "Reset your password",
+    intro: "Someone asked to reset the password of the VibeSSH account for this address.",
+    code_label: "Your code",
+    instructions: "Type it into VibeSSH together with your new password. It works once, for 30 minutes.",
+    two_factor: "If two-step verification is on, you will still need the code from your authenticator app to sign in.",
+    not_you: "If this wasn't you, ignore this email - your password stays as it is.",
+};
+
 /// The reset email, in the language the app asked in - Polish unless it
 /// asked for English.
-pub fn password_reset_message(code: &str, language: &str) -> (&'static str, String) {
-    if language == "en" {
-        (
-            "Your VibeSSH password reset code",
-            format!(
-                "Someone asked to reset the password of the VibeSSH account for this address.\n\n\
-                 Your code: {code}\n\n\
-                 Type it into VibeSSH together with your new password. It works once, for 30 minutes.\n\
-                 If two-step verification is on, you will still need the code from your authenticator app to sign in.\n\n\
-                 If this wasn't you, ignore this email - your password stays as it is.\n\n\
-                 VibeSSH - https://vibessh.dev\n"
-            ),
-        )
-    } else {
-        (
-            "Kod do zmiany hasła VibeSSH",
-            format!(
-                "Ktoś poprosił o zmianę hasła do konta VibeSSH przypisanego do tego adresu.\n\n\
-                 Twój kod: {code}\n\n\
-                 Wpisz go w VibeSSH razem z nowym hasłem. Działa raz, przez 30 minut.\n\
-                 Jeśli masz włączoną weryfikację dwuetapową, przy logowaniu i tak podasz kod z aplikacji uwierzytelniającej.\n\n\
-                 Jeśli to nie Ty, zignoruj tę wiadomość - hasło zostaje bez zmian.\n\n\
-                 VibeSSH - https://vibessh.dev\n"
-            ),
-        )
-    }
+///
+/// The HTML is built for mail clients, which is its own discipline: a table
+/// for layout, every style inline, no web fonts or scripts, and the one image
+/// loaded from the site. The code is the only thing in the accent colour.
+/// Everything put into it is fixed text or the code, whose alphabet has
+/// nothing HTML would read as markup.
+pub fn password_reset_message(code: &str, language: &str) -> Email {
+    let words = if language == "en" { &RESET_EN } else { &RESET_PL };
+    let text = format!(
+        "{intro}\n\n{code_label}: {code}\n\n{instructions}\n{two_factor}\n\n{not_you}\n\nVibeSSH - https://vibessh.dev\n",
+        intro = words.intro,
+        code_label = words.code_label,
+        instructions = words.instructions,
+        two_factor = words.two_factor,
+        not_you = words.not_you,
+    );
+    let html = format!(
+        r##"<!doctype html>
+<html lang="{lang}">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{subject}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
+      <tr><td style="background:#0d1117;padding:22px 28px;">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="vertical-align:middle;"><img src="https://vibessh.dev/vibessh-mark.png" width="28" height="28" alt="" style="display:block;border:0;"></td>
+          <td style="vertical-align:middle;padding-left:10px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:600;color:#ecedef;">VibeSSH</td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="padding:30px 28px 4px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <h1 style="margin:0 0 12px;font-size:21px;font-weight:600;color:#0d1117;">{heading}</h1>
+        <p style="margin:0 0 22px;font-size:15px;line-height:1.55;color:#424a53;">{intro}</p>
+        <p style="margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#6e7781;">{code_label}</p>
+        <div style="margin:0 0 22px;padding:16px 18px;background:#0d1117;border-radius:10px;font-family:Consolas,Menlo,monospace;font-size:26px;font-weight:600;letter-spacing:.14em;color:#4dd9f5;text-align:center;">{code}</div>
+        <p style="margin:0 0 10px;font-size:14px;line-height:1.55;color:#424a53;">{instructions}</p>
+        <p style="margin:0 0 22px;font-size:14px;line-height:1.55;color:#424a53;">{two_factor}</p>
+        <p style="margin:0 0 26px;padding-top:18px;border-top:1px solid #e5e7eb;font-size:13px;line-height:1.55;color:#6e7781;">{not_you}</p>
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;"><a href="https://vibessh.dev" style="color:#8c959f;text-decoration:none;">vibessh.dev</a></p>
+  </td></tr>
+</table>
+</body>
+</html>
+"##,
+        lang = if language == "en" { "en" } else { "pl" },
+        subject = words.subject,
+        heading = words.heading,
+        intro = words.intro,
+        code_label = words.code_label,
+        instructions = words.instructions,
+        two_factor = words.two_factor,
+        not_you = words.not_you,
+    );
+    Email { subject: words.subject, text, html }
 }

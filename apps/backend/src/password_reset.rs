@@ -122,9 +122,9 @@ pub async fn request(
             .await?;
         tx.commit().await?;
 
-        let (subject, message) = mail::password_reset_message(&code, body.language.trim());
+        let message = mail::password_reset_message(&code, body.language.trim());
         tokio::spawn(async move {
-            if let Err(err) = mailer.send(&email, subject, message).await {
+            if let Err(err) = mailer.send(&email, &message).await {
                 log::warn!("couldn't send a password reset code: {err}");
             }
         });
@@ -227,13 +227,28 @@ mod tests {
 
     #[test]
     fn the_email_is_in_the_language_asked_for_and_carries_the_code() {
-        let (subject, body) = mail::password_reset_message("ABCDE-FGH23", "en");
-        assert!(subject.contains("password reset"));
-        assert!(body.contains("ABCDE-FGH23") && body.contains("30 minutes"));
-        let (subject, body) = mail::password_reset_message("ABCDE-FGH23", "pl");
-        assert!(subject.contains("hasła"));
-        assert!(body.contains("ABCDE-FGH23") && body.contains("30 minut"));
+        let english = mail::password_reset_message("ABCDE-FGH23", "en");
+        assert!(english.subject.contains("password reset"));
+        for body in [&english.text, &english.html] {
+            assert!(body.contains("ABCDE-FGH23") && body.contains("30 minutes"), "{body}");
+        }
+        let polish = mail::password_reset_message("ABCDE-FGH23", "pl");
+        assert!(polish.subject.contains("hasła"));
+        for body in [&polish.text, &polish.html] {
+            assert!(body.contains("ABCDE-FGH23") && body.contains("30 minut"), "{body}");
+        }
+        assert!(polish.html.contains(r#"lang="pl""#) && english.html.contains(r#"lang="en""#));
         // Anything else is Polish rather than nothing.
-        assert_eq!(mail::password_reset_message("X", "de").0, mail::password_reset_message("X", "pl").0);
+        assert_eq!(mail::password_reset_message("X", "de").subject, polish.subject);
+    }
+
+    /// Written out for looking at, when asked: `VIBESSH_WRITE_EMAIL_PREVIEW=<dir>`.
+    #[test]
+    fn preview_the_reset_email() {
+        let Ok(dir) = std::env::var("VIBESSH_WRITE_EMAIL_PREVIEW") else { return };
+        for language in ["pl", "en"] {
+            let email = mail::password_reset_message("ABCDE-FGH23", language);
+            std::fs::write(format!("{dir}/reset-{language}.html"), email.html).unwrap();
+        }
     }
 }
