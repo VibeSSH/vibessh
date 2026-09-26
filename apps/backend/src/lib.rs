@@ -29,7 +29,9 @@ pub mod authorize;
 pub mod errors;
 pub mod jwt;
 pub mod models;
+pub mod mail;
 pub mod password;
+pub mod password_reset;
 pub mod permissions;
 pub mod rate_limit;
 pub mod refresh_token;
@@ -97,6 +99,10 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         // Takes `AnyAuthUser`, so it keeps working for the one account
         // state that cannot use anything else - see `auth::AuthUser`.
         .route("/auth/password", post(auth::change_password))
+        // A forgotten password: a code by email, then the code with a new
+        // password. Unauthenticated by nature, and rate-limited like sign-in.
+        .route("/auth/password-reset/request", post(password_reset::request))
+        .route("/auth/password-reset/confirm", post(password_reset::confirm))
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))

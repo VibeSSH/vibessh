@@ -39,7 +39,7 @@ pub(crate) fn validate_email(email: &str) -> ApiResult<()> {
     Ok(())
 }
 
-fn validate_password(password: &str) -> ApiResult<()> {
+pub(crate) fn validate_password(password: &str) -> ApiResult<()> {
     if password.chars().count() < password::MIN_PASSWORD_LEN {
         return Err(ApiError::InvalidInput(Detail::new("password_too_short", format!("password must be at least {} characters", password::MIN_PASSWORD_LEN)).with("min", password::MIN_PASSWORD_LEN)));
     }
@@ -79,7 +79,7 @@ async fn issue_auth_response(state: &AppState, user: &User) -> ApiResult<AuthRes
 /// password list aimed at one email; the address key catches one password
 /// tried against many emails, which no per-account counter would see. See
 /// `rate_limit` for why the address key is derived the way it is.
-fn check_rate_limit(state: &AppState, headers: &axum::http::HeaderMap, peer: Option<std::net::SocketAddr>, email: &str) -> ApiResult<()> {
+pub(crate) fn check_rate_limit(state: &AppState, headers: &axum::http::HeaderMap, peer: Option<std::net::SocketAddr>, email: &str) -> ApiResult<()> {
     let forwarded = headers.get("cf-connecting-ip").or_else(|| headers.get("x-forwarded-for")).and_then(|value| value.to_str().ok());
     let address_key = crate::rate_limit::client_key(forwarded, peer.map(|socket| socket.ip()));
     let account_key = format!("account:{email}");

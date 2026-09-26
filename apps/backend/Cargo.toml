@@ -42,6 +42,9 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 # and a second TLS stack in one binary is worth avoiding.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 argon2 = "0.5"
+# Sending the password-reset code (`mail`). rustls with ring and the bundled
+# webpki roots, the TLS stack reqwest already brings, rather than native-tls.
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "ring", "webpki-roots"] }
 # JWT access tokens. HS256 (symmetric) is enough here since this service is
 # both the sole issuer and sole verifier - no third party ever needs to
 # verify a token independently, which is the usual reason to reach for

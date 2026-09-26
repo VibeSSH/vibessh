@@ -27,7 +27,7 @@ database.
 | Path | What it is |
 | --- | --- |
 | `/opt/vibessh/src` | A checkout of this repository, shipped with `git archive` |
-| `/opt/vibessh/secrets/backend.env` | `POSTGRES_PASSWORD`, `JWT_SECRET` and `TOTP_ENCRYPTION_KEY`, mode 0600, owned by root |
+| `/opt/vibessh/secrets/backend.env` | `POSTGRES_PASSWORD`, `JWT_SECRET`, `TOTP_ENCRYPTION_KEY` and the `SMTP_*`/`MAIL_FROM` settings, mode 0600, owned by root |
 | `/etc/cloudflared/config.yml` | Tunnel ingress: `api.vibessh.dev` → `127.0.0.1:8787` |
 
 The secrets were generated on the host with `openssl rand` and have never
@@ -38,6 +38,12 @@ token, which clients recover from by refreshing; see `.env.example`.
 two-factor secret. Unlike `JWT_SECRET` it must never be rotated or lost on
 its own: without the key it was stored under, no account with two-factor on
 can sign in. Back it up together with the database.
+
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `MAIL_FROM`
+are the mailbox password-reset codes are sent from. Without them the service
+runs and a reset is refused with a reason. The sending domain needs the
+provider in its SPF record and its DKIM key published, or the codes land in
+spam.
 
 ## Deploying a change
 

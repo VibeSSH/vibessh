@@ -68,6 +68,9 @@ async fn run() -> Result<(), String> {
     if vibessh_backend::two_factor::cipher().is_none() {
         log::warn!("TOTP_ENCRYPTION_KEY is not set (or isn't 32 bytes of base64) - two-factor sign-in is unavailable");
     }
+    if vibessh_backend::mail::mailer().is_none() {
+        log::warn!("SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD/MAIL_FROM are not all set - passwords can't be reset by email");
+    }
     let bind_addr: SocketAddr = std::env::var("VIBESSH_BACKEND_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8787".to_string())
         .parse()

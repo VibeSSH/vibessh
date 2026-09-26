@@ -55,6 +55,13 @@ services:
       # Generate with `openssl rand -base64 32`; losing it strands every account
       # that has two-factor on, so it is backed up with the database.
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
+      # Sends password-reset codes (src/mail.rs). Optional: unset, the service
+      # runs and asking for a reset code is refused with a reason.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       # Optional: unset means this deployment simply reports that it has no
       # included model, and users bring their own key. Empty defaults so that
       # a missing value is not an error.
