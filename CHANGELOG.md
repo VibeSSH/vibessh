@@ -6,6 +6,98 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.21
+
+### New
+
+- **Scheduled restarts, stops and starts.** An application has a new
+  **Schedules** tab: pick an action, the days and the time, and the Node runs
+  it on its own through cron, so it happens whether or not VibeSSH is open. A
+  scheduled stop or restart gives the server two minutes to save its world
+  first. A Node without cron gets an **Install cron** button. The Overview
+  shows what happens to the application next, under its ports.
+
+- **Reinstall a server that a restart won't fix.** **Settings - General** has a
+  **Reinstall** card. It runs the installation again with the answers you gave
+  when you created the application - a Paper server downloads its jar afresh,
+  an image is pulled again - rebuilds the container and starts it again if it
+  was running. The world, configs and plugins stay. **Start from scratch**
+  empties the folder first, and asks you to type the application's name,
+  since that deletes worlds for good.
+
+- **A disk limit.** **Resource limits** has **Disk (GB)**. Every five minutes
+  the Node measures the application's folder, and once it holds more than the
+  limit the server is stopped, with time to save, and cannot be started until
+  it is back under. The Overview shows the usage as a bar.
+
+- **Two-step verification for your VibeSSH account.** Turn it on under your
+  account in Settings and signing in also asks for the six-digit code from an
+  authenticator app (Google Authenticator, Aegis, 1Password). You get ten
+  recovery codes once, when you turn it on - keep them, because they are the
+  only way back in without your phone.
+
+- **Download a file from a link straight onto the Node.** The Files tab has
+  **Download from a link**: paste an address and the Node fetches it itself,
+  named the way its server names it, so a plugin arrives as a `.jar`.
+
+- **Drag a file out of the Files tab onto your desktop.**
+
+- **Choose the jar a Paper, Purpur or Velocity server starts from.** Leave the
+  new **Server jar** field empty to keep the one VibeSSH downloaded, or name a
+  jar in the server's folder - your own fork, or one you uploaded.
+
+- **A Restarts tab** for servers running the VibeSSH Scheduler plugin, with a
+  countdown to the next restart.
+
+- **Settings says who made VibeSSH and how to reach them.**
+
+### Changed
+
+- **The application tabs are easier to read.** Buttons sit in the card headers
+  instead of at the bottom of long pages, Settings is split into sections,
+  Ports and Users are tables, and environment variables that look like
+  passwords or tokens are masked until you reveal them.
+
+- **Moving an application to another Node is faster and shows how far along it
+  is.** Its folder travels as one stream instead of file by file, with a
+  progress bar.
+
+- **CPU and memory on the Overview update about once a second**, from a live
+  stream instead of a poll every few seconds.
+
+- **Opening and saving a file is quicker**, and a file left open is kept, with
+  unsaved changes, when you switch to another server and back.
+
+- **Closing the add-server dialog no longer throws away a connection in
+  progress.** A click outside a dialog does nothing, and closing it while
+  something is running moves the work to **Background tasks** on the top bar.
+
+### Fixed
+
+- **A Node that gained a new kind of host key no longer looks like an
+  interception.** VibeSSH asks for the kind of key it recorded and connects if
+  that key is unchanged. A key that really changed opens a dialog with both
+  fingerprints and a way to trust the new one.
+
+- **When a Node rejects your password, VibeSSH asks for it again** instead of
+  staying on "Connecting...". A busy screen no longer runs the connection out
+  of channels.
+
+- **Deleting a server with applications on it says which ones**, and lets you
+  stop, kill or delete them from the same dialog, or remove them all at once.
+
+- **Logs show the colours a process wrote** instead of raw escape codes.
+
+- **The console no longer reconnects twice a second** to a container that has
+  stopped.
+
+- **File operations work for an administrator who is not root.** The rule that
+  lets the file helper act as an application's own account was cut off on
+  every install.
+
+- **The Agent installer works again.** `curl ... | sudo sh` failed on every
+  machine with `install: cannot stat '==> downloading ...'`.
+
 ## 0.1.0-beta.20
 
 ### New
