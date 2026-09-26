@@ -432,6 +432,16 @@ impl SshSession {
             .unwrap_or_else(|_| Err(AppError::Timeout { operation: "the command", seconds: COMMAND_TIMEOUT.as_secs() }))
     }
 
+    /// `execute_command` with a bound of the caller's choosing, for the few
+    /// operations whose length is the size of somebody's data - copying a
+    /// game server's whole world - and for which ten minutes is not a
+    /// generous ceiling but a failure waiting for a big enough world.
+    pub async fn execute_command_with_timeout(&self, command: &str, timeout: Duration) -> AppResult<CommandOutput> {
+        tokio::time::timeout(timeout, self.execute_command_inner(command, None))
+            .await
+            .unwrap_or(Err(AppError::Timeout { operation: "the command", seconds: timeout.as_secs() }))
+    }
+
     /// `execute_command`, with `input` sent to the command's stdin and then
     /// closed.
     ///

@@ -171,14 +171,8 @@ async fn copy_volume(
         // than nesting the volume inside the working directory. `-a`
         // preserves modes and timestamps, which matters for a world that a
         // server will compare against its own region files.
-        let command = format!(
-            "cp -a {}/. {}/ && find {} -type f | wc -l",
-            shell_quote(volume_path),
-            shell_quote(working_directory),
-            shell_quote(working_directory)
-        );
-        let output = connection.execute_command(&command).await?;
-        return Ok(output.stdout.trim().parse::<u64>().unwrap_or_default());
+        let output = connection.execute_command_with_timeout(&same_machine_copy_command(volume_path, working_directory), VOLUME_COPY_TIMEOUT).await?;
+        return copied_file_count(&output);
     }
 
     let source_connection = get_or_connect(server_repo, sessions, source_server_id).await?;
@@ -186,6 +180,51 @@ async fn copy_volume(
     let source = SftpApplicationFileProvider::new(source_connection, volume_path.to_string());
     let target = SftpApplicationFileProvider::new(target_connection, working_directory.to_string());
     copy_tree(&source, &target).await
+}
+
+/// How long a same-machine volume copy may take. A world of tens of GB on a
+/// slow disk is a long `cp`; the old ten-minute command limit cut it off.
+const VOLUME_COPY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4 * 60 * 60);
+
+/// The copy, as root, and the count of what arrived.
+///
+/// **As root**, because Wings' volumes belong to its own `pterodactyl`
+/// account (mode 0700 on most panels): an admin who is not root could not
+/// read them, and the copy found nothing to copy. `-a` keeps modes and
+/// timestamps - a world compares its own region files - and the start that
+/// follows hands the directory to the Application's account.
+///
+/// `/.` copies the directory's *contents*, including dotfiles, rather than
+/// nesting the volume inside the working directory.
+fn same_machine_copy_command(volume_path: &str, working_directory: &str) -> String {
+    format!(
+        "sudo cp -a {volume}/. {target}/ && sudo find {target} -type f | wc -l",
+        volume = shell_quote(volume_path),
+        target = shell_quote(working_directory),
+    )
+}
+
+/// How many files the copy left in place - or why it failed.
+///
+/// The exit code used to be ignored: a `cp` that could not read the volume
+/// never reached `find`, the empty output parsed as zero, and the import
+/// went on to start an Application with an empty directory - a brand-new
+/// world in place of the one being moved, reported as a success. A failed
+/// copy is now an error with `cp`'s own words, and the import stops there.
+fn copied_file_count(output: &crate::transport::CommandOutput) -> AppResult<u64> {
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        return Err(AppError::Connection(if detail.is_empty() {
+            "couldn't copy the server's files".to_string()
+        } else {
+            format!("couldn't copy the server's files: {detail}")
+        }));
+    }
+    output
+        .stdout
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| AppError::Connection(format!("couldn't count the copied files (got {:?})", output.stdout.trim())))
 }
 
 /// Mirrors one provider's tree onto another, a file at a time.
@@ -577,6 +616,31 @@ pub async fn import_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn output(exit_code: i32, stdout: &str, stderr: &str) -> crate::transport::CommandOutput {
+        crate::transport::CommandOutput { exit_code, stdout: stdout.to_string(), stderr: stderr.to_string() }
+    }
+
+    /// The silent empty import: `cp` could not read the volume, `find` never
+    /// ran, and the empty output was read as "0 files copied" - a success.
+    #[test]
+    fn a_copy_that_failed_is_an_error_not_zero_files() {
+        let failed = copied_file_count(&output(1, "", "cp: cannot open '/var/lib/pterodactyl/volumes/x/world/level.dat' for reading: Permission denied"));
+        match failed {
+            Err(AppError::Connection(message)) => assert!(message.contains("Permission denied"), "{message}"),
+            other => panic!("expected an error, got {other:?}"),
+        }
+        assert!(copied_file_count(&output(0, "", "")).is_err(), "no count at all is not zero");
+        assert_eq!(copied_file_count(&output(0, "1532\n", "")).unwrap(), 1532);
+    }
+
+    /// Wings' volumes are its own account's; the copy has to read them as root.
+    #[test]
+    fn the_same_machine_copy_reads_the_volume_as_root() {
+        let command = same_machine_copy_command("/var/lib/pterodactyl/volumes/abc", "/home/container/lobby");
+        assert!(command.starts_with("sudo cp -a '/var/lib/pterodactyl/volumes/abc'/. '/home/container/lobby'/"), "{command}");
+        assert!(command.contains("&& sudo find '/home/container/lobby' -type f"), "{command}");
+    }
 
     #[test]
     fn a_container_name_has_to_be_a_uuid_before_it_reaches_a_command() {
