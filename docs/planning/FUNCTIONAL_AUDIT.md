@@ -31,6 +31,8 @@ the edges.
 
 ## P0 - data loss and privilege
 
+**All seven, and the sharing bug below, are fixed** - see the commits of the same day. Each fix is tested by running the operation where that was possible (real symlinks, the real helper script in WSL, the retention decision, the migration refusal); the live pass below still has to confirm them on a Node.
+
 | # | Finding | Where | Status |
 |---|---|---|---|
 | 1 | **Deleting a symlink deletes its target.** SFTP `REALPATH` and the helper's `realpath` resolve before delete/rename/upload-over. On the Node Files page (root provider `/`) deleting `/bin` on Ubuntu 24.04 empties `/usr/bin`; deleting `sites-enabled/default` deletes `sites-available/default`; uploading over a symlinked `server.jar` deletes its target. | `files/sftp.rs:46-66`, `files/sudo_user.rs:147-157` | **confirmed** |
