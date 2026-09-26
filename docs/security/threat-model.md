@@ -109,6 +109,33 @@ nothing. The worst outcome of a successful injection is a wrong answer.
   the point of supporting self-hosted endpoints, but it means a mistyped or
   malicious base URL is a real disclosure channel.
 
+## Root on a Node without the desktop in the loop
+
+Two features run as root on a Node on their own, so they are where a mistake
+would not wait for an operator to notice it.
+
+**Schedules** (`services::schedule_service`). Cron runs
+`/usr/local/lib/vibessh/schedule-runner` as root from
+`/etc/cron.d/vibessh-app-<id>`. Every path involved is root-owned and not
+writable by anyone else: the runner is `root:root 0755`, the cron file
+`root:root 0644`, past runs are kept in `/var/lib/vibessh/schedules` under a
+0700 umask. Nothing a person types reaches a cron line except the five time
+fields, which are held to digits and `* / , -` - a cron line cannot be ended,
+commented or extended with those - and the runner re-checks its ids and its
+one-of-three action before calling `docker`, because a cron file is a text
+file root can edit by hand. The schedule's name never leaves the local
+database. It re-attaches the console only to a FIFO VibeSSH already made, so
+it never leaves a root-owned FIFO the admin could no longer open.
+
+**Migration** (`services::migration_service::stream_directory`). The source
+Node's `tar` output is extracted as root on the target. That makes a
+compromised source Node an attacker against the target, and the defence is
+GNU tar's defaults, deliberately not overridden: members with a `..`
+component are skipped, a leading `/` is stripped, and symlinks are created
+only after every regular file, so no member can be written through one. A
+Node whose `tar` is not GNU tar (BusyBox, say) does not get those guarantees
+and has not been assessed.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |
