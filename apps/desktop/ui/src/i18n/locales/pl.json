@@ -1196,6 +1196,14 @@
     "nobodyOnline": "Nikt teraz nie gra.",
     "namesHidden": "Lista graczy jest wyłączona w konfiguracji pluginu (include-player-names)."
   },
+  "upcoming": {
+    "title": "Najbliższe akcje",
+    "today": "dziś {{time}}",
+    "tomorrow": "jutro {{time}}",
+    "none": "Nic nie jest zaplanowane.",
+    "loading": "Sprawdzanie harmonogramów…",
+    "pluginLabel": "Plugin VibeSSH Scheduler"
+  },
   "schedules": {
     "installCron": "Zainstaluj crona",
     "installingCron": "Instalowanie crona…",

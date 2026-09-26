@@ -23,6 +23,7 @@ import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { SchedulesTab } from "@/components/applications/SchedulesTab";
+import { UpcomingActionsCard } from "@/components/applications/UpcomingActionsCard";
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCard";
 import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
@@ -922,6 +923,15 @@ export function ApplicationDetail() {
                     )}
                   </Card>
                 )}
+
+                {/* The gap under Ports: when this application next restarts,
+                    stops or starts, from its schedules and the Scheduler plugin. */}
+                <UpcomingActionsCard
+                  applicationId={id}
+                  schedulesAvailable={schedulesAvailable}
+                  pluginNextRestart={scheduler.status?.nextRestart ?? null}
+                  onManage={() => setTab("schedules")}
+                />
               </aside>
             </div>
           )}

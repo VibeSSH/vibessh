@@ -1189,6 +1189,14 @@
     "nobodyOnline": "Nobody is playing right now.",
     "namesHidden": "The player list is turned off in the plugin config (include-player-names)."
   },
+  "upcoming": {
+    "title": "Coming up",
+    "today": "today {{time}}",
+    "tomorrow": "tomorrow {{time}}",
+    "none": "Nothing is scheduled.",
+    "loading": "Checking the schedules…",
+    "pluginLabel": "VibeSSH Scheduler plugin"
+  },
   "schedules": {
     "installCron": "Install cron",
     "installingCron": "Installing cron…",
