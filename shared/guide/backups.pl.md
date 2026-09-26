@@ -28,7 +28,7 @@ Najpewniejszy backup robisz przy zatrzymanej aplikacji.
 6. **Maks. łączny rozmiar w MB** — opcjonalnie, np. `20480`.
 7. Zapisz.
 
-Backup jest usuwany, gdy przekroczy którykolwiek z ustawionych limitów.
+Automatyczny backup jest usuwany, gdy przekroczy którykolwiek z ustawionych limitów. Najnowszy zawsze zostaje, nawet jeśli sam jest większy niż limit rozmiaru, a backupów zrobionych ręcznie limity nie dotyczą.
 
 ## Jak przywrócić backup
 

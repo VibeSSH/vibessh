@@ -141,7 +141,7 @@
     "scheduleMaxAgePlaceholder": "bez limitu",
     "scheduleMaxSize": "Maks. łączny rozmiar w MB (opcjonalnie)",
     "scheduleMaxSizePlaceholder": "bez limitu",
-    "scheduleRetentionNote": "Backup jest usuwany, gdy przekroczy którykolwiek z ustawionych limitów.",
+    "scheduleRetentionNote": "Automatyczny backup jest usuwany, gdy przekroczy którykolwiek z ustawionych limitów. Najnowszy zawsze zostaje, a backupów zrobionych ręcznie limity nie dotyczą.",
     "scheduleNote": "Działa tylko, gdy VibeSSH jest otwarty - nie ma tu procesu w tle działającego bez uruchomionej aplikacji desktopowej.",
     "scheduleSavedToast": "Zapisano harmonogram backupów.",
     "scheduleSaveError": "Nie udało się zapisać harmonogramu.",

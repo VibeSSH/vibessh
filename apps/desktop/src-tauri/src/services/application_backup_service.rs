@@ -312,26 +312,31 @@ pub fn set_backup_schedule(backup_repo: &ApplicationBackupRepository, applicatio
     })
 }
 
-/// Applies all three retention rules independently - a backup is pruned
-/// once it fails *any* of them (count, age, or running total size),
-/// evaluated newest-first so "keep the N most recent"/"keep the most
-/// recent total under N bytes" both mean what they sound like. Each
-/// rule is skipped entirely when unset (`None`) - see
-/// `models::SetBackupScheduleInput`'s own doc comment.
-async fn prune_old_backups(
-    app_repo: &ApplicationRepository,
-    backup_repo: &ApplicationBackupRepository,
-    server_repo: &ServerRepository,
-    backup_destination: &BackupDestinationState,
-    sessions: &SshSessionManager,
-    application_id: Uuid,
-    schedule: &BackupSchedule,
-) -> AppResult<()> {
-    let backups = backup_repo.list(application_id)?; // newest first
-    let now = Utc::now();
+/// Which backups the retention rules remove - all three rules applied
+/// independently, so a backup goes once it fails *any* of them (count, age,
+/// or running total size), evaluated newest-first so "keep the N most
+/// recent" and "keep the most recent total under N bytes" mean what they
+/// sound like. A rule left unset (`None`) is skipped.
+///
+/// Two things are never removed, and both used to be:
+/// - **A manual backup.** Somebody made it on purpose; a schedule's rules
+///   are about the schedule's own backups. `list` returns both kinds, so a
+///   manual one taken before an upgrade was pruned like any other.
+/// - **The newest scheduled backup.** With a size limit below one backup's
+///   size, the one just made failed "0 + its size > limit" and was deleted
+///   with its file - and since that left nothing recent, the next tick
+///   fifteen minutes later made another and deleted it too, forever, each
+///   time toasting "backup created". The newest one is kept whatever its
+///   size; the limit then prunes everything older.
+fn backups_to_prune(backups: Vec<ApplicationBackup>, schedule: &BackupSchedule, now: chrono::DateTime<Utc>) -> Vec<ApplicationBackup> {
     let mut kept_bytes: u64 = 0;
     let mut to_prune = Vec::new();
-    for (index, backup) in backups.into_iter().enumerate() {
+    let scheduled = backups.into_iter().filter(|backup| backup.kind == BackupKind::Scheduled);
+    for (index, backup) in scheduled.enumerate() {
+        if index == 0 {
+            kept_bytes += backup.size_bytes;
+            continue;
+        }
         let over_count = index as u32 >= schedule.retention_count;
         let over_age = schedule
             .retention_max_age_days
@@ -343,6 +348,19 @@ async fn prune_old_backups(
             kept_bytes += backup.size_bytes;
         }
     }
+    to_prune
+}
+
+async fn prune_old_backups(
+    app_repo: &ApplicationRepository,
+    backup_repo: &ApplicationBackupRepository,
+    server_repo: &ServerRepository,
+    backup_destination: &BackupDestinationState,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    schedule: &BackupSchedule,
+) -> AppResult<()> {
+    let to_prune = backups_to_prune(backup_repo.list(application_id)?, schedule, Utc::now()); // list is newest first
     if to_prune.is_empty() {
         return Ok(());
     }
@@ -388,7 +406,14 @@ pub async fn run_due_backups(
         if !due {
             continue;
         }
-        if create_backup(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, BackupKind::Scheduled).await.is_ok() {
+        let made = create_backup(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, BackupKind::Scheduled).await;
+        if let Err(err) = &made {
+            // Nobody is watching the sweep, and a schedule that never
+            // succeeds used to look exactly like one that works: no toast,
+            // no log line. It is retried next tick; this is the trace.
+            log::warn!("the scheduled backup of application {application_id} failed, trying again next time: {err}");
+        }
+        if made.is_ok() {
             created += 1;
             if let Err(err) = prune_old_backups(app_repo, backup_repo, server_repo, backup_destination, sessions, application_id, &schedule).await {
                 // Nobody is watching this sweep, so it must not fail the
@@ -399,6 +424,64 @@ pub async fn run_due_backups(
         }
     }
     Ok(created)
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::*;
+
+    fn backup(kind: BackupKind, size_bytes: u64, age_days: i64, now: chrono::DateTime<Utc>) -> ApplicationBackup {
+        ApplicationBackup {
+            id: Uuid::new_v4(),
+            application_id: Uuid::nil(),
+            file_name: format!("{}.zip", Uuid::new_v4()),
+            size_bytes,
+            kind,
+            s3_key: None,
+            created_at: now - chrono::Duration::days(age_days),
+        }
+    }
+
+    fn schedule(count: u32, max_age_days: Option<u32>, max_total_bytes: Option<u64>) -> BackupSchedule {
+        BackupSchedule { enabled: true, interval_hours: 24, retention_count: count, retention_max_age_days: max_age_days, retention_max_total_bytes: max_total_bytes }
+    }
+
+    /// The loop: one backup bigger than the size limit deleted itself, every
+    /// fifteen minutes, forever. The newest is kept; older ones go.
+    #[test]
+    fn the_newest_backup_survives_a_size_limit_smaller_than_itself() {
+        let now = Utc::now();
+        let newest = backup(BackupKind::Scheduled, 5_000, 0, now);
+        let older = backup(BackupKind::Scheduled, 5_000, 1, now);
+        let pruned = backups_to_prune(vec![newest.clone(), older.clone()], &schedule(10, None, Some(1_000)), now);
+        let ids: Vec<Uuid> = pruned.iter().map(|b| b.id).collect();
+        assert!(!ids.contains(&newest.id), "the backup just made was pruned");
+        assert!(ids.contains(&older.id));
+    }
+
+    /// A manual backup is never retention's to remove, however old or big.
+    #[test]
+    fn a_manual_backup_is_never_pruned() {
+        let now = Utc::now();
+        let manual = backup(BackupKind::Manual, 50_000, 400, now);
+        let scheduled = [backup(BackupKind::Scheduled, 10, 0, now), backup(BackupKind::Scheduled, 10, 1, now)];
+        let all = vec![scheduled[0].clone(), manual.clone(), scheduled[1].clone()];
+        let pruned = backups_to_prune(all, &schedule(1, Some(30), Some(100)), now);
+        assert!(!pruned.iter().any(|b| b.id == manual.id));
+        assert_eq!(pruned.len(), 1, "only the older scheduled backup is over the count");
+        assert_eq!(pruned[0].id, scheduled[1].id);
+    }
+
+    /// The rules still do their job on the schedule's own backups.
+    #[test]
+    fn count_and_age_still_prune_older_scheduled_backups() {
+        let now = Utc::now();
+        let backups: Vec<ApplicationBackup> = (0..5).map(|day| backup(BackupKind::Scheduled, 10, day * 10, now)).collect();
+        let by_count = backups_to_prune(backups.clone(), &schedule(3, None, None), now);
+        assert_eq!(by_count.len(), 2);
+        let by_age = backups_to_prune(backups, &schedule(10, Some(15), None), now);
+        assert_eq!(by_age.len(), 3, "20, 30 and 40 days old are over 15");
+    }
 }
 
 #[cfg(test)]

@@ -28,7 +28,7 @@ The most trustworthy backup is taken while the application is stopped.
 6. **Max total size in MB** - optional, e.g. `20480`.
 7. Save.
 
-A backup is removed once it exceeds any one of the limits you set.
+An automatic backup is removed once it exceeds any one of the limits you set. The newest one always stays, even if it is bigger than the size limit on its own, and backups you made by hand are never removed by these limits.
 
 ## How to restore a backup
 

@@ -141,7 +141,7 @@
     "scheduleMaxAgePlaceholder": "no limit",
     "scheduleMaxSize": "Max total size in MB (optional)",
     "scheduleMaxSizePlaceholder": "no limit",
-    "scheduleRetentionNote": "A backup is removed once it exceeds any one of the limits set above.",
+    "scheduleRetentionNote": "An automatic backup is removed once it exceeds any one of the limits set above. The newest one always stays, and backups you made by hand are never removed by these limits.",
     "scheduleNote": "Only runs while VibeSSH is open - there's no background process keeping this going without the desktop app running.",
     "scheduleSavedToast": "Backup schedule saved.",
     "scheduleSaveError": "Couldn't save the schedule.",
