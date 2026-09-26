@@ -156,6 +156,20 @@ resolve_target() {{
     fi
 }}
 
+# The entry itself rather than what it points at: the parent is resolved and
+# checked, the last name is kept as written. Delete and rename use this, so
+# removing a symlink removes the link - resolving it first is how deleting a
+# link to a folder deleted the folder.
+resolve_entry() {{
+    name=$(basename -- "$1")
+    case "$name" in
+        # Not a name at all - resolved in full, as before.
+        .|..|/) realpath -e -- "$1"; return ;;
+    esac
+    parent_canon=$(realpath -e -- "$(dirname -- "$1")") || return 1
+    printf '%s/%s\n' "$parent_canon" "$name"
+}}
+
 require_within_root() {{
     within_root "$1" || {{ echo "vibessh-file-helper: '$1' is outside the application root" >&2; exit 5; }}
 }}
@@ -254,7 +268,7 @@ case "$op" in
     mkdir -- "$target"
     ;;
   delete)
-    target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such path" >&2; exit 4; }}
+    target=$(resolve_entry "$1") || {{ echo "vibessh-file-helper: no such path" >&2; exit 4; }}
     require_within_root "$target"
     if [ "$target" = "$canon_root" ]; then
         echo "vibessh-file-helper: refusing to delete the application root itself" >&2
@@ -263,11 +277,16 @@ case "$op" in
     rm -rf -- "$target"
     ;;
   rename)
-    from=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such source path" >&2; exit 4; }}
+    from=$(resolve_entry "$1") || {{ echo "vibessh-file-helper: no such source path" >&2; exit 4; }}
     require_within_root "$from"
-    to=$(resolve_target "$2") || {{ echo "vibessh-file-helper: no such destination directory" >&2; exit 4; }}
+    [ -e "$from" ] || [ -L "$from" ] || {{ echo "vibessh-file-helper: no such source path" >&2; exit 4; }}
+    to=$(resolve_entry "$2") || {{ echo "vibessh-file-helper: no such destination directory" >&2; exit 4; }}
     require_within_root "$to"
-    mv -- "$from" "$to"
+    # Never into or over something already there - SFTP's rename refuses
+    # that too, and `mv` onto a symlinked directory would move the file
+    # into wherever the link points.
+    if [ -e "$to" ] || [ -L "$to" ]; then echo "vibessh-file-helper: the destination already exists" >&2; exit 11; fi
+    mv -T -- "$from" "$to"
     ;;
   copy)
     from=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such source path" >&2; exit 4; }}
@@ -1000,6 +1019,56 @@ mod tests {
     #[test]
     fn parse_entry_line_rejects_an_empty_line() {
         assert!(parse_entry_line("", "/srv/app/x", "/srv/app").is_err());
+    }
+
+    #[test]
+    /// Runs the real helper against a temporary directory - not a string
+    /// assertion. Deleting a symlink must remove the link, not its target;
+    /// renaming one must move the link; a rename never lands in or over an
+    /// existing path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_helper_deletes_and_renames_symlinks_themselves() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("vibessh-helper-test-{}", uuid::Uuid::new_v4()));
+        let root = dir.join("app");
+        std::fs::create_dir_all(root.join("world")).unwrap();
+        std::fs::write(root.join("world/level.dat"), b"save").unwrap();
+        std::fs::create_dir_all(dir.join("outside")).unwrap();
+        std::fs::write(dir.join("outside/keep"), b"keep").unwrap();
+        symlink(root.join("world"), root.join("world-link")).unwrap();
+        symlink(dir.join("outside"), root.join("escape")).unwrap();
+        let script = dir.join("helper.sh");
+        std::fs::write(&script, helper_script()).unwrap();
+        let run = |args: &[&str]| std::process::Command::new("sh").arg(&script).arg(&root).args(args).output().unwrap();
+
+        let deleted = run(&["delete", &root.join("world-link").to_string_lossy()]);
+        assert!(deleted.status.success(), "{}", String::from_utf8_lossy(&deleted.stderr));
+        assert!(std::fs::symlink_metadata(root.join("world-link")).is_err());
+        assert_eq!(std::fs::read(root.join("world/level.dat")).unwrap(), b"save");
+
+        // A link pointing out of the root is removed as a link - its target
+        // was never within reach, and is not touched.
+        let escaped = run(&["delete", &root.join("escape").to_string_lossy()]);
+        assert!(escaped.status.success(), "{}", String::from_utf8_lossy(&escaped.stderr));
+        assert_eq!(std::fs::read(dir.join("outside/keep")).unwrap(), b"keep");
+
+        symlink(root.join("world"), root.join("link2")).unwrap();
+        let renamed = run(&["rename", &root.join("link2").to_string_lossy(), &root.join("link3").to_string_lossy()]);
+        assert!(renamed.status.success(), "{}", String::from_utf8_lossy(&renamed.stderr));
+        assert!(std::fs::symlink_metadata(root.join("link3")).unwrap().file_type().is_symlink());
+        assert!(root.join("world").is_dir());
+
+        // Not into an existing directory, and not over an existing file.
+        let into = run(&["rename", &root.join("link3").to_string_lossy(), &root.join("world").to_string_lossy()]);
+        assert!(!into.status.success());
+        assert!(std::fs::symlink_metadata(root.join("link3")).is_ok());
+
+        let refused = run(&["delete", &root.to_string_lossy()]);
+        assert!(!refused.status.success(), "the root itself must not be deletable");
+        assert!(root.join("world/level.dat").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

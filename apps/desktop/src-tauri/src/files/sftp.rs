@@ -65,6 +65,34 @@ impl SftpApplicationFileProvider {
         Ok(canonical)
     }
 
+    /// Like `resolve`, but for the entry itself: the parent is resolved and
+    /// checked against the root, the last name is kept as written.
+    ///
+    /// Delete and rename use this. `resolve` follows a symlink all the way,
+    /// so deleting a link used to delete what it pointed at - on the Node
+    /// Files page, where the root is `/`, deleting `/bin` on Ubuntu emptied
+    /// `/usr/bin`. `delete_resolved` already removed a link rather than
+    /// descending into it; it was simply never handed the link.
+    async fn resolve_entry(&self, relative: &str) -> AppResult<String> {
+        let relative = sanitize_relative_path(relative)?;
+        if relative.is_empty() {
+            return self.resolve(&relative).await;
+        }
+        let candidate = format!("{}/{}", self.root.trim_end_matches('/'), relative);
+        let (parent, name) = split_parent(&candidate)?;
+        let canonical_root = self.canonical_root().await?;
+        let canonical_parent = self
+            .connection
+            .canonicalize_path(&parent)
+            .await
+            .map_err(|_| AppError::InvalidInput("the containing directory doesn't exist".into()))?;
+        let entry = format!("{}/{}", canonical_parent.trim_end_matches('/'), name);
+        if !is_within_root(&entry, &canonical_root) {
+            return Err(AppError::InvalidInput("path escapes the application directory".into()));
+        }
+        Ok(entry)
+    }
+
     fn delete_resolved<'a>(&'a self, path: &'a str) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let stat = self.connection.symlink_metadata(path).await?;
@@ -187,13 +215,19 @@ impl ApplicationFileProvider for SftpApplicationFileProvider {
     }
 
     async fn delete(&self, path: &str) -> AppResult<()> {
-        let resolved = self.resolve(path).await?;
+        let resolved = self.resolve_entry(path).await?;
+        // The helper has always refused this; the SFTP provider did not, so
+        // an empty path deleted the whole working directory - or, on the
+        // Node Files page, everything under `/`.
+        if resolved.trim_end_matches('/') == self.canonical_root().await?.trim_end_matches('/') {
+            return Err(AppError::InvalidInput("refusing to delete the root itself".into()));
+        }
         self.delete_resolved(&resolved).await
     }
 
     async fn rename(&self, from: &str, to: &str) -> AppResult<()> {
-        let from_resolved = self.resolve(from).await?;
-        let to_resolved = self.resolve(to).await?;
+        let from_resolved = self.resolve_entry(from).await?;
+        let to_resolved = self.resolve_entry(to).await?;
         self.connection.rename(&from_resolved, &to_resolved).await
     }
 

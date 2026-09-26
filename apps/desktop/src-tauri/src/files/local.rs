@@ -51,6 +51,27 @@ impl LocalApplicationFileProvider {
         }
         Ok(canonical)
     }
+
+    /// The entry itself rather than what it points at - see
+    /// `SftpApplicationFileProvider::resolve_entry` for why delete and rename
+    /// must not follow the last component.
+    fn resolve_entry(&self, relative: &str) -> AppResult<PathBuf> {
+        let relative = sanitize_relative_path(relative)?;
+        if relative.is_empty() {
+            return self.resolve(&relative);
+        }
+        let candidate = self.root.join(&relative);
+        let parent = candidate.parent().ok_or_else(|| AppError::InvalidInput("invalid path".into()))?;
+        let file_name = candidate.file_name().ok_or_else(|| AppError::InvalidInput("invalid path".into()))?;
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|err| AppError::InvalidInput(format!("the containing directory doesn't exist: {err}")))?;
+        let entry = canonical_parent.join(file_name);
+        if !is_within_root(&path_key(&entry), &path_key(&self.canonical_root()?)) {
+            return Err(AppError::InvalidInput("path escapes the application directory".into()));
+        }
+        Ok(entry)
+    }
 }
 
 fn canonicalize_existing_or_parent(candidate: &Path) -> AppResult<PathBuf> {
@@ -242,7 +263,10 @@ impl ApplicationFileProvider for LocalApplicationFileProvider {
     }
 
     async fn delete(&self, path: &str) -> AppResult<()> {
-        let resolved = self.resolve(path)?;
+        let resolved = self.resolve_entry(path)?;
+        if path_key(&resolved) == path_key(&self.canonical_root()?) {
+            return Err(AppError::InvalidInput("refusing to delete the root itself".into()));
+        }
         let metadata = tokio::fs::symlink_metadata(&resolved).await.map_err(|err| AppError::NotFound(format!("{path}: {err}")))?;
         let result = if metadata.is_dir() && !metadata.is_symlink() {
             tokio::fs::remove_dir_all(&resolved).await
@@ -255,8 +279,8 @@ impl ApplicationFileProvider for LocalApplicationFileProvider {
     }
 
     async fn rename(&self, from: &str, to: &str) -> AppResult<()> {
-        let from_resolved = self.resolve(from)?;
-        let to_resolved = self.resolve(to)?;
+        let from_resolved = self.resolve_entry(from)?;
+        let to_resolved = self.resolve_entry(to)?;
         tokio::fs::rename(&from_resolved, &to_resolved)
             .await
             .map_err(|err| AppError::Internal(format!("couldn't rename to {}: {err}", to_resolved.display())))
@@ -496,6 +520,49 @@ mod tests {
         let nested = provider.list_directory(&plugins_dir.path).await.unwrap();
         assert_eq!(nested.len(), 1);
         assert_eq!(nested[0].name, "MyPlugin.jar");
+    }
+
+    #[tokio::test]
+    /// The data-loss bug: deleting a symlink deleted what it pointed at. A
+    /// link to a folder inside the root is removed; the folder and its files
+    /// stay.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn deleting_a_symlink_removes_the_link_and_keeps_its_target() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(&root);
+        provider.create_directory("world").await.unwrap();
+        provider.write_file("world/level.dat", b"save").await.unwrap();
+        std::os::unix::fs::symlink(root.join("world"), root.join("world-link")).unwrap();
+
+        provider.delete("world-link").await.unwrap();
+
+        assert!(std::fs::symlink_metadata(root.join("world-link")).is_err(), "the link should be gone");
+        assert_eq!(std::fs::read(root.join("world/level.dat")).unwrap(), b"save", "the target must survive");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn renaming_a_symlink_renames_the_link_not_its_target() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(&root);
+        provider.write_file("server-1.21.jar", b"jar").await.unwrap();
+        std::os::unix::fs::symlink(root.join("server-1.21.jar"), root.join("server.jar")).unwrap();
+
+        provider.rename("server.jar", "server-old.jar").await.unwrap();
+
+        assert!(std::fs::symlink_metadata(root.join("server-old.jar")).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read(root.join("server-1.21.jar")).unwrap(), b"jar", "the target keeps its name");
+    }
+
+    #[tokio::test]
+    async fn the_root_itself_is_never_deleted() {
+        let root = temp_root();
+        let provider = LocalApplicationFileProvider::new(&root);
+        provider.write_file("keep.txt", b"x").await.unwrap();
+        assert!(provider.delete("").await.is_err());
+        assert!(provider.delete(".").await.is_err());
+        assert!(root.join("keep.txt").exists());
     }
 
     #[tokio::test]
