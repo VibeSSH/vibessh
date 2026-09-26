@@ -180,6 +180,10 @@ pub struct CloudApplicationMember {
     pub email: String,
     pub display_name: String,
     pub granted_at: DateTime<Utc>,
+    /// What they may do with this Application beyond seeing it. Defaulted, so
+    /// a backend from before per-application permissions reads as "nothing".
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

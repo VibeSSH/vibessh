@@ -133,6 +133,19 @@ pub async fn add_application_member(
     services::team_application_service::add_application_member(&cloud, team_id, application_id, user_id).await
 }
 
+/// Replaces what one member may do with a shared Application - the
+/// checkboxes beside them in its Users tab.
+#[tauri::command]
+pub async fn set_application_member_permissions(
+    cloud: State<'_, CloudState>,
+    team_id: uuid::Uuid,
+    application_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+    permissions: Vec<String>,
+) -> AppResult<()> {
+    services::team_application_service::set_application_member_permissions(&cloud, team_id, application_id, user_id, &permissions).await
+}
+
 /// Revokes one member's access to a shared Application. Emptying the list
 /// returns it to being visible to the whole team.
 #[tauri::command]

@@ -20,3 +20,13 @@ export const SERVERS_MANAGE = "servers.manage";
  * `apps/backend/src/team_applications.rs` - unlike the other `applications.*`
  * keys, which are desktop-side guard rails. */
 export const APPLICATIONS_CREATE = "applications.create";
+export const APPLICATIONS_LIFECYCLE = "applications.lifecycle";
+export const APPLICATIONS_CONSOLE = "applications.console";
+export const APPLICATIONS_FILES_READ = "applications.files.read";
+export const APPLICATIONS_FILES_WRITE = "applications.files.write";
+
+/** The permissions that can be granted on one shared application rather than
+ * team-wide - the backend's `APPLICATION_SCOPED`, in the order the Users tab
+ * shows them. Everything else reaches every application or is root on the
+ * Node, and is given through a role. */
+export const APPLICATION_SCOPED = [APPLICATIONS_LIFECYCLE, APPLICATIONS_CONSOLE, APPLICATIONS_FILES_READ, APPLICATIONS_FILES_WRITE] as const;

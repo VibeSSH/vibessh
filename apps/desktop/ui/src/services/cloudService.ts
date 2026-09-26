@@ -411,6 +411,11 @@ export function addApplicationMember(teamId: string, applicationId: string, user
   return callCommand<void>("add_application_member", { teamId, applicationId, userId });
 }
 
+/** Replaces what one member may do with a shared application they can see. */
+export function setApplicationMemberPermissions(teamId: string, applicationId: string, userId: string, permissions: string[]): Promise<void> {
+  return callCommand<void>("set_application_member_permissions", { teamId, applicationId, userId, permissions });
+}
+
 export function removeApplicationMember(teamId: string, applicationId: string, userId: string): Promise<void> {
   return callCommand<void>("remove_application_member", { teamId, applicationId, userId });
 }

@@ -46,6 +46,8 @@ export interface CloudApplicationMember {
   email: string;
   displayName: string;
   grantedAt: string;
+  /** What they may do here beyond seeing it - a subset of `APPLICATION_SCOPED`. */
+  permissions: string[];
 }
 
 export interface CloudRole {

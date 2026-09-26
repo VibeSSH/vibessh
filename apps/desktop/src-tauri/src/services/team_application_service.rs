@@ -115,6 +115,19 @@ pub async fn add_application_member(cloud: &CloudState, team_id: Uuid, applicati
     crate::services::cloud_service::add_application_member(cloud, team_id, application_id, user_id).await
 }
 
+/// Replaces what one member may do with a shared Application they can see.
+/// The backend refuses anything a Node could not hold to one Application,
+/// and anything the caller does not hold themselves.
+pub async fn set_application_member_permissions(
+    cloud: &CloudState,
+    team_id: Uuid,
+    application_id: Uuid,
+    user_id: Uuid,
+    permissions: &[String],
+) -> AppResult<()> {
+    crate::services::cloud_service::set_application_member_permissions(cloud, team_id, application_id, user_id, permissions).await
+}
+
 /// Revokes one member's access. Emptying the list returns the Application to
 /// being visible to the whole team.
 pub async fn remove_application_member(cloud: &CloudState, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {

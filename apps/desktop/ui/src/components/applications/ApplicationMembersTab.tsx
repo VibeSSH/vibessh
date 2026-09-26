@@ -3,11 +3,12 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { SkeletonRows } from "@/components/ui/SkeletonRows";
 import { Switch } from "@/components/ui/Switch";
-import { APPLICATIONS_CREATE } from "@/constants/permissions";
+import { APPLICATION_SCOPED, APPLICATIONS_CREATE, APPLICATIONS_FILES_READ, APPLICATIONS_FILES_WRITE } from "@/constants/permissions";
 import {
   addApplicationMember,
   cloudListMembers,
@@ -17,6 +18,7 @@ import {
   listApplicationMembers,
   listTeamApplications,
   removeApplicationMember,
+  setApplicationMemberPermissions,
   shareApplicationWithTeam,
   type CloudApplication,
 } from "@/services/cloudService";
@@ -75,6 +77,9 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
   const [teamId, setTeamId] = useState<string | null>(null);
   const [members, setMembers] = useState<CloudTeamMember[]>([]);
   const [canManage, setCanManage] = useState(false);
+  /** What the signed-in person holds in this team - a permission they do not
+   * hold cannot be handed on, and the backend refuses it, so its box is off. */
+  const [myPermissions, setMyPermissions] = useState<string[]>([]);
   /** This application's projection in the selected team, or null when it has
    * not been shared there yet. Its `id` (not `applicationId`) is what the
    * member calls are keyed on. */
@@ -126,6 +131,7 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
         ]);
         setMembers(loadedMembers);
         setCanManage(permissions.includes(APPLICATIONS_CREATE));
+        setMyPermissions(permissions);
         const projection = shared.find((entry) => entry.localId === applicationId) ?? null;
         setSharedApp(projection);
         if (!projection) {
@@ -157,6 +163,39 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
   }, [teamId, loadTeam]);
 
   const allowedIds = useMemo(() => new Set(allowed.map((member) => member.userId)), [allowed]);
+  const grantedPermissions = useMemo(() => new Map(allowed.map((member) => [member.userId, member.permissions ?? []])), [allowed]);
+
+  /**
+   * Ticks or unticks one permission for one member.
+   *
+   * Editing files without being able to read them is not a thing anybody
+   * means, so the two move together: writing brings reading with it, and
+   * taking reading away takes writing too.
+   */
+  async function togglePermission(member: CloudTeamMember, permission: string, next: boolean) {
+    if (!teamId || !sharedApp) return;
+    const current = new Set(grantedPermissions.get(member.userId) ?? []);
+    if (next) {
+      current.add(permission);
+      if (permission === APPLICATIONS_FILES_WRITE) current.add(APPLICATIONS_FILES_READ);
+    } else {
+      current.delete(permission);
+      if (permission === APPLICATIONS_FILES_READ) current.delete(APPLICATIONS_FILES_WRITE);
+    }
+    const permissions = APPLICATION_SCOPED.filter((key) => current.has(key));
+    setBusy(member.userId);
+    setError(null);
+    try {
+      await setApplicationMemberPermissions(teamId, sharedApp.id, member.userId, permissions);
+      setAllowed((previous) => previous.map((entry) => (entry.userId === member.userId ? { ...entry, permissions } : entry)));
+    } catch (err) {
+      const message = errorMessage(err, t);
+      setError(message);
+      toastError(message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function toggle(member: CloudTeamMember, next: boolean) {
     if (!teamId) return;
@@ -318,10 +357,37 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
                   })}
                   onChange={(next) => toggle(member, next)}
                 />
+                {granted && (
+                  <div className="application-members-permissions">
+                    {member.isOwner ? (
+                      <span className="application-members-permissions-owner">{t("applicationMembers.ownerHasAll")}</span>
+                    ) : (
+                      <>
+                        <span className="application-members-permissions-label">{t("applicationMembers.canAlso")}</span>
+                        {APPLICATION_SCOPED.map((permission) => (
+                          <Checkbox
+                            key={permission}
+                            checked={(grantedPermissions.get(member.userId) ?? []).includes(permission)}
+                            disabled={!canManage || busy === member.userId || !myPermissions.includes(permission)}
+                            label={t(`roles.permissionLabels.${permission}`, { defaultValue: permission })}
+                            onChange={(next) => void togglePermission(member, permission, next)}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
         </ul>
+      )}
+
+      {sharedApp && allowed.length > 0 && (
+        <p className="application-members-guardrail">
+          <Icon name="refresh-cw" size={13} />
+          {t("applicationMembers.permissionsSyncNote")}
+        </p>
       )}
 
       <p className="application-members-guardrail">

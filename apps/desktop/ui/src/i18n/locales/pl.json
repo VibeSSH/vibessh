@@ -463,7 +463,10 @@
     "ownerPill": "Właściciel",
     "grantAria": "Nadaj {{name}} dostęp do tej aplikacji",
     "revokeAria": "Odbierz {{name}} dostęp do tej aplikacji",
-    "guardRailNote": "To ukrywa aplikację w VibeSSH. To nie jest granica bezpieczeństwa: ktoś, kto ma dostęp do serwera przez SSH, i tak ją zobaczy."
+    "guardRailNote": "To ukrywa aplikację w VibeSSH. To nie jest granica bezpieczeństwa: ktoś, kto ma dostęp do serwera przez SSH, i tak ją zobaczy.",
+    "canAlso": "Poza podglądem i logami może:",
+    "ownerHasAll": "Właściciel zespołu ma wszystkie uprawnienia przez swoją rolę.",
+    "permissionsSyncNote": "Uprawnienia przy aplikacji trafiają na Node przy następnej synchronizacji dostępu (Zespoły → Serwery) i obowiązują tylko dla tej aplikacji."
   },
   "applicationNetwork": {
     "access": "Dostęp sieciowy",
@@ -562,7 +565,13 @@
       "invitation.accepted": "Zaakceptowano zaproszenie",
       "invitation.declined": "Odrzucono zaproszenie",
       "server.added": "Dodano serwer",
-      "server.removed": "Usunięto serwer"
+      "server.removed": "Usunięto serwer",
+      "application.shared": "Udostępniono aplikację",
+      "application.unshared": "Wycofano udostępnienie aplikacji",
+      "application.access_granted": "Dano dostęp do aplikacji",
+      "application.access_changed": "Zmieniono uprawnienia do aplikacji",
+      "application.access_revoked": "Odebrano dostęp do aplikacji",
+      "access.revoked": "Usunięto dostęp z serwera"
     }
   },
   "auth": {
@@ -936,6 +945,7 @@
     "application_directory_invalid": "Katalog roboczy musi mieć od 1 do {{max}} znaków.",
     "application_member_exists": "Ten członek już widzi tę aplikację.",
     "application_member_not_added": "Ten członek i tak nie widział tej aplikacji.",
+    "permission_not_application_scoped": "Tego uprawnienia nie da się dać dla jednej aplikacji - daj je przez rolę w zespole.",
     "application_name_invalid": "Nazwa aplikacji musi mieć od 1 do {{max}} znaków.",
     "application_not_shared": "Ta aplikacja nie jest współdzielona z tym zespołem.",
     "application_runtime_invalid": "Typ środowiska uruchomieniowego musi mieć od 1 do {{max}} znaków.",
@@ -1649,6 +1659,7 @@
       "applications.files.read": "Przeglądanie i odczyt plików aplikacji.",
       "applications.files.write": "Edycja, wysyłanie, zmiana nazw i usuwanie plików aplikacji.",
       "applications.lifecycle": "Uruchamianie, zatrzymywanie, restart i wymuszanie zakończenia.",
+      "applications.console": "Wpisywanie komend do konsoli aplikacji - na serwerze Minecraft każdej komendy, łącznie z op.",
       "applications.ports": "Dodawanie, edycja i usuwanie portów oraz synchronizacja firewalla węzła.",
       "applications.view": "Podgląd aplikacji na tym węźle i ich statusu.",
       "audit.view": "Odczyt zapisu, kto co zrobił w tym zespole.",
@@ -1675,6 +1686,7 @@
       "applications.files.read": "Odczyt plików",
       "applications.files.write": "Edycja i wysyłanie plików",
       "applications.lifecycle": "Uruchamianie i zatrzymywanie",
+      "applications.console": "Konsola (wpisywanie komend)",
       "applications.ports": "Zarządzanie portami",
       "applications.view": "Podgląd aplikacji",
       "audit.view": "Podgląd dziennika audytu",

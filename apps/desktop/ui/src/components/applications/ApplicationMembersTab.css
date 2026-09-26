@@ -104,6 +104,7 @@
 
 .application-members-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 0;
@@ -160,4 +161,21 @@
   color: var(--text-tertiary);
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* What a person with access may do here, on its own line under their name -
+   indented to the name so it reads as belonging to that row. */
+.application-members-permissions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  flex-basis: 100%;
+  padding-left: 44px;
+}
+
+.application-members-permissions-label,
+.application-members-permissions-owner {
+  color: var(--text-tertiary);
+  font-size: 12px;
 }

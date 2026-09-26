@@ -463,7 +463,10 @@
     "ownerPill": "Owner",
     "grantAria": "Give {{name}} access to this application",
     "revokeAria": "Remove {{name}}'s access to this application",
-    "guardRailNote": "This hides the application inside VibeSSH. It is not a security boundary: anyone who can reach the server over SSH can still see it."
+    "guardRailNote": "This hides the application inside VibeSSH. It is not a security boundary: anyone who can reach the server over SSH can still see it.",
+    "canAlso": "Besides viewing and logs, can:",
+    "ownerHasAll": "The team owner has every permission through their role.",
+    "permissionsSyncNote": "Permissions on an application reach the Node at the next access sync (Teams → Servers), and apply to this application only."
   },
   "applicationNetwork": {
     "access": "Network access",
@@ -558,7 +561,13 @@
       "invitation.accepted": "Invitation accepted",
       "invitation.declined": "Invitation declined",
       "server.added": "Server added",
-      "server.removed": "Server removed"
+      "server.removed": "Server removed",
+      "application.shared": "Application shared",
+      "application.unshared": "Application unshared",
+      "application.access_granted": "Access to an application given",
+      "application.access_changed": "Application permissions changed",
+      "application.access_revoked": "Access to an application removed",
+      "access.revoked": "Access removed from a server"
     }
   },
   "auth": {
@@ -930,6 +939,7 @@
     "application_directory_invalid": "The working directory must be between 1 and {{max}} characters.",
     "application_member_exists": "That member can already see this application.",
     "application_member_not_added": "That member could not already see this application.",
+    "permission_not_application_scoped": "That permission can't be given for one application - give it through a team role.",
     "application_name_invalid": "The application name must be between 1 and {{max}} characters.",
     "application_not_shared": "That application is not shared with this team.",
     "application_runtime_invalid": "The runtime type must be between 1 and {{max}} characters.",
@@ -1642,6 +1652,7 @@
       "applications.files.read": "Browse and read an application's files.",
       "applications.files.write": "Edit, upload, rename and delete an application's files.",
       "applications.lifecycle": "Start, stop, restart and force-end an application.",
+      "applications.console": "Type commands into an application's console - on a Minecraft server, any command, op included.",
       "applications.ports": "Add, edit and remove ports, and sync the Node's firewall from them.",
       "applications.view": "See the applications on this Node and their status.",
       "audit.view": "Read the record of who did what in this team.",
@@ -1668,6 +1679,7 @@
       "applications.files.read": "Read files",
       "applications.files.write": "Edit and upload files",
       "applications.lifecycle": "Start, stop and restart",
+      "applications.console": "Console (type commands)",
       "applications.ports": "Manage ports",
       "applications.view": "See applications",
       "audit.view": "View the audit log",

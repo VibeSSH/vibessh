@@ -403,6 +403,7 @@ pub fn run() {
             commands::cloud_commands::unshare_application_from_team,
             commands::cloud_commands::list_application_members,
             commands::cloud_commands::add_application_member,
+            commands::cloud_commands::set_application_member_permissions,
             commands::cloud_commands::remove_application_member,
             commands::cloud_commands::cloud_publish_this_device,
             commands::cloud_commands::cloud_list_devices,

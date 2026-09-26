@@ -450,6 +450,24 @@ impl CloudClient {
         .await
     }
 
+    /// Replaces what one member may do with a shared Application.
+    pub async fn set_application_member_permissions(
+        &self,
+        access_token: &str,
+        team_id: Uuid,
+        application_id: Uuid,
+        user_id: Uuid,
+        permissions: &[String],
+    ) -> AppResult<()> {
+        self.send_no_content(
+            Method::PUT,
+            &format!("/teams/{team_id}/applications/{application_id}/members/{user_id}"),
+            Some(access_token),
+            Some(&json!({ "permissions": permissions })),
+        )
+        .await
+    }
+
     /// Removes one member. Emptying the list returns the Application to being
     /// visible to the whole team.
     pub async fn remove_application_member(&self, access_token: &str, team_id: Uuid, application_id: Uuid, user_id: Uuid) -> AppResult<()> {
