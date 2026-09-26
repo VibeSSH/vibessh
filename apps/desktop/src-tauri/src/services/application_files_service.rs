@@ -481,6 +481,82 @@ pub async fn download_file(
     provider.download_file(path, local_dest, &mut reporter).await
 }
 
+/// The largest file that can be dragged out of the Files tab: 25 MB.
+///
+/// A drag out of the window is the operating system's, and it only carries a
+/// file that already exists on this computer - so the file is downloaded the
+/// moment the drag begins, while the mouse button is still held. A config or
+/// a plugin arrives in a fraction of a second; a world would keep somebody
+/// holding the button for minutes, and for that the Download button is the
+/// honest tool.
+pub const MAX_DRAG_OUT_BYTES: u64 = 25 * 1024 * 1024;
+
+/// How long a dragged-out copy is kept before the next drag clears it away.
+const DRAG_OUT_KEEP: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Downloads one file to a private temporary folder so it can be dragged out
+/// of the window, and returns where it is.
+///
+/// Each drag gets its own folder, named for nothing but a fresh id, so the
+/// file keeps its real name - which is the name it lands with - without two
+/// drags of same-named files colliding. Copies older than an hour are
+/// cleared on every drag: long enough for any drop to have finished copying
+/// it, and nothing is left to pile up.
+pub async fn prepare_drag_out(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    path: &str,
+) -> AppResult<std::path::PathBuf> {
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+    let entry = provider.metadata(path).await?;
+    if entry.is_dir {
+        return Err(AppError::InvalidInput("folders can't be dragged out yet - compress it into an archive and drag that".into()));
+    }
+    if entry.size > MAX_DRAG_OUT_BYTES {
+        return Err(AppError::InvalidInput(format!(
+            "'{}' is too large to drag out ({} MB, the limit is {} MB) - use the download button instead",
+            entry.name,
+            entry.size / (1024 * 1024),
+            MAX_DRAG_OUT_BYTES / (1024 * 1024)
+        )));
+    }
+
+    let root = std::env::temp_dir().join("vibessh-drag-out");
+    clear_old_drag_outs(&root).await;
+    let folder = root.join(Uuid::new_v4().to_string());
+    tokio::fs::create_dir_all(&folder)
+        .await
+        .map_err(|err| AppError::Internal(format!("couldn't prepare the file for dragging: {err}")))?;
+    let name = std::path::Path::new(&entry.name)
+        .file_name()
+        .ok_or_else(|| AppError::InvalidInput("that file has no name to drag it by".into()))?;
+    let local = folder.join(name);
+    provider.download_file(path, &local, &mut |_| {}).await?;
+    Ok(local)
+}
+
+async fn clear_old_drag_outs(root: &std::path::Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(root).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let stale = entry
+            .metadata()
+            .await
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > DRAG_OUT_KEEP);
+        if stale {
+            if let Err(err) = tokio::fs::remove_dir_all(entry.path()).await {
+                log::warn!("couldn't clear an old dragged-out copy {}: {err}", entry.path().display());
+            }
+        }
+    }
+}
+
 /// Uploads a whole local directory into `path`, keeping its shape.
 ///
 /// The progress this reports is the sum over every file, not per file, so a

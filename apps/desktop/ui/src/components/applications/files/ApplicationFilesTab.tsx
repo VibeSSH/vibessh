@@ -31,6 +31,7 @@ import {
   downloadApplicationFile,
   extractApplicationArchive,
   fetchApplicationFileUrl,
+  prepareApplicationFileDragOut,
   getApplicationFileMetadata,
   onTransferProgress,
   renameApplicationFile,
@@ -42,13 +43,14 @@ import {
   listApplicationFiles,
 } from "@/services/applicationFilesService";
 import { useFileTransferStore } from "@/stores/fileTransferStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { ApplicationDetail, KnownFile } from "@/types/application";
 import type { RemoteFileEntry } from "@/types/files";
 import { discardFileDraft, rememberFilesView, rememberedFilesView } from "@/stores/applicationFilesStore";
 import { ApplicationFileEditorPanel } from "./ApplicationFileEditorPanel";
 import { ChmodModal } from "./ChmodModal";
 import { FetchUrlModal } from "./FetchUrlModal";
+import { dragFileOut } from "./dragOut";
 import { formatBytes } from "@/utils/formatBytes";
 import { JarReplaceWarningModal } from "./JarReplaceWarningModal";
 import { RenameOrMoveModal } from "./RenameOrMoveModal";
@@ -70,6 +72,8 @@ interface FileRowProps {
   language: string;
   onOpen: (entry: RemoteFileEntry) => void;
   onDownload: (entry: RemoteFileEntry) => void;
+  /** Starts dragging a file out of the window, onto the desktop. */
+  onDragOut: (entry: RemoteFileEntry) => void;
   onContextMenu: (event: ReactMouseEvent, entry: RemoteFileEntry) => void;
   buildMenuItems: (entry: RemoteFileEntry) => ContextMenuItem[];
 }
@@ -91,14 +95,24 @@ interface FileRowProps {
  * boolean that changes only for the row being toggled, so it does not undo
  * that.
  */
-const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, language, onOpen, onDownload, onContextMenu, buildMenuItems }: FileRowProps) {
+const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, language, onOpen, onDownload, onDragOut, onContextMenu, buildMenuItems }: FileRowProps) {
   const { t } = useTranslation();
   const icon = fileIcon(entry.name, entry.isDir);
   return (
     // A row of a table rather than a tile: size, date and permissions in
     // columns that line up with the header, so a folder of backups reads as a
     // list that can be compared and sorted instead of a stack of cards.
-    <li className={`files-row ${selected ? "files-row-selected" : ""}`.trim()} onContextMenu={(event) => onContextMenu(event, entry)}>
+    <li
+      className={`files-row ${selected ? "files-row-selected" : ""}`.trim()}
+      onContextMenu={(event) => onContextMenu(event, entry)}
+      // A file drags out to the desktop. The browser's own drag is cancelled:
+      // it cannot carry a file out of the window, the native one below can.
+      draggable={!entry.isDir}
+      onDragStart={(event) => {
+        event.preventDefault();
+        onDragOut(entry);
+      }}
+    >
       <Checkbox checked={selected} onChange={() => onToggleSelect(entry.path)} label={null} />
       <span className={`files-row-icon file-icon-${icon.tone}`}>
         <Icon name={icon.name} size={15} />
@@ -129,6 +143,9 @@ const FileRow = memo(function FileRow({ entry, selected, onToggleSelect, languag
 });
 
 const ROOT_PATH = ".";
+
+/** Mirrors the backend's `MAX_DRAG_OUT_BYTES`, so a large file is refused before anything is downloaded. */
+const DRAG_OUT_LIMIT_BYTES = 25 * 1024 * 1024;
 
 type FileSortKey = "name" | "size" | "modified";
 interface FileSort {
@@ -523,6 +540,21 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
     else latest.current.setOpenFile(entry);
   }, []);
   const handleDownloadEntry = useCallback((entry: RemoteFileEntry) => void latest.current.runDownload(entry), []);
+  /** Downloads the file while the mouse button is still held, then hands the
+   *  drag to the operating system. Too large a file is refused up front and
+   *  pointed at the download button - see `MAX_DRAG_OUT_BYTES` in the backend. */
+  const handleDragOut = useCallback(
+    (entry: RemoteFileEntry) => {
+      if (entry.size > DRAG_OUT_LIMIT_BYTES) {
+        toastError(t("applicationFilesTab.dragOutTooLarge", { name: entry.name }));
+        return;
+      }
+      void prepareApplicationFileDragOut(applicationId, entry.path)
+        .then((local) => dragFileOut(local, entry.name))
+        .catch((err) => toastError(errorMessage(err, t)));
+    },
+    [applicationId, t],
+  );
   const buildRowMenuItems = useCallback((entry: RemoteFileEntry) => latest.current.buildMenuItems(entry), []);
 
   /** Pinned, like the other row callbacks - a new identity every render would
@@ -783,6 +815,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
                 language={i18n.language}
                 onOpen={handleOpenEntry}
                 onDownload={handleDownloadEntry}
+                onDragOut={handleDragOut}
                 onContextMenu={handleRowContextMenu}
                 buildMenuItems={buildRowMenuItems}
               />

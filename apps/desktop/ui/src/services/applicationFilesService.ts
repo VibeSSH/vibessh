@@ -122,6 +122,11 @@ export function onTransferProgress(transferId: string, handler: (progress: Trans
   return listen<TransferProgressEvent>(`application-files://${transferId}/progress`, (event) => handler(event.payload)).catch(() => () => {});
 }
 
+/** Downloads a file to a temporary folder for dragging it out of the window. Resolves with the local path. */
+export function prepareApplicationFileDragOut(applicationId: string, path: string): Promise<string> {
+  return callCommand<string>("prepare_application_file_drag_out", { applicationId, path });
+}
+
 /** The file name the server behind `url` gives it, or null when it gives none better than the link. */
 export function suggestDownloadFileName(url: string): Promise<string | null> {
   return callCommand<string | null>("suggest_download_file_name", { url });

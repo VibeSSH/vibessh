@@ -126,6 +126,8 @@ tauri-plugin-process = "2.3.1"
 # "multiple candidates" error rather than a style question. The
 # dev-dependencies section carries the same entry for the same reason.
 rand010 = { package = "rand", version = "0.10" }
+tauri-plugin-drag = "2.1.1"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
 

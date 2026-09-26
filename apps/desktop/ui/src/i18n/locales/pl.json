@@ -366,6 +366,7 @@
     "windowLoading": "Wczytuję…"
   },
   "applicationFilesTab": {
+    "dragOutTooLarge": "{{name}} jest za duży, żeby go przeciągnąć (limit 25 MB) - użyj przycisku pobierania.",
     "fetchNoExtension": "Ta nazwa nie ma rozszerzenia - wtyczka musi kończyć się na .jar, inaczej serwer jej nie wczyta.",
     "loadFailedTitle": "Nie udało się wczytać folderu",
     "loadFailedDescription": "Pliki są na miejscu - nie udało się tylko połączyć z Nodem. Powód jest wyżej.",

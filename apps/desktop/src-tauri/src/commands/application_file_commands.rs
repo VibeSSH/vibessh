@@ -152,6 +152,21 @@ pub async fn copy_application_file(
     services::copy_application_file(&app_repo, &server_repo, &sessions, application_id, &from, &to).await
 }
 
+/// Downloads a file to a temporary folder so it can be dragged out of the
+/// window onto the desktop - see `services::prepare_drag_out`. Returns the
+/// local path the drag should carry.
+#[tauri::command]
+pub async fn prepare_application_file_drag_out(
+    app_repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    application_id: Uuid,
+    path: String,
+) -> AppResult<String> {
+    let local = services::prepare_application_file_drag_out(&app_repo, &server_repo, &sessions, application_id, &path).await?;
+    Ok(local.to_string_lossy().into_owned())
+}
+
 /// The file name the server behind a link gives it, for "Download from a
 /// link"'s Save as field - see `files::url_fetch::suggest_file_name`.
 #[tauri::command]

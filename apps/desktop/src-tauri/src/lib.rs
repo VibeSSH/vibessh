@@ -114,6 +114,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        // Dragging a file out of the Files tab onto the desktop - the
+        // operating system's own drag, which only a native call can start.
+        .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::new("VibeSSH", env!("CARGO_PKG_VERSION")))
@@ -357,6 +360,7 @@ pub fn run() {
             commands::application_file_commands::compress_application_files,
             commands::application_file_commands::fetch_application_file_url,
             commands::application_file_commands::suggest_download_file_name,
+            commands::application_file_commands::prepare_application_file_drag_out,
             commands::application_file_commands::set_application_file_permissions,
             commands::application_file_commands::download_application_file,
             commands::application_file_commands::upload_application_file,
