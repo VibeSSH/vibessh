@@ -839,6 +839,16 @@
     "bodyMany_many": "Usunąć <1>{{count}}</1> aplikacji? Dotyczy: {{names}}. Każda zostanie rozebrana: kontener, reguły firewalla, konto na nodzie i jej bazy danych. Tej operacji nie można cofnąć."
   },
   "deleteDialog": {
+    "appsIntro": "Na tym serwerze są jeszcze aplikacje ({{count}}). Serwera nie da się usunąć, dopóki na nim są - ich kontenery działałyby dalej bez żadnej kontroli.",
+    "stop": "Zatrzymaj",
+    "kill": "Zabij",
+    "deleteApp": "Usuń",
+    "confirmDeleteApp": "Tak, usuń aplikację",
+    "force": "Wymuś usunięcie",
+    "forceConfirm": "Tak, usuń wszystko",
+    "forcing": "Usuwanie…",
+    "forceWarning": "Najpierw zostanie usuniętych {{count}} aplikacji razem z kontenerami, regułami firewalla, nazwami DNS i kontami na Nodzie, a potem sam serwer. Pliki aplikacji zostaną na serwerze. Tego nie da się cofnąć.",
+    "actionFailed": "{{name}}: {{reason}}",
     "title": "Usuń serwer",
     "body": "Usunąć <1>{{name}}</1>? Zapisane hasło lub hasło do klucza zostanie też usunięte z magazynu poświadczeń systemu. Tej operacji nie można cofnąć."
   },
@@ -882,6 +892,7 @@
     "docker_unavailable": "Docker jest tu niedostępny - albo nie działa, albo nie jest zainstalowany. Uruchom Dockera (na Windows i macOS to Docker Desktop) lub zainstaluj go i spróbuj ponownie.",
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "ssh_auth_rejected": "Serwer odrzucił logowanie SSH jako {{username}}. Sprawdź nazwę użytkownika, hasło lub klucz w ustawieniach serwera.",
+    "server_has_applications": "Na serwerze {{server}} są jeszcze aplikacje: {{applications}}. Usuń je albo przenieś na inny Node (Migruj), zanim usuniesz serwer - inaczej ich kontenery działałyby dalej bez żadnej kontroli.",
     "cron_missing": "Ten Node nie ma crona, a harmonogramy go potrzebują. Zainstaluj go przyciskiem poniżej albo w terminalu Node'a: sudo apt install cron.",
     "disk_limit_exceeded": "Aplikacja zajmuje {{usedMb}} MB, a jej limit dysku to {{limitMb}} MB, więc nie zostanie uruchomiona. Usuń część plików albo zwiększ limit w Ustawieniach → Limity zasobów.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",

@@ -69,6 +69,8 @@ pub enum ErrorCode {
     /// A Node without cron, asked to keep a schedule. Its own code so the
     /// interface can offer to install it rather than only say so.
     CronMissing,
+    /// Deleting a server that still has applications on it.
+    ServerHasApplications,
     /// Starting an Application whose directory holds more than its disk limit.
     DiskLimitExceeded,
 
@@ -225,6 +227,12 @@ pub enum AppError {
     #[error("this Node has no cron, which schedules need to run")]
     CronMissing { server_id: uuid::Uuid },
 
+    /// A server with applications on it is not deleted: their containers
+    /// would go on running on a Node nothing manages any more. Names them,
+    /// because "still has applications" alone leaves somebody hunting.
+    #[error("{server} still has applications on it ({applications}) - delete them or migrate them to another Node first")]
+    ServerHasApplications { server: String, applications: String },
+
     /// The directory is over its disk limit, so it is not started - the same
     /// rule the Node's own check enforces by stopping it.
     #[error("this application uses {used_mb} MB, over its {limit_mb} MB disk limit - free some space or raise the limit")]
@@ -314,6 +322,7 @@ impl AppError {
             AppError::PasswordRequired { .. } => ErrorCode::PasswordRequired,
             AppError::SshAuthRejected { .. } => ErrorCode::SshAuthRejected,
             AppError::CronMissing { .. } => ErrorCode::CronMissing,
+            AppError::ServerHasApplications { .. } => ErrorCode::ServerHasApplications,
             AppError::DiskLimitExceeded { .. } => ErrorCode::DiskLimitExceeded,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
@@ -360,6 +369,7 @@ impl AppError {
                 serde_json::json!({ "username": username, "method": method, "serverId": server_id })
             }
             AppError::CronMissing { server_id } => serde_json::json!({ "serverId": server_id }),
+            AppError::ServerHasApplications { server, applications } => serde_json::json!({ "server": server, "applications": applications }),
             AppError::DiskLimitExceeded { used_mb, limit_mb } => serde_json::json!({ "usedMb": used_mb, "limitMb": limit_mb }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
@@ -431,6 +441,7 @@ impl Serialize for AppError {
             ErrorCode::SshAuthRejected => "invalid_input",
             // Something the operator can fix on the Node - an input problem.
             ErrorCode::CronMissing => "invalid_input",
+            ErrorCode::ServerHasApplications => "invalid_input",
             ErrorCode::DiskLimitExceeded => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it

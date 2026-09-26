@@ -30,8 +30,13 @@ pub fn set_server_icon(repo: State<ServerRepository>, id: Uuid, icon: Option<Str
 }
 
 #[tauri::command]
-pub async fn delete_server(repo: State<'_, ServerRepository>, forwards: State<'_, PortForwardManager>, id: Uuid) -> AppResult<()> {
-    services::delete_server(&repo, id)?;
+pub async fn delete_server(
+    repo: State<'_, ServerRepository>,
+    app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
+    forwards: State<'_, PortForwardManager>,
+    id: Uuid,
+) -> AppResult<()> {
+    services::delete_server(&repo, &app_repo, id)?;
     // Best-effort, same reasoning as the SSH credential cleanup inside
     // services::delete_server itself - a tunnel to a Node that no longer
     // has a Server row shouldn't be left running until it errors out on its

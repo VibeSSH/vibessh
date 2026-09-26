@@ -833,6 +833,16 @@
     "bodyMany_other": "Remove <1>{{count}}</1> applications? These: {{names}}. Each is torn down: its container, firewall rules, Node account and its databases. This cannot be undone."
   },
   "deleteDialog": {
+    "appsIntro": "This server still has applications on it ({{count}}). It can't be deleted while they are - their containers would keep running with nothing managing them.",
+    "stop": "Stop",
+    "kill": "Kill",
+    "deleteApp": "Delete",
+    "confirmDeleteApp": "Yes, delete the application",
+    "force": "Force delete",
+    "forceConfirm": "Yes, delete everything",
+    "forcing": "Deleting…",
+    "forceWarning": "First the {{count}} applications are deleted, with their containers, firewall rules, DNS names and accounts on the Node, then the server itself. The applications' files stay on the server. This can't be undone.",
+    "actionFailed": "{{name}}: {{reason}}",
     "title": "Remove server",
     "body": "Remove <1>{{name}}</1>? Its stored password or key passphrase is deleted from your OS credential store too. This can't be undone."
   },
@@ -876,6 +886,7 @@
     "docker_unavailable": "Docker isn't available here - it's either not running or not installed. Start Docker (on Windows and macOS, that's Docker Desktop) or install it, then try again.",
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "ssh_auth_rejected": "The server rejected the SSH login as {{username}}. Check the username, password or key in the server's settings.",
+    "server_has_applications": "{{server}} still has applications on it: {{applications}}. Delete them or move them to another Node (Migrate) before deleting the server - otherwise their containers would keep running with nothing managing them.",
     "cron_missing": "This Node has no cron, which schedules need to run. Install it with the button below, or in the Node's terminal: sudo apt install cron.",
     "disk_limit_exceeded": "The application uses {{usedMb}} MB and its disk limit is {{limitMb}} MB, so it won't be started. Delete some files or raise the limit in Settings → Resource limits.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",

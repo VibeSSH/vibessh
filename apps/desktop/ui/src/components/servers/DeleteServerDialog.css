@@ -1,0 +1,39 @@
+.delete-server-apps {
+  margin: 4px 0 8px;
+}
+
+.delete-server-app-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.delete-server-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.delete-server-app:last-child {
+  border-bottom: none;
+}
+
+.delete-server-app-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-server-app-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}

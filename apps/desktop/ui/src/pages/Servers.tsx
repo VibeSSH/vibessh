@@ -219,6 +219,7 @@ export function Servers() {
 
       {deletingServer && (
         <DeleteServerDialog
+          serverId={deletingServer.id}
           serverName={deletingServer.name}
           busy={deleteBusy}
           error={deleteError}

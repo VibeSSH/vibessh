@@ -10,6 +10,7 @@ use crate::models::{AuthenticationType, NodeCapabilities, Server, ServerInput};
 use crate::services::ssh_service::get_or_connect;
 use crate::state::SshSessionManager;
 use crate::storage::credentials::{self, SecretKind};
+use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::server_repository::ServerRepository;
 
 pub fn create_server(repo: &ServerRepository, input: ServerInput) -> AppResult<Server> {
@@ -35,7 +36,19 @@ pub fn set_server_icon(repo: &ServerRepository, id: Uuid, icon: Option<String>) 
     repo.set_icon(id, icon.as_deref())
 }
 
-pub fn delete_server(repo: &ServerRepository, id: Uuid) -> AppResult<()> {
+/// Refused while applications are on the server, naming them - the foreign
+/// key in `storage::migrations` refuses it too, but only as a bare id.
+pub fn delete_server(repo: &ServerRepository, app_repo: &ApplicationRepository, id: Uuid) -> AppResult<()> {
+    let attached: Vec<String> = app_repo
+        .list()?
+        .into_iter()
+        .filter(|application| application.server_id == Some(id))
+        .map(|application| application.name)
+        .collect();
+    if !attached.is_empty() {
+        let server = repo.get(id)?.map(|server| server.name).unwrap_or_else(|| id.to_string());
+        return Err(AppError::ServerHasApplications { server, applications: attached.join(", ") });
+    }
     repo.delete(id)?;
     // Best-effort: the row is already gone, and delete_secret already treats
     // "nothing to delete" as success, so these can't meaningfully fail in a
@@ -371,7 +384,11 @@ mod tests {
             Some("hunter2".to_string())
         );
 
-        delete_server(&repo, server.id).unwrap();
+        let app_repo = crate::storage::application_repository::ApplicationRepository::open(
+            &std::env::temp_dir().join(format!("vibessh-server-service-apps-{}.sqlite3", Uuid::new_v4())),
+        )
+        .unwrap();
+        delete_server(&repo, &app_repo, server.id).unwrap();
         assert_eq!(credentials::load_secret(server.id, SecretKind::SshPassword).unwrap(), None);
         assert!(get_server(&repo, server.id).is_err());
     }
