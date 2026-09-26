@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::errors::{ApiError, ApiResult, Detail};
-use crate::models::{DeviceKey, MemberAccess, PublishDeviceKeyRequest};
+use crate::models::{DeviceKey, MemberAccess, MemberApplicationAccess, PublishDeviceKeyRequest};
 use crate::teams::team_for_member;
 use crate::AppState;
 
@@ -234,6 +234,29 @@ pub async fn list_team_access(
         permissions_by_user.entry(user_id).or_default().push(key);
     }
 
+    // Same shape, for the per-Application grants: one query, grouped here.
+    #[allow(clippy::type_complexity)]
+    let application_rows: Vec<(Uuid, Uuid, Option<Uuid>, String, String, Vec<String>)> = sqlx::query_as(
+        "SELECT am.user_id, ta.local_id, ta.team_server_id, ta.runtime_type, ta.working_directory, am.permissions \
+         FROM application_members am \
+         JOIN team_applications ta ON ta.id = am.application_id \
+         WHERE am.team_id = $1 \
+         ORDER BY am.user_id, ta.local_id",
+    )
+    .bind(team_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut applications_by_user: std::collections::HashMap<Uuid, Vec<MemberApplicationAccess>> = std::collections::HashMap::new();
+    for (user_id, local_id, team_server_id, runtime_type, working_directory, permissions) in application_rows {
+        applications_by_user.entry(user_id).or_default().push(MemberApplicationAccess {
+            local_id,
+            team_server_id,
+            runtime_type,
+            working_directory,
+            permissions,
+        });
+    }
+
     let mut members: Vec<MemberAccess> = Vec::new();
     for (id, email, display_name, public_key) in rows {
         // The join produces one row per key, and a member with no key at all
@@ -248,6 +271,7 @@ pub async fn list_team_access(
                 node_username: node_username(id),
                 public_keys: Vec::new(),
                 permissions: permissions_by_user.remove(&id).unwrap_or_default(),
+                applications: applications_by_user.remove(&id).unwrap_or_default(),
             });
         }
         if let Some(key) = public_key {

@@ -331,6 +331,30 @@ pub struct MemberAccess {
     /// keys rather than fetched separately because the two are one decision:
     /// who may log in, and what they may do once they have.
     pub permissions: Vec<String>,
+    /// The shared Applications this member is on the list for, and what they
+    /// may do with each - what the provisioning install turns into sudo rules
+    /// naming that one Application's container and account.
+    pub applications: Vec<MemberApplicationAccess>,
+}
+
+/// One Application a member is on the list for.
+///
+/// Carries what the provisioning install needs to write rules for it without
+/// having the Application in its own database: `local_id` names the
+/// container, the unit and the Application's account; the runtime says which
+/// of those exist; the working directory is the root its file rule is held
+/// to; `team_server_id` says which Node it is on. Taken from the shared
+/// projection, so an install syncing a Node writes the rules for every
+/// shared Application on it - not only the ones it created, which would
+/// silently drop another admin's.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberApplicationAccess {
+    pub local_id: Uuid,
+    pub team_server_id: Option<Uuid>,
+    pub runtime_type: String,
+    pub working_directory: String,
+    pub permissions: Vec<String>,
 }
 
 /// Access that has been taken away in the team but is still on a Node.

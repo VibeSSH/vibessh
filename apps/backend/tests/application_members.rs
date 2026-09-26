@@ -135,6 +135,32 @@ async fn a_member_without_the_sharing_permission_cannot_change_anybodys_permissi
     assert_eq!(members_of(&owner_token, &team_id, &application_id).await[0]["permissions"], json!([]));
 }
 
+/// What the provisioning install reads to write a member's sudo rules: every
+/// Application they are on the list for, with what it needs to name that
+/// Application's container and folder, and what they may do there.
+#[tokio::test]
+#[ignore]
+async fn the_team_access_list_carries_each_members_per_application_grants() {
+    let (owner_token, _, team_id, member_id, application_id) = team_with_a_shared_application().await;
+    post_with_bearer(
+        test_router().await,
+        &format!("/teams/{team_id}/applications/{application_id}/members"),
+        &owner_token,
+        json!({ "userId": member_id, "permissions": ["applications.lifecycle", "applications.files.read"] }),
+    )
+    .await;
+
+    let (status, access) = get_with_bearer(test_router().await, &format!("/teams/{team_id}/access"), &owner_token).await;
+    assert_eq!(status, StatusCode::OK, "{access}");
+    let member = access.as_array().unwrap().iter().find(|entry| entry["userId"] == member_id.as_str()).expect("the member is listed");
+    let applications = member["applications"].as_array().expect("grants are listed");
+    assert_eq!(applications.len(), 1, "{member}");
+    assert_eq!(applications[0]["runtimeType"], "docker");
+    assert_eq!(applications[0]["workingDirectory"], "/srv/vibessh/oneblock");
+    assert_eq!(applications[0]["permissions"], json!(["applications.files.read", "applications.lifecycle"]));
+    assert!(applications[0]["localId"].is_string());
+}
+
 /// Changing somebody who is not on the list is a clear refusal, not a grant
 /// that quietly adds them.
 #[tokio::test]
