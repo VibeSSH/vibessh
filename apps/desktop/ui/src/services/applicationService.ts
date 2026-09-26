@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./tauri";
+import type { FirewallFollowUp, FirewallSyncResult } from "./serverService";
 import type {
   Application,
   ApplicationDetail,
@@ -213,24 +214,24 @@ export function listApplicationPorts(id: string): Promise<ApplicationPort[]> {
   return callCommand<ApplicationPort[]>("list_application_ports", { id });
 }
 
-export function addApplicationPort(id: string, port: PortInput): Promise<ApplicationPort> {
-  return callCommand<ApplicationPort>("add_application_port", { id, port });
+/** Mirrors the Rust `PortSaved` DTO: the saved port, and what the Node's firewall made of it. A failed sync does not fail the save - the port is stored either way - so it arrives here instead, for `firewallFollowUpWarning`. */
+export interface PortSaved {
+  port: ApplicationPort;
+  firewall: FirewallFollowUp;
 }
 
-export function updateApplicationPort(id: string, portId: string, port: PortInput): Promise<ApplicationPort> {
-  return callCommand<ApplicationPort>("update_application_port", { id, portId, port });
+export function addApplicationPort(id: string, port: PortInput): Promise<PortSaved> {
+  return callCommand<PortSaved>("add_application_port", { id, port });
+}
+
+export function updateApplicationPort(id: string, portId: string, port: PortInput): Promise<PortSaved> {
+  return callCommand<PortSaved>("update_application_port", { id, portId, port });
 }
 
 /** Mirrors the Rust `FirewallSyncResult` DTO. `backend: null` means no supported firewall was detected on this application's Node (not an error). `rulesRemoved` counts rules this same sync just revoked (a port that's been unpublished, or belonged to an Application that's been deleted/migrated away) - see the Rust `firewall` module's own doc comment for the "only ever removes a rule it can prove it added itself" safety property behind that. Never enables enforcement itself, that stays a separate, explicit action. `unenforced` is `true` when nothing is actually restricting these ports - either no backend at all, or one that's installed but switched off. It must be surfaced as a warning: a sync that reports success while leaving ports open is exactly what made "Vibe Network only" ports publicly reachable. */
-export interface FirewallSyncResult {
-  backend: string | null;
-  active: boolean;
-  rulesApplied: number;
-  rulesRemoved: number;
-  unenforced: boolean;
-}
+export type { FirewallSyncResult, FirewallFollowUp };
 
-/** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically, best-effort, after every `addApplicationPort`/`updateApplicationPort` - this is for a port declared before the feature existed, or retrying after a failed sync. */
+/** "Sync Firewall" (Etap M2, Ports tab) - re-applies the current desired rule set for this application's Node. `null` for a Local application (nothing to sync). Also fires automatically after every `addApplicationPort`/`updateApplicationPort`/`removeApplicationPort`, whose result carries it - this is for a port declared before the feature existed, or retrying after a failed sync. */
 export function syncApplicationNodeFirewall(id: string): Promise<FirewallSyncResult | null> {
   return callCommand<FirewallSyncResult | null>("sync_application_node_firewall", { id });
 }
@@ -260,8 +261,9 @@ export function disconnectApplications(id: string, peerId: string): Promise<void
   return callCommand<void>("disconnect_applications", { id, peerId });
 }
 
-export function removeApplicationPort(id: string, portId: string): Promise<void> {
-  return callCommand<void>("remove_application_port", { id, portId });
+/** Returns what the Node's firewall made of the removal - see `PortSaved`. */
+export function removeApplicationPort(id: string, portId: string): Promise<FirewallFollowUp> {
+  return callCommand<FirewallFollowUp>("remove_application_port", { id, portId });
 }
 
 /** Runs the actual probe right now (a TCP/HTTP dial or a Minecraft Server List Ping, depending on how the application's health check is configured) - not a cached value, same "pull, not push" shape as `getApplicationResourceUsage`. */

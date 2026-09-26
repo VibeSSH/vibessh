@@ -22,8 +22,11 @@ import {
   removeApplicationPort,
   syncApplicationNodeFirewall,
   updateApplicationPort,
+  type FirewallFollowUp,
   type FirewallSyncResult,
+  type PortSaved,
 } from "@/services/applicationService";
+import { firewallFollowUpWarning, firewallResultWarning } from "@/services/firewallWarnings";
 import { useContainerApply } from "@/hooks/useContainerApply";
 import type { ApplicationDetail, ApplicationPort, PortInput, PortProtocol, PortVisibility } from "@/types/application";
 import "@/components/servers/AddServerModal.css";
@@ -120,6 +123,18 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
   const [firewallResult, setFirewallResult] = useState<FirewallSyncResult | null | undefined>(undefined);
   const [firewallError, setFirewallError] = useState<string | null>(null);
 
+  /** A port change syncs the firewall on the side; its outcome goes into the
+   * same card a manual sync reports in, so "saved" is never the whole story
+   * when the Node did not follow. */
+  function showFirewallFollowUp(followUp: FirewallFollowUp) {
+    if (followUp.error) {
+      setFirewallError(firewallFollowUpWarning(followUp, t));
+      return;
+    }
+    setFirewallError(null);
+    setFirewallResult(followUp.result);
+  }
+
   async function handleSyncFirewall() {
     setFirewallSyncing(true);
     setFirewallError(null);
@@ -148,7 +163,7 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await removeApplicationPort(applicationId, deletingPort.id);
+      showFirewallFollowUp(await removeApplicationPort(applicationId, deletingPort.id));
       removePortFromCache(deletingPort.id);
       setDeletingPort(null);
       // The published `-p` only leaves the container on a recreate; run it in
@@ -281,6 +296,9 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
               {firewallResult && firewallResult.backend !== null && firewallResult.unenforced && (
                 <span className="form-note-danger"> {t("portsTab.firewallUnenforced")}</span>
               )}
+              {firewallResult && firewallResultWarning(firewallResult, t) && (
+                <span className="form-note-danger"> {firewallResultWarning(firewallResult, t)}</span>
+              )}
               {firewallError && <span className="form-note-danger"> {firewallError}</span>}
             </p>
           </div>
@@ -302,9 +320,10 @@ export function PortsTab({ applicationId, application }: PortsTabProps) {
           applicationId={applicationId}
           editingPort={editingPort}
           onClose={() => setFormOpen(false)}
-          onSaved={(port) => {
+          onSaved={(saved) => {
             setFormOpen(false);
-            upsertPortInCache(port);
+            upsertPortInCache(saved.port);
+            showFirewallFollowUp(saved.firewall);
             void applyToContainer(application);
           }}
         />
@@ -340,7 +359,7 @@ interface PortFormModalProps {
   applicationId: string;
   editingPort: ApplicationPort | null;
   onClose: () => void;
-  onSaved: (port: ApplicationPort) => void;
+  onSaved: (saved: PortSaved) => void;
 }
 
 function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFormModalProps) {
@@ -378,8 +397,8 @@ function PortFormModal({ applicationId, editingPort, onClose, onSaved }: PortFor
     setBusy(true);
     setError(null);
     try {
-      // The mutation returns the saved port; hand it back so the list updates
-      // from it directly. The container recreate the `-p` change needs runs in
+      // The mutation returns the saved port and what the firewall made of it;
+      // hand both back so the list updates from it directly. The container recreate the `-p` change needs runs in
       // the background from the parent, not awaited here.
       const saved = editingPort ? await updateApplicationPort(applicationId, editingPort.id, input) : await addApplicationPort(applicationId, input);
       onSaved(saved);

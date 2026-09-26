@@ -8,7 +8,8 @@ import { Select } from "@/components/ui/Select";
 import { addApplicationPort, createApplication } from "@/services/applicationService";
 import { scanForServers, type DiscoveredServer } from "@/services/serverDiscoveryService";
 import { errorMessage } from "@/services/tauri";
-import { toastSuccess } from "@/stores/toastStore";
+import { firewallFollowUpWarning } from "@/services/firewallWarnings";
+import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { ManagedServer } from "@/stores/serversStore";
 import "./AdoptServersModal.css";
 
@@ -118,7 +119,7 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
         // wrong one and look deliberate.
         if (server.port !== null) {
           try {
-            await addApplicationPort(created_app.id, {
+            const saved = await addApplicationPort(created_app.id, {
               name: t("adoptServers.portName"),
               protocol: "tcp",
               bindAddress: "",
@@ -126,10 +127,15 @@ export function AdoptServersModal({ servers, onClose, onAdopted }: AdoptServersM
               externalPort: server.port,
               visibility: "public",
             });
-          } catch {
+            const warning = firewallFollowUpWarning(saved.firewall, t);
+            if (warning) toastError(warning);
+          } catch (err) {
             // The application exists and is the point; a port can be added
             // by hand on its Ports tab, and failing the whole adoption over
-            // one would leave the rest uncreated.
+            // one would leave the rest uncreated. But the operator is told -
+            // this used to be swallowed, leaving a server nobody could reach
+            // and nothing saying why.
+            toastError(t("adoptServers.portFailed", { name: server.name, port: server.port, message: errorMessage(err, t) }));
           }
         }
         created += 1;

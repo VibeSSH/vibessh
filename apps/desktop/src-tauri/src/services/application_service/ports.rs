@@ -18,6 +18,7 @@ use crate::models::{
 };
 // The one shared implementation - this module used to carry its own
 // byte-identical copy, one of six across the codebase.
+use crate::services::firewall_service::FirewallFollowUp;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
@@ -175,14 +176,23 @@ async fn check_external_port_available(
     Ok(())
 }
 
+/// A saved port, and what the Node's firewall made of it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortSaved {
+    pub port: ApplicationPort,
+    pub firewall: FirewallFollowUp,
+}
+
 /// Publishing a port (`external_port` set) should open it in the Node's
 /// firewall right away, not only whenever someone next thinks to click
-/// "Sync Firewall" on the Ports tab - `sync_firewall_best_effort` fires
-/// after every successful write. Best-effort deliberately: a sync failure
-/// (host unreachable, no supported firewall detected, a transient SSH
-/// hiccup) must never fail the port CRUD call itself - the port is already
-/// correctly saved either way, and `firewall_service::reconcile_node` is
-/// safe to retry from the Ports tab at any time.
+/// "Sync Firewall" on the Ports tab - `sync_firewall_after_port_change`
+/// fires after every successful write. A sync failure (host unreachable, a
+/// transient SSH hiccup) must never fail the port CRUD call itself - the
+/// port is already correctly saved either way, and
+/// `firewall_service::reconcile_node` is safe to retry from the Ports tab
+/// at any time. But it is returned beside the port rather than logged, so
+/// the interface can say the Node has not caught up.
 pub async fn add_application_port(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
@@ -191,7 +201,7 @@ pub async fn add_application_port(
     sessions: &SshSessionManager,
     application_id: Uuid,
     port: &PortInput,
-) -> AppResult<ApplicationPort> {
+) -> AppResult<PortSaved> {
     let server_id = get_application(repo, application_id)?.application.server_id;
     let port = PortInput { bind_address: resolve_bind_address(network_repo, server_id, port)?, ..port.clone() };
     // The live half of the check first - it talks to the Node and cannot be
@@ -206,8 +216,8 @@ pub async fn add_application_port(
         // no cross-Application claim to make.
         None => repo.add_port(application_id, &port)?,
     };
-    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
-    Ok(created)
+    let firewall = sync_firewall_after_port_change(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
+    Ok(PortSaved { port: created, firewall })
 }
 
 pub async fn update_application_port(
@@ -219,28 +229,27 @@ pub async fn update_application_port(
     application_id: Uuid,
     port_id: Uuid,
     port: &PortInput,
-) -> AppResult<ApplicationPort> {
+) -> AppResult<PortSaved> {
     let server_id = get_application(repo, application_id)?.application.server_id;
     let port = PortInput { bind_address: resolve_bind_address(network_repo, server_id, port)?, ..port.clone() };
     check_external_port_available(repo, server_repo, sessions, application_id, Some(port_id), &port).await?;
     let updated = repo.update_port(application_id, port_id, &port)?;
-    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
-    Ok(updated)
+    let firewall = sync_firewall_after_port_change(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
+    Ok(PortSaved { port: updated, firewall })
 }
 
-async fn sync_firewall_best_effort(
+async fn sync_firewall_after_port_change(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,
     network_repo: &NodeNetworkRepository,
     firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     application_id: Uuid,
-) {
-    if let Err(err) =
-        crate::services::firewall_service::sync_application_node_firewall(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await
-    {
-        log::warn!("firewall sync after a port change failed (application {application_id}): {err}");
-    }
+) -> FirewallFollowUp {
+    FirewallFollowUp::from_sync(
+        crate::services::firewall_service::sync_application_node_firewall(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await,
+        &format!("a port change on application {application_id}"),
+    )
 }
 
 /// Also syncs the firewall afterward (best-effort, same as
@@ -256,8 +265,7 @@ pub async fn remove_application_port(
     sessions: &SshSessionManager,
     application_id: Uuid,
     port_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<FirewallFollowUp> {
     repo.remove_port(application_id, port_id)?;
-    sync_firewall_best_effort(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await;
-    Ok(())
+    Ok(sync_firewall_after_port_change(repo, server_repo, network_repo, firewall_rule_repo, sessions, application_id).await)
 }

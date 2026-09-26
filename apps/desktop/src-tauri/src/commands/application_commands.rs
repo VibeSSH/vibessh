@@ -109,7 +109,7 @@ pub async fn add_application_port(
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     port: PortInput,
-) -> AppResult<ApplicationPort> {
+) -> AppResult<services::PortSaved> {
     services::add_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, &port).await
 }
 
@@ -123,7 +123,7 @@ pub async fn update_application_port(
     id: Uuid,
     port_id: Uuid,
     port: PortInput,
-) -> AppResult<ApplicationPort> {
+) -> AppResult<services::PortSaved> {
     services::update_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, port_id, &port).await
 }
 
@@ -155,7 +155,7 @@ pub async fn remove_application_port(
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     port_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<services::FirewallFollowUp> {
     services::remove_application_port(&repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, port_id).await
 }
 

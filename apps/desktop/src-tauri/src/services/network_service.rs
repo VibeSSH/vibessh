@@ -361,7 +361,10 @@ pub async fn sync_vibe_network(
         let mesh_error = mesh_results.iter().find(|r| r.server_id == member.server_id).and_then(|r| r.error.clone());
         let dns_error = dns_results.iter().find(|r| r.server_id == member.server_id).and_then(|r| r.error.clone());
         let firewall_error = match crate::services::firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, member.server_id).await {
-            Ok(_) => None,
+            // The container half is the half that restricts a "Vibe Network
+            // only" Docker port - which is what joining the mesh is for. A
+            // sync that could not write it is not a sync that worked.
+            Ok(result) => result.container_error.map(|err| format!("container ports are not restricted to the Vibe Network: {err}")),
             Err(err) => Some(err.to_string()),
         };
         results.push(VibeNetworkSyncResult {

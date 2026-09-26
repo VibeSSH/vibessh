@@ -565,7 +565,10 @@ mod tests {
             required: false,
         };
         let added = add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, &input).await.unwrap();
-        assert_eq!(added.internal_port, 25565);
+        assert_eq!(added.port.internal_port, 25565);
+        // A Local application has no Node firewall: nothing synced, and nothing
+        // to warn about.
+        assert!(added.firewall.result.is_none() && added.firewall.error.is_none());
         assert_eq!(list_application_ports(&app_repo, application_id).unwrap().len(), 1);
 
         // Adding the exact same internal_port/bind_address/protocol again
@@ -574,10 +577,10 @@ mod tests {
         assert!(add_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, &input).await.is_err());
 
         let updated_input = crate::models::PortInput { internal_port: 25566, ..input };
-        let updated = update_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.id, &updated_input).await.unwrap();
-        assert_eq!(updated.internal_port, 25566);
+        let updated = update_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.port.id, &updated_input).await.unwrap();
+        assert_eq!(updated.port.internal_port, 25566);
 
-        remove_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.id).await.unwrap();
+        remove_application_port(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, application_id, added.port.id).await.unwrap();
         assert!(list_application_ports(&app_repo, application_id).unwrap().is_empty());
     }
 

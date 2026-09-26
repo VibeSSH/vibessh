@@ -510,7 +510,8 @@
     "adopt": "Adopt {{count}}",
     "adoptNote": "Each becomes a plain Docker application pointed at its directory as it is - the jar that is already there is the jar that runs. Nothing is downloaded and no file is replaced.",
     "createdToast": "Adopted {{count}} servers",
-    "partialError": "Adopted {{created}} before this stopped it: {{error}}"
+    "partialError": "Adopted {{created}} before this stopped it: {{error}}",
+    "portFailed": "{{name}} was added, but its port {{port}} wasn't published: {{message}}. Add it on the application's Ports tab."
   },
   "applications": {
     "adopt": "Find existing",
@@ -1143,7 +1144,9 @@
     "invalidPort": "Enter a valid port number (1-65535).",
     "invalidCidr": "Enter a source range, or turn off the restriction.",
     "addRuleError": "Couldn't add the rule.",
-    "addRuleNote": "Applied right away if the server is reachable - otherwise use \"Sync now\" afterward."
+    "addRuleNote": "Applied right away if the server is reachable - otherwise use \"Sync now\" afterward.",
+    "invalidSource": "Enter an IPv4 address or network, e.g. 203.0.113.7 or 10.0.0.0/24.",
+    "sourceHostBits": "That network has host bits set - did you mean {{network}}?"
   },
   "forcePassword": {
     "body": "The password for {{email}} was set by whoever created this account, so they know it. Choose your own to start using the app.",
@@ -2380,5 +2383,10 @@
     "unshareAria": "Stop sharing {{name}} - it keeps running and this computer keeps its own copy",
     "unsharedToast": "{{name}} is no longer shared.",
     "updatedAt": "Snapshot taken {{when}}"
+  },
+  "firewallFollowUp": {
+    "syncFailed": "Saved, but the server's firewall wasn't updated: {{message}}. Sync it from the Firewall page or the Ports tab once the server is reachable.",
+    "containerFailed": "Docker ports on this server are not restricted as shown - the container rules couldn't be written: {{message}}",
+    "notActive": "The firewall was switched on, but the server still reports it inactive - the ports are open."
   }
 }

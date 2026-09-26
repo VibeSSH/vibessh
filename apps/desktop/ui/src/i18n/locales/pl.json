@@ -510,7 +510,8 @@
     "adopt": "Przygarnij: {{count}}",
     "adoptNote": "Każdy staje się zwykłą aplikacją Dockera wskazującą na swój katalog bez zmian — uruchamia się ten jar, który tam leży. Nic nie jest pobierane i żaden plik nie jest podmieniany.",
     "createdToast": "Przygarnięto serwery: {{count}}",
-    "partialError": "Przygarnięto {{created}}, zanim to przerwało: {{error}}"
+    "partialError": "Przygarnięto {{created}}, zanim to przerwało: {{error}}",
+    "portFailed": "Dodano {{name}}, ale nie udało się opublikować portu {{port}}: {{message}}. Dodaj go w zakładce Porty aplikacji."
   },
   "applications": {
     "adopt": "Znajdź istniejące",
@@ -1150,7 +1151,9 @@
     "invalidPort": "Podaj poprawny numer portu (1-65535).",
     "invalidCidr": "Podaj zakres źródłowy albo odznacz ograniczenie.",
     "addRuleError": "Nie udało się dodać reguły.",
-    "addRuleNote": "Reguła zostanie zastosowana od razu, jeśli serwer jest osiągalny - w przeciwnym razie użyj potem „Synchronizuj teraz”."
+    "addRuleNote": "Reguła zostanie zastosowana od razu, jeśli serwer jest osiągalny - w przeciwnym razie użyj potem „Synchronizuj teraz”.",
+    "invalidSource": "Podaj adres IPv4 albo sieć, np. 203.0.113.7 lub 10.0.0.0/24.",
+    "sourceHostBits": "Ta sieć ma ustawione bity hosta - czy chodziło o {{network}}?"
   },
   "forcePassword": {
     "body": "Hasło do konta {{email}} ustawiła osoba, która to konto założyła, więc je zna. Wybierz własne, żeby zacząć korzystać z aplikacji.",
@@ -2396,5 +2399,10 @@
     "unshareAria": "Przestań udostępniać {{name}} — aplikacja działa dalej, a ten komputer zachowuje własny zapis",
     "unsharedToast": "{{name}} nie jest już współdzielona.",
     "updatedAt": "Migawka z {{when}}"
+  },
+  "firewallFollowUp": {
+    "syncFailed": "Zapisano, ale firewall serwera nie został zaktualizowany: {{message}}. Zsynchronizuj go na stronie Firewall albo w zakładce Porty, gdy serwer będzie osiągalny.",
+    "containerFailed": "Porty Dockera na tym serwerze nie są ograniczone tak, jak pokazuje panel - nie udało się zapisać reguł dla kontenerów: {{message}}",
+    "notActive": "Firewall został włączony, ale serwer nadal zgłasza go jako nieaktywny - porty są otwarte."
   }
 }

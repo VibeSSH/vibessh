@@ -364,8 +364,13 @@ async fn migrate_application_inner(
             warnings.push(format!("the old node's firewall still allows this application's ports: {err}"));
         }
     }
-    if let Err(err) = firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target_server_id).await {
-        warnings.push(format!("the new node's firewall wasn't updated for this application's ports: {err}"));
+    match firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, target_server_id).await {
+        Ok(result) => {
+            if let Some(err) = result.container_error {
+                warnings.push(format!("the new node doesn't restrict this application's Vibe Network ports: {err}"));
+            }
+        }
+        Err(err) => warnings.push(format!("the new node's firewall wasn't updated for this application's ports: {err}")),
     }
 
     let final_detail = application_service::get_application(app_repo, target_application_id)?;

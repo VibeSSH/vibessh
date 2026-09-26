@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::firewall::FirewallRule;
-use crate::models::{FirewallCustomRule, FirewallCustomRuleInput, NodeCapabilities, Server, ServerInput};
+use crate::models::{FirewallCustomRuleInput, NodeCapabilities, Server, ServerInput};
 use crate::services::{self, FirewallSyncResult, NodeFirewallOverview};
 use crate::state::{PortForwardManager, SshSessionManager};
 use crate::storage::application_repository::ApplicationRepository;
@@ -238,7 +238,7 @@ pub async fn add_firewall_custom_rule(
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     input: FirewallCustomRuleInput,
-) -> AppResult<FirewallCustomRule> {
+) -> AppResult<services::CustomRuleSaved> {
     services::add_custom_firewall_rule(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, input).await
 }
 
@@ -254,6 +254,6 @@ pub async fn remove_firewall_custom_rule(
     sessions: State<'_, SshSessionManager>,
     id: Uuid,
     rule_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<services::FirewallFollowUp> {
     services::remove_custom_firewall_rule(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, id, rule_id).await
 }

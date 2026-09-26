@@ -56,8 +56,8 @@ the edges.
 - **DOCKER-USER drops block legitimate outbound container traffic.** The DROP has no ingress-interface or `--ctstate DNAT` match, so a "Vibe Network only" port N stops every container on that Node from reaching port N anywhere. `firewall/docker_user.rs`.
 - **Non-root admin on Debian: ufw is "missing"** - `/usr/sbin` is not on a non-root SSH exec PATH. Setup says missing, install errors, the Firewall page has no backend, DOCKER-USER is never reconciled, and member firewall rules are dropped. `firewall/ufw.rs:164`, `server_service.rs:95,150`, `member_account.rs:180`.
 - Join reports success when the tunnel never came up; the mesh does not survive a reboot (`wg-quick@` never enabled); leave is not a full teardown; private DNS names do not resolve inside containers.
-- Custom firewall rules are not validated (and the CIDR goes unquoted into the command); a bad one reports success and then breaks every later sync of that Node.
-- Enforcement failures never reach the UI (`containerError`/`unenforced` dropped).
+- ~~Custom firewall rules are not validated (and the CIDR goes unquoted into the command); a bad one reports success and then breaks every later sync of that Node.~~ **Fixed:** the source is validated and stored in the spelling ufw reports back (`command::canonical_ipv4_source`), quoted in the command, and a row saved before this is listed but left out of what is applied.
+- ~~Enforcement failures never reach the UI (`containerError`/`unenforced` dropped).~~ **Fixed:** port saves and custom-rule changes return what the firewall sync did (`FirewallFollowUp`), and the Ports tab, Vibe Network page, Firewall page, Node setup and server adoption show it; "secured" is only toasted when ufw is active and the container rules landed. `DOCKER-USER` is now also reconciled on a Node without ufw, and by "Secure this server", neither of which did it before; teardown, migration and Vibe Network sync report a failed container reconcile.
 - Agent mode: never reconnects after a desktop restart, the upgrade has no way back, "Secure" closes the agent port.
 
 **Applications**

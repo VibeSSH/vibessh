@@ -46,7 +46,7 @@ pub use ai_service::{
     set_ai_config, test_ai_connection,
 };
 pub use application_service::{
-    add_application_port, application_console_write, change_application_blueprint, application_health_check, application_logs, application_resource_usage, clear_application_logs, run_application_command,
+    add_application_port, PortSaved, application_console_write, change_application_blueprint, application_health_check, application_logs, application_resource_usage, clear_application_logs, run_application_command,
     rename_application,
     follow_application_logs, follow_application_stats, StatsSample,
     refresh_vibe_network_bind_addresses,
@@ -65,7 +65,7 @@ pub use dns_service::{
 };
 pub use firewall_service::{
     add_custom_firewall_rule, desired_rules as preview_node_firewall_rules, enable_node_firewall, node_firewall_overview,
-    node_listening_sockets, reconcile_node as sync_node_firewall, remove_custom_firewall_rule, sync_application_node_firewall, FirewallSyncResult,
+    node_listening_sockets, reconcile_node as sync_node_firewall, remove_custom_firewall_rule, sync_application_node_firewall, CustomRuleSaved, FirewallFollowUp, FirewallSyncResult,
     ListeningSocket, NodeFirewallOverview,
 };
 pub use network_service::{

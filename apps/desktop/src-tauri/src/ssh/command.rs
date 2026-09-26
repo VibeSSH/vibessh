@@ -165,6 +165,35 @@ pub fn validate_ipv4_cidr(value: &str, field: &str) -> AppResult<()> {
     }
 }
 
+/// A firewall rule's source - one IPv4 address or an IPv4 network - in the
+/// one spelling `ufw show added` prints back.
+///
+/// The spelling matters as much as the validity. A reconcile revokes every
+/// VibeSSH rule the Node reports that is not in the desired set, so a rule
+/// stored as `203.0.113.7/32` but reported as `203.0.113.7` is added and then
+/// revoked by the same sync, every sync. A host address therefore loses its
+/// `/32`, and a network with host bits set (`10.0.0.5/24`) is refused rather
+/// than silently widened into a different rule than the one typed.
+pub fn canonical_ipv4_source(value: &str, field: &str) -> AppResult<String> {
+    let trimmed = value.trim();
+    let Some((address, prefix)) = trimmed.split_once('/') else {
+        validate_ipv4(trimmed, field)?;
+        return Ok(trimmed.to_string());
+    };
+    validate_ipv4_cidr(trimmed, field)?;
+    let bits: u32 = prefix.parse().map_err(|_| AppError::InvalidInput(format!("{field} has an invalid CIDR prefix length")))?;
+    let address: std::net::Ipv4Addr = address.parse().map_err(|_| AppError::InvalidInput(format!("{field} isn't a valid IPv4 address")))?;
+    if bits == 32 {
+        return Ok(address.to_string());
+    }
+    let mask = if bits == 0 { 0 } else { u32::MAX << (32 - bits) };
+    if u32::from(address) & !mask != 0 {
+        let network = std::net::Ipv4Addr::from(u32::from(address) & mask);
+        return Err(AppError::InvalidInput(format!("{field} has host bits set - did you mean {network}/{bits}?")));
+    }
+    Ok(format!("{address}/{bits}"))
+}
+
 /// An absolute POSIX path with no traversal component and no NUL - the
 /// shape every `working_directory`, mount source and helper target must
 /// take before it reaches a `chown -R`, a bind mount, or a `rm -rf`.
@@ -348,6 +377,24 @@ mod tests {
         assert!(validate_ipv4_cidr("10.77.0.3/32", "the CIDR").is_ok());
         assert!(validate_ipv4_cidr("10.77.0.0", "the CIDR").is_err());
         assert!(validate_ipv4_cidr("10.77.0.0/33", "the CIDR").is_err());
+    }
+
+    /// The spelling is checked, not only the validity: a rule stored in any
+    /// other spelling than the one `ufw show added` prints is revoked by the
+    /// same sync that adds it.
+    #[test]
+    fn canonical_ipv4_source_spells_a_source_the_way_ufw_reports_it() {
+        assert_eq!(canonical_ipv4_source(" 203.0.113.7 ", "the source").unwrap(), "203.0.113.7");
+        assert_eq!(canonical_ipv4_source("203.0.113.7/32", "the source").unwrap(), "203.0.113.7");
+        assert_eq!(canonical_ipv4_source("10.0.0.0/24", "the source").unwrap(), "10.0.0.0/24");
+        assert_eq!(canonical_ipv4_source("0.0.0.0/0", "the source").unwrap(), "0.0.0.0/0");
+
+        let widened = canonical_ipv4_source("10.0.0.5/24", "the source").unwrap_err().to_string();
+        assert!(widened.contains("10.0.0.0/24"), "{widened}");
+
+        for hostile in ["10.0.0.0/8; reboot", "$(id)", "10.0.0.0/8 to any port 22", "10.0.0.0/33", "10.0.0", ""] {
+            assert!(canonical_ipv4_source(hostile, "the source").is_err(), "{hostile:?} must be refused");
+        }
     }
 
     #[test]

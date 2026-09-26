@@ -66,6 +66,20 @@ export interface FirewallSyncResult {
   rulesApplied: number;
   rulesRemoved: number;
   unenforced: boolean;
+  /** Set when the Node's `DOCKER-USER` rules could not be written. The ufw half still succeeded, but a published Docker port bypasses ufw, so a "Vibe Network only" container port is not restricted. Must be shown, never dropped. */
+  containerError: string | null;
+}
+
+/** Mirrors the Rust `FirewallFollowUp` DTO - what the Node's firewall made of a change that syncs it on the side (a port saved, a custom rule added or removed). The change itself already succeeded; this is whether the Node caught up. `error` is a serialized `AppError`, for `normalizeError`. */
+export interface FirewallFollowUp {
+  result: FirewallSyncResult | null;
+  error: unknown;
+}
+
+/** Mirrors the Rust `CustomRuleSaved` DTO. */
+export interface CustomRuleSaved {
+  rule: FirewallCustomRule;
+  firewall: FirewallFollowUp;
 }
 
 /** A local-only read, no SSH round trip - what "Secure this server"'s confirmation dialog shows before anything actually changes (the SSH port is always first). See the Rust `preview_server_firewall_rules` doc comment. */
@@ -142,14 +156,14 @@ export interface FirewallCustomRuleInput {
   sourceCidr?: string;
 }
 
-/** Persists the rule then best-effort applies it live right away - see the Rust `add_custom_firewall_rule` doc comment. */
-export function addFirewallCustomRule(id: string, input: FirewallCustomRuleInput): Promise<FirewallCustomRule> {
-  return callCommand<FirewallCustomRule>("add_firewall_custom_rule", { id, input });
+/** Persists the rule then applies it live right away - see the Rust `add_custom_firewall_rule` doc comment. A failed live sync does not fail the call; it comes back in `firewall`, to be shown with `firewallFollowUpWarning`. */
+export function addFirewallCustomRule(id: string, input: FirewallCustomRuleInput): Promise<CustomRuleSaved> {
+  return callCommand<CustomRuleSaved>("add_firewall_custom_rule", { id, input });
 }
 
-/** Deletes the rule then best-effort revokes it live - see the Rust `remove_custom_firewall_rule` doc comment. */
-export function removeFirewallCustomRule(id: string, ruleId: string): Promise<void> {
-  return callCommand<void>("remove_firewall_custom_rule", { id, ruleId });
+/** Deletes the rule then revokes it live - see the Rust `remove_custom_firewall_rule` doc comment. Returns what the live revoke did, same as `addFirewallCustomRule`. */
+export function removeFirewallCustomRule(id: string, ruleId: string): Promise<FirewallFollowUp> {
+  return callCommand<FirewallFollowUp>("remove_firewall_custom_rule", { id, ruleId });
 }
 
 /** Starts (or confirms already-running) the persistent Etap M3 connection for a just-paired Node - called right after `upsertAgentServer` succeeds, while host/port/the freshly issued credential are all still in hand. See the Rust `AgentSessionManager`'s own doc comment for why this only covers "stays connected for the running app session," not reconnecting after an app restart. */

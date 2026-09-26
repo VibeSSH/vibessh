@@ -17,6 +17,7 @@ import { Details } from "@/components/ui/Details";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { useServerPinging } from "@/hooks/useServerPinging";
 import { addApplicationPort, listApplications, removeApplicationPort, updateApplicationPort } from "@/services/applicationService";
+import { firewallFollowUpWarning } from "@/services/firewallWarnings";
 import {
   createDnsAlias,
   deleteDnsAlias,
@@ -566,7 +567,8 @@ function EndpointsPanel({ members, servers, meshStatus }: EndpointsPanelProps) {
 
   async function handleDelete(endpoint: NodeEndpoint) {
     try {
-      await removeApplicationPort(endpoint.applicationId, endpoint.id);
+      const warning = firewallFollowUpWarning(await removeApplicationPort(endpoint.applicationId, endpoint.id), t);
+      if (warning) toastError(warning);
       reload();
     } catch (err) {
       setError(errorMessage(err, t));
@@ -700,11 +702,11 @@ function EndpointFormModal({ applications, editing, onClose, onSaved }: Endpoint
     setBusy(true);
     setError(null);
     try {
-      if (editing) {
-        await updateApplicationPort(editing.applicationId, editing.id, input);
-      } else {
-        await addApplicationPort(applicationId, input);
-      }
+      const saved = editing ? await updateApplicationPort(editing.applicationId, editing.id, input) : await addApplicationPort(applicationId, input);
+      // This page is where a port is made "Vibe Network only", so a container
+      // restriction that did not land is the one thing it must not keep quiet.
+      const warning = firewallFollowUpWarning(saved.firewall, t);
+      if (warning) toastError(warning);
       onSaved();
     } catch (err) {
       setError(errorMessage(err, t));

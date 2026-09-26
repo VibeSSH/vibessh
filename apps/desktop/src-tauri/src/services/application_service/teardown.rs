@@ -182,7 +182,13 @@ pub async fn delete_application(
     // 5. Firewall and DNS, now that the desired state no longer mentions it.
     if let Some(server_id) = server_id {
         match crate::services::firewall_service::reconcile_node(repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await {
-            Ok(_) => report.firewall_synced = true,
+            // A container restriction left behind is a DROP for a port no
+            // longer anyone's - harmless until the next Application to
+            // publish that port finds its traffic dropped.
+            Ok(result) => match result.container_error {
+                None => report.firewall_synced = true,
+                Some(err) => report.warnings.push(format!("couldn't remove this application's container firewall rules: {err}")),
+            },
             Err(err) => report.warnings.push(format!("couldn't revoke this application's firewall rules: {err}")),
         }
         if network_repo.get(server_id)?.is_some() {

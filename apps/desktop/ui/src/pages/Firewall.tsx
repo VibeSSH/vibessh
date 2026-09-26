@@ -17,6 +17,7 @@ import {
   getNodeFirewallOverview,
   removeFirewallCustomRule,
   syncNodeFirewall,
+  type CustomRuleSaved,
   type FirewallCustomRuleInput,
   type FirewallRuleOrigin,
   type NodeFirewallOverview,
@@ -24,6 +25,7 @@ import {
 import { useServersStore } from "@/stores/serversStore";
 import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { toastSuccess } from "@/stores/toastStore";
+import { canonicalIpv4Source, firewallFollowUpWarning, firewallResultWarning } from "@/services/firewallWarnings";
 import "./pages.css";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -82,7 +84,9 @@ export function FirewallPage() {
     setSyncing(true);
     setActionError(null);
     try {
-      await syncNodeFirewall(serverId!);
+      // A sync can succeed for ufw and still fail to restrict container
+      // ports; that half used to be dropped here along with the whole result.
+      setActionError(firewallResultWarning(await syncNodeFirewall(serverId!), t));
       load();
     } catch (err) {
       setActionError(errorMessage(err, t));
@@ -100,7 +104,10 @@ export function FirewallPage() {
         setActionError(t("firewallPage.noBackend"));
         return;
       }
-      toastSuccess(t("firewallPage.securedToast"));
+      // "Secured" only when it is: ufw on, and container ports restricted.
+      const warning = result.unenforced ? t("firewallFollowUp.notActive") : firewallResultWarning(result, t);
+      if (warning) setActionError(warning);
+      else toastSuccess(t("firewallPage.securedToast"));
       load();
     } catch (err) {
       setActionError(errorMessage(err, t));
@@ -113,7 +120,7 @@ export function FirewallPage() {
     if (!deletingRule) return;
     setDeleting(true);
     try {
-      await removeFirewallCustomRule(serverId!, deletingRule.id);
+      setActionError(firewallFollowUpWarning(await removeFirewallCustomRule(serverId!, deletingRule.id), t));
       setDeletingRule(null);
       load();
     } catch (err) {
@@ -217,8 +224,9 @@ export function FirewallPage() {
         <AddCustomRuleModal
           serverId={serverId}
           onClose={() => setAddOpen(false)}
-          onAdded={() => {
+          onAdded={(saved) => {
             setAddOpen(false);
+            setActionError(firewallFollowUpWarning(saved.firewall, t));
             load();
           }}
         />
@@ -239,7 +247,7 @@ export function FirewallPage() {
 interface AddCustomRuleModalProps {
   serverId: string;
   onClose: () => void;
-  onAdded: () => void;
+  onAdded: (saved: CustomRuleSaved) => void;
 }
 
 function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalProps) {
@@ -264,6 +272,13 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
       setError(t("firewallPage.invalidCidr"));
       return;
     }
+    // Checked here as well as on the Rust side so the refusal is translated;
+    // the canonical spelling is what gets saved, see `canonicalIpv4Source`.
+    const source = restrictSource ? canonicalIpv4Source(sourceCidr) : null;
+    if (source && !source.ok) {
+      setError(source.network ? t("firewallPage.sourceHostBits", { network: source.network }) : t("firewallPage.invalidSource"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -271,10 +286,9 @@ function AddCustomRuleModal({ serverId, onClose, onAdded }: AddCustomRuleModalPr
         label: label.trim() || undefined,
         protocol,
         port: portNumber,
-        sourceCidr: restrictSource ? sourceCidr.trim() : undefined,
+        sourceCidr: source?.ok ? source.value : undefined,
       };
-      await addFirewallCustomRule(serverId, input);
-      onAdded();
+      onAdded(await addFirewallCustomRule(serverId, input));
     } catch (err) {
       setError(errorMessage(err, t));
     } finally {

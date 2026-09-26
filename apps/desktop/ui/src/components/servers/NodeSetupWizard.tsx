@@ -18,6 +18,7 @@ import {
 } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
 import { toastSuccess } from "@/stores/toastStore";
+import { firewallResultWarning } from "@/services/firewallWarnings";
 import type { NodeCapabilities } from "@/types/server";
 import { AgentPairingFlow } from "./AgentPairingFlow";
 import "./AddServerModal.css";
@@ -143,7 +144,14 @@ export function NodeSetupWizard({ serverId, serverName, onClose, onActivity }: N
         setSecuringError(t("secureFirewallModal.noBackend"));
         return;
       }
-      setFirewallActive(true);
+      // Read from the result rather than assumed: `enable` returning is not
+      // the Node reporting ufw active, and "secured" was toasted either way.
+      setFirewallActive(result.active);
+      const warning = result.unenforced ? t("firewallFollowUp.notActive") : firewallResultWarning(result, t);
+      if (warning) {
+        setSecuringError(warning);
+        return;
+      }
       toastSuccess(t("secureFirewallModal.securedToast", { name: serverName, backend: result.backend }));
     } catch (err) {
       setSecuringError(errorMessage(err, t));

@@ -14,6 +14,7 @@ use crate::firewall::{self, FirewallRule};
 use crate::models::{FirewallCustomRuleInput, PortProtocol, PortVisibility};
 use crate::network::wireguard;
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
+use crate::ssh::command;
 use crate::state::SshSessionManager;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
@@ -133,8 +134,37 @@ impl FirewallSyncResult {
     /// The result for a Node with no firewall backend at all. Deliberately
     /// not a `Default` impl - constructing one should always be a conscious
     /// choice, never what you get by forgetting a field.
-    fn unenforced() -> Self {
-        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true, container_error: None }
+    fn unenforced(container_error: Option<String>) -> Self {
+        Self { backend: None, active: false, rules_applied: 0, rules_removed: 0, unenforced: true, container_error }
+    }
+}
+
+/// What happened to the Node's firewall after a change that syncs it on the
+/// side - a port saved, a custom rule added or removed.
+///
+/// The change itself has already succeeded by the time the sync runs, so a
+/// failed sync is not the change's error. It used to be only a log line,
+/// which left the operator reading "saved" about a port the Node was still
+/// not allowing, or a Vibe Network port whose container restriction never
+/// landed. Carried back instead, for the interface to say so.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirewallFollowUp {
+    /// `None` when the sync failed, or there was nothing to sync (a Local
+    /// application).
+    pub result: Option<FirewallSyncResult>,
+    pub error: Option<AppError>,
+}
+
+impl FirewallFollowUp {
+    pub fn from_sync(outcome: AppResult<Option<FirewallSyncResult>>, what: &str) -> Self {
+        match outcome {
+            Ok(result) => Self { result, error: None },
+            Err(err) => {
+                log::warn!("firewall sync after {what} failed: {err}");
+                Self { result: None, error: Some(err) }
+            }
+        }
     }
 }
 
@@ -244,7 +274,24 @@ pub fn desired_rules(
     firewall_rule_repo: &FirewallRuleRepository,
     server_id: Uuid,
 ) -> AppResult<Vec<FirewallRule>> {
-    Ok(desired_rules_with_origin(app_repo, server_repo, network_repo, firewall_rule_repo, server_id)?.into_iter().map(|view| view.rule).collect())
+    Ok(desired_rules_with_origin(app_repo, server_repo, network_repo, firewall_rule_repo, server_id)?
+        .into_iter()
+        .filter(|view| match (&view.origin, &view.rule.source_cidr) {
+            // A custom rule saved before its source was validated. Left out
+            // of what is applied rather than sent to ufw - which would fail
+            // on it and take the whole sync with it - but still listed on
+            // the Firewall page, where it can be seen and removed.
+            (FirewallRuleOrigin::Custom { rule_id, .. }, Some(source)) => match command::canonical_ipv4_source(source, "the source") {
+                Ok(canonical) if &canonical == source => true,
+                _ => {
+                    log::warn!("skipping custom firewall rule {rule_id} on server {server_id}: its source {source:?} is not a valid IPv4 address or network");
+                    false
+                }
+            },
+            _ => true,
+        })
+        .map(|view| view.rule)
+        .collect())
 }
 
 /// Additive-only reconcile (see `firewall::mod`'s own doc comment) - adds
@@ -272,7 +319,12 @@ pub async fn reconcile_node(
     ) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult::unenforced());
+            // No ufw is no reason to skip the container rules: they live in
+            // iptables, not ufw, and a published Docker port bypasses ufw
+            // anyway. This used to return before reaching them, so on a
+            // Node without ufw a "Vibe Network only" container port had no
+            // filter-level restriction at all.
+            return Ok(FirewallSyncResult::unenforced(reconcile_containers(&connection, server_id, container_rules).await));
         };
         // Desired first, unconditionally - the SSH port (always first in
         // `rules`) must never go missing even for a moment, including the
@@ -280,23 +332,7 @@ pub async fn reconcile_node(
         // and the old one is about to be revoked below.
         provider.apply_rules(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
-        // Published Docker ports bypass ufw entirely, so a source-scoped
-        // rule only actually restricts container traffic once it also
-        // exists in `DOCKER-USER` - see that module's own doc comment.
-        // Best-effort: a Node with no Docker has nothing to reconcile, and
-        // an iptables failure must not make an otherwise-successful ufw
-        // sync look like a total failure.
-        let container_error = match firewall::docker_user::reconcile(&connection, container_rules).await {
-            Ok(_) => None,
-            // Still not fatal to the ufw sync, which did succeed - but it
-            // is carried out rather than logged, because a port whose
-            // container restriction did not land is not protected, and the
-            // interface has to be able to say so.
-            Err(err) => {
-                log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
-                Some(err.to_string())
-            }
-        };
+        let container_error = reconcile_containers(&connection, server_id, container_rules).await;
         let active = provider.is_active(&connection).await?;
         // A backend that exists but is switched off enforces nothing
         // either: the rules are recorded and take effect the moment it
@@ -337,20 +373,53 @@ pub async fn enable_node_firewall(
     server_id: Uuid,
 ) -> AppResult<FirewallSyncResult> {
     let rules = desired_rules(app_repo, server_repo, network_repo, firewall_rule_repo, server_id)?;
+    let container_rules = desired_container_rules(app_repo, network_repo, server_id)?;
 
-    async fn attempt(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid, rules: &[FirewallRule]) -> AppResult<FirewallSyncResult> {
+    async fn attempt(
+        server_repo: &ServerRepository,
+        sessions: &SshSessionManager,
+        server_id: Uuid,
+        rules: &[FirewallRule],
+        container_rules: &[firewall::docker_user::ContainerRule],
+    ) -> AppResult<FirewallSyncResult> {
         let connection = get_or_connect(server_repo, sessions, server_id).await?;
         let Some(provider) = firewall::provider_for(&connection).await? else {
-            return Ok(FirewallSyncResult::unenforced());
+            return Ok(FirewallSyncResult::unenforced(reconcile_containers(&connection, server_id, container_rules).await));
         };
         provider.enable(&connection, rules).await?;
         let rules_removed = revoke_obsolete_rules(provider.as_ref(), &connection, rules).await?;
+        // "Secure this server" is the operator asking for the Node to be
+        // protected, and for a published container port ufw alone does not
+        // do that. It never reconciled `DOCKER-USER`, so a Node secured
+        // before its first port sync had no container restriction at all.
+        let container_error = reconcile_containers(&connection, server_id, container_rules).await;
         let active = provider.is_active(&connection).await?;
-        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active, container_error: None })
+        Ok(FirewallSyncResult { backend: Some(provider.name().to_string()), active, rules_applied: rules.len(), rules_removed, unenforced: !active, container_error })
     }
 
     // Same recovery `reconcile_node` uses, and for the same reason.
-    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules)).await
+    retry_on_connection_failure(sessions, Some(server_id), || attempt(server_repo, sessions, server_id, &rules, &container_rules)).await
+}
+
+/// Brings the Node's `DOCKER-USER` chain in line, and says why if it could
+/// not.
+///
+/// Published Docker ports bypass ufw entirely, so a source-scoped rule only
+/// restricts container traffic once it also exists in `DOCKER-USER` - see
+/// that module's own doc comment. Not fatal to the sync around it: a Node
+/// with no Docker has nothing to reconcile, and an iptables failure must
+/// not make an otherwise successful ufw sync look like a total failure. But
+/// it is carried out rather than only logged, because a port whose
+/// container restriction did not land is not protected, and the interface
+/// has to be able to say so.
+async fn reconcile_containers(connection: &crate::ssh::SshSession, server_id: Uuid, container_rules: &[firewall::docker_user::ContainerRule]) -> Option<String> {
+    match firewall::docker_user::reconcile(connection, container_rules).await {
+        Ok(_) => None,
+        Err(err) => {
+            log::warn!("couldn't reconcile the DOCKER-USER chain on server {server_id}: {err}");
+            Some(err.to_string())
+        }
+    }
 }
 
 /// Diffs `desired` against whatever this backend can prove it already
@@ -546,12 +615,33 @@ pub async fn add_custom_firewall_rule(
     sessions: &SshSessionManager,
     server_id: Uuid,
     input: FirewallCustomRuleInput,
-) -> AppResult<crate::models::FirewallCustomRule> {
-    let created = firewall_rule_repo.create(server_id, &input)?;
-    if let Err(err) = reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await {
-        log::warn!("firewall sync after adding a custom rule failed (server {server_id}): {err}");
+) -> AppResult<CustomRuleSaved> {
+    // Checked before it is stored. It used to be stored as typed and pasted
+    // into the `ufw` command unquoted: anything else in the field ran as a
+    // shell command on the Node, and a merely wrong value made ufw fail on
+    // every later sync of that Node while this call reported success.
+    let source_cidr = match input.source_cidr.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(source) => Some(command::canonical_ipv4_source(source, "The source")?),
+    };
+    if input.port == 0 {
+        return Err(AppError::InvalidInput("The port must be between 1 and 65535".into()));
     }
-    Ok(created)
+    let input = FirewallCustomRuleInput { source_cidr, ..input };
+    let rule = firewall_rule_repo.create(server_id, &input)?;
+    let firewall = FirewallFollowUp::from_sync(
+        reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await.map(Some),
+        "adding a custom rule",
+    );
+    Ok(CustomRuleSaved { rule, firewall })
+}
+
+/// A saved custom rule, and what the Node made of it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomRuleSaved {
+    pub rule: crate::models::FirewallCustomRule,
+    pub firewall: FirewallFollowUp,
 }
 
 /// Removes a manual rule and best-effort revokes it live - same shape as
@@ -566,12 +656,12 @@ pub async fn remove_custom_firewall_rule(
     sessions: &SshSessionManager,
     server_id: Uuid,
     rule_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<FirewallFollowUp> {
     firewall_rule_repo.delete(rule_id)?;
-    if let Err(err) = reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await {
-        log::warn!("firewall sync after removing a custom rule failed (server {server_id}): {err}");
-    }
-    Ok(())
+    Ok(FirewallFollowUp::from_sync(
+        reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await.map(Some),
+        "removing a custom rule",
+    ))
 }
 
 /// Everything the Firewall page needs in one call - see
@@ -974,5 +1064,82 @@ LISTEN 0      4096            [::]:22            [::]:*    users:((\"sshd\",pid=
             }
         }
     }
+
+    /// A Node nothing answers on - a closed port on this machine, so the
+    /// sync fails at once rather than waiting out a timeout.
+    fn unreachable_server(server_repo: &ServerRepository) -> crate::models::Server {
+        server_repo
+            .create(&crate::models::ServerInput {
+                name: "Unreachable".into(),
+                host: "127.0.0.1".into(),
+                ssh_port: 1,
+                username: "root".into(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("x".into()),
+                key_passphrase: None,
+            })
+            .unwrap()
+    }
+
+    fn custom_input(source_cidr: Option<&str>) -> FirewallCustomRuleInput {
+        FirewallCustomRuleInput { label: None, protocol: PortProtocol::Tcp, port: 8443, source_cidr: source_cidr.map(str::to_string) }
+    }
+
+    /// The source used to be stored as typed and pasted into the `ufw`
+    /// command unquoted.
+    #[tokio::test]
+    async fn a_custom_rule_source_is_refused_before_it_is_stored() {
+        let (app_repo, server_repo, network_repo, firewall_rule_repo) = temp_setup();
+        let sessions = SshSessionManager::new();
+        let server = unreachable_server(&server_repo);
+
+        for source in ["10.0.0.0/8; reboot", "10.0.0.5/24"] {
+            let err = add_custom_firewall_rule(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, server.id, custom_input(Some(source)))
+                .await
+                .unwrap_err();
+            assert!(matches!(err, AppError::InvalidInput(_)), "{source:?}: {err}");
+        }
+        assert!(firewall_rule_repo.list(server.id).unwrap().is_empty(), "a refused rule must not be stored");
+    }
+
+    /// The rule is the operator's change and it stands; the Node not
+    /// following is reported beside it. Both halves used to be a log line.
+    #[tokio::test]
+    async fn a_custom_rule_is_stored_canonically_and_a_failed_sync_comes_back_with_it() {
+        let (app_repo, server_repo, network_repo, firewall_rule_repo) = temp_setup();
+        let sessions = SshSessionManager::new();
+        let server = unreachable_server(&server_repo);
+
+        let saved = add_custom_firewall_rule(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, server.id, custom_input(Some(" 10.0.0.5/32 ")))
+            .await
+            .unwrap();
+        assert_eq!(saved.rule.source_cidr.as_deref(), Some("10.0.0.5"));
+        assert!(saved.firewall.result.is_none());
+        assert!(saved.firewall.error.is_some(), "a sync that could not reach the Node must be returned, not only logged");
+
+        let removed = remove_custom_firewall_rule(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, &sessions, server.id, saved.rule.id).await.unwrap();
+        assert!(removed.error.is_some());
+        assert!(firewall_rule_repo.list(server.id).unwrap().is_empty());
+    }
+
+    /// A row saved before validation existed must not take every later sync
+    /// down with it, and must stay visible so it can be removed.
+    #[test]
+    fn a_custom_rule_saved_before_validation_is_listed_but_never_applied() {
+        let (app_repo, server_repo, network_repo, firewall_rule_repo) = temp_setup();
+        let server = unreachable_server(&server_repo);
+        let stale = firewall_rule_repo.create(server.id, &custom_input(Some("10.0.0.0/8 && reboot"))).unwrap();
+        let valid = firewall_rule_repo.create(server.id, &FirewallCustomRuleInput { port: 9443, ..custom_input(Some("10.0.0.0/8")) }).unwrap();
+
+        let listed = desired_rules_with_origin(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, server.id).unwrap();
+        assert!(listed.iter().any(|view| matches!(view.origin, FirewallRuleOrigin::Custom { rule_id, .. } if rule_id == stale.id)));
+
+        let applied = desired_rules(&app_repo, &server_repo, &network_repo, &firewall_rule_repo, server.id).unwrap();
+        assert!(applied.iter().all(|rule| rule.source_cidr.as_deref() != stale.source_cidr.as_deref()));
+        assert!(applied.iter().any(|rule| rule.port == valid.port && rule.source_cidr.as_deref() == Some("10.0.0.0/8")));
+    }
+
 
 }

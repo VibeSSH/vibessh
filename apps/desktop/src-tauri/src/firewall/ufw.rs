@@ -20,7 +20,7 @@
 
 use crate::errors::{AppError, AppResult};
 use crate::models::PortProtocol;
-use crate::ssh::SshSession;
+use crate::ssh::{command, SshSession};
 
 use super::{FirewallProvider, FirewallRule};
 
@@ -51,7 +51,9 @@ fn protocol_str(protocol: PortProtocol) -> &'static str {
 fn allow_command(rule: &FirewallRule) -> String {
     match &rule.source_cidr {
         None => format!("sudo ufw allow {}/{} comment 'vibessh'", rule.port, protocol_str(rule.protocol)),
-        Some(cidr) => format!("sudo ufw allow from {cidr} to any port {} proto {} comment 'vibessh'", rule.port, protocol_str(rule.protocol)),
+        // Quoted: a custom rule's source is typed by the operator, and until
+        // it was validated and quoted it reached this line as raw shell.
+        Some(cidr) => format!("sudo ufw allow from {} to any port {} proto {} comment 'vibessh'", command::quote(cidr), rule.port, protocol_str(rule.protocol)),
     }
 }
 
@@ -61,7 +63,7 @@ fn allow_command(rule: &FirewallRule) -> String {
 fn revoke_command(rule: &FirewallRule) -> String {
     match &rule.source_cidr {
         None => format!("sudo ufw delete allow {}/{}", rule.port, protocol_str(rule.protocol)),
-        Some(cidr) => format!("sudo ufw delete allow from {cidr} to any port {} proto {}", rule.port, protocol_str(rule.protocol)),
+        Some(cidr) => format!("sudo ufw delete allow from {} to any port {} proto {}", command::quote(cidr), rule.port, protocol_str(rule.protocol)),
     }
 }
 
@@ -305,7 +307,7 @@ mod tests {
     #[test]
     fn allow_command_scopes_to_a_source_cidr_when_set() {
         let scoped = FirewallRule { port: 25565, protocol: PortProtocol::Tcp, source_cidr: Some("10.77.0.0/16".to_string()) };
-        assert_eq!(allow_command(&scoped), "sudo ufw allow from 10.77.0.0/16 to any port 25565 proto tcp comment 'vibessh'");
+        assert_eq!(allow_command(&scoped), "sudo ufw allow from '10.77.0.0/16' to any port 25565 proto tcp comment 'vibessh'");
     }
 
     #[test]
@@ -338,7 +340,7 @@ mod tests {
     fn revoke_command_mirrors_allow_command_without_the_comment() {
         assert_eq!(revoke_command(&rule(25565, PortProtocol::Tcp)), "sudo ufw delete allow 25565/tcp");
         let scoped = FirewallRule { port: 8080, protocol: PortProtocol::Tcp, source_cidr: Some("10.77.0.0/16".to_string()) };
-        assert_eq!(revoke_command(&scoped), "sudo ufw delete allow from 10.77.0.0/16 to any port 8080 proto tcp");
+        assert_eq!(revoke_command(&scoped), "sudo ufw delete allow from '10.77.0.0/16' to any port 8080 proto tcp");
     }
 
     #[test]
@@ -431,8 +433,13 @@ ufw allow in on docker0 to any port 3306 proto tcp\n";
                 let protocol = if udp { PortProtocol::Udp } else { PortProtocol::Tcp };
                 let original = FirewallRule { port, protocol, source_cidr: cidr };
                 // `ufw show added` prints the command that was run, without
-                // the `sudo` the module adds when it runs it.
-                let line = allow_command(&original).replace("sudo ", "");
+                // the `sudo` the module adds when it runs it - and without
+                // the shell quoting, which the shell removed before ufw ever
+                // saw its arguments.
+                let mut line = allow_command(&original).replace("sudo ", "");
+                if let Some(cidr) = &original.source_cidr {
+                    line = line.replace(&command::quote(cidr), cidr);
+                }
                 let parsed = parse_added_rules(&line);
                 prop_assert_eq!(parsed.len(), 1, "did not read back: {:?}", line);
                 prop_assert_eq!(parsed[0].port, original.port);
