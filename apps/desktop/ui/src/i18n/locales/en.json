@@ -1950,6 +1950,11 @@
     "emptyTitle": "No servers yet",
     "grantFailed": "{{email}} - failed: {{error}}",
     "grantNoDevice": "{{email}} - has not opened VibeSSH on any device yet, so there is no key to install",
+    "skipped": {
+      "folder_unnameable": "{{application}}: this application's folder can't be written into a sudo rule, so file access was not given",
+      "no_console": "{{application}}: a systemd service has no console, so the console permission gives nothing here",
+      "nothing_to_name": "{{application}}: this application runs neither in Docker nor as a systemd service, so there is nothing on the Node to give"
+    },
     "grantOk": "{{email}} - account {{account}} created",
     "hostPlaceholder": "Host",
     "namePlaceholder": "Server name",

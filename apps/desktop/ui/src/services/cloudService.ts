@@ -224,6 +224,14 @@ export interface MemberAccessResult {
   hasKey: boolean;
   granted: boolean;
   error: string | null;
+  /** Permissions granted on one application that no sudo rule could carry. */
+  notes: SkippedGrant[];
+}
+
+/** Why a per-application permission was not written - see the Rust side's `member_sudoers::SkipReason`. */
+export interface SkippedGrant {
+  applicationId: string;
+  reason: "folder_unnameable" | "no_console" | "nothing_to_name";
 }
 
 /**

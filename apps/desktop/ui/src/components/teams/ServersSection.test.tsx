@@ -127,7 +127,7 @@ describe("ServersSection", () => {
   /// and the name was squeezed to nothing the first time a sync ran.
   it("keeps the server's name visible once the sync results are shown", async () => {
     syncTeamNodeAccess.mockResolvedValue({
-      members: [{ userId: "u1", email: "someone@example.com", nodeUsername: "vibessh-m-0123456789ab", hasKey: true, granted: true, error: null }],
+      members: [{ userId: "u1", email: "someone@example.com", nodeUsername: "vibessh-m-0123456789ab", hasKey: true, granted: true, error: null, notes: [] }],
       revocations: [],
     });
     render(<ServersSection teamId={TEAM_ID} canManage />);

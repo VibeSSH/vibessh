@@ -28,6 +28,7 @@ use uuid::Uuid;
 
 use crate::errors::{AppError, AppResult};
 use crate::member_account;
+use crate::member_sudoers;
 use crate::models::CloudMemberAccess;
 use crate::services::ssh_service::get_or_connect;
 use crate::state::{CloudState, SshSessionManager};
@@ -50,6 +51,10 @@ pub struct MemberAccessResult {
     pub has_key: bool,
     pub granted: bool,
     pub error: Option<String>,
+    /// Per-application permissions that were asked for and could not be
+    /// written - a folder a rule cannot name, a console a service does not
+    /// have. Not a failed grant, and not something to leave unsaid.
+    pub notes: Vec<member_sudoers::SkippedGrant>,
 }
 
 /// What happened to one person's access that the team has taken away.
@@ -104,8 +109,22 @@ pub async fn sync_team_access(
     let members = crate::services::cloud_service::list_team_access(cloud, team_id).await?;
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
 
+    // Each member's per-application rules, for the Applications on this Node
+    // only - the grants cover every Node the team shares.
+    let rules_by_member: Vec<Vec<member_sudoers::ApplicationRules>> =
+        members.iter().map(|member| application_rules_on(member, team_server_id)).collect();
+
+    // Installed before anybody is granted it, so a console rule never names
+    // a writer that is not there yet.
+    let console_writer = if rules_by_member.iter().flatten().any(|rules| rules.console.is_some()) {
+        ensure_console_writer_installed(&connection).await
+    } else {
+        Ok(())
+    };
+
     let mut results = Vec::new();
-    for member in members {
+    for (member, rules) in members.into_iter().zip(rules_by_member) {
+        let notes: Vec<member_sudoers::SkippedGrant> = rules.iter().flat_map(|rules| rules.skipped.iter().cloned()).collect();
         let has_key = !member.public_keys.is_empty();
         if !has_key {
             results.push(MemberAccessResult {
@@ -115,11 +134,18 @@ pub async fn sync_team_access(
                 has_key: false,
                 granted: false,
                 error: None,
+                notes,
             });
             continue;
         }
 
-        let outcome = grant_one(&connection, &member).await;
+        let outcome = match &console_writer {
+            // Nothing is granted on top of a writer that failed to install:
+            // their console rule would name a missing file, and the rest of
+            // the rules would read as a complete grant.
+            Err(err) if rules.iter().any(|rules| rules.console.is_some()) => Err(AppError::Connection(err.to_string())),
+            _ => grant_one(&connection, &member, &rules).await,
+        };
         results.push(MemberAccessResult {
             user_id: member.user_id,
             email: member.email,
@@ -127,6 +153,7 @@ pub async fn sync_team_access(
             has_key: true,
             granted: outcome.is_ok(),
             error: outcome.err().map(|err| err.to_string()),
+            notes,
         });
     }
 
@@ -182,7 +209,57 @@ async fn revoke_one(
     crate::services::cloud_service::complete_revocation(cloud, team_id, revocation.id).await
 }
 
-async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAccess) -> AppResult<()> {
+/// The rules one member's per-application grants earn on this Node.
+///
+/// An Application with no `team_server_id`, or on another Node, earns
+/// nothing here; one whose runtime has no container or unit to name is said
+/// so in the notes rather than dropped.
+fn application_rules_on(member: &CloudMemberAccess, team_server_id: Uuid) -> Vec<member_sudoers::ApplicationRules> {
+    member
+        .applications
+        .iter()
+        .filter(|application| application.team_server_id == Some(team_server_id))
+        .map(|application| match member_sudoers::GrantRuntime::from_projection(&application.runtime_type) {
+            Some(runtime) => member_sudoers::application_rules(&member_sudoers::ApplicationGrant {
+                application_id: application.local_id,
+                runtime,
+                working_directory: application.working_directory.clone(),
+                permissions: application.permissions.clone(),
+            }),
+            None => member_sudoers::ApplicationRules {
+                skipped: vec![member_sudoers::SkippedGrant {
+                    application_id: application.local_id,
+                    reason: member_sudoers::SkipReason::NothingToName,
+                }],
+                ..Default::default()
+            },
+        })
+        .collect()
+}
+
+/// Puts the console writer in place when it is missing or out of date - the
+/// same compare-then-install the file helper and the schedule runner use.
+async fn ensure_console_writer_installed(connection: &crate::ssh::SshSession) -> AppResult<()> {
+    let writer = crate::ssh::command::quote(member_sudoers::CONSOLE_WRITER_PATH);
+    let deployed = connection.execute_command(&format!("sudo cat {writer} 2>/dev/null")).await;
+    if matches!(deployed, Ok(ref output) if output.stdout == member_sudoers::CONSOLE_WRITER_SCRIPT) {
+        return Ok(());
+    }
+    // Staged in the admin's own home over SFTP, then moved into place as
+    // root: nothing passes through a world-writable directory (AGENTS.md 4).
+    let staging = format!(".vibessh-console-write-{}", Uuid::new_v4());
+    connection.write_file(&staging, member_sudoers::CONSOLE_WRITER_SCRIPT.as_bytes()).await?;
+    let staging = crate::ssh::command::quote(&staging);
+    let output = connection
+        .execute_command(&format!("sudo install -D -o root -g root -m 0755 {staging} {writer}; rc=$?; rm -f {staging}; exit $rc"))
+        .await?;
+    if output.exit_code != 0 {
+        return Err(AppError::Connection(format!("couldn't install the console writer: {}", output.stderr.trim())));
+    }
+    Ok(())
+}
+
+async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAccess, applications: &[member_sudoers::ApplicationRules]) -> AppResult<()> {
     let username = &member.node_username;
     member_account::run(connection, &member_account::provision_script(username)?, "create the member's account").await?;
     // The keys before the sudo rule. An account that can log in and do
@@ -197,7 +274,7 @@ async fn grant_one(connection: &crate::ssh::SshSession, member: &CloudMemberAcce
     // Last, and derived from their role rather than blanket. A member whose
     // role earns nothing privileged ends up with no sudoers file at all,
     // which is the whole of stage 3 - see `member_sudoers`.
-    member_account::run(connection, &member_account::sudoers_script(username, &member.permissions)?, "set the member's sudo rules").await
+    member_account::run(connection, &member_account::sudoers_script(username, &member.permissions, applications)?, "set the member's sudo rules").await
 }
 
 /// What this person logs in as on a shared Node, and with which key.

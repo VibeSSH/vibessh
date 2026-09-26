@@ -37,7 +37,7 @@ pub use database::{ApplicationDatabase, CreateApplicationDatabaseInput, CreateDa
 pub use cloud::{
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
-    CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation, CloudSessionInfo, CloudTeam, CloudTeamMember,
+    CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudMemberApplicationAccess, CloudNodeRevocation, CloudSessionInfo, CloudTeam, CloudTeamMember,
     CloudTwoFactorEnabled, CloudTwoFactorSetup, CloudUserProfile,
 };
 pub use dns::{DnsRecord, DnsRecordInput, DnsView, DnsViewKind};

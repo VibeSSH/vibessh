@@ -118,13 +118,20 @@ pub fn authorized_keys_script(username: &str, keys: &[String]) -> AppResult<Stri
 /// `command -v` and drops the rules for anything that is not installed -
 /// which is also how a Node without Docker avoids a rule naming a binary
 /// that is not there.
-pub fn sudoers_script(username: &str, permissions: &[String]) -> AppResult<String> {
+///
+/// **Per-Application rules** (`applications`) sit beside the role's: the
+/// member's role decides what they may do with every Application, each
+/// grant what they may do with one. A role that is root already covers them,
+/// so they are only written when it is not.
+pub fn sudoers_script(username: &str, permissions: &[String], applications: &[member_sudoers::ApplicationRules]) -> AppResult<String> {
     validate_linux_username(username, "the member's account name")?;
     let path = shell_quote(&sudoers_path(username));
     let temporary = shell_quote(&format!("{}.new", sudoers_path(username)));
 
     let privilege = member_sudoers::privilege_for(permissions);
     let helper = member_sudoers::may_use_the_file_helper(permissions);
+    let is_root = matches!(privilege, member_sudoers::Privilege::Root { .. });
+    let applications: &[member_sudoers::ApplicationRules] = if is_root { &[] } else { applications };
 
     // The account name goes into a rule unquoted, because sudoers is not a
     // shell and quotes would become part of the name. That is safe only
@@ -144,18 +151,47 @@ pub fn sudoers_script(username: &str, permissions: &[String]) -> AppResult<Strin
         // `files::sudo_user` already installs.
         lines.push(format!("{username} ALL=(%{group}) NOPASSWD: {helper_path}", group = APPLICATION_GROUP, helper_path = FILE_HELPER_PATH));
     }
+    for application in applications {
+        // The writer's path is fixed, and the id is a UUID, so this needs
+        // nothing resolved on the far side.
+        if let Some(id) = application.console {
+            lines.push(format!("{username} ALL=(root) NOPASSWD: {writer} {id}", writer = member_sudoers::CONSOLE_WRITER_PATH));
+        }
+    }
 
     // Everything above is known here. The command rules are not, because
     // their paths only exist on the far side, so they are appended by the
     // script itself.
+    let mut commands: std::collections::BTreeSet<member_sudoers::AllowedCommand> = std::collections::BTreeSet::new();
+    if let member_sudoers::Privilege::Commands(role_commands) = &privilege {
+        commands.extend(role_commands.iter().cloned());
+    }
+    for application in applications {
+        commands.extend(application.commands.iter().cloned());
+    }
+    // Appended through `sudo tee -a`, not `>>`: the file was created by
+    // `sudo tee` and belongs to root, and a `>>` is opened by the admin's own
+    // shell. Connecting as root hid that; as any other admin the append was
+    // refused, and `set -e` ended the sync on the first rule.
     let mut resolvers = String::new();
-    if let member_sudoers::Privilege::Commands(commands) = &privilege {
-        for allowed in commands {
-            let arguments = if allowed.arguments.is_empty() { String::new() } else { format!(" {}", allowed.arguments) };
+    for allowed in &commands {
+        let arguments = if allowed.arguments.is_empty() { String::new() } else { format!(" {}", allowed.arguments) };
+        resolvers.push_str(&format!(
+            "p=$(command -v {binary} 2>/dev/null) && printf '%s ALL=(root) NOPASSWD: %s{arguments}\\n' {user} \"$p\" | sudo tee -a {temporary} >/dev/null; ",
+            binary = shell_quote(allowed.binary),
+            user = shell_quote(username),
+        ));
+    }
+    // An Application's account exists only once it has been started with
+    // one, and a rule naming a missing account is a rule for nobody - so,
+    // like a command's path, whether to write it is decided on the Node.
+    for application in applications {
+        if let Some(files) = &application.files {
+            let rule = format!("{username} ALL=({account}) NOPASSWD: {commands}", account = files.account, commands = files.commands());
             resolvers.push_str(&format!(
-                "p=$(command -v {binary} 2>/dev/null) && printf '%s ALL=(root) NOPASSWD: %s{arguments}\\n' {user} \"$p\" >> {temporary}; ",
-                binary = shell_quote(allowed.binary),
-                user = shell_quote(username),
+                "id -u {account} >/dev/null 2>&1 && printf '%s\\n' {rule} | sudo tee -a {temporary} >/dev/null; ",
+                account = shell_quote(&files.account),
+                rule = shell_quote(&rule),
             ));
         }
     }
@@ -214,7 +250,7 @@ mod tests {
         for name in ["../root", "a b", "root; rm -rf /", "UPPER", ""] {
             assert!(provision_script(name).is_err(), "{name} was accepted");
             assert!(authorized_keys_script(name, &[]).is_err(), "{name} was accepted");
-            assert!(sudoers_script(name, &admin()).is_err(), "{name} was accepted");
+            assert!(sudoers_script(name, &admin(), &[]).is_err(), "{name} was accepted");
         }
     }
 
@@ -262,7 +298,7 @@ mod tests {
     /// on a remote Node means physical access.
     #[test]
     fn the_sudoers_file_is_checked_before_it_is_installed() {
-        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin(), &[]).unwrap();
         let check = script.find("visudo -c").expect("no syntax check at all");
         let install = script.rfind("mv").expect("nothing is moved into place");
         assert!(check < install, "the check has to happen before the move: {script}");
@@ -273,7 +309,7 @@ mod tests {
     /// privileged does not leave a rule behind, it takes one away.
     #[test]
     fn a_role_earning_nothing_removes_the_file_rather_than_writing_an_empty_one() {
-        let script = sudoers_script("vibessh-m-0123456789ab", &["team.view".to_string()]).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &["team.view".to_string()], &[]).unwrap();
         assert!(script.contains("rm -f"), "{script}");
         assert!(!script.contains("NOPASSWD"), "nothing should be granted: {script}");
     }
@@ -282,7 +318,7 @@ mod tests {
     #[test]
     fn a_narrow_role_writes_specific_commands_and_no_blanket_rule() {
         let held = vec!["applications.view".to_string(), "applications.lifecycle".to_string()];
-        let script = sudoers_script("vibessh-m-0123456789ab", &held).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &held, &[]).unwrap();
         assert!(!script.contains("NOPASSWD: ALL"), "a narrow role must not get the blanket rule: {script}");
         // Resolved on the far side, because sudo needs a full path and
         // `docker` is not in the same place on every distribution.
@@ -296,7 +332,7 @@ mod tests {
     /// the machine, months later, wondering why this account is root.
     #[test]
     fn a_root_equivalent_role_writes_the_blanket_rule_and_names_the_reason() {
-        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin(), &[]).unwrap();
         assert!(script.contains("NOPASSWD: ALL"), "{script}");
         assert!(script.contains("node.terminal"), "the file should say what decided this: {script}");
     }
@@ -305,7 +341,7 @@ mod tests {
     /// Application's own account, through the helper that already exists.
     #[test]
     fn file_access_runs_as_the_applications_account_and_not_as_root() {
-        let script = sudoers_script("vibessh-m-0123456789ab", &["applications.files.write".to_string()]).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &["applications.files.write".to_string()], &[]).unwrap();
         assert!(script.contains("(%vibessh-apps)"), "{script}");
         assert!(script.contains("/usr/local/lib/vibessh/file-helper.sh"), "{script}");
         assert!(!script.contains("NOPASSWD: ALL"), "{script}");
@@ -315,11 +351,69 @@ mod tests {
     /// next run to move into place.
     #[test]
     fn a_file_that_fails_its_check_is_removed_rather_than_left() {
-        let script = sudoers_script("vibessh-m-0123456789ab", &admin()).unwrap();
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin(), &[]).unwrap();
         let check = script.find("visudo -c").expect("no syntax check at all");
         let cleanup = script[check..].find("rm -f").expect("nothing cleans up a rejected file");
         let install = script[check..].find("mv").expect("nothing is moved into place");
         assert!(cleanup < install, "the rejected file has to go before the move: {script}");
+    }
+
+    fn oneblock(keys: &[&str]) -> member_sudoers::ApplicationRules {
+        member_sudoers::application_rules(&member_sudoers::ApplicationGrant {
+            application_id: uuid::Uuid::parse_str("3fe67742-ebd2-453d-b1ee-ae1bb75911dd").unwrap(),
+            runtime: member_sudoers::GrantRuntime::Docker,
+            working_directory: "/srv/vibessh/oneblock".to_string(),
+            permissions: keys.iter().map(|key| (*key).to_string()).collect(),
+        })
+    }
+
+    /// A member with no role beyond seeing the team, and restart, console
+    /// and files on one Application: a file with exactly that, checked
+    /// before it is installed, and never the blanket rule.
+    #[test]
+    fn per_application_grants_are_written_beside_a_role_that_earns_nothing() {
+        let applications = [oneblock(&["applications.lifecycle", "applications.console", "applications.files.write"])];
+        let script = sudoers_script("vibessh-m-0123456789ab", &["team.view".to_string()], &applications).unwrap();
+        assert!(!script.contains("NOPASSWD: ALL"), "{script}");
+        assert!(script.contains("restart vibessh-app-3fe67742-ebd2-453d-b1ee-ae1bb75911dd"), "{script}");
+        assert!(script.contains("/usr/local/lib/vibessh/console-write 3fe67742-ebd2-453d-b1ee-ae1bb75911dd"), "{script}");
+        // The Application's own account, and only if it exists on the Node.
+        assert!(script.contains("id -u 'vibessh-app-3fe67742ebd2'"), "{script}");
+        assert!(script.contains("ALL=(vibessh-app-3fe67742ebd2) NOPASSWD: /usr/local/lib/vibessh/file-helper.sh /srv/vibessh/oneblock *"), "{script}");
+        assert!(script.contains("visudo -c"), "{script}");
+    }
+
+    /// A role that is already root makes per-application rules decoration -
+    /// a list of specific commands beside `ALL` reads as a limit that is
+    /// not there.
+    #[test]
+    fn a_root_role_is_not_dressed_up_with_per_application_rules() {
+        let script = sudoers_script("vibessh-m-0123456789ab", &admin(), &[oneblock(&["applications.lifecycle"])]).unwrap();
+        assert!(script.contains("NOPASSWD: ALL"), "{script}");
+        assert!(!script.contains("restart vibessh-app-3fe67742"), "{script}");
+    }
+
+    /// The rules file belongs to root from the moment `sudo tee` creates it.
+    /// A `>>` is opened by the admin's own shell, which works as root and
+    /// fails as anybody else - checked in an Ubuntu container as a non-root
+    /// admin, where it ended the sync on the first rule.
+    #[test]
+    fn rules_are_appended_through_sudo_and_never_by_the_admins_shell() {
+        let applications = [oneblock(&["applications.lifecycle", "applications.files.read"])];
+        let script = sudoers_script("vibessh-m-0123456789ab", &["applications.view".to_string()], &applications).unwrap();
+        assert!(!script.contains(">> '/etc/sudoers.d/"), "{script}");
+        assert!(script.contains("| sudo tee -a '/etc/sudoers.d/vibessh-m-0123456789ab.new'"), "{script}");
+    }
+
+    /// The generated script is shell run as the admin over SSH; it has to
+    /// parse, per-application rules and all.
+    #[test]
+    fn the_script_with_per_application_rules_parses() {
+        let applications = [oneblock(&["applications.lifecycle", "applications.console", "applications.files.read"])];
+        let script = sudoers_script("vibessh-m-0123456789ab", &["applications.view".to_string()], &applications).unwrap();
+        if let Ok(status) = std::process::Command::new("sh").arg("-n").arg("-c").arg(&script).status() {
+            assert!(status.success(), "{script}");
+        }
     }
 
     /// A key's comment field is free text and arrives from another person's

@@ -1958,6 +1958,11 @@
     "emptyTitle": "Brak serwerów",
     "grantFailed": "{{email}} — nie udało się: {{error}}",
     "grantNoDevice": "{{email}} — nie otworzył jeszcze VibeSSH na żadnym urządzeniu, więc nie ma czego zainstalować",
+    "skipped": {
+      "folder_unnameable": "{{application}}: nazwy folderu tej aplikacji nie da się zapisać w regule sudo, więc dostęp do plików nie został nadany",
+      "no_console": "{{application}}: usługa systemd nie ma konsoli, więc prawo do konsoli nic tu nie daje",
+      "nothing_to_name": "{{application}}: ta aplikacja nie działa w Dockerze ani jako usługa systemd, więc na Nodzie nie ma czego jej nadać"
+    },
     "grantOk": "{{email}} — konto {{account}} utworzone",
     "hostPlaceholder": "Host",
     "namePlaceholder": "Nazwa serwera",

@@ -105,6 +105,25 @@ pub struct CloudMemberAccess {
     /// the sudo rules their account gets - see stage 3 of the design.
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// The shared Applications this member is on the list for, and what they
+    /// may do with each. Defaulted, for a backend from before
+    /// per-application permissions.
+    #[serde(default)]
+    pub applications: Vec<CloudMemberApplicationAccess>,
+}
+
+/// One shared Application a member is on the list for - see
+/// `member_sudoers::application_rules`, which turns it into rules naming
+/// that Application's container, unit and account only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudMemberApplicationAccess {
+    pub local_id: Uuid,
+    pub team_server_id: Option<Uuid>,
+    pub runtime_type: String,
+    pub working_directory: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 /// Access taken away in the team that is still on a Node.

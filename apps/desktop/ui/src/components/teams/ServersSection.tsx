@@ -13,6 +13,7 @@ import {
   cloudListServers,
   cloudMyNodeAccess,
   listPendingRevocations,
+  listTeamApplications,
   syncTeamNodeAccess,
   type MyNodeAccess,
   type NodeAccessSync,
@@ -60,6 +61,9 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
   const [sshPort, setSshPort] = useState("22");
   const [username, setUsername] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Shared applications' names by their local id, so a sync's notes can say
+   * which application they are about. Only read once a sync has something to say. */
+  const [applicationNames, setApplicationNames] = useState<Record<string, string>>({});
 
   function load() {
     setLoading(true);
@@ -112,6 +116,11 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
     try {
       const result = await syncTeamNodeAccess(local.id, teamId, server.id);
       setGrantResults((current) => ({ ...current, [server.id]: result }));
+      if (result.members.some((member) => member.notes.length > 0)) {
+        listTeamApplications(teamId)
+          .then((shared) => setApplicationNames(Object.fromEntries(shared.map((application) => [application.localId, application.name]))))
+          .catch(() => setApplicationNames({}));
+      }
       const granted = result.members.filter((member) => member.granted).length;
       const revoked = result.revocations.filter((revocation) => revocation.completed).length;
       toastSuccess(t("teamServers.syncedToast", { granted, revoked }));
@@ -298,6 +307,13 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                         : result.hasKey
                           ? t("teamServers.grantFailed", { email: result.email, error: result.error ?? "" })
                           : t("teamServers.grantNoDevice", { email: result.email })}
+                      {result.notes.map((note) => (
+                        <div key={`${note.applicationId}-${note.reason}`} className="team-servers-grant-note">
+                          {t(`teamServers.skipped.${note.reason}`, {
+                            application: applicationNames[note.applicationId] ?? note.applicationId.slice(0, 8),
+                          })}
+                        </div>
+                      ))}
                     </li>
                   ))}
                   {grantResults[server.id].revocations.map((revocation) => (

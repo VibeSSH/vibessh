@@ -170,6 +170,37 @@ two-factor off takes the password and a current second factor, so a stolen
 session cannot remove it. The QR code is drawn on the desktop, so the
 secret never reaches a QR service.
 
+## A team member's account on a Node
+
+A team member reaches a Node through their own account (`vibessh-m-...`),
+whose sudo rules are written by an access sync from what the team says they
+may do (`member_sudoers`, `docs/planning/team-access-design.md`). Two
+sources feed those rules, and they mean different things:
+
+- **A role** is team-wide. Its narrow permissions name `vibessh-app-*`,
+  every Application on the Node; the rest of the catalog is root, and the
+  rule written says so.
+- **A grant on one Application** (its Users tab) names that Application
+  only: `docker start|stop|restart|kill vibessh-app-<id>` by exact name,
+  `inspect` and `logs` of the same, the file helper run as that
+  Application's own account with its folder fixed as the first argument
+  (read-only grants name only the helper's read operations), and the
+  console through `/usr/local/lib/vibessh/console-write <id>`.
+
+The console writer is a root-run script taking another person's input. It
+takes the Application id as its only argument and checks it is a UUID
+before it becomes a path, reads exactly one line from stdin - never from
+the command line - and writes it under `timeout`. A folder a sudoers rule
+could not hold as a literal (anything but letters, digits and `/ . _ -`,
+or any `..`) earns no file rule, and the sync says so.
+
+What this does not do: the rules name containers by the Application's
+local id, taken from the shared projection its owner pushed. Somebody who
+can push a projection (`applications.create`) is already trusted with
+root-equivalent rights on the Node, so this does not widen what they can
+reach. And `systemctl status` is only allowed with `--no-pager`: without
+it `less` runs as root, and `!sh` in `less` is a root shell.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

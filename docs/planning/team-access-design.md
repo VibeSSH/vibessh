@@ -178,6 +178,24 @@ person no longer has access" and "we asked" is the entire point.
    which a sync would grant them their account and take it away again in the
    same pass.
 
+5. **Permissions on one Application**, what Pterodactyl calls a subuser.
+   *Done on the Node side.* A role is team-wide, so "may restart this server
+   and nothing else" had nowhere to live. The Application's Users tab now
+   carries, per person, a subset of the four permissions a Node can hold to
+   one Application - start/stop, the console, reading files, writing them
+   (`APPLICATION_SCOPED`, migration 0017). The access sync writes them as
+   rules naming that Application alone, by exact container name, never
+   `vibessh-app-*`: `*` in sudoers matches spaces, and `docker stop` takes
+   several containers. Being on the list is viewing; the root-equivalent
+   permissions stay in roles. The rules come from the shared projection
+   rather than the syncing install's own database, so two admins syncing
+   one Node do not drop each other's grants.
+
+   What is not done yet: a member's own install cannot open a shared
+   Application at all - it sees a list on the team page. Until it can, the
+   grants are real on the Node (the member's account can do exactly that
+   and no more) and reachable only from a terminal.
+
 Stage 1 without stage 3 must not describe roles as restrictions anywhere in
 the interface. That wording can only appear once the Node enforces them.
 
