@@ -3,7 +3,7 @@ mod app_info_service;
 mod application_backup_service;
 mod application_files_service;
 mod application_service;
-mod cloud_service;
+pub mod cloud_service;
 mod database_service;
 mod dns_service;
 mod firewall_service;

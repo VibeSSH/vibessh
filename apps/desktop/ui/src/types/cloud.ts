@@ -9,6 +9,8 @@ export interface CloudUserProfile {
    * holds, so the app sends them to that screen rather than letting them
    * discover it one failed call at a time. */
   mustChangePassword: boolean;
+  /** Whether signing in takes a code from an authenticator app too. */
+  twoFactorEnabled?: boolean;
 }
 
 /** The account a team lead just created, with the only readable copy of its

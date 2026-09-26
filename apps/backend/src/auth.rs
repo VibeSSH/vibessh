@@ -12,8 +12,16 @@ use axum::Json;
 use uuid::Uuid;
 
 use crate::errors::{ApiError, ApiResult, Detail};
-use crate::models::{AuthResponse, ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, User, UserProfile};
-use crate::{jwt, password, refresh_token, AppState};
+use crate::models::{
+    AuthResponse, ChangePasswordRequest, LoginRequest, RefreshRequest, RegisterRequest, TwoFactorDisableRequest, TwoFactorEnableRequest,
+    TwoFactorEnabledResponse, TwoFactorSetupResponse, User, UserProfile,
+};
+use crate::{jwt, password, refresh_token, two_factor, AppState};
+
+/// Every column `User` reads, in one place - the four queries that load a
+/// user must agree, and `two_factor_enabled` is computed rather than stored.
+const USER_COLUMNS: &str =
+    "id, email, password_hash, display_name, created_at, must_change_password, (totp_enabled_at IS NOT NULL) AS two_factor_enabled";
 
 const MAX_DISPLAY_NAME_LEN: usize = 100;
 
@@ -121,7 +129,7 @@ pub async fn register(
 
     // Self-registered: the person chose this password themselves, so
     // there is nothing to force them to replace.
-    let user = User { id: user_id, email, password_hash, display_name, created_at: now, must_change_password: false };
+    let user = User { id: user_id, email, password_hash, display_name, created_at: now, must_change_password: false, two_factor_enabled: false };
     let response = issue_auth_response(&state, &user).await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
@@ -155,7 +163,7 @@ pub async fn login(
     }
 
     let user: Option<User> = sqlx::query_as(
-        "SELECT id, email, password_hash, display_name, created_at, must_change_password FROM users WHERE email = $1",
+        &format!("SELECT {USER_COLUMNS} FROM users WHERE email = $1"),
     )
     .bind(&email)
     .fetch_optional(&state.db)
@@ -173,13 +181,149 @@ pub async fn login(
         return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
     }
 
+    // Only after the password: asking for a code tells the caller the
+    // password was right, so it must not be said to somebody who got it wrong.
+    if user.two_factor_enabled {
+        check_second_factor(&state, user.id, body.totp_code.as_deref(), body.recovery_code.as_deref()).await?;
+    }
+
     Ok(Json(issue_auth_response(&state, &user).await?))
+}
+
+/// The second factor for an account that has one: a code from the app, or a
+/// recovery code, each accepted once.
+///
+/// Neither given is `two_factor_required` - the client's cue to ask for one
+/// and send the sign-in again with it. The replay guard is enforced in the
+/// same statement that records the use, so two requests racing with one code
+/// cannot both succeed.
+async fn check_second_factor(state: &AppState, user_id: Uuid, totp_code: Option<&str>, recovery_code: Option<&str>) -> ApiResult<()> {
+    let invalid = || ApiError::Unauthorized(Detail::new("two_factor_invalid", "that code isn't right - check the time on your phone, or use a recovery code"));
+    let (stored, last_step): (Option<Vec<u8>>, Option<i64>) =
+        sqlx::query_as("SELECT totp_secret, totp_last_step FROM users WHERE id = $1").bind(user_id).fetch_one(&state.db).await?;
+    let Some(stored) = stored else {
+        return Ok(());
+    };
+
+    if let Some(code) = totp_code.map(str::trim).filter(|code| !code.is_empty()) {
+        let cipher = two_factor::cipher().ok_or_else(two_factor_unavailable)?;
+        let secret = two_factor::decrypt(cipher, user_id, &stored).map_err(ApiError::Internal)?;
+        let step = two_factor::verify(&secret, code, chrono::Utc::now().timestamp(), last_step).ok_or_else(invalid)?;
+        let recorded = sqlx::query("UPDATE users SET totp_last_step = $1 WHERE id = $2 AND (totp_last_step IS NULL OR totp_last_step < $1)")
+            .bind(step)
+            .bind(user_id)
+            .execute(&state.db)
+            .await?;
+        return if recorded.rows_affected() == 1 { Ok(()) } else { Err(invalid()) };
+    }
+
+    if let Some(code) = recovery_code.map(two_factor::normalize_recovery_code).filter(|code| !code.is_empty()) {
+        let used = sqlx::query("UPDATE totp_recovery_codes SET used_at = $1 WHERE user_id = $2 AND code_hash = $3 AND used_at IS NULL")
+            .bind(chrono::Utc::now())
+            .bind(user_id)
+            .bind(crate::tokens::hash(&code))
+            .execute(&state.db)
+            .await?;
+        return if used.rows_affected() == 1 { Ok(()) } else { Err(invalid()) };
+    }
+
+    Err(ApiError::Unauthorized(Detail::new("two_factor_required", "enter the code from your authenticator app")))
+}
+
+fn two_factor_unavailable() -> ApiError {
+    ApiError::InvalidInput(Detail::new(
+        "two_factor_unavailable",
+        "two-factor sign-in isn't available on this server - its TOTP_ENCRYPTION_KEY is not set",
+    ))
+}
+
+/// Starts turning two-factor on: a new secret, kept as pending until a code
+/// from the app confirms it (`two_factor_enable`). Starting again replaces a
+/// pending one, so a setup abandoned half-way costs nothing.
+pub async fn two_factor_setup(State(state): State<AppState>, AuthUser(user_id): AuthUser) -> ApiResult<Json<TwoFactorSetupResponse>> {
+    let cipher = two_factor::cipher().ok_or_else(two_factor_unavailable)?;
+    let user: User = sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1")).bind(user_id).fetch_one(&state.db).await?;
+    if user.two_factor_enabled {
+        return Err(ApiError::Conflict(Detail::new("two_factor_already_enabled", "two-factor sign-in is already on for this account")));
+    }
+    let secret = two_factor::generate_secret();
+    let encrypted = two_factor::encrypt(cipher, user_id, &secret).map_err(ApiError::Internal)?;
+    sqlx::query("UPDATE users SET totp_pending_secret = $1 WHERE id = $2").bind(encrypted).bind(user_id).execute(&state.db).await?;
+    Ok(Json(TwoFactorSetupResponse { secret: two_factor::base32(&secret), otpauth_uri: two_factor::otpauth_uri(&user.email, &secret) }))
+}
+
+/// Confirms the pending secret with a code from the app and turns two-factor
+/// on, returning the recovery codes - the only time they are ever shown.
+pub async fn two_factor_enable(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Json(body): Json<TwoFactorEnableRequest>,
+) -> ApiResult<Json<TwoFactorEnabledResponse>> {
+    let cipher = two_factor::cipher().ok_or_else(two_factor_unavailable)?;
+    let pending: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT totp_pending_secret FROM users WHERE id = $1").bind(user_id).fetch_one(&state.db).await?;
+    let pending = pending.ok_or_else(|| ApiError::InvalidInput(Detail::new("two_factor_setup_missing", "start the two-factor setup again")))?;
+    let secret = two_factor::decrypt(cipher, user_id, &pending).map_err(ApiError::Internal)?;
+    let step = two_factor::verify(&secret, &body.code, chrono::Utc::now().timestamp(), None).ok_or_else(|| {
+        ApiError::InvalidInput(Detail::new("two_factor_invalid", "that code isn't right - check the time on your phone, or use a recovery code"))
+    })?;
+
+    let codes = two_factor::generate_recovery_codes();
+    let mut tx = state.db.begin().await?;
+    sqlx::query(
+        "UPDATE users SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled_at = $1, totp_last_step = $2 WHERE id = $3",
+    )
+    .bind(chrono::Utc::now())
+    .bind(step)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM totp_recovery_codes WHERE user_id = $1").bind(user_id).execute(&mut *tx).await?;
+    for code in &codes {
+        sqlx::query("INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(crate::tokens::hash(&two_factor::normalize_recovery_code(code)))
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(Json(TwoFactorEnabledResponse { recovery_codes: codes }))
+}
+
+/// Turns two-factor off. Takes the password and a current second factor, so
+/// a stolen session alone cannot remove the protection that would have kept
+/// its thief out.
+pub async fn two_factor_disable(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
+    AuthUser(user_id): AuthUser,
+    Json(body): Json<TwoFactorDisableRequest>,
+) -> ApiResult<StatusCode> {
+    let user: User = sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1")).bind(user_id).fetch_one(&state.db).await?;
+    check_rate_limit(&state, &headers, peer.map(|info| info.0), &user.email)?;
+    if body.password.len() > password::MAX_PASSWORD_LEN || !password::verify_password(&body.password, &user.password_hash) {
+        return Err(ApiError::Unauthorized(Detail::new("invalid_credentials", INVALID_CREDENTIALS)));
+    }
+    if !user.two_factor_enabled {
+        return Err(ApiError::Conflict(Detail::new("two_factor_not_enabled", "two-factor sign-in isn't on for this account")));
+    }
+    check_second_factor(&state, user_id, body.totp_code.as_deref(), body.recovery_code.as_deref()).await?;
+
+    let mut tx = state.db.begin().await?;
+    sqlx::query("UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM totp_recovery_codes WHERE user_id = $1").bind(user_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn refresh(State(state): State<AppState>, Json(body): Json<RefreshRequest>) -> ApiResult<Json<AuthResponse>> {
     let (user_id, new_refresh) = refresh_token::verify_and_rotate(&state.db, &body.refresh_token).await?;
 
-    let user: Option<User> = sqlx::query_as("SELECT id, email, password_hash, display_name, created_at, must_change_password FROM users WHERE id = $1")
+    let user: Option<User> = sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1"))
         .bind(user_id)
         .fetch_optional(&state.db)
         .await?;
@@ -297,7 +441,7 @@ pub async fn change_password(
     validate_password(&body.new_password)?;
 
     let user: Option<User> =
-        sqlx::query_as("SELECT id, email, password_hash, display_name, created_at, must_change_password FROM users WHERE id = $1")
+        sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1"))
             .bind(user_id)
             .fetch_optional(&state.db)
             .await?;
@@ -328,7 +472,7 @@ pub async fn change_password(
 }
 
 pub async fn me(State(state): State<AppState>, AuthUser(user_id): AuthUser) -> ApiResult<Json<UserProfile>> {
-    let user: Option<User> = sqlx::query_as("SELECT id, email, password_hash, display_name, created_at, must_change_password FROM users WHERE id = $1")
+    let user: Option<User> = sqlx::query_as(&format!("SELECT {USER_COLUMNS} FROM users WHERE id = $1"))
         .bind(user_id)
         .fetch_optional(&state.db)
         .await?;

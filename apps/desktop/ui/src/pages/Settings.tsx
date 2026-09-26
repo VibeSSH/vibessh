@@ -17,6 +17,7 @@ import { AiUsageModal } from "@/components/ai/AiUsageModal";
 import { getAiConfig, getAiQuota, setAiConfig, testAiConnection } from "@/services/aiService";
 import { getAppInfo } from "@/services/appService";
 import { McpCard } from "@/components/settings/McpCard";
+import { AccountSecurityCard } from "@/components/settings/AccountSecurityCard";
 import { getTraySettings, setMinimizeToTray } from "@/services/trayService";
 import { getBackupDestination, setBackupDestination, testBackupDestination } from "@/services/applicationBackupService";
 import { listRegistryCredentials, removeRegistryCredential, setRegistryCredential } from "@/services/applicationService";
@@ -85,6 +86,8 @@ export function Settings() {
 
         <MinimizeToTrayRow />
       </Card>
+
+      <AccountSecurityCard />
 
       <AiCard />
 

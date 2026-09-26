@@ -27,7 +27,7 @@ async fn register_then_login_and_list_teams_round_trips_against_a_real_backend()
     let registered = client.register(&email, "correct horse battery staple", "Desktop Test").await.expect("register should succeed");
     assert_eq!(registered.user.email, email);
 
-    let logged_in = client.login(&email, "correct horse battery staple").await.expect("login should succeed");
+    let logged_in = client.login(&email, "correct horse battery staple", None, None).await.expect("login should succeed");
     assert_eq!(logged_in.user.id, registered.user.id);
 
     let me = client.me(&logged_in.access_token).await.expect("me should succeed with a fresh access token");
@@ -121,13 +121,13 @@ async fn wrong_password_is_a_clean_error_not_a_panic() {
     let email = unique_email();
     client.register(&email, "correct horse battery staple", "Desktop Test").await.unwrap();
 
-    let result = client.login(&email, "wrong password").await;
+    let result = client.login(&email, "wrong password", None, None).await;
     assert!(result.is_err());
 }
 
 #[tokio::test]
 async fn an_unreachable_backend_is_a_connection_error_not_a_panic() {
     let client = CloudClient::new("http://127.0.0.1:1".to_string());
-    let result = client.login("nobody@example.com", "whatever-password").await;
+    let result = client.login("nobody@example.com", "whatever-password", None, None).await;
     assert!(result.is_err());
 }

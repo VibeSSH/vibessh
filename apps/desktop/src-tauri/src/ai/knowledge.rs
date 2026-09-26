@@ -213,6 +213,8 @@ impl KeywordKnowledgeService {
             ("Poradnik - Wtyczka do IntelliJ", include_str!("../../../../../shared/guide/intellij.pl.md")),
             ("Guide - Backups", include_str!("../../../../../shared/guide/backups.en.md")),
             ("Poradnik - Backupy", include_str!("../../../../../shared/guide/backups.pl.md")),
+            ("Guide - Two-step verification", include_str!("../../../../../shared/guide/account-security.en.md")),
+            ("Poradnik - Weryfikacja dwuetapowa", include_str!("../../../../../shared/guide/account-security.pl.md")),
             ("Guide - Schedules", include_str!("../../../../../shared/guide/schedules.en.md")),
             ("Poradnik - Harmonogramy", include_str!("../../../../../shared/guide/schedules.pl.md")),
             // How to set up each kind of application, step by step - the

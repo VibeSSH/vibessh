@@ -10,7 +10,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{
     CloudAuditEvent, CloudProvisionedMember, CloudRole, CloudRoleWithPermissions,
     CloudServer, CloudSessionInfo,
-    CloudTeam, CloudTeamMember, CloudUserProfile,
+    CloudTeam, CloudTeamMember, CloudTwoFactorEnabled, CloudTwoFactorSetup, CloudUserProfile,
 };
 use crate::state::cloud_session::{CloudSession, CloudState};
 use crate::storage::credentials;
@@ -27,9 +27,9 @@ pub async fn register(state: &CloudState, email: &str, password: &str, display_n
     Ok(user)
 }
 
-pub async fn login(state: &CloudState, email: &str, password: &str) -> AppResult<CloudUserProfile> {
+pub async fn login(state: &CloudState, email: &str, password: &str, totp_code: Option<&str>, recovery_code: Option<&str>) -> AppResult<CloudUserProfile> {
     let mut inner = state.inner.lock().await;
-    let auth = inner.client.login(email, password).await?;
+    let auth = inner.client.login(email, password, totp_code, recovery_code).await?;
     credentials::store_cloud_refresh_token(&auth.refresh_token)?;
     let user = auth.user.clone();
     inner.session =
@@ -404,6 +404,61 @@ pub async fn change_password(state: &CloudState, current_password: &str, new_pas
         user: response.user,
     });
     Ok(user)
+}
+
+/// Starts turning two-factor on, and draws the QR code for the link.
+pub async fn two_factor_setup(state: &CloudState) -> AppResult<CloudTwoFactorSetup> {
+    let token = ensure_valid_access_token(state).await?;
+    let mut setup = {
+        let inner = state.inner.lock().await;
+        inner.client.two_factor_setup(&token).await?
+    };
+    let code = qrcode::QrCode::new(setup.otpauth_uri.as_bytes()).map_err(|err| AppError::Internal(format!("couldn't draw the QR code: {err}")))?;
+    setup.qr_svg = code
+        .render::<qrcode::render::svg::Color<'_>>()
+        .min_dimensions(200, 200)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build();
+    Ok(setup)
+}
+
+/// Confirms the setup with a code and returns the recovery codes. The
+/// session's copy of the profile is refreshed, so the account screen shows
+/// two-factor as on without signing in again.
+pub async fn two_factor_enable(state: &CloudState, code: &str) -> AppResult<CloudTwoFactorEnabled> {
+    let token = ensure_valid_access_token(state).await?;
+    let enabled = {
+        let inner = state.inner.lock().await;
+        inner.client.two_factor_enable(&token, code).await?
+    };
+    refresh_profile(state, &token).await;
+    Ok(enabled)
+}
+
+pub async fn two_factor_disable(state: &CloudState, password: &str, totp_code: Option<&str>, recovery_code: Option<&str>) -> AppResult<CloudUserProfile> {
+    let token = ensure_valid_access_token(state).await?;
+    {
+        let inner = state.inner.lock().await;
+        inner.client.two_factor_disable(&token, password, totp_code, recovery_code).await?;
+    }
+    refresh_profile(state, &token).await;
+    let inner = state.inner.lock().await;
+    inner.session.as_ref().map(|session| session.user.clone()).ok_or_else(|| AppError::Internal("the session ended while turning two-factor off".into()))
+}
+
+/// Re-reads the profile into the session after something changed it. A
+/// failure leaves the old copy - the change itself already succeeded.
+async fn refresh_profile(state: &CloudState, token: &str) {
+    let mut inner = state.inner.lock().await;
+    match inner.client.me(token).await {
+        Ok(user) => {
+            if let Some(session) = inner.session.as_mut() {
+                session.user = user;
+            }
+        }
+        Err(err) => log::warn!("couldn't refresh the account profile after a change: {err}"),
+    }
 }
 
 pub async fn list_audit_events(state: &CloudState, team_id: Uuid, limit: i64, offset: i64) -> AppResult<Vec<CloudAuditEvent>> {

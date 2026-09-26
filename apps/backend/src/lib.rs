@@ -40,6 +40,7 @@ pub mod team_applications;
 pub mod team_servers;
 pub mod teams;
 pub mod tokens;
+pub mod two_factor;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -99,6 +100,9 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         .route("/auth/refresh", post(auth::refresh))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        .route("/auth/2fa/setup", post(auth::two_factor_setup))
+        .route("/auth/2fa/enable", post(auth::two_factor_enable))
+        .route("/auth/2fa/disable", post(auth::two_factor_disable))
         // A device's own public key, and which accounts a team's members get
         // on a shared Node. Public values only - see device_keys' own doc.
         .route("/devices", get(device_keys::list_mine).post(device_keys::publish))

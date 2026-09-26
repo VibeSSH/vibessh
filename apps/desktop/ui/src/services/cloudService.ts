@@ -16,8 +16,34 @@ export function cloudRegister(email: string, password: string, displayName: stri
   return callCommand<CloudUserProfile>("cloud_register", { email, password, displayName });
 }
 
-export function cloudLogin(email: string, password: string): Promise<CloudUserProfile> {
-  return callCommand<CloudUserProfile>("cloud_login", { email, password });
+/** The second factor, sent again with the email and password after the first attempt came back `two_factor_required`. */
+export interface SecondFactor {
+  totpCode?: string;
+  recoveryCode?: string;
+}
+
+export function cloudLogin(email: string, password: string, secondFactor?: SecondFactor): Promise<CloudUserProfile> {
+  return callCommand<CloudUserProfile>("cloud_login", { email, password, totpCode: secondFactor?.totpCode ?? null, recoveryCode: secondFactor?.recoveryCode ?? null });
+}
+
+/** A two-factor setup in progress - the QR code is drawn on this computer. */
+export interface TwoFactorSetup {
+  secret: string;
+  otpauthUri: string;
+  qrSvg: string;
+}
+
+export function cloudTwoFactorSetup(): Promise<TwoFactorSetup> {
+  return callCommand<TwoFactorSetup>("cloud_two_factor_setup");
+}
+
+/** Turns two-factor on; resolves with the recovery codes, shown this once. */
+export function cloudTwoFactorEnable(code: string): Promise<{ recoveryCodes: string[] }> {
+  return callCommand<{ recoveryCodes: string[] }>("cloud_two_factor_enable", { code });
+}
+
+export function cloudTwoFactorDisable(password: string, secondFactor: SecondFactor): Promise<CloudUserProfile> {
+  return callCommand<CloudUserProfile>("cloud_two_factor_disable", { password, totpCode: secondFactor.totpCode ?? null, recoveryCode: secondFactor.recoveryCode ?? null });
 }
 
 export function cloudLogout(): Promise<void> {

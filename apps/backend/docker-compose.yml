@@ -50,6 +50,11 @@ services:
       # process refuses to start without it (main.rs), so the container
       # restarted in a loop with the reason only visible in its logs.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET - e.g. `openssl rand -base64 48`}
+      # Encrypts two-factor secrets at rest (src/two_factor.rs). Optional: unset,
+      # the service runs and turning two-factor on is refused with a reason.
+      # Generate with `openssl rand -base64 32`; losing it strands every account
+      # that has two-factor on, so it is backed up with the database.
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-}
       # Optional: unset means this deployment simply reports that it has no
       # included model, and users bring their own key. Empty defaults so that
       # a missing value is not an error.

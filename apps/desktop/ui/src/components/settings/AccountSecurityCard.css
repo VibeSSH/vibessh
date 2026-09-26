@@ -1,0 +1,64 @@
+.account-security-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.account-security-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.account-security-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The QR code keeps its own white quiet zone, which scanners need, on any theme. */
+.account-security-qr {
+  align-self: center;
+  width: 200px;
+  height: 200px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.account-security-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.account-security-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-security-secret code,
+.account-security-codes code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.account-security-code {
+  max-width: 160px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+}
+
+.account-security-codes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 20px;
+  margin: 0;
+  padding: 10px 14px 10px 32px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}

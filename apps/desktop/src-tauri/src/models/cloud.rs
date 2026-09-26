@@ -23,6 +23,28 @@ pub struct CloudUserProfile {
     /// correctly read as "nothing to do".
     #[serde(default)]
     pub must_change_password: bool,
+    /// Whether signing in takes a code from an authenticator app too.
+    /// Defaulted for the same reason as the flag above.
+    #[serde(default)]
+    pub two_factor_enabled: bool,
+}
+
+/// A two-factor setup in progress: the secret for typing in by hand, the
+/// `otpauth://` link, and that link as a QR code (SVG) - drawn here, so the
+/// secret never goes to a QR service anywhere.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudTwoFactorSetup {
+    pub secret: String,
+    pub otpauth_uri: String,
+    #[serde(default)]
+    pub qr_svg: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudTwoFactorEnabled {
+    pub recovery_codes: Vec<String>,
 }
 
 /// The account a team lead just created, with the one readable copy of its

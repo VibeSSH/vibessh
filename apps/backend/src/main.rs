@@ -63,6 +63,11 @@ async fn run() -> Result<(), String> {
     if jwt_secret.len() < 32 {
         return Err("JWT_SECRET is too short - use at least 32 bytes of real randomness".to_string());
     }
+    // Optional, but said out loud: without it two-factor can't be turned on,
+    // and an account that already has it can't sign in.
+    if vibessh_backend::two_factor::cipher().is_none() {
+        log::warn!("TOTP_ENCRYPTION_KEY is not set (or isn't 32 bytes of base64) - two-factor sign-in is unavailable");
+    }
     let bind_addr: SocketAddr = std::env::var("VIBESSH_BACKEND_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8787".to_string())
         .parse()

@@ -339,6 +339,8 @@ pub async fn provision_member(
         display_name,
         created_at: now,
         must_change_password: true,
+        // A new account has no second factor until its owner turns one on.
+        two_factor_enabled: false,
     };
     Ok((StatusCode::CREATED, Json(ProvisionedMember { user, temporary_password, role_assigned })))
 }

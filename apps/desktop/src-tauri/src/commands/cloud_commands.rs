@@ -21,9 +21,37 @@ pub async fn cloud_register(
     services::cloud_register(&state, &email, &password, &display_name).await
 }
 
+/// `totp_code` or `recovery_code` on the second attempt, after the first
+/// came back `two_factor_required`.
 #[tauri::command]
-pub async fn cloud_login(state: State<'_, CloudState>, email: String, password: String) -> AppResult<CloudUserProfile> {
-    services::cloud_login(&state, &email, &password).await
+pub async fn cloud_login(
+    state: State<'_, CloudState>,
+    email: String,
+    password: String,
+    totp_code: Option<String>,
+    recovery_code: Option<String>,
+) -> AppResult<CloudUserProfile> {
+    services::cloud_login(&state, &email, &password, totp_code.as_deref(), recovery_code.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn cloud_two_factor_setup(state: State<'_, CloudState>) -> AppResult<crate::models::CloudTwoFactorSetup> {
+    crate::services::cloud_service::two_factor_setup(&state).await
+}
+
+#[tauri::command]
+pub async fn cloud_two_factor_enable(state: State<'_, CloudState>, code: String) -> AppResult<crate::models::CloudTwoFactorEnabled> {
+    crate::services::cloud_service::two_factor_enable(&state, &code).await
+}
+
+#[tauri::command]
+pub async fn cloud_two_factor_disable(
+    state: State<'_, CloudState>,
+    password: String,
+    totp_code: Option<String>,
+    recovery_code: Option<String>,
+) -> AppResult<CloudUserProfile> {
+    crate::services::cloud_service::two_factor_disable(&state, &password, totp_code.as_deref(), recovery_code.as_deref()).await
 }
 
 #[tauri::command]

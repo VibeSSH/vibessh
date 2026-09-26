@@ -12,7 +12,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::{
     CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation,
     CloudAiAnswer, CloudAiQuota,
-    CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
+    CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole, CloudTwoFactorEnabled, CloudTwoFactorSetup,
     CloudRoleWithPermissions, CloudServer,
     CloudTeam, CloudTeamMember, CloudUserProfile,
 };
@@ -147,8 +147,24 @@ impl CloudClient {
             .await
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> AppResult<CloudAuthResponse> {
-        self.send(Method::POST, "/auth/login", None, Some(&json!({ "email": email, "password": password }))).await
+    /// `totp_code` or `recovery_code` only on the second attempt, after the
+    /// first came back `two_factor_required`.
+    pub async fn login(&self, email: &str, password: &str, totp_code: Option<&str>, recovery_code: Option<&str>) -> AppResult<CloudAuthResponse> {
+        let body = json!({ "email": email, "password": password, "totpCode": totp_code, "recoveryCode": recovery_code });
+        self.send(Method::POST, "/auth/login", None, Some(&body)).await
+    }
+
+    pub async fn two_factor_setup(&self, access_token: &str) -> AppResult<CloudTwoFactorSetup> {
+        self.send(Method::POST, "/auth/2fa/setup", Some(access_token), Some(&json!({}))).await
+    }
+
+    pub async fn two_factor_enable(&self, access_token: &str, code: &str) -> AppResult<CloudTwoFactorEnabled> {
+        self.send(Method::POST, "/auth/2fa/enable", Some(access_token), Some(&json!({ "code": code }))).await
+    }
+
+    pub async fn two_factor_disable(&self, access_token: &str, password: &str, totp_code: Option<&str>, recovery_code: Option<&str>) -> AppResult<()> {
+        let body = json!({ "password": password, "totpCode": totp_code, "recoveryCode": recovery_code });
+        self.send_no_content(Method::POST, "/auth/2fa/disable", Some(access_token), Some(&body)).await
     }
 
     pub async fn refresh(&self, refresh_token: &str) -> AppResult<CloudAuthResponse> {

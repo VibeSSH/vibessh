@@ -57,6 +57,9 @@ base64 = "0.22"
 # implementing it needs the same macro on the impl to match.
 async-trait = "0.1"
 dotenvy = "0.15.7"
+hmac = "0.12"
+sha1 = "0.10"
+aes-gcm = "0.10"
 
 [dev-dependencies]
 # Drives the real axum Router in-process for tests/health.rs, without

@@ -16,6 +16,9 @@ pub struct User {
     /// `migrations/0008_provisioned_accounts.sql`. While it holds, the
     /// account may only read its own profile and set a new password.
     pub must_change_password: bool,
+    /// Whether a second factor is required at sign-in - `totp_enabled_at IS
+    /// NOT NULL`, computed in the query (see `auth::USER_COLUMNS`).
+    pub two_factor_enabled: bool,
 }
 
 /// What a client is ever shown about a user - `password_hash` never leaves
@@ -31,6 +34,8 @@ pub struct UserProfile {
     /// screen. The backend refuses everything else regardless, so this is
     /// for the interface's benefit, never the enforcement.
     pub must_change_password: bool,
+    /// So the account screen can show whether two-factor is on.
+    pub two_factor_enabled: bool,
 }
 
 impl From<&User> for UserProfile {
@@ -41,6 +46,7 @@ impl From<&User> for UserProfile {
             display_name: user.display_name.clone(),
             created_at: user.created_at,
             must_change_password: user.must_change_password,
+            two_factor_enabled: user.two_factor_enabled,
         }
     }
 }
@@ -95,6 +101,46 @@ pub struct ProvisionedMember {
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
+    /// The six digits from the authenticator app, on an account with
+    /// two-factor on. Sent again with the email and password after the first
+    /// attempt came back `two_factor_required`.
+    #[serde(default)]
+    pub totp_code: Option<String>,
+    /// Or one of the account's recovery codes, instead of the six digits.
+    #[serde(default)]
+    pub recovery_code: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TwoFactorSetupResponse {
+    /// Base32, for typing into an app by hand.
+    pub secret: String,
+    /// The `otpauth://` link a QR code carries.
+    pub otpauth_uri: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TwoFactorEnableRequest {
+    pub code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TwoFactorEnabledResponse {
+    /// Shown once - only their hashes are kept.
+    pub recovery_codes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TwoFactorDisableRequest {
+    pub password: String,
+    #[serde(default)]
+    pub totp_code: Option<String>,
+    #[serde(default)]
+    pub recovery_code: Option<String>,
 }
 
 #[derive(Deserialize)]

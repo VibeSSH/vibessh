@@ -152,6 +152,24 @@ private address, or rebinds to one, still gets through. Closing that would
 mean resolving on the Node and pinning curl to the checked address, which
 has not been done.
 
+## Account two-factor sign-in
+
+The account backend can require a time-based code (TOTP) after the
+password (`apps/backend/src/two_factor.rs`). The shared secret is stored
+encrypted with AES-256-GCM under `TOTP_ENCRYPTION_KEY`, a key kept apart
+from `JWT_SECRET`, with the user id as associated data - a database dump
+alone does not yield anyone's second factor, and a ciphertext copied onto
+another account does not decrypt. A code is accepted once (the last accepted
+time step is kept and checked in the same statement that records the use),
+within one 30-second step either side of now. Guessing is bounded by the
+existing sign-in rate limit, ten attempts per five minutes per account and
+per address. Recovery codes are ten single-use values of about 50 bits,
+stored as SHA-256. Asking for the code tells the caller the password was
+right; that is only said after the password has been checked. Turning
+two-factor off takes the password and a current second factor, so a stolen
+session cannot remove it. The QR code is drawn on the desktop, so the
+secret never reaches a QR service.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

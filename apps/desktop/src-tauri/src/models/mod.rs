@@ -38,7 +38,7 @@ pub use cloud::{
     CloudAuditEvent, CloudAuthResponse, CloudProvisionedMember, CloudRole,
     CloudRoleWithPermissions, CloudServer,
     CloudApplication, CloudApplicationEnvironment, CloudApplicationMember, CloudApplicationPort, CloudDeviceKey, CloudMemberAccess, CloudNodeRevocation, CloudSessionInfo, CloudTeam, CloudTeamMember,
-    CloudUserProfile,
+    CloudTwoFactorEnabled, CloudTwoFactorSetup, CloudUserProfile,
 };
 pub use dns::{DnsRecord, DnsRecordInput, DnsView, DnsViewKind};
 pub use firewall_custom_rule::{FirewallCustomRule, FirewallCustomRuleInput};

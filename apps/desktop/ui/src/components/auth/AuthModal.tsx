@@ -9,7 +9,7 @@ import { cloudBackendIsConfigured, cloudLogin, cloudRegister, cloudPublishThisDe
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
-import { errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage } from "@/services/tauri";
 
 type Tab = "login" | "register";
 
@@ -25,6 +25,11 @@ export function AuthModal() {
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set once the password was right and the account wants its second
+   *  factor: which kind is being typed, and what. The email and password stay
+   *  as they were, since the sign-in is sent again with them. */
+  const [secondFactor, setSecondFactor] = useState<"totp" | "recovery" | null>(null);
+  const [code, setCode] = useState("");
   /**
    * Whether an account backend has been chosen at all.
    *
@@ -46,6 +51,8 @@ export function AuthModal() {
     setPassword("");
     setDisplayName("");
     setError(null);
+    setSecondFactor(null);
+    setCode("");
   }
 
   function handleClose() {
@@ -62,7 +69,8 @@ export function AuthModal() {
     setBusy(true);
     setError(null);
     try {
-      const user = tab === "login" ? await cloudLogin(email, password) : await cloudRegister(email, password, displayName);
+      const factor = secondFactor === "totp" ? { totpCode: code } : secondFactor === "recovery" ? { recoveryCode: code } : undefined;
+      const user = tab === "login" ? await cloudLogin(email, password, factor) : await cloudRegister(email, password, displayName);
       setUser(user);
       // Registers this machine's public key, so a teammate's install can put
       // it in the account it creates for this person on a shared Node.
@@ -75,7 +83,14 @@ export function AuthModal() {
       reset();
       close();
     } catch (err) {
-      setError(errorMessage(err, t));
+      // The password was right and the account has two-factor on: ask for
+      // the code rather than show it as a failure.
+      if (err instanceof CommandError && err.params.backendCode === "two_factor_required") {
+        setSecondFactor("totp");
+        setError(null);
+      } else {
+        setError(errorMessage(err, t));
+      }
     } finally {
       setBusy(false);
     }
@@ -106,7 +121,36 @@ export function AuthModal() {
             <p className="form-note form-note-danger form-note-spaced">{t("auth.noBackend")}</p>
           )}
           <form className="server-form" onSubmit={handleSubmit}>
-            {tab === "register" && (
+            {secondFactor && (
+              <>
+                <p className="dialog-body-text">{secondFactor === "totp" ? t("auth.twoFactorPrompt") : t("auth.recoveryPrompt")}</p>
+                <label className="form-field">
+                  <span className="form-label">{secondFactor === "totp" ? t("auth.twoFactorCode") : t("auth.recoveryCode")}</span>
+                  <input
+                    className="form-input"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    inputMode={secondFactor === "totp" ? "numeric" : "text"}
+                    autoComplete="one-time-code"
+                    placeholder={secondFactor === "totp" ? "123456" : "abcde-fghjk"}
+                    autoFocus
+                    required
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="form-note-link"
+                  onClick={() => {
+                    setSecondFactor(secondFactor === "totp" ? "recovery" : "totp");
+                    setCode("");
+                    setError(null);
+                  }}
+                >
+                  {secondFactor === "totp" ? t("auth.useRecoveryCode") : t("auth.useAppCode")}
+                </button>
+              </>
+            )}
+            {!secondFactor && tab === "register" && (
               <label className="form-field">
                 <span className="form-label">{t("auth.displayName")}</span>
                 <input
@@ -118,6 +162,8 @@ export function AuthModal() {
                 />
               </label>
             )}
+            {!secondFactor && (
+              <>
             <label className="form-field">
               <span className="form-label">{t("auth.email")}</span>
               <input
@@ -140,6 +186,8 @@ export function AuthModal() {
                 required
               />
             </label>
+              </>
+            )}
 
             {error && <p className="form-note form-note-danger">{error}</p>}
 

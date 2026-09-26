@@ -27,12 +27,17 @@ database.
 | Path | What it is |
 | --- | --- |
 | `/opt/vibessh/src` | A checkout of this repository, shipped with `git archive` |
-| `/opt/vibessh/secrets/backend.env` | `POSTGRES_PASSWORD` and `JWT_SECRET`, mode 0600, owned by root |
+| `/opt/vibessh/secrets/backend.env` | `POSTGRES_PASSWORD`, `JWT_SECRET` and `TOTP_ENCRYPTION_KEY`, mode 0600, owned by root |
 | `/etc/cloudflared/config.yml` | Tunnel ingress: `api.vibessh.dev` → `127.0.0.1:8787` |
 
 The secrets were generated on the host with `openssl rand` and have never
 left it. Rotating `JWT_SECRET` invalidates every currently-issued access
 token, which clients recover from by refreshing; see `.env.example`.
+
+`TOTP_ENCRYPTION_KEY` (`openssl rand -base64 32`) encrypts every account's
+two-factor secret. Unlike `JWT_SECRET` it must never be rotated or lost on
+its own: without the key it was stored under, no account with two-factor on
+can sign in. Back it up together with the database.
 
 ## Deploying a change
 
