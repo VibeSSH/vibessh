@@ -73,6 +73,10 @@ pub enum ErrorCode {
     ServerHasApplications,
     /// Starting an Application whose directory holds more than its disk limit.
     DiskLimitExceeded,
+    /// The local database was migrated by a newer build than this one. Its
+    /// own code because the fix - install the newer version again - is a
+    /// button, and the first place it shows is the startup-failure screen.
+    DatabaseFromNewerVersion,
 
     // ---- Vibe AI ----
     //
@@ -238,6 +242,17 @@ pub enum AppError {
     #[error("this application uses {used_mb} MB, over its {limit_mb} MB disk limit - free some space or raise the limit")]
     DiskLimitExceeded { used_mb: u64, limit_mb: u64 },
 
+    /// A database whose schema is ahead of this build: a newer VibeSSH
+    /// opened it, then an older one was started. Nothing is damaged or lost,
+    /// and the message has to say so, because "migration failed" reads like
+    /// the opposite.
+    #[error(
+        "this {what} database was created by a newer version of VibeSSH (its schema is at version {found}, this build \
+         understands {supported}). Nothing has been lost and the database is not damaged - update VibeSSH to open it again, or \
+         restore one of the .bak files next to it if you meant to go back."
+    )]
+    DatabaseFromNewerVersion { what: String, found: usize, supported: usize },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -324,6 +339,7 @@ impl AppError {
             AppError::CronMissing { .. } => ErrorCode::CronMissing,
             AppError::ServerHasApplications { .. } => ErrorCode::ServerHasApplications,
             AppError::DiskLimitExceeded { .. } => ErrorCode::DiskLimitExceeded,
+            AppError::DatabaseFromNewerVersion { .. } => ErrorCode::DatabaseFromNewerVersion,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -371,6 +387,9 @@ impl AppError {
             AppError::CronMissing { server_id } => serde_json::json!({ "serverId": server_id }),
             AppError::ServerHasApplications { server, applications } => serde_json::json!({ "server": server, "applications": applications }),
             AppError::DiskLimitExceeded { used_mb, limit_mb } => serde_json::json!({ "usedMb": used_mb, "limitMb": limit_mb }),
+            AppError::DatabaseFromNewerVersion { what, found, supported } => {
+                serde_json::json!({ "what": what, "found": found, "supported": supported })
+            }
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -443,6 +462,8 @@ impl Serialize for AppError {
             ErrorCode::CronMissing => "invalid_input",
             ErrorCode::ServerHasApplications => "invalid_input",
             ErrorCode::DiskLimitExceeded => "invalid_input",
+            // Was a plain `Storage` error until it had a code of its own.
+            ErrorCode::DatabaseFromNewerVersion => "storage",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

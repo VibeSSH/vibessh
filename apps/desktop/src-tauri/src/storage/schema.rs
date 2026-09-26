@@ -108,11 +108,11 @@ fn refuse_if_ahead(conn: &Connection, what: &str) -> AppResult<()> {
     if user_version <= latest {
         return Ok(());
     }
-    Err(AppError::Storage(format!(
-        "this {what} database was created by a newer version of VibeSSH (its schema is at version {user_version}, this build \
-         understands {latest}). Nothing has been lost and the database is not damaged - update VibeSSH to open it again, or \
-         restore one of the .bak files next to it if you meant to go back."
-    )))
+    Err(AppError::DatabaseFromNewerVersion {
+        what: what.to_string(),
+        found: user_version,
+        supported: latest,
+    })
 }
 
 /// Copies the database file next to itself before any migration changes its

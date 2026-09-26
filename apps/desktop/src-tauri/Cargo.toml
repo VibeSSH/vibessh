@@ -23,6 +23,10 @@ base64 = "0.22"
 tauri-plugin-log = "2"
 # Native open/save file dialogs for Files module upload/download.
 tauri-plugin-dialog = "2"
+# The dialog `crash_report` shows when VibeSSH cannot start or panics - a
+# point where there may be no window or event loop to hang a Tauri dialog on.
+# The same version tauri-plugin-dialog already builds, so nothing new compiles.
+rfd = { version = "0.16", default-features = false, features = ["common-controls-v6"] }
 # One notification, once per installation: the first time the close button
 # hides the window instead of quitting - see `tray::hide_to_tray`.
 tauri-plugin-notification = "2"

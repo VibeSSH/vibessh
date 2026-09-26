@@ -895,6 +895,7 @@
     "server_has_applications": "Na serwerze {{server}} są jeszcze aplikacje: {{applications}}. Usuń je albo przenieś na inny Node (Migruj), zanim usuniesz serwer - inaczej ich kontenery działałyby dalej bez żadnej kontroli.",
     "cron_missing": "Ten Node nie ma crona, a harmonogramy go potrzebują. Zainstaluj go przyciskiem poniżej albo w terminalu Node'a: sudo apt install cron.",
     "disk_limit_exceeded": "Aplikacja zajmuje {{usedMb}} MB, a jej limit dysku to {{limitMb}} MB, więc nie zostanie uruchomiona. Usuń część plików albo zwiększ limit w Ustawieniach → Limity zasobów.",
+    "database_from_newer_version": "Twoje dane zapisała nowsza wersja VibeSSH niż ta (baza w wersji {{found}}, ta wersja zna {{supported}}). Nic nie zginęło i nic nie jest uszkodzone - zainstaluj najnowszą wersję, żeby je otworzyć.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
     "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora.",
@@ -1303,6 +1304,19 @@
     "working": "Reinstalowanie…",
     "confirm": "Reinstaluj",
     "doneToast": "Zainstalowano {{name}} od nowa"
+  },
+  "startupFailure": {
+    "title": "VibeSSH nie mógł się uruchomić",
+    "lead": "Coś poszło nie tak podczas uruchamiania. Wyślij nam raport - zobaczymy dokładnie, co się stało, i szybko to naprawimy.",
+    "newerTitle": "Zainstaluj najnowszą wersję VibeSSH",
+    "newerLead": "Twoje serwery i ustawienia zapisała nowsza wersja VibeSSH niż ta, którą właśnie uruchomiłeś. Nic nie zginęło - po zainstalowaniu najnowszej wersji wszystko wróci na swoje miejsce.",
+    "download": "Pobierz najnowszą wersję",
+    "whatHappened": "Co się stało",
+    "reportLead": "Raport zawiera wersję VibeSSH, system, ten błąd i ostatnie wpisy z logu. Wyślij go nam na Discordzie albo na {{email}}.",
+    "copyReport": "Kopiuj raport",
+    "copied": "Skopiowano",
+    "showReport": "Pokaż plik raportu",
+    "close": "Zamknij"
   },
   "schedules": {
     "installCron": "Zainstaluj crona",

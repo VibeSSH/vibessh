@@ -5,6 +5,26 @@ export function getAppInfo(): Promise<AppInfo> {
   return callCommand<AppInfo>("get_app_info");
 }
 
+/** Why VibeSSH did not start - see the Rust side's `crash_report`. */
+export interface StartupFailure {
+  /** A failed command's error, as the Rust side serializes it; `normalizeError` reads it. */
+  error: unknown;
+  /** The report file's text. */
+  report: string;
+  /** Where the report was written, or null if it could not be. */
+  reportPath: string | null;
+}
+
+/** Why VibeSSH did not start, or null when it did. Asked before anything renders. */
+export function getStartupFailure(): Promise<StartupFailure | null> {
+  return callCommand<StartupFailure | null>("get_startup_failure");
+}
+
+/** Opens the file manager on the startup failure's report file. */
+export function revealCrashReport(): Promise<void> {
+  return callCommand<void>("reveal_crash_report");
+}
+
 /**
  * Whether this machine can run containers.
  *

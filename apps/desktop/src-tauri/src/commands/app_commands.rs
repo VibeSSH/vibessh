@@ -12,6 +12,21 @@ pub fn get_app_info(state: State<AppState>) -> AppResult<AppInfo> {
     services::get_app_info(&state)
 }
 
+/// Why VibeSSH did not start, or `None` when it did. The interface asks this
+/// before anything else, and shows its startup-failure screen instead of the
+/// app when there is an answer - see `crash_report`. Takes no state: when
+/// startup failed, none was set up.
+#[tauri::command]
+pub fn get_startup_failure() -> Option<crate::crash_report::StartupFailure> {
+    crate::crash_report::startup_failure().cloned()
+}
+
+/// Opens the file manager on the startup failure's report file.
+#[tauri::command]
+pub fn reveal_crash_report() -> AppResult<()> {
+    crate::crash_report::reveal_startup_report()
+}
+
 /// Whether containers can run on this machine - what the wizard asks before
 /// offering the Docker runtime for a Local application.
 #[tauri::command]

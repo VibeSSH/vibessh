@@ -31,6 +31,7 @@ export type ErrorCode =
   | "cron_missing"
   | "server_has_applications"
   | "disk_limit_exceeded"
+  | "database_from_newer_version"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"

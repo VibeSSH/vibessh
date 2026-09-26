@@ -889,6 +889,7 @@
     "server_has_applications": "{{server}} still has applications on it: {{applications}}. Delete them or move them to another Node (Migrate) before deleting the server - otherwise their containers would keep running with nothing managing them.",
     "cron_missing": "This Node has no cron, which schedules need to run. Install it with the button below, or in the Node's terminal: sudo apt install cron.",
     "disk_limit_exceeded": "The application uses {{usedMb}} MB and its disk limit is {{limitMb}} MB, so it won't be started. Delete some files or raise the limit in Settings → Resource limits.",
+    "database_from_newer_version": "Your data was saved by a newer version of VibeSSH than this one (the database is at version {{found}}, this version knows {{supported}}). Nothing is lost or damaged - install the latest version to open it.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
     "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account.",
@@ -1296,6 +1297,19 @@
     "working": "Reinstalling…",
     "confirm": "Reinstall",
     "doneToast": "Reinstalled {{name}}"
+  },
+  "startupFailure": {
+    "title": "VibeSSH could not start",
+    "lead": "Something went wrong while starting. Send us the report - we'll see exactly what happened and get it fixed quickly.",
+    "newerTitle": "Install the latest version of VibeSSH",
+    "newerLead": "Your servers and settings were saved by a newer version of VibeSSH than the one you just started. Nothing is lost - once you install the latest version, everything will be back where it was.",
+    "download": "Download the latest version",
+    "whatHappened": "What happened",
+    "reportLead": "The report holds the VibeSSH version, your system, this error and the last lines of the log. Send it to us on Discord or to {{email}}.",
+    "copyReport": "Copy report",
+    "copied": "Copied",
+    "showReport": "Show report file",
+    "close": "Close"
   },
   "schedules": {
     "installCron": "Install cron",

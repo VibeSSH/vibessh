@@ -7869,6 +7869,7 @@ dependencies = [
  "rand 0.10.2",
  "rand 0.8.8",
  "reqwest 0.12.28",
+ "rfd",
  "rusqlite",
  "rusqlite_migration",
  "russh",

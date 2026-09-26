@@ -11,6 +11,8 @@ import "@fontsource/jetbrains-mono/600.css";
 import "./styles/globals.css";
 import "./i18n";
 import { applyStoredTheme } from "@/theme/themeStore";
+import { StartupFailureScreen } from "@/components/StartupFailureScreen";
+import { getStartupFailure } from "@/services/appService";
 
 // A desktop app has no business showing the WebView's own native menu
 // (Back/Reload/Save As/Print/Inspect Element) - nothing here intercepted
@@ -29,6 +31,19 @@ applyStoredTheme();
 document.addEventListener("contextmenu", (e) => {
   if (!e.shiftKey) e.preventDefault();
 });
+
+/**
+ * The window's content when VibeSSH could not start. Rendered on its own,
+ * outside the router and the query client: nothing the app needs was set up,
+ * so the only thing to do is say why and how to get it to us.
+ */
+function renderStartupFailure(failure: NonNullable<Awaited<ReturnType<typeof getStartupFailure>>>) {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <StartupFailureScreen failure={failure} />
+    </React.StrictMode>,
+  );
+}
 
 function render() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -56,6 +71,15 @@ async function start() {
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("fixtures")) {
     const { installDevFixtures } = await import("./devFixtures");
     installDevFixtures();
+  }
+  // Asked before the app mounts, because the app mounting is what would
+  // start calling commands that have nothing behind them. Anything that is
+  // not a clear "it started" - no Tauri at all in a browser preview, say -
+  // renders the app as before.
+  const failure = await getStartupFailure().catch(() => null);
+  if (failure) {
+    renderStartupFailure(failure);
+    return;
   }
   render();
 }

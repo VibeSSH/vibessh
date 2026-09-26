@@ -20,6 +20,7 @@ pub mod agent_client;
 pub mod ai;
 mod blueprints;
 pub mod cloud_client;
+mod crash_report;
 mod commands;
 // `pub` for the same reason as `files`/`runtime` above - the file-operation
 // helper's install/provisioning logic (`files::sudo_user`) needs this, and a
@@ -101,6 +102,7 @@ use tauri_plugin_log::{Target, TargetKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crash_report::install_panic_hook();
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -145,85 +147,16 @@ pub fn run() {
         // blueprint registry above - the documents are compiled into
         // the binary, so there is nothing to reload.
         .manage(ai::knowledge::KeywordKnowledgeService::with_builtin_docs())
+        // An error here used to go back to Tauri, which panics with it - and
+        // with `panic = "abort"` the window just vanished. `crash_report`
+        // records it instead, and the interface shows it in place of the app.
         .setup(|app| {
-            // Needs the resolved app data dir, which only exists once the
-            // app is running - can't be built alongside the other .manage()
-            // calls above.
-            let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
-            app.manage(state::JavaRoot(app.path().app_data_dir()?.join("java")));
-            app.manage(ServerRepository::open(&db_path)?);
-            // Same physical file as ServerRepository above (Applications'
-            // server_id is a real foreign key into servers, which only
-            // means something within one SQLite file) - see
-            // ApplicationRepository::open's own doc comment for why this
-            // is a second independent Connection rather than a shared one.
-            app.manage(ApplicationRepository::open(&db_path)?);
-            // Same physical file again - Application Databases (Phase 11)
-            // foreign keys into both `applications` and `servers`.
-            app.manage(storage::database_repository::DatabaseRepository::open(&db_path)?);
-            // Same physical file again - Etap M3's desired/applied state
-            // revisioning foreign-keys into `servers`.
-            app.manage(storage::node_state_repository::NodeStateRepository::open(&db_path)?);
-            // Same physical file again - Etap M4's Vibe Network membership
-            // (IPAM) and Private DNS records both foreign-key into
-            // `servers`/`applications`.
-            app.manage(storage::node_network_repository::NodeNetworkRepository::open(&db_path)?);
-            app.manage(storage::dns_repository::DnsRepository::open(&db_path)?);
-            // Same physical file again - Application backups foreign-key
-            // into `applications`.
-            app.manage(storage::application_backup_repository::ApplicationBackupRepository::open(&db_path)?);
-            // Same physical file again - schedules foreign-key into `applications`.
-            app.manage(storage::application_schedule_repository::ApplicationScheduleRepository::open(&db_path)?);
-            // Same physical file again - manual firewall rules foreign-key
-            // into `servers`.
-            app.manage(storage::firewall_rule_repository::FirewallRuleRepository::open(&db_path)?);
-            // Same physical file again - one row per registry host, not
-            // scoped to any particular server/application.
-            app.manage(storage::registry_credential_repository::RegistryCredentialRepository::open(&db_path)?);
-
-            let config_dir = app.path().app_config_dir()?;
-            let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
-            app.manage(CloudState::new(backend_url));
-
-            // Before `tray::build`, which reads the language out of it.
-            app.manage(tray::TrayState::new(storage::tray_config::load_tray_config(&config_dir)));
-            tray::build(app.handle())?;
-
-            // The local endpoint Claude talks to. Off unless somebody turned
-            // it on, and a port already taken is logged rather than raised:
-            // the alternative is an application that refuses to start
-            // because something unrelated is using 7422.
-            let mcp_state = mcp::McpState::new();
-            app.manage(mcp_state.clone());
-            let mcp_config = storage::mcp_config::load_mcp_config(&config_dir);
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(err) = mcp::apply(&handle, &mcp_state, mcp_config).await {
-                    log::warn!("couldn't open the local MCP endpoint: {err}");
-                }
-            });
-
-            app.manage(storage::log_capture::LogCaptureStore::new(config_dir.join("logs"))?);
-
-            let backup_destination = storage::backup_destination_config::load_backup_destination(&config_dir)?;
-            app.manage(BackupDestinationState::new(backup_destination));
-
-            let dns_suffix = storage::dns_config::load_dns_suffix(&config_dir)?;
-            app.manage(DnsSuffixState::new(dns_suffix));
-
-            // Silently turns a keyring-stored refresh token from a previous
-            // run back into a live session, if there is one - see
-            // services::cloud_try_restore_session's own doc comment for why
-            // this is fire-and-forget rather than something setup() waits on
-            // or surfaces an error for. Spawned *after* app.manage() above,
-            // not before - the spawned task looks the state up by type, so
-            // it must already be registered before this can run.
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let state = handle.state::<CloudState>();
-                services::cloud_try_restore_session(&state).await;
-            });
-
+            if let Ok(dir) = app.path().app_log_dir() {
+                crash_report::remember_log_dir(dir);
+            }
+            if let Err(err) = setup(app) {
+                crash_report::startup_failed(&*err);
+            }
             Ok(())
         })
         // The close button hides the window rather than ending the process -
@@ -244,6 +177,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_commands::get_app_info,
+            commands::app_commands::get_startup_failure,
+            commands::app_commands::reveal_crash_report,
             commands::app_commands::get_tray_settings,
             commands::app_commands::set_minimize_to_tray,
             commands::app_commands::set_tray_language,
@@ -512,4 +447,88 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// Everything `run` needs the running app for. Its own function so every
+/// `?` in it lands in one place - see the `.setup` call above.
+fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Needs the resolved app data dir, which only exists once the
+    // app is running - can't be built alongside the other .manage()
+    // calls above.
+    let db_path = app.path().app_data_dir()?.join("servers.sqlite3");
+    app.manage(state::JavaRoot(app.path().app_data_dir()?.join("java")));
+    app.manage(ServerRepository::open(&db_path)?);
+    // Same physical file as ServerRepository above (Applications'
+    // server_id is a real foreign key into servers, which only
+    // means something within one SQLite file) - see
+    // ApplicationRepository::open's own doc comment for why this
+    // is a second independent Connection rather than a shared one.
+    app.manage(ApplicationRepository::open(&db_path)?);
+    // Same physical file again - Application Databases (Phase 11)
+    // foreign keys into both `applications` and `servers`.
+    app.manage(storage::database_repository::DatabaseRepository::open(&db_path)?);
+    // Same physical file again - Etap M3's desired/applied state
+    // revisioning foreign-keys into `servers`.
+    app.manage(storage::node_state_repository::NodeStateRepository::open(&db_path)?);
+    // Same physical file again - Etap M4's Vibe Network membership
+    // (IPAM) and Private DNS records both foreign-key into
+    // `servers`/`applications`.
+    app.manage(storage::node_network_repository::NodeNetworkRepository::open(&db_path)?);
+    app.manage(storage::dns_repository::DnsRepository::open(&db_path)?);
+    // Same physical file again - Application backups foreign-key
+    // into `applications`.
+    app.manage(storage::application_backup_repository::ApplicationBackupRepository::open(&db_path)?);
+    // Same physical file again - schedules foreign-key into `applications`.
+    app.manage(storage::application_schedule_repository::ApplicationScheduleRepository::open(&db_path)?);
+    // Same physical file again - manual firewall rules foreign-key
+    // into `servers`.
+    app.manage(storage::firewall_rule_repository::FirewallRuleRepository::open(&db_path)?);
+    // Same physical file again - one row per registry host, not
+    // scoped to any particular server/application.
+    app.manage(storage::registry_credential_repository::RegistryCredentialRepository::open(&db_path)?);
+
+    let config_dir = app.path().app_config_dir()?;
+    let backend_url = storage::cloud_config::load_backend_url(&config_dir)?;
+    app.manage(CloudState::new(backend_url));
+
+    // Before `tray::build`, which reads the language out of it.
+    app.manage(tray::TrayState::new(storage::tray_config::load_tray_config(&config_dir)));
+    tray::build(app.handle())?;
+
+    // The local endpoint Claude talks to. Off unless somebody turned
+    // it on, and a port already taken is logged rather than raised:
+    // the alternative is an application that refuses to start
+    // because something unrelated is using 7422.
+    let mcp_state = mcp::McpState::new();
+    app.manage(mcp_state.clone());
+    let mcp_config = storage::mcp_config::load_mcp_config(&config_dir);
+    let handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = mcp::apply(&handle, &mcp_state, mcp_config).await {
+            log::warn!("couldn't open the local MCP endpoint: {err}");
+        }
+    });
+
+    app.manage(storage::log_capture::LogCaptureStore::new(config_dir.join("logs"))?);
+
+    let backup_destination = storage::backup_destination_config::load_backup_destination(&config_dir)?;
+    app.manage(BackupDestinationState::new(backup_destination));
+
+    let dns_suffix = storage::dns_config::load_dns_suffix(&config_dir)?;
+    app.manage(DnsSuffixState::new(dns_suffix));
+
+    // Silently turns a keyring-stored refresh token from a previous
+    // run back into a live session, if there is one - see
+    // services::cloud_try_restore_session's own doc comment for why
+    // this is fire-and-forget rather than something setup() waits on
+    // or surfaces an error for. Spawned *after* app.manage() above,
+    // not before - the spawned task looks the state up by type, so
+    // it must already be registered before this can run.
+    let handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let state = handle.state::<CloudState>();
+        services::cloud_try_restore_session(&state).await;
+    });
+
+    Ok(())
 }
