@@ -1,0 +1,135 @@
+.schedule-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-row:last-child {
+  border-bottom: none;
+}
+
+/* A paused schedule is still listed, but reads as set aside. */
+.schedule-row-off .schedule-main {
+  opacity: 0.6;
+}
+
+.schedule-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.schedule-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.schedule-when {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.schedule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.schedule-last {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A failed run is the one thing on this tab worth a colour. */
+.schedule-last-failed {
+  color: var(--danger-text);
+}
+
+.schedule-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.schedule-actions > :last-child {
+  margin-left: 8px;
+}
+
+.schedule-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.schedule-note + .schedule-note {
+  margin-top: 6px;
+}
+
+.schedule-kinds,
+.schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-days {
+  margin-bottom: 12px;
+}
+
+.schedule-kind,
+.schedule-day {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.schedule-kind:hover,
+.schedule-day:hover {
+  color: var(--text-primary);
+}
+
+/* The accent marks the chosen option, on the border and text only. */
+.schedule-kind-active,
+.schedule-day-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.schedule-day {
+  min-width: 44px;
+  text-transform: capitalize;
+}
+
+.schedule-time {
+  max-width: 140px;
+}
+
+.schedule-cron {
+  font-family: var(--font-mono);
+}

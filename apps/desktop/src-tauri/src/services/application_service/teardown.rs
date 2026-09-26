@@ -249,8 +249,9 @@ pub async fn delete_application(
 }
 
 /// The per-Application files VibeSSH itself put on the Node outside the
-/// Application's own directory: its console fifo and its file-staging
-/// directory. Plus the dedicated Linux account, when it had one.
+/// Application's own directory: its console fifo, its file-staging
+/// directory, and its schedules' cron file and run records. Plus the
+/// dedicated Linux account, when it had one.
 ///
 /// `userdel` without `--remove` on purpose: the account has no home
 /// directory to remove (see `dedicated_user::ensure_provisioned`), and
@@ -266,6 +267,11 @@ async fn cleanup_node_artifacts(
     let staging = crate::ssh::command::quote(&format!("{}/{application_id}", crate::files::sudo_user::STAGING_ROOT));
     if let Err(err) = connection.execute_command(&format!("rm -f {fifo}; sudo rm -rf {staging}")).await {
         report.warnings.push(format!("couldn't remove this application's runtime files: {err}"));
+    }
+    // Its schedules: left behind, the cron file would go on starting and
+    // stopping a container that no longer exists, every day, for good.
+    if let Err(err) = crate::services::schedule_service::remove_from_node(connection, application_id).await {
+        report.warnings.push(format!("couldn't remove this application's schedules from the Node: {err}"));
     }
 
     if !wants_dedicated_user {

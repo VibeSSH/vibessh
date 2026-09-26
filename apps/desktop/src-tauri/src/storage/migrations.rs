@@ -479,6 +479,27 @@ const STEPS: &[Step] = &[
             up: "ALTER TABLE servers ADD COLUMN icon TEXT;",
             down: Some("ALTER TABLE servers DROP COLUMN icon;"),
         },
+        // Migration 18: scheduled power actions (`services::schedule_service`).
+        //
+        // This table is the source of truth; the Node's cron file is written
+        // from it on every change. `ON DELETE CASCADE` so a schedule cannot
+        // outlive its Application here - the Node-side cron file is removed
+        // by `delete_application`'s teardown, since no foreign key reaches
+        // that far. The CHECK keeps an action the runner would refuse from
+        // ever being stored.
+        Step {
+            up: "CREATE TABLE application_schedules (
+                id             TEXT PRIMARY KEY,
+                application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+                name           TEXT NOT NULL,
+                cron           TEXT NOT NULL,
+                action         TEXT NOT NULL CHECK (action IN ('start', 'stop', 'restart')),
+                enabled        INTEGER NOT NULL DEFAULT 1,
+                created_at     TEXT NOT NULL
+            );
+            CREATE INDEX application_schedules_application_idx ON application_schedules (application_id);",
+            down: Some("DROP TABLE application_schedules;"),
+        },
 ];
 
 #[cfg(test)]
@@ -774,6 +795,34 @@ mod tests {
 
         let visibility: String = conn.query_row("SELECT visibility FROM application_ports WHERE id = 'p1'", (), |row| row.get(0)).unwrap();
         assert_eq!(visibility, "public");
+    }
+
+    #[test]
+    fn migration_18_keeps_schedules_to_known_actions_and_removes_them_with_their_application() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO applications (id, name, blueprint_id, blueprint_version, runtime_type, working_directory, created_at, updated_at)
+             VALUES ('a1', 'App', 'generic', 1, 'docker', '/srv/app', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+            (),
+        )
+        .unwrap();
+        let insert = |id: &str, action: &str| {
+            conn.execute(
+                "INSERT INTO application_schedules (id, application_id, name, cron, action, enabled, created_at)
+                 VALUES (?1, 'a1', 'Nightly', '0 4 * * *', ?2, 1, '2024-01-01T00:00:00Z')",
+                (id, action),
+            )
+        };
+        insert("s1", "restart").unwrap();
+        // The runner knows three actions; the table refuses a fourth.
+        assert!(insert("s2", "rm -rf").is_err());
+
+        conn.execute("DELETE FROM applications WHERE id = 'a1'", ()).unwrap();
+        let left: i64 = conn.query_row("SELECT count(*) FROM application_schedules", (), |row| row.get(0)).unwrap();
+        assert_eq!(left, 0, "schedules go with their application");
     }
 
     #[test]

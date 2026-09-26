@@ -169,6 +169,8 @@ pub fn run() {
             // Same physical file again - Application backups foreign-key
             // into `applications`.
             app.manage(storage::application_backup_repository::ApplicationBackupRepository::open(&db_path)?);
+            // Same physical file again - schedules foreign-key into `applications`.
+            app.manage(storage::application_schedule_repository::ApplicationScheduleRepository::open(&db_path)?);
             // Same physical file again - manual firewall rules foreign-key
             // into `servers`.
             app.manage(storage::firewall_rule_repository::FirewallRuleRepository::open(&db_path)?);
@@ -319,6 +321,12 @@ pub fn run() {
             commands::application_commands::remove_registry_credential,
             commands::application_commands::detect_java_installations,
             commands::migration_commands::migrate_application,
+            commands::schedule_commands::list_application_schedules,
+            commands::schedule_commands::create_application_schedule,
+            commands::schedule_commands::update_application_schedule,
+            commands::schedule_commands::delete_application_schedule,
+            commands::schedule_commands::run_application_schedule_now,
+            commands::schedule_commands::install_cron,
             commands::database_commands::list_database_hosts,
             commands::database_commands::create_database_host,
             commands::database_commands::update_database_host,

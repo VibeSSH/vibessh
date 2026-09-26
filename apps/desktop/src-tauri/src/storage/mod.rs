@@ -6,6 +6,7 @@
 
 pub mod ai_config;
 pub mod application_backup_repository;
+pub mod application_schedule_repository;
 pub mod application_repository;
 pub mod application_template_config;
 pub mod builtin_templates;

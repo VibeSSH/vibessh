@@ -17,6 +17,7 @@ mod papermc_service;
 mod pterodactyl_import_service;
 mod pterodactyl_run_service;
 mod ping_service;
+pub mod schedule_service;
 mod purpur_service;
 mod server_service;
 mod ssh_service;
@@ -138,6 +139,7 @@ pub use cloud_service::{
     unassign_role as cloud_unassign_role, update_role as cloud_update_role,
 };
 pub use ping_service::ping_server;
+pub use schedule_service::{create_schedule, delete_schedule, list_schedules, run_schedule_now, update_schedule};
 pub use server_service::{
     create_server, delete_server, get_server, set_server_icon, install_docker, install_ufw, install_wireguard, list_servers, probe_node_capabilities,
     replace_ssh_password, update_server,

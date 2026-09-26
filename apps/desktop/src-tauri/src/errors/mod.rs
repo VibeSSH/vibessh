@@ -66,6 +66,9 @@ pub enum ErrorCode {
     /// typed into a form was malformed - the credentials are the wrong ones,
     /// and the sentence has to name the account that was refused.
     SshAuthRejected,
+    /// A Node without cron, asked to keep a schedule. Its own code so the
+    /// interface can offer to install it rather than only say so.
+    CronMissing,
 
     // ---- Vibe AI ----
     //
@@ -204,6 +207,11 @@ pub enum AppError {
     #[error("the Node rejected the SSH login for {username} - check the username, password or key")]
     SshAuthRejected { username: String, method: &'static str, server_id: Option<uuid::Uuid> },
 
+    /// Schedules are written to the Node's cron, and this Node has none.
+    /// `server_id` is what the interface's install button installs it on.
+    #[error("this Node has no cron, which schedules need to run")]
+    CronMissing { server_id: uuid::Uuid },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -287,6 +295,7 @@ impl AppError {
             AppError::HostKeyMismatch { .. } => ErrorCode::HostKeyMismatch,
             AppError::PasswordRequired { .. } => ErrorCode::PasswordRequired,
             AppError::SshAuthRejected { .. } => ErrorCode::SshAuthRejected,
+            AppError::CronMissing { .. } => ErrorCode::CronMissing,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -329,6 +338,7 @@ impl AppError {
             AppError::SshAuthRejected { username, method, server_id } => {
                 serde_json::json!({ "username": username, "method": method, "serverId": server_id })
             }
+            AppError::CronMissing { server_id } => serde_json::json!({ "serverId": server_id }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -397,6 +407,8 @@ impl Serialize for AppError {
             // Was literally `InvalidInput` until it had a code of its own, so
             // a `kind` reader keeps seeing exactly what it saw before.
             ErrorCode::SshAuthRejected => "invalid_input",
+            // Something the operator can fix on the Node - an input problem.
+            ErrorCode::CronMissing => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

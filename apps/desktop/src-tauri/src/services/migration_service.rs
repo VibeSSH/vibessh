@@ -30,6 +30,7 @@ use crate::runtime::local_process::LocalProcessManager;
 use crate::services::application_service;
 use crate::services::dns_service;
 use crate::services::firewall_service;
+use crate::services::schedule_service;
 use crate::services::ssh_service::get_or_connect;
 use crate::ssh::command::quote as shell_quote;
 use crate::ssh::SshSession;
@@ -40,6 +41,7 @@ use crate::storage::dns_repository::DnsRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
+use crate::storage::application_schedule_repository::ApplicationScheduleRepository;
 use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
@@ -121,6 +123,7 @@ pub async fn migrate_application(
     dns_suffix: &str,
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
+    schedule_repo: &ApplicationScheduleRepository,
     log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     locks: &MigrationLockManager,
@@ -141,6 +144,7 @@ pub async fn migrate_application(
         dns_suffix,
         firewall_rule_repo,
         registry_repo,
+        schedule_repo,
         log_capture,
         sessions,
         local_process_manager,
@@ -163,6 +167,7 @@ async fn migrate_application_inner(
     dns_suffix: &str,
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
+    schedule_repo: &ApplicationScheduleRepository,
     log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     local_process_manager: &Arc<LocalProcessManager>,
@@ -276,6 +281,12 @@ async fn migrate_application_inner(
     // - see `LogCaptureStore::rename`'s own doc comment.
     progress(MigrationProgress::phase(MigrationPhase::Finishing));
     log_capture.rename(source_application_id, target_application_id).await;
+    // Before the source row goes: its schedules would go with it, by cascade.
+    // They follow the Application to its new Node, and the source's cron
+    // file is removed by the teardown just below.
+    if let Err(err) = schedule_service::move_schedules(server_repo, sessions, app_repo, schedule_repo, source_application_id, target_application_id).await {
+        warnings.push(format!("the application's schedules weren't set up on the new node - open its Schedules tab and save one to retry: {err}"));
+    }
     // Retires the source instance: destroys its container, removes its
     // Node-side identity, and revokes its firewall rules. Deliberately
     // neither drops databases (migration does not move them, so dropping

@@ -22,6 +22,7 @@ import { MetricTile, MetricTileGrid } from "@/components/ui/MetricTile";
 import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
+import { SchedulesTab } from "@/components/applications/SchedulesTab";
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCard";
 import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
@@ -85,7 +86,7 @@ const LOG_TAIL_LINES = 500;
 
 /** Every tab, and the values the `?tab=` parameter accepts. One list, so a
  * tab cannot exist without being linkable to. */
-const TABS = ["overview", "minecraft", "restarts", "files", "logs", "ports", "databases", "backups", "members", "settings"] as const;
+const TABS = ["overview", "minecraft", "restarts", "files", "logs", "ports", "databases", "backups", "schedules", "members", "settings"] as const;
 type Tab = (typeof TABS)[number];
 type Verb = "start" | "stop" | "restart" | "kill" | "recreate";
 
@@ -506,6 +507,10 @@ export function ApplicationDetail() {
   const canStopOrRestart = canLifecycle && (application ? ["running", "starting"].includes(application.status) : false);
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
   const features = blueprint?.features ?? [];
+  const schedulesAvailable =
+    application?.runtimeType === "docker" &&
+    !!application.serverId &&
+    servers.find((s) => s.id === application.serverId)?.connectionMode !== "agent";
   /* Held steady across this page's five-second poll. Written inline it was a
      fresh array literal on every render, which is enough on its own to make
      the memoised rows inside the Files tab miss every time. */
@@ -743,6 +748,14 @@ export function ApplicationDetail() {
               {t("applicationDetail.tabBackups")}
             {tab === "backups" && <TabUnderline group="application" />}
               </button>
+            {/* Where the Node can run them itself: a Docker application on a
+                Node reached over SSH. See `SchedulesTab`. */}
+            {schedulesAvailable && (
+              <button className={`modal-tab ${tab === "schedules" ? "modal-tab-active" : ""}`} onClick={() => setTab("schedules")}>
+                {t("schedules.title")}
+              {tab === "schedules" && <TabUnderline group="application" />}
+              </button>
+            )}
             <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
               {t("applicationDetail.tabMembers")}
             {tab === "members" && <TabUnderline group="application" />}
@@ -1004,6 +1017,7 @@ export function ApplicationDetail() {
 
           {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
           {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
+          {tab === "schedules" && schedulesAvailable && <SchedulesTab applicationId={id} canManage={canLifecycle} />}
           {tab === "members" && <ApplicationMembersTab applicationId={id} />}
           {tab === "minecraft" && minecraft.status && <MinecraftStatusCard status={minecraft.status} history={minecraft.history} />}
           {tab === "restarts" && scheduler.status && <SchedulerStatusCard status={scheduler.status} fetchedAt={scheduler.fetchedAt} />}

@@ -1166,6 +1166,7 @@ mod tests {
                 ".vibe",
                 &firewall_rule_repo,
                 &registry_repo,
+                &crate::storage::application_schedule_repository::ApplicationScheduleRepository::open(&std::env::temp_dir().join(format!("vibessh-schedule-test-{}.sqlite3", Uuid::new_v4()))).unwrap(),
                 &log_capture,
                 &sessions,
                 &locks,

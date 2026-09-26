@@ -18,6 +18,7 @@ pub mod network_commands;
 pub mod pairing_commands;
 pub mod pterodactyl_commands;
 pub mod pterodactyl_import_command;
+pub mod schedule_commands;
 pub mod port_forward_commands;
 pub mod server_commands;
 pub mod ssh_commands;

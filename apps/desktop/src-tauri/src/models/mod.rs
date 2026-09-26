@@ -2,6 +2,7 @@ mod ai;
 mod app_info;
 mod application;
 mod application_backup;
+mod application_schedule;
 mod application_template;
 mod discovered_server;
 mod backup_destination;
@@ -27,6 +28,7 @@ pub use application::{
     protocol_name, SetHealthCheckInput, SetResourceLimitsInput, UpdateApplicationInput,
 };
 pub use application_backup::{ApplicationBackup, BackupKind, BackupSchedule, SetBackupScheduleInput};
+pub use application_schedule::{ApplicationSchedule, ApplicationSchedules, NodeTimeZone, ScheduleAction, ScheduleInput, ScheduleRun};
 pub use application_template::{ApplicationTemplate, TemplateEnvironmentVariable};
 pub use discovered_server::{DiscoveredServer, DiscoveredServerKind};
 pub use backup_destination::{BackupDestinationConfig, SetBackupDestinationInput};

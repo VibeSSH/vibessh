@@ -13,6 +13,7 @@ use crate::storage::dns_repository::DnsRepository;
 use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::log_capture::LogCaptureStore;
 use crate::storage::node_network_repository::NodeNetworkRepository;
+use crate::storage::application_schedule_repository::ApplicationScheduleRepository;
 use crate::storage::registry_credential_repository::RegistryCredentialRepository;
 use crate::storage::server_repository::ServerRepository;
 
@@ -26,7 +27,7 @@ use crate::storage::server_repository::ServerRepository;
 /// keyed by the source Application - one migration per Application at a
 /// time is already enforced by `MigrationLockManager`.
 #[tauri::command]
-// Fourteen managed dependencies, because migrating an Application touches
+// Fifteen managed dependencies, because migrating an Application touches
 // almost every subsystem at once: both Nodes, the applications/servers/DNS/
 // database/firewall/registry repositories, the session and lock managers,
 // and the log store. Tauri has no way to inject these other than as
@@ -43,6 +44,7 @@ pub async fn migrate_application(
     dns_suffix: State<'_, DnsSuffixState>,
     firewall_rule_repo: State<'_, FirewallRuleRepository>,
     registry_repo: State<'_, RegistryCredentialRepository>,
+    schedule_repo: State<'_, ApplicationScheduleRepository>,
     log_capture: State<'_, LogCaptureStore>,
     sessions: State<'_, SshSessionManager>,
     locks: State<'_, MigrationLockManager>,
@@ -65,6 +67,7 @@ pub async fn migrate_application(
         &dns_suffix.get(),
         &firewall_rule_repo,
         &registry_repo,
+        &schedule_repo,
         &log_capture,
         &sessions,
         &locks,
