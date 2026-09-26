@@ -116,7 +116,7 @@ pub async fn sync_team_access(
 
     // Installed before anybody is granted it, so a console rule never names
     // a writer that is not there yet.
-    let console_writer = if rules_by_member.iter().flatten().any(|rules| rules.console.is_some()) {
+    let console_writer = if members.iter().zip(&rules_by_member).any(|(member, rules)| needs_console_writer(member, rules)) {
         ensure_console_writer_installed(&connection).await
     } else {
         Ok(())
@@ -143,7 +143,7 @@ pub async fn sync_team_access(
             // Nothing is granted on top of a writer that failed to install:
             // their console rule would name a missing file, and the rest of
             // the rules would read as a complete grant.
-            Err(err) if rules.iter().any(|rules| rules.console.is_some()) => Err(AppError::Connection(err.to_string())),
+            Err(err) if needs_console_writer(&member, &rules) => Err(AppError::Connection(err.to_string())),
             _ => grant_one(&connection, &member, &rules).await,
         };
         results.push(MemberAccessResult {
@@ -207,6 +207,12 @@ async fn revoke_one(
     )
     .await?;
     crate::services::cloud_service::complete_revocation(cloud, team_id, revocation.id).await
+}
+
+/// Whether this member's rules name the console writer - through a grant on
+/// one Application, or through a role's team-wide console permission.
+fn needs_console_writer(member: &CloudMemberAccess, rules: &[member_sudoers::ApplicationRules]) -> bool {
+    rules.iter().any(|rules| rules.console.is_some()) || member.permissions.iter().any(|key| key == "applications.console")
 }
 
 /// The rules one member's per-application grants earn on this Node.

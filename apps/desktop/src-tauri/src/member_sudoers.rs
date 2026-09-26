@@ -107,6 +107,9 @@ pub fn privilege_for(permissions: &[String]) -> Privilege {
         commands.insert(command("docker", "ps *"));
         commands.insert(command("docker", "inspect vibessh-app-*"));
         commands.insert(command("docker", "logs vibessh-app-*"));
+        // With options first - `--tail 200 --timestamps`, the form
+        // `runtime::member` reads them in. `docker logs` takes one container.
+        commands.insert(command("docker", "logs * vibessh-app-*"));
         // `--no-pager` is not tidiness. Without it `systemctl status` on a
         // terminal opens `less` - as root, under this rule - and `!sh` in
         // `less` is a root shell.
@@ -123,6 +126,13 @@ pub fn privilege_for(permissions: &[String]) -> Privilege {
         for verb in ["start", "stop", "restart"] {
             commands.insert(command("systemctl", format!("{verb} vibessh-app-*")));
         }
+    }
+
+    if held.contains("applications.console") {
+        // Any Application's console, which is what a team-wide permission
+        // means. The writer checks its argument is an Application id and
+        // reads the line from stdin, so the wildcard reaches no further.
+        commands.insert(command(CONSOLE_WRITER_PATH, "*"));
     }
 
     if held.contains("node.firewall") {
@@ -164,6 +174,14 @@ pub const CONSOLE_WRITER_PATH: &str = "/usr/local/lib/vibessh/console-write";
 /// One line only (`read -r`), so input cannot smuggle a second command in on
 /// a newline; `timeout`, because a fifo nobody is reading blocks a writer
 /// forever; and the id checked to be a UUID before it becomes part of a path.
+///
+/// **It attaches the console again when nothing is reading it.** The owner's
+/// start and restart attach `docker attach` to the fifo; a restart run by a
+/// member is a bare `docker restart`, and the attach ends with the process
+/// it was attached to. Without this, a member's restart would leave the
+/// console deaf until the owner next started the server. So a write nobody
+/// reads within two seconds attaches again - as the owner's start would,
+/// the running container checked first - and writes once more.
 pub const CONSOLE_WRITER_SCRIPT: &str = r#"#!/bin/sh
 # Installed by VibeSSH. Writes one line from stdin to an application's
 # console: console-write <application id>
@@ -172,9 +190,18 @@ case "${1:-}" in
   ''|*[!0-9a-f-]*) echo "console-write: not an application id" >&2; exit 2 ;;
 esac
 fifo="/run/vibessh/console/$1.stdin"
+name="vibessh-app-$1"
 [ -p "$fifo" ] || { echo "console-write: the console is not attached - start the application first" >&2; exit 3; }
 IFS= read -r line || [ -n "${line:-}" ] || exit 0
-exec timeout 5 sh -c 'printf "%s\n" "$1" >> "$2"' console-write "$line" "$fifo"
+send() { timeout "$1" sh -c 'printf "%s\n" "$1" >> "$2"' console-write "$line" "$fifo"; }
+send 2 && exit 0
+# Nothing is reading: the container restarted since it was attached.
+[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" = "true" ] || { echo "console-write: the application is not running" >&2; exit 4; }
+exec 3<>"$fifo"
+nohup docker attach --sig-proxy=false "$name" <&3 3<&- >/dev/null 2>&1 &
+exec 3<&-
+sleep 1
+send 5
 "#;
 
 /// The file helper, which `files::sudo_user` installs and runs as an
@@ -550,6 +577,10 @@ mod tests {
         assert!(CONSOLE_WRITER_SCRIPT.contains("*[!0-9a-f-]*"), "the id is not checked");
         assert!(CONSOLE_WRITER_SCRIPT.contains("read -r line"), "input should be read as one line");
         assert!(CONSOLE_WRITER_SCRIPT.contains("timeout"), "a fifo nobody reads would block forever");
+        // A member's restart ends the owner's attach; the writer has to be
+        // able to attach again, and only to a running container.
+        assert!(CONSOLE_WRITER_SCRIPT.contains("docker attach --sig-proxy=false \"$name\""), "no re-attach");
+        assert!(CONSOLE_WRITER_SCRIPT.contains("{{.State.Running}}"), "re-attach without checking the container runs");
     }
 
     #[test]
