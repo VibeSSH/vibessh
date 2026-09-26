@@ -39,6 +39,14 @@ describe("every icon name used in the app", () => {
     for (const match of text.matchAll(/<Icon\s+name=["']([a-z][a-z0-9-]*)["']/g)) {
       used.set(match[1], [...(used.get(match[1]) ?? []), path]);
     }
+    // Menu items and similar objects: `{ label, icon: "scissors" }`. The two
+    // forms above missed these, and cut and paste shipped without icons in
+    // every right-click menu. Not in the shadcn primitives, where `icon:` is a
+    // button size variant holding class names.
+    if (path.includes("/shadcn/")) continue;
+    for (const match of text.matchAll(/\bicon:\s*["']([a-z][a-z0-9-]*)["']/g)) {
+      used.set(match[1], [...(used.get(match[1]) ?? []), path]);
+    }
   }
 
   it("finds icon usages at all, so a broken scan cannot pass by finding nothing", () => {

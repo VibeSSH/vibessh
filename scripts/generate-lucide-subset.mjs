@@ -38,6 +38,9 @@ const ICON_NAMES = [
   "plug",
   "x",
   "copy",
+  // Cut and paste in the text-field and editor right-click menus.
+  "scissors",
+  "clipboard",
   "check",
   "key",
   "square-pen",

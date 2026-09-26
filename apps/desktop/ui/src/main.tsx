@@ -28,8 +28,13 @@ import { getStartupFailure } from "@/services/appService";
 // and then again in the chosen one.
 applyStoredTheme();
 
+// Text fields are left alone here: `TextFieldContextMenu` gives them cut,
+// copy and paste in the app's own menu, and suppressing the event first
+// would make it look already handled.
 document.addEventListener("contextmenu", (e) => {
-  if (!e.shiftKey) e.preventDefault();
+  const target = e.target;
+  const textField = target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !["checkbox", "radio", "button", "submit", "range", "color", "file"].includes(target.type));
+  if (!e.shiftKey && !textField) e.preventDefault();
 });
 
 /**
