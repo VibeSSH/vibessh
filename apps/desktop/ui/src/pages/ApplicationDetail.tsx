@@ -23,6 +23,7 @@ import { useAiReady } from "@/hooks/useAiReady";
 import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { SchedulesTab } from "@/components/applications/SchedulesTab";
+import { ReinstallCard } from "@/components/applications/ReinstallCard";
 import { UpcomingActionsCard } from "@/components/applications/UpcomingActionsCard";
 import { DiskUsageBar } from "@/components/applications/DiskUsageBar";
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
@@ -972,6 +973,9 @@ export function ApplicationDetail() {
                         this is what decides whether the card above asks for
                         a Paper version or a container image. */}
                     <BlueprintSwitchCard applicationId={id} application={application} current={blueprint} onChanged={reload} />
+                    {application.runtimeType === "docker" && canLifecycle && (
+                      <ReinstallCard applicationId={id} applicationName={application.name} onDone={reload} />
+                    )}
                   </>
                 )}
                 {settingsSection === "environment" && <EnvironmentTab application={application} blueprint={blueprint} onApplied={applyUpdate} />}

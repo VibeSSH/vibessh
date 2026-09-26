@@ -307,6 +307,7 @@ pub fn run() {
             commands::application_commands::stop_application,
             commands::application_commands::restart_application,
             commands::application_commands::recreate_application,
+            commands::application_commands::reinstall_application,
             commands::application_commands::kill_application,
             commands::application_commands::refresh_application_status,
             commands::application_commands::get_application_resource_usage,

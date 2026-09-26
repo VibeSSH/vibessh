@@ -167,6 +167,92 @@ pub async fn recreate_application(
     .await
 }
 
+/// Reinstalls an Application the way Pterodactyl does: its blueprint's
+/// installation runs again from the answers kept at creation - a Paper server
+/// downloads its jar afresh, a server from an image pulls the image again -
+/// and the container is rebuilt. Worlds, configs and plugins stay, unless
+/// `wipe_files` asks for a clean start, in which case everything in the
+/// working directory goes first.
+///
+/// Stopped first, and started again only if it was running: a reinstall is
+/// not a way to start something that was off on purpose.
+#[allow(clippy::too_many_arguments)]
+pub async fn reinstall_application(
+    repo: &ApplicationRepository,
+    registry: &BlueprintRegistry,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    registry_repo: &RegistryCredentialRepository,
+    local_process_manager: &Arc<LocalProcessManager>,
+    java_root: &std::path::Path,
+    id: Uuid,
+    wipe_files: bool,
+) -> AppResult<ApplicationStatus> {
+    let detail = get_application(repo, id)?;
+    if detail.application.runtime_type != RuntimeType::Docker {
+        return Err(AppError::InvalidInput("reinstalling is only available for Docker applications".into()));
+    }
+    let was_running = matches!(detail.application.status, ApplicationStatus::Running | ApplicationStatus::Starting);
+    if was_running {
+        stop_application(repo, server_repo, sessions, local_process_manager, id, true).await?;
+    }
+
+    if wipe_files {
+        clear_working_directory(server_repo, sessions, detail.application.server_id, &detail.application.working_directory).await?;
+    }
+
+    // The installation itself: provisioning again from the stored answers,
+    // the same call a config edit makes with nothing edited.
+    update_application_config(repo, registry, server_repo, sessions, java_root, id, serde_json::Value::Null).await?;
+    // A newer copy of the image, even when one is cached - the same pull the
+    // Docker image card offers, private registry login included.
+    if get_application(repo, id)?.runtime_config.get("image").and_then(|image| image.as_str()).is_some_and(|image| !image.trim().is_empty()) {
+        super::registry::pull_application_image(repo, server_repo, sessions, registry_repo, id).await?;
+    }
+
+    let server_id = detail.application.server_id;
+    retry_on_connection_failure(sessions, server_id, || async {
+        let (detail, connection, runtime) = load_runtime(repo, server_repo, sessions, local_process_manager, id).await?;
+        let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
+        runtime.destroy(&ctx).await?;
+        if was_running {
+            runtime.start(&ctx).await?;
+        }
+        refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
+    })
+    .await
+}
+
+/// Empties a working directory, keeping the directory itself - its owner and
+/// mode, and the bind mount that points at it. Re-validated against the rules
+/// that gated it at creation, since this deletes as root.
+async fn clear_working_directory(server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Option<Uuid>, working_directory: &str) -> AppResult<()> {
+    let Some(server_id) = server_id else {
+        let mut entries = tokio::fs::read_dir(working_directory)
+            .await
+            .map_err(|err| AppError::Internal(format!("couldn't read '{working_directory}': {err}")))?;
+        while let Some(entry) = entries.next_entry().await.map_err(|err| AppError::Internal(format!("couldn't read '{working_directory}': {err}")))? {
+            let path = entry.path();
+            let removed = if entry.file_type().await.map(|kind| kind.is_dir()).unwrap_or(false) {
+                tokio::fs::remove_dir_all(&path).await
+            } else {
+                tokio::fs::remove_file(&path).await
+            };
+            removed.map_err(|err| AppError::Internal(format!("couldn't remove {}: {err}", path.display())))?;
+        }
+        return Ok(());
+    };
+    crate::ssh::command::validate_application_directory(working_directory)?;
+    let connection = crate::services::ssh_service::get_or_connect(server_repo, sessions, server_id).await?;
+    let output = connection
+        .execute_command(&format!("sudo find {} -mindepth 1 -delete", crate::ssh::command::quote(working_directory)))
+        .await?;
+    if output.exit_code != 0 {
+        return Err(AppError::Connection(format!("couldn't clear '{working_directory}': {}", output.stderr.trim())));
+    }
+    Ok(())
+}
+
 pub async fn kill_application(
     repo: &ApplicationRepository,
     server_repo: &ServerRepository,

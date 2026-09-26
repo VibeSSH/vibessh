@@ -104,6 +104,19 @@ Dla aplikacji Docker na Nodzie połączonym przez SSH możesz ograniczyć, ile m
 
 Limitu pilnuje sam Node: co 5 minut sprawdza, ile zajmuje folder aplikacji. Po przekroczeniu limitu zatrzymuje serwer, dając mu czas na zapis świata, i nie da się go uruchomić, dopóki nie zwolnisz miejsca albo nie zwiększysz limitu. Zajętość widać w zakładce **Przegląd**, w karcie **Zasoby**. Node potrzebuje do tego crona, tak jak harmonogramy.
 
+## Reinstalacja
+
+Gdy serwer jest zepsuty i restart nie pomaga (uszkodzony plik .jar, nieudana ręczna aktualizacja), zainstaluj go od nowa.
+
+1. Wejdź w zakładkę **Ustawienia** → **Ogólne**.
+2. W karcie **Reinstalacja** kliknij **Reinstaluj**.
+3. Zostaw **Zacznij od zera** niezaznaczone, jeśli chcesz zachować świat, konfiguracje i pluginy.
+4. Kliknij **Reinstaluj**.
+
+Aplikacja zostanie zatrzymana, zainstalowana od nowa z tymi samymi ustawieniami (serwer Paper pobierze swój plik .jar ponownie, obraz Dockera zostanie pobrany jeszcze raz) i uruchomiona, jeśli wcześniej działała.
+
+**Zacznij od zera** usuwa wszystkie pliki aplikacji przed instalacją - to czysty serwer. Trzeba wtedy wpisać nazwę aplikacji. Zrób wcześniej backup, jeśli czegoś z tych plików potrzebujesz.
+
 ## Zmienne środowiskowe
 
 1. Wejdź w zakładkę **Ustawienia**.

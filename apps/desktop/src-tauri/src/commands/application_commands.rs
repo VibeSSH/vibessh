@@ -541,6 +541,24 @@ pub async fn recreate_application(
     services::recreate_application(&repo, &registry, &server_repo, &sessions, &registry_repo, &local_process_manager, id).await
 }
 
+/// Runs the application's installation again and rebuilds its container -
+/// see `services::reinstall_application`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn reinstall_application(
+    repo: State<'_, ApplicationRepository>,
+    registry: State<'_, BlueprintRegistry>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    registry_repo: State<'_, RegistryCredentialRepository>,
+    local_process_manager: State<'_, Arc<LocalProcessManager>>,
+    java_root: State<'_, crate::state::JavaRoot>,
+    id: Uuid,
+    wipe_files: bool,
+) -> AppResult<ApplicationStatus> {
+    services::reinstall_application(&repo, &registry, &server_repo, &sessions, &registry_repo, &local_process_manager, &java_root.0, id, wipe_files).await
+}
+
 #[tauri::command]
 pub async fn kill_application(
     repo: State<'_, ApplicationRepository>,

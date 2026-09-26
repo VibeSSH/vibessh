@@ -1289,6 +1289,21 @@
     "disableBody": "Do zalogowania się znów wystarczy samo hasło. Potwierdź hasłem i kodem z aplikacji.",
     "disabledToast": "Wyłączono weryfikację dwuetapową"
   },
+  "reinstall": {
+    "title": "Reinstalacja",
+    "subtitle": "Zainstaluj serwer od nowa, gdy restart nie pomaga.",
+    "button": "Reinstaluj",
+    "note": "Instalacja przebiega jeszcze raz z tymi samymi ustawieniami: np. serwer Paper pobiera swój plik .jar od nowa, a aplikacja z obrazu Dockera pobiera obraz ponownie. Kontener zostaje przebudowany. Świat, konfiguracje i pluginy zostają, chyba że zaznaczysz start od zera.",
+    "confirmTitle": "Reinstalować {{name}}?",
+    "confirmBody": "Aplikacja zostanie zatrzymana, zainstalowana od nowa i uruchomiona ponownie, jeśli wcześniej działała.",
+    "wipe": "Zacznij od zera - usuń wszystkie pliki aplikacji (świat, konfiguracje, pluginy) przed instalacją",
+    "wipeWarning": "Wszystkie pliki w folderze aplikacji zostaną trwale usunięte. Zrób najpierw backup, jeśli czegoś z nich potrzebujesz.",
+    "typeName": "Wpisz {{name}}, żeby potwierdzić",
+    "busy": "Trwa reinstalacja - pobieranie może chwilę potrwać.",
+    "working": "Reinstalowanie…",
+    "confirm": "Reinstaluj",
+    "doneToast": "Zainstalowano {{name}} od nowa"
+  },
   "schedules": {
     "installCron": "Zainstaluj crona",
     "installingCron": "Instalowanie crona…",

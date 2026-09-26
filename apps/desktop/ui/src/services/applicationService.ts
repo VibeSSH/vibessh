@@ -128,6 +128,11 @@ export function restartApplication(id: string): Promise<ApplicationStatus> {
 }
 
 /** "Recreate Container" (Etap M1, Docker applications only) - tears the container down and creates it again from the application's current config, so an edited image/command/resource limit/restart policy actually takes effect. */
+/** Runs the application's installation again and rebuilds its container; `wipeFiles` empties its folder first. Docker only. */
+export function reinstallApplication(id: string, wipeFiles: boolean): Promise<ApplicationStatus> {
+  return callCommand<ApplicationStatus>("reinstall_application", { id, wipeFiles });
+}
+
 export function recreateApplication(id: string): Promise<ApplicationStatus> {
   return callCommand<ApplicationStatus>("recreate_application", { id });
 }

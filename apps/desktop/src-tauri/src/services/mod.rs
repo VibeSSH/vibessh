@@ -52,7 +52,7 @@ pub use application_service::{
     create_application, delete_application, get_application, kill_application, list_application_ports, list_applications,
     ApplicationDeleteOptions, ApplicationTeardownReport,
     connect_applications, disconnect_applications, list_application_links,
-    list_blueprints, list_registry_credentials, recreate_application, refresh_application_status, remove_application_port,
+    list_blueprints, list_registry_credentials, recreate_application, reinstall_application, refresh_application_status, remove_application_port,
     remove_registry_credential, restart_application,
     pull_application_image, set_application_environment, set_application_health_check, set_application_image, set_application_resource_limits,
     set_registry_credential, start_application,

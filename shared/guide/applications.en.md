@@ -104,6 +104,19 @@ For a Docker application on a Node connected over SSH you can cap how much space
 
 The Node itself keeps to the limit: every 5 minutes it measures the application's folder. Once it is over, it stops the server - giving it time to save the world - and the server can't be started until you free some space or raise the limit. The usage is shown on the **Overview** tab, in the **Resources** card. The Node needs cron for this, as it does for schedules.
 
+## Reinstalling
+
+When a server is broken and a restart doesn't help (a corrupted .jar, a botched manual update), install it again.
+
+1. Open the **Settings** tab → **General**.
+2. In the **Reinstall** card, click **Reinstall**.
+3. Leave **Start from scratch** unticked to keep the world, configs and plugins.
+4. Click **Reinstall**.
+
+The application is stopped, installed again with the same settings (a Paper server downloads its .jar again, a Docker image is pulled again) and started again if it was running.
+
+**Start from scratch** deletes all of the application's files before installing - a clean server. You then have to type the application's name. Make a backup first if you need anything from those files.
+
 ## Environment variables
 
 1. Open the **Settings** tab.

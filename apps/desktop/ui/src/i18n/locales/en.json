@@ -1282,6 +1282,21 @@
     "disableBody": "Signing in will take only the password again. Confirm with your password and a code from the app.",
     "disabledToast": "Two-step verification turned off"
   },
+  "reinstall": {
+    "title": "Reinstall",
+    "subtitle": "Install the server again, for when a restart doesn't help.",
+    "button": "Reinstall",
+    "note": "The installation runs again with the same settings: a Paper server downloads its .jar afresh, an application from a Docker image pulls the image again. The container is rebuilt. The world, configs and plugins stay, unless you choose to start from scratch.",
+    "confirmTitle": "Reinstall {{name}}?",
+    "confirmBody": "The application will be stopped, installed again, and started again if it was running.",
+    "wipe": "Start from scratch - delete all of the application's files (world, configs, plugins) before installing",
+    "wipeWarning": "Every file in the application's folder will be deleted for good. Make a backup first if you need anything from them.",
+    "typeName": "Type {{name}} to confirm",
+    "busy": "Reinstalling - the download can take a while.",
+    "working": "Reinstalling…",
+    "confirm": "Reinstall",
+    "doneToast": "Reinstalled {{name}}"
+  },
   "schedules": {
     "installCron": "Install cron",
     "installingCron": "Installing cron…",
