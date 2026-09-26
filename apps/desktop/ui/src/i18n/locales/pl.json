@@ -467,7 +467,8 @@
     "guardRailNote": "To ukrywa aplikację w VibeSSH. To nie jest granica bezpieczeństwa: ktoś, kto ma dostęp do serwera przez SSH, i tak ją zobaczy.",
     "canAlso": "Poza podglądem i logami może:",
     "ownerHasAll": "Właściciel zespołu ma wszystkie uprawnienia przez swoją rolę.",
-    "permissionsSyncNote": "Uprawnienia przy aplikacji trafiają na Node przy następnej synchronizacji dostępu (Zespoły → Serwery) i obowiązują tylko dla tej aplikacji."
+    "permissionsSyncNote": "Uprawnienia przy aplikacji trafiają na Node przy następnej synchronizacji dostępu (Zespoły → Serwery) i obowiązują tylko dla tej aplikacji.",
+    "noTeamServerNote": "Serwer, na którym działa ta aplikacja, nie jest udostępniony temu zespołowi, więc uprawnienia ustawione tutaj nie mają dokąd trafić. Dodaj go w Zespoły → Serwery i wróć do tej zakładki."
   },
   "applicationNetwork": {
     "access": "Dostęp sieciowy",

@@ -102,12 +102,13 @@ pub async fn cloud_set_backend_url(app: tauri::AppHandle, state: State<'_, Cloud
 #[tauri::command]
 pub async fn share_application_with_team(
     app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
+    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
     cloud: State<'_, CloudState>,
     team_id: uuid::Uuid,
     application_id: uuid::Uuid,
     team_server_id: Option<uuid::Uuid>,
 ) -> AppResult<crate::models::CloudApplication> {
-    services::team_application_service::share_application(&app_repo, &cloud, team_id, application_id, team_server_id).await
+    services::team_application_service::share_application(&app_repo, &server_repo, &cloud, team_id, application_id, team_server_id).await
 }
 
 /// Puts the Applications teammates shared with this account on this

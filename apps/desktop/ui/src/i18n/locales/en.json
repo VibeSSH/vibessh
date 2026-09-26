@@ -467,7 +467,8 @@
     "guardRailNote": "This hides the application inside VibeSSH. It is not a security boundary: anyone who can reach the server over SSH can still see it.",
     "canAlso": "Besides viewing and logs, can:",
     "ownerHasAll": "The team owner has every permission through their role.",
-    "permissionsSyncNote": "Permissions on an application reach the Node at the next access sync (Teams → Servers), and apply to this application only."
+    "permissionsSyncNote": "Permissions on an application reach the Node at the next access sync (Teams → Servers), and apply to this application only.",
+    "noTeamServerNote": "The server this application runs on isn't shared with this team, so the permissions set here have nowhere to go. Add it under Teams → Servers and come back to this tab."
   },
   "applicationNetwork": {
     "access": "Network access",

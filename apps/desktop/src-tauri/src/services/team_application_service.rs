@@ -20,6 +20,7 @@ use crate::models::{
 };
 use crate::state::CloudState;
 use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::server_repository::ServerRepository;
 
 fn protocol_name(protocol: PortProtocol) -> &'static str {
     match protocol {
@@ -56,8 +57,18 @@ fn project_environment(environment: &[EnvironmentVariable]) -> Vec<CloudApplicat
 }
 
 /// Publishes one Application to a team, replacing any earlier snapshot.
+///
+/// **Which Node it is on.** Without `team_server_id` the projection says the
+/// Application runs nowhere, and every per-application permission is inert:
+/// the access sync writes rules only for Applications on the Node it is
+/// syncing, and a member's install adopts only Applications on a Node it
+/// reaches. Both places that share passed none. So when the caller does not
+/// name one, it is found here - the team's server at the same address and
+/// SSH port as the Node this install runs the Application on - and only left
+/// empty when the team shares no such server.
 pub async fn share_application(
     app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
     cloud: &CloudState,
     team_id: Uuid,
     application_id: Uuid,
@@ -66,6 +77,11 @@ pub async fn share_application(
     let detail = app_repo
         .get(application_id)?
         .ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?;
+    let team_server_id = match (team_server_id, detail.application.server_id) {
+        (Some(given), _) => Some(given),
+        (None, Some(server_id)) => team_server_for(server_repo, cloud, team_id, server_id).await?,
+        (None, None) => None,
+    };
 
     let ports: Vec<CloudApplicationPort> = detail
         .ports
@@ -92,6 +108,18 @@ pub async fn share_application(
         &project_environment(&detail.environment),
     )
     .await
+}
+
+/// The team's server for the Node this install knows as `server_id`,
+/// matched on address and SSH port - the pair that identifies a machine to
+/// SSH, and the one `ServersSection` matches on in the other direction.
+async fn team_server_for(server_repo: &ServerRepository, cloud: &CloudState, team_id: Uuid, server_id: Uuid) -> AppResult<Option<Uuid>> {
+    let Some(local) = server_repo.get(server_id)? else { return Ok(None) };
+    let team_servers = crate::services::cloud_service::list_servers(cloud, team_id).await?;
+    Ok(team_servers
+        .iter()
+        .find(|shared| shared.host.eq_ignore_ascii_case(&local.host) && shared.ssh_port == i32::from(local.ssh_port))
+        .map(|shared| shared.id))
 }
 
 pub async fn list_shared_applications(cloud: &CloudState, team_id: Uuid) -> AppResult<Vec<CloudApplication>> {

@@ -132,7 +132,19 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
         setMembers(loadedMembers);
         setCanManage(permissions.includes(APPLICATIONS_CREATE));
         setMyPermissions(permissions);
-        const projection = shared.find((entry) => entry.localId === applicationId) ?? null;
+        let projection = shared.find((entry) => entry.localId === applicationId) ?? null;
+        // Shared before the projection recorded its Node, which every share
+        // did until now: pushed again, so the Rust side can find the team's
+        // server for it. Without one, no permission set here can reach the
+        // Node. Only by somebody who may share - anyone else just sees the
+        // note below.
+        if (projection && !projection.teamServerId && permissions.includes(APPLICATIONS_CREATE)) {
+          try {
+            projection = await shareApplicationWithTeam(tid, applicationId, null);
+          } catch (err) {
+            console.warn("couldn't record which Node this shared application is on", err);
+          }
+        }
         setSharedApp(projection);
         if (!projection) {
           setAllowed([]);
@@ -383,7 +395,14 @@ export function ApplicationMembersTab({ applicationId }: { applicationId: string
         </ul>
       )}
 
-      {sharedApp && allowed.length > 0 && (
+      {sharedApp && !sharedApp.teamServerId && (
+        <p className="application-members-note application-members-note-pending">
+          <Icon name="alert-triangle" size={14} />
+          {t("applicationMembers.noTeamServerNote")}
+        </p>
+      )}
+
+      {sharedApp && sharedApp.teamServerId && allowed.length > 0 && (
         <p className="application-members-guardrail">
           <Icon name="refresh-cw" size={13} />
           {t("applicationMembers.permissionsSyncNote")}
