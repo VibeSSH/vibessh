@@ -1187,6 +1187,7 @@ mod tests {
                 &firewall_rule_repo,
                 &registry_repo,
                 &crate::storage::application_schedule_repository::ApplicationScheduleRepository::open(&std::env::temp_dir().join(format!("vibessh-schedule-test-{}.sqlite3", Uuid::new_v4()))).unwrap(),
+                &crate::storage::application_backup_repository::ApplicationBackupRepository::open(&std::env::temp_dir().join(format!("vibessh-backup-test-{}.sqlite3", Uuid::new_v4()))).unwrap(),
                 &log_capture,
                 &sessions,
                 &locks,
@@ -1204,6 +1205,66 @@ mod tests {
                 "the half-provisioned target application was left behind: {:?}",
                 app_repo.list().unwrap().iter().map(|a| a.name.clone()).collect::<Vec<_>>()
             );
+        }
+
+        /// Databases on the source Node do not move. Migrating went ahead
+        /// anyway, dropped their records and left the Application unable to
+        /// reach them; it is refused now, before anything is stopped or made.
+        #[tokio::test]
+        async fn a_migration_with_a_database_is_refused_before_anything_happens() {
+            let (app_repo, server_repo, network_repo, sessions, local_process_manager, _registry, firewall_rule_repo, registry_repo, log_capture, db_repo, dns_repo) =
+                temp_setup();
+            let source_node = unreachable_node(&server_repo, "Source");
+            let target_node = unreachable_node(&server_repo, "Target");
+            let id = docker_application(&app_repo, Some(source_node), "WithDatabase");
+            let host = db_repo
+                .create_host(&crate::models::CreateDatabaseHostInput {
+                    server_id: Some(source_node),
+                    name: "local".into(),
+                    engine: crate::models::DatabaseEngine::Mariadb,
+                    host: "127.0.0.1".into(),
+                    port: 3306,
+                    admin_username: "root".into(),
+                    admin_password: "unused".into(),
+                })
+                .unwrap();
+            db_repo
+                .create_database(&crate::models::CreateApplicationDatabaseInput {
+                    application_id: id,
+                    database_host_id: host.id,
+                    database_name: "lobby_stats".into(),
+                    username: "lobby".into(),
+                    connections_from: "%".into(),
+                })
+                .unwrap();
+            let before = app_repo.list().unwrap().len();
+
+            let result = crate::services::migration_service::migrate_application(
+                &app_repo,
+                &server_repo,
+                &network_repo,
+                &dns_repo,
+                &db_repo,
+                ".vibe",
+                &firewall_rule_repo,
+                &registry_repo,
+                &crate::storage::application_schedule_repository::ApplicationScheduleRepository::open(&std::env::temp_dir().join(format!("vibessh-schedule-test-{}.sqlite3", Uuid::new_v4()))).unwrap(),
+                &crate::storage::application_backup_repository::ApplicationBackupRepository::open(&std::env::temp_dir().join(format!("vibessh-backup-test-{}.sqlite3", Uuid::new_v4()))).unwrap(),
+                &log_capture,
+                &sessions,
+                &crate::state::MigrationLockManager::default(),
+                &local_process_manager,
+                id,
+                target_node,
+                &|_| {},
+            )
+            .await;
+
+            match result {
+                Err(AppError::MigrationHasDatabases { databases }) => assert_eq!(databases, "lobby_stats"),
+                other => panic!("expected the database refusal, got {:?}", other.map(|r| r.files_copied)),
+            }
+            assert_eq!(app_repo.list().unwrap().len(), before, "nothing was created");
         }
     }
 

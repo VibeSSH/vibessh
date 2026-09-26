@@ -35,6 +35,7 @@ use crate::services::ssh_service::get_or_connect;
 use crate::ssh::command::quote as shell_quote;
 use crate::ssh::SshSession;
 use crate::state::{MigrationLockManager, SshSessionManager};
+use crate::storage::application_backup_repository::ApplicationBackupRepository;
 use crate::storage::application_repository::ApplicationRepository;
 use crate::storage::database_repository::DatabaseRepository;
 use crate::storage::dns_repository::DnsRepository;
@@ -124,6 +125,7 @@ pub async fn migrate_application(
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
     schedule_repo: &ApplicationScheduleRepository,
+    backup_repo: &ApplicationBackupRepository,
     log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     locks: &MigrationLockManager,
@@ -146,6 +148,7 @@ pub async fn migrate_application(
         firewall_rule_repo,
         registry_repo,
         schedule_repo,
+        backup_repo,
         log_capture,
         sessions,
         local_process_manager,
@@ -169,6 +172,7 @@ async fn migrate_application_inner(
     firewall_rule_repo: &FirewallRuleRepository,
     registry_repo: &RegistryCredentialRepository,
     schedule_repo: &ApplicationScheduleRepository,
+    backup_repo: &ApplicationBackupRepository,
     log_capture: &LogCaptureStore,
     sessions: &SshSessionManager,
     local_process_manager: &Arc<LocalProcessManager>,
@@ -188,11 +192,27 @@ async fn migrate_application_inner(
     }
     server_repo.get(target_server_id)?.ok_or_else(|| AppError::NotFound(format!("server {target_server_id}")))?;
 
+    // Before anything is stopped: databases hosted on this Node do not move,
+    // and going ahead left them behind untracked while the Application
+    // started somewhere its connection could not reach them.
+    let databases = db_repo.list_databases(source_application_id)?;
+    if !databases.is_empty() {
+        let databases = databases.iter().map(|database| database.database_name.clone()).collect::<Vec<_>>().join(", ");
+        return Err(AppError::MigrationHasDatabases { databases });
+    }
+
     // Stop the source first - copying a directory a running Application is
     // still writing to (a Minecraft server saving its world, a database
     // flushing a page) would copy it mid-write.
+    //
+    // Decided from the Node, not from the stored status: a server a schedule
+    // started while the record still said Stopped was copied while running.
     log::info!("migrating {} ({source_application_id}) to node {target_server_id}", source.application.name);
-    if matches!(source.application.status, ApplicationStatus::Running | ApplicationStatus::Starting) {
+    let status = application_service::refresh_application_status(app_repo, server_repo, sessions, local_process_manager, source_application_id)
+        .await
+        .unwrap_or(source.application.status);
+    let was_running = matches!(status, ApplicationStatus::Running | ApplicationStatus::Starting);
+    if was_running {
         progress(MigrationProgress::phase(MigrationPhase::Stopping));
         application_service::stop_application(app_repo, server_repo, sessions, local_process_manager, source_application_id, true).await?;
     }
@@ -238,7 +258,10 @@ async fn migrate_application_inner(
     // real error to retry, not a half-finished migration to clean up by hand.
     let files_copied = match provision_target(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, &source, &created.application, target_server_id, progress).await {
         Ok(files_copied) => files_copied,
-        Err(err) => return Err(roll_back_target(app_repo, target_application_id, err)),
+        Err(err) => {
+            let err = roll_back_target(app_repo, target_application_id, err);
+            return Err(restart_source(app_repo, server_repo, sessions, registry_repo, local_process_manager, source_application_id, was_running, err).await);
+        }
     };
     // Only written once the target row is otherwise fully provisioned - on
     // any earlier failure above, the target row (and so its keyring
@@ -246,7 +269,8 @@ async fn migrate_application_inner(
     // failure here, the same rollback still applies rather than leaving a
     // target Application missing its secrets.
     if let Err(err) = application_service::store_secret_environment_values(target_application_id, &create_input.environment) {
-        return Err(roll_back_target(app_repo, target_application_id, err));
+        let err = roll_back_target(app_repo, target_application_id, err);
+        return Err(restart_source(app_repo, server_repo, sessions, registry_repo, local_process_manager, source_application_id, was_running, err).await);
     }
 
     // Step 5: cut the DNS alias over, if this service has one - the
@@ -287,6 +311,25 @@ async fn migrate_application_inner(
     // file is removed by the teardown just below.
     if let Err(err) = schedule_service::move_schedules(server_repo, sessions, app_repo, schedule_repo, source_application_id, target_application_id).await {
         warnings.push(format!("the application's schedules weren't set up on the new node - open its Schedules tab and save one to retry: {err}"));
+    }
+    // The backup files travelled inside the working directory; their records
+    // and the backup schedule follow them, instead of going with the source
+    // row by cascade and leaving the copied files listed nowhere.
+    if let Err(err) = backup_repo.move_to_application(source_application_id, target_application_id) {
+        warnings.push(format!("the application's backups weren't carried over to its list, though the files were copied: {err}"));
+    }
+    // A connection is a Docker network on one Node, so it cannot follow an
+    // Application to another. It used to disappear without a word.
+    if !source.links.is_empty() {
+        let peers: Vec<String> = source
+            .links
+            .iter()
+            .map(|peer| app_repo.get(*peer).ok().flatten().map(|detail| detail.application.name).unwrap_or_else(|| peer.to_string()))
+            .collect();
+        warnings.push(format!(
+            "its connections to {} were removed - applications on different Nodes can't share a Docker network; reach them over Vibe Network instead",
+            peers.join(", ")
+        ));
     }
     // Retires the source instance: destroys its container, removes its
     // Node-side identity, and revokes its firewall rules. Deliberately
@@ -338,6 +381,33 @@ async fn migrate_application_inner(
 /// original error and a broken, empty duplicate Application in their list
 /// with no indication where it came from - and the natural next move, retry
 /// the migration, then hit a name collision instead.
+/// Starts the source again after a failed migration, if it was running
+/// when the migration stopped it - otherwise a failure left the server down
+/// while the error only talked about the target. Best-effort, and said in
+/// the error when it fails too.
+#[allow(clippy::too_many_arguments)]
+async fn restart_source(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    registry_repo: &RegistryCredentialRepository,
+    local_process_manager: &Arc<LocalProcessManager>,
+    source_application_id: Uuid,
+    was_running: bool,
+    err: AppError,
+) -> AppError {
+    if !was_running {
+        return err;
+    }
+    match application_service::start_application(app_repo, server_repo, sessions, registry_repo, local_process_manager, source_application_id).await {
+        Ok(_) => err,
+        Err(start_err) => {
+            log::error!("the migration failed and the source {source_application_id} couldn't be started again: {start_err}");
+            AppError::Internal(format!("{err}. The application was stopped for the migration and couldn't be started again on its own Node ({start_err}) - start it by hand"))
+        }
+    }
+}
+
 fn roll_back_target(app_repo: &ApplicationRepository, target_application_id: Uuid, err: AppError) -> AppError {
     let Err(undo) = app_repo.delete(target_application_id) else {
         return err;

@@ -80,6 +80,9 @@ pub enum ErrorCode {
     /// Somebody else's shared Application, asked to do something this
     /// account was not given - by this install, or refused by the Node.
     SharedActionNotAllowed,
+    /// Migrating an Application that has databases on its current Node,
+    /// which migration does not move.
+    MigrationHasDatabases,
 
     // ---- Vibe AI ----
     //
@@ -264,6 +267,14 @@ pub enum AppError {
     #[error("your account may not do that with this shared application ({action}) - ask its owner for it in the application's Users tab")]
     SharedActionNotAllowed { action: String },
 
+    /// Refused before anything is stopped or copied: the Application uses
+    /// databases hosted on its current Node, migration does not move them,
+    /// and it used to go ahead anyway - dropping their records, leaving the
+    /// databases behind untracked, and starting the Application somewhere
+    /// its database connection could no longer reach.
+    #[error("this application uses databases on its current Node ({databases}), which migration doesn't move - back them up and remove them from the application first")]
+    MigrationHasDatabases { databases: String },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -352,6 +363,7 @@ impl AppError {
             AppError::DiskLimitExceeded { .. } => ErrorCode::DiskLimitExceeded,
             AppError::DatabaseFromNewerVersion { .. } => ErrorCode::DatabaseFromNewerVersion,
             AppError::SharedActionNotAllowed { .. } => ErrorCode::SharedActionNotAllowed,
+            AppError::MigrationHasDatabases { .. } => ErrorCode::MigrationHasDatabases,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -403,6 +415,7 @@ impl AppError {
                 serde_json::json!({ "what": what, "found": found, "supported": supported })
             }
             AppError::SharedActionNotAllowed { action } => serde_json::json!({ "action": action }),
+            AppError::MigrationHasDatabases { databases } => serde_json::json!({ "databases": databases }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -479,6 +492,7 @@ impl Serialize for AppError {
             ErrorCode::DatabaseFromNewerVersion => "storage",
             // A permission problem, as a reader of `kind` would have seen it.
             ErrorCode::SharedActionNotAllowed => "invalid_input",
+            ErrorCode::MigrationHasDatabases => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

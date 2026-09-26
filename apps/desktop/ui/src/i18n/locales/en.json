@@ -916,6 +916,7 @@
     "disk_limit_exceeded": "The application uses {{usedMb}} MB and its disk limit is {{limitMb}} MB, so it won't be started. Delete some files or raise the limit in Settings → Resource limits.",
     "database_from_newer_version": "Your data was saved by a newer version of VibeSSH than this one (the database is at version {{found}}, this version knows {{supported}}). Nothing is lost or damaged - install the latest version to open it.",
     "shared_action_not_allowed": "You don't have permission for that in this shared application. Ask its owner to give it to you in the Users tab and sync access.",
+    "migration_has_databases": "This application uses databases on its current Node ({{databases}}), which migration doesn't move. Back them up and remove them from the application before moving it.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
     "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account.",

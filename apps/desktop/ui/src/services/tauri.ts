@@ -33,6 +33,7 @@ export type ErrorCode =
   | "disk_limit_exceeded"
   | "database_from_newer_version"
   | "shared_action_not_allowed"
+  | "migration_has_databases"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"

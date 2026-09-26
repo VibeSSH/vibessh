@@ -95,6 +95,23 @@ impl ApplicationBackupRepository {
         Ok(file_name)
     }
 
+    /// Hands every backup record and the backup schedule of one Application
+    /// to another - what a migration does, since the backup files travel with
+    /// the working directory. Without it the records went with the source row
+    /// by cascade, and the copied files were listed nowhere.
+    pub fn move_to_application(&self, from: Uuid, to: Uuid) -> AppResult<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().map_err(|err| AppError::Storage(format!("failed to start transaction: {err}")))?;
+        tx.execute("UPDATE application_backups SET application_id = ?2 WHERE application_id = ?1", params![from.to_string(), to.to_string()])
+            .map_err(|err| AppError::Storage(format!("failed to move the backups: {err}")))?;
+        tx.execute(
+            "UPDATE application_backup_schedules SET application_id = ?2 WHERE application_id = ?1",
+            params![from.to_string(), to.to_string()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to move the backup schedule: {err}")))?;
+        tx.commit().map_err(|err| AppError::Storage(format!("failed to commit transaction: {err}")))
+    }
+
     /// `None` = no schedule row yet, i.e. never configured - callers apply
     /// `BackupSchedule::default()` (`enabled: false`) themselves, same
     /// "absent means unset" idiom the migration's own doc comment describes.
@@ -244,6 +261,25 @@ mod tests {
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].id, second.id);
         assert_eq!(listed[1].id, first.id);
+    }
+
+    /// Migration creates the Application anew and deletes the old row; the
+    /// backups - whose files travel with the working directory - have to
+    /// follow it rather than go with the old row by cascade.
+    #[test]
+    fn backups_and_their_schedule_move_to_another_application() {
+        let (repo, app_repo) = temp_repository();
+        let from = create_test_application(&app_repo);
+        let to = create_test_application(&app_repo);
+        repo.create(from, "a.zip", 100, BackupKind::Manual).unwrap();
+        repo.create(from, "b.zip", 200, BackupKind::Scheduled).unwrap();
+        repo.set_schedule(from, &SetBackupScheduleInput { enabled: true, interval_hours: 12, retention_count: 3, retention_max_age_days: None, retention_max_total_bytes: None }).unwrap();
+
+        repo.move_to_application(from, to).unwrap();
+        app_repo.delete(from).unwrap();
+
+        assert_eq!(repo.list(to).unwrap().len(), 2, "the records survive the old row");
+        assert_eq!(repo.get_schedule(to).unwrap().map(|schedule| schedule.interval_hours), Some(12));
     }
 
     #[test]
