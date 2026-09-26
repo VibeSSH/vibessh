@@ -126,6 +126,10 @@ one-of-three action before calling `docker`, because a cron file is a text
 file root can edit by hand. The schedule's name never leaves the local
 database. It re-attaches the console only to a FIFO VibeSSH already made, so
 it never leaves a root-owned FIFO the admin could no longer open.
+The disk-limit check shares the runner and the cron file, and puts one more
+value on a cron line: the Application's directory, which is refused unless it
+is absolute, free of `..`, and made only of letters, digits and `/ . _ -`,
+and checked again by the runner before `du` sees it.
 
 **Migration** (`services::migration_service::stream_directory`). The source
 Node's `tar` output is extracted as root on the target. That makes a

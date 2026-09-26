@@ -24,6 +24,7 @@ import { useModalDialog } from "@/hooks/useModalDialog";
 import { ApplicationBackupsTab } from "@/components/applications/ApplicationBackupsTab";
 import { SchedulesTab } from "@/components/applications/SchedulesTab";
 import { UpcomingActionsCard } from "@/components/applications/UpcomingActionsCard";
+import { DiskUsageBar } from "@/components/applications/DiskUsageBar";
 import { ApplicationMembersTab } from "@/components/applications/ApplicationMembersTab";
 import { MinecraftStatusCard } from "@/components/applications/MinecraftStatusCard";
 import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
@@ -63,7 +64,7 @@ import { useServersStore } from "@/stores/serversStore";
 import { useCanOnServer } from "@/stores/nodePermissionsStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
-import type { ApplicationDetail, ApplicationStatus, Blueprint } from "@/types/application";
+import type { ApplicationDetail, ApplicationStatus, Blueprint, ResourceLimitsConfig } from "@/types/application";
 import { useIsApplying } from "@/stores/applicationApplyStore";
 import { ErrorCallout } from "@/components/ui/ErrorCallout";
 import "@/components/servers/AddServerModal.css";
@@ -845,6 +846,11 @@ export function ApplicationDetail() {
                   ) : (
                     <p className="form-note">{t("applicationDetail.notRunning")}</p>
                   )}
+                  {/* Outside the running-only tiles: over its limit, the server
+                      is stopped, and that is when this matters most. */}
+                  {schedulesAvailable && (application.runtimeConfig as ResourceLimitsConfig | undefined)?.diskLimitMb ? (
+                    <DiskUsageBar applicationId={id} />
+                  ) : null}
                 </Card>
               </div>
 
@@ -971,7 +977,7 @@ export function ApplicationDetail() {
                 {settingsSection === "environment" && <EnvironmentTab application={application} blueprint={blueprint} onApplied={applyUpdate} />}
                 {settingsSection === "image" && <DockerImageCard applicationId={id} application={application} onSaved={reload} />}
                 {settingsSection === "health" && <HealthCheckCard applicationId={id} application={application} onConfigChanged={reload} />}
-                {settingsSection === "limits" && <ResourceLimitsCard applicationId={id} application={application} onApplied={applyUpdate} />}
+                {settingsSection === "limits" && <ResourceLimitsCard applicationId={id} application={application} onApplied={applyUpdate} diskLimitAvailable={schedulesAvailable} />}
               </div>
             </div>
           )}

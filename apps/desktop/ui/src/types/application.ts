@@ -67,6 +67,8 @@ export interface SetResourceLimitsInput {
 export interface ResourceLimitsConfig {
   memoryLimitMb?: number;
   cpuLimitCores?: number;
+  /** Enforced by the Node, not Docker - see `setApplicationDiskLimit`. */
+  diskLimitMb?: number;
 }
 
 /** The one field of a Docker application's own `runtimeConfig` the Docker Image card reads/writes - see `ResourceLimitsConfig`'s own doc comment for why the rest of that shape stays opaque here. */

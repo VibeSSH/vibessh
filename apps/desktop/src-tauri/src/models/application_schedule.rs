@@ -82,6 +82,17 @@ pub struct NodeTimeZone {
     pub offset_minutes: i32,
 }
 
+/// What the Node's last disk check found - see `schedule_service::set_disk_limit`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskUsage {
+    pub checked_at: DateTime<Utc>,
+    pub used_bytes: u64,
+    pub limit_bytes: u64,
+    /// Whether that check stopped the server for being over the limit.
+    pub stopped: bool,
+}
+
 /// Everything the Schedules tab shows, fetched in one call.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

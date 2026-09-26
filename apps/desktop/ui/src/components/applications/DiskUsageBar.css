@@ -1,0 +1,65 @@
+.disk-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.disk-usage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.disk-usage-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.disk-usage-value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.disk-usage-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3, var(--border));
+}
+
+/* Muted until it matters: grey while there is room, a warning near the
+   limit, danger over it. */
+.disk-usage-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-tertiary);
+}
+
+.disk-usage-near .disk-usage-fill {
+  background: var(--warning);
+}
+
+.disk-usage-over .disk-usage-fill {
+  background: var(--danger);
+}
+
+.disk-usage-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.disk-usage-over .disk-usage-note {
+  color: var(--danger-text);
+}

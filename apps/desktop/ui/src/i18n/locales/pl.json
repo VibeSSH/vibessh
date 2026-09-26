@@ -873,6 +873,7 @@
     "timeout": "{{operation}} trwało dłużej niż {{seconds}} s i zostało przerwane. Node może być obciążony - spróbuj ponownie.",
     "ssh_auth_rejected": "Serwer odrzucił logowanie SSH jako {{username}}. Sprawdź nazwę użytkownika, hasło lub klucz w ustawieniach serwera.",
     "cron_missing": "Ten Node nie ma crona, a harmonogramy go potrzebują. Zainstaluj go przyciskiem poniżej albo w terminalu Node'a: sudo apt install cron.",
+    "disk_limit_exceeded": "Aplikacja zajmuje {{usedMb}} MB, a jej limit dysku to {{limitMb}} MB, więc nie zostanie uruchomiona. Usuń część plików albo zwiększ limit w Ustawieniach → Limity zasobów.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
     "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora.",
@@ -1214,6 +1215,13 @@
     "loading": "Sprawdzanie harmonogramów…",
     "pluginLabel": "Plugin VibeSSH Scheduler"
   },
+  "diskUsage": {
+    "label": "Dysk",
+    "value": "{{used}} z {{limit}}",
+    "checked": "Sprawdzono o {{time}}, Node sprawdza co 5 minut.",
+    "over": "Przekroczony limit - Node zatrzymał serwer i nie uruchomi go, dopóki nie zwolnisz miejsca albo nie zwiększysz limitu.",
+    "pending": "Pierwszy pomiar dysku pojawi się w ciągu 5 minut."
+  },
   "schedules": {
     "installCron": "Zainstaluj crona",
     "installingCron": "Instalowanie crona…",
@@ -1487,6 +1495,9 @@
     "system": "System"
   },
   "resourceLimits": {
+    "disk": "Dysk (GB)",
+    "diskPlaceholder": "Bez limitu",
+    "diskNote": "Limit dysku pilnuje Node: co 5 minut sprawdza, ile zajmuje folder aplikacji, i po przekroczeniu limitu zatrzymuje serwer (z czasem na zapis świata). Ponad limitem serwera nie da się uruchomić.",
     "title": "Limity zasobów",
     "dockerNote": "Zmiana zadziała dopiero przy następnym utworzeniu tego kontenera od nowa (usunięcie i ponowne uruchomienie) - tak samo jak zmieniony obraz czy komenda.",
     "remoteProcessNote": "Tylko limit CPU - pamięci nie da się ograniczyć bez Dockera/systemd. Wymaga zainstalowanego na serwerze pakietu „cpulimit”; jeśli go brak, limit nie zostanie zastosowany. Zadziała dopiero po restarcie aplikacji.",

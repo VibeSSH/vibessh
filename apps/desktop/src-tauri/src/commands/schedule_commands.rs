@@ -73,3 +73,28 @@ pub async fn run_application_schedule_now(
 pub async fn install_cron(server_repo: State<'_, ServerRepository>, sessions: State<'_, SshSessionManager>, server_id: Uuid) -> AppResult<()> {
     services::schedule_service::install_cron(&server_repo, &sessions, server_id).await
 }
+
+/// Sets or clears an Application's disk limit, enforced by the Node - see
+/// `services::schedule_service::set_disk_limit`.
+#[tauri::command]
+pub async fn set_application_disk_limit(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    schedule_repo: State<'_, ApplicationScheduleRepository>,
+    id: Uuid,
+    limit_mb: Option<u64>,
+) -> AppResult<crate::models::ApplicationDetail> {
+    services::schedule_service::set_disk_limit(&repo, &server_repo, &sessions, &schedule_repo, id, limit_mb).await
+}
+
+/// What the Node's last disk check found, or null before the first one.
+#[tauri::command]
+pub async fn get_application_disk_usage(
+    repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    id: Uuid,
+) -> AppResult<Option<crate::models::DiskUsage>> {
+    services::schedule_service::disk_usage(&repo, &server_repo, &sessions, id).await
+}

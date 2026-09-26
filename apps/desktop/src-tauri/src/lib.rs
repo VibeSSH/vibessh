@@ -327,6 +327,8 @@ pub fn run() {
             commands::schedule_commands::delete_application_schedule,
             commands::schedule_commands::run_application_schedule_now,
             commands::schedule_commands::install_cron,
+            commands::schedule_commands::set_application_disk_limit,
+            commands::schedule_commands::get_application_disk_usage,
             commands::database_commands::list_database_hosts,
             commands::database_commands::create_database_host,
             commands::database_commands::update_database_host,

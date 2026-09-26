@@ -94,6 +94,16 @@ Warnings are amber, errors red.
 4. **CPU** - a number of cores, e.g. `1.5`.
 5. Save.
 
+## Setting a disk limit
+
+For a Docker application on a Node connected over SSH you can cap how much space its folder takes.
+
+1. Open **Settings** → **Resource limits** and click **Edit**.
+2. **Disk (GB)** - enter, for example, `20`. Empty means no limit.
+3. Save.
+
+The Node itself keeps to the limit: every 5 minutes it measures the application's folder. Once it is over, it stops the server - giving it time to save the world - and the server can't be started until you free some space or raise the limit. The usage is shown on the **Overview** tab, in the **Resources** card. The Node needs cron for this, as it does for schedules.
+
 ## Environment variables
 
 1. Open the **Settings** tab.

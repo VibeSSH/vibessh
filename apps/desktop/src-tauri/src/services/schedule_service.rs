@@ -83,7 +83,54 @@ is_id() {
     [ "${#1}" -eq 36 ]
 }
 
+is_number() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+}
+
+# Only what an Application directory is allowed to look like - it reaches here
+# from a cron line, so it is checked again rather than trusted.
+is_directory() {
+    case "$1" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case "$1" in
+        *[!A-Za-z0-9/._-]*|*..*) return 1 ;;
+    esac
+}
+
 case "${1:-}" in
+    diskcheck)
+        # Every five minutes from cron: how much the directory holds, and a
+        # graceful stop when it holds more than its limit - the same
+        # enforcement Pterodactyl's Wings does.
+        app="${2:-}"
+        limit="${3:-}"
+        dir="${4:-}"
+        is_id "$app" && is_number "$limit" && is_directory "$dir" || { echo "schedule-runner: invalid disk check" >&2; exit 64; }
+        [ -d "$dir" ] || exit 0
+        used=$(du -sb -- "$dir" 2>/dev/null | cut -f1)
+        is_number "$used" || used=$(( $(du -sk -- "$dir" | cut -f1) * 1024 ))
+        stopped=0
+        name="vibessh-app-$app"
+        if [ "$used" -gt "$limit" ] && [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" = "true" ]; then
+            docker stop -t "$GRACE" "$name" >/dev/null 2>&1 && stopped=1
+            logger -t vibessh-schedule "$name stopped: $used bytes used, limit $limit" 2>/dev/null || true
+        fi
+        umask 077
+        mkdir -p "$STATE_ROOT/$app"
+        printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$used" "$limit" "$stopped" > "$STATE_ROOT/$app/disk.tmp" \
+            && mv -f "$STATE_ROOT/$app/disk.tmp" "$STATE_ROOT/$app/disk"
+        exit 0
+        ;;
+    disk)
+        app="${2:-}"
+        is_id "$app" || { echo "schedule-runner: invalid application id" >&2; exit 64; }
+        [ -f "$STATE_ROOT/$app/disk" ] && head -n 1 "$STATE_ROOT/$app/disk"
+        exit 0
+        ;;
     status)
         app="${2:-}"
         is_id "$app" || { echo "schedule-runner: invalid application id" >&2; exit 64; }
@@ -212,7 +259,7 @@ fn validate_input(input: &ScheduleInput) -> AppResult<ScheduleInput> {
 /// The cron file for one Application: a line per enabled schedule, nothing
 /// for a disabled one. The trailing newline is not optional - cron silently
 /// ignores a last line without one.
-pub fn build_cron_file(application_id: Uuid, schedules: &[ApplicationSchedule]) -> String {
+pub fn build_cron_file(application_id: Uuid, schedules: &[ApplicationSchedule], disk: Option<&DiskCheck>) -> String {
     let mut file = format!(
         "# Managed by VibeSSH for Application {application_id}. Edits here are overwritten.\n\
          SHELL=/bin/sh\n\
@@ -221,7 +268,49 @@ pub fn build_cron_file(application_id: Uuid, schedules: &[ApplicationSchedule]) 
     for schedule in schedules.iter().filter(|schedule| schedule.enabled) {
         file.push_str(&format!("{} root {RUNNER_PATH} run {application_id} {} {}\n", schedule.cron, schedule.id, schedule.action.as_str()));
     }
+    if let Some(disk) = disk {
+        file.push_str(&format!("{DISK_CHECK_EVERY} root {RUNNER_PATH} diskcheck {application_id} {} {}\n", disk.limit_bytes, disk.directory));
+    }
     file
+}
+
+/// How often the Node measures a limited Application's directory.
+const DISK_CHECK_EVERY: &str = "*/5 * * * *";
+
+/// A disk limit as the Node enforces it: the directory to measure and the
+/// most it may hold.
+pub struct DiskCheck {
+    pub limit_bytes: u64,
+    pub directory: String,
+}
+
+/// The directory as it may appear on a cron line. Stricter than a working
+/// directory needs to be anywhere else, because a cron line has no quoting:
+/// letters, digits and `/ . _ -` only, absolute, no `..`. One that does not
+/// fit cannot have a disk limit, and says so rather than being written.
+fn cron_safe_directory(directory: &str) -> AppResult<String> {
+    let fits = directory.starts_with('/')
+        && !directory.contains("..")
+        && directory.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'));
+    if !fits {
+        return Err(AppError::InvalidInput(format!(
+            "a disk limit needs a working directory made of letters, digits and / . _ - only, and '{directory}' isn't"
+        )));
+    }
+    Ok(directory.to_string())
+}
+
+/// The limit stored for an Application, in megabytes, from its runtime config.
+fn disk_limit_mb(runtime_config: &serde_json::Value) -> Option<u64> {
+    runtime_config.get("diskLimitMb").and_then(serde_json::Value::as_u64).filter(|mb| *mb > 0)
+}
+
+fn disk_check_for(app_repo: &ApplicationRepository, application_id: Uuid) -> AppResult<Option<DiskCheck>> {
+    let detail = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?;
+    let Some(limit_mb) = disk_limit_mb(&detail.runtime_config) else {
+        return Ok(None);
+    };
+    Ok(Some(DiskCheck { limit_bytes: limit_mb * 1024 * 1024, directory: cron_safe_directory(&detail.application.working_directory)? }))
 }
 
 /// The Node an Application's schedules run on, or why it cannot have any.
@@ -306,9 +395,29 @@ pub async fn install_cron(server_repo: &ServerRepository, sessions: &SshSessionM
 
 /// Makes the Node's cron file match `schedules`. No enabled schedule means no
 /// file, rather than a file with nothing in it.
-async fn write_to_node(connection: &SshSession, server_id: Uuid, application_id: Uuid, schedules: &[ApplicationSchedule]) -> AppResult<()> {
+/// Regenerates the Node's cron file from everything that belongs in it: the
+/// enabled schedules and the disk check.
+async fn sync_node(
+    connection: &SshSession,
+    server_id: Uuid,
+    app_repo: &ApplicationRepository,
+    schedule_repo: &ApplicationScheduleRepository,
+    application_id: Uuid,
+) -> AppResult<()> {
+    let schedules = schedule_repo.list(application_id)?;
+    let disk = disk_check_for(app_repo, application_id)?;
+    write_to_node(connection, server_id, application_id, &schedules, disk.as_ref()).await
+}
+
+async fn write_to_node(
+    connection: &SshSession,
+    server_id: Uuid,
+    application_id: Uuid,
+    schedules: &[ApplicationSchedule],
+    disk: Option<&DiskCheck>,
+) -> AppResult<()> {
     let path = shell_quote(&cron_file_path(application_id));
-    if !schedules.iter().any(|schedule| schedule.enabled) {
+    if !schedules.iter().any(|schedule| schedule.enabled) && disk.is_none() {
         let output = connection.execute_command(&format!("sudo rm -f {path}")).await?;
         if output.exit_code != 0 {
             return Err(AppError::Connection(format!("couldn't remove the schedule file: {}", output.stderr.trim())));
@@ -323,7 +432,7 @@ async fn write_to_node(connection: &SshSession, server_id: Uuid, application_id:
     let output = connection
         .execute_command_with_input(
             &format!("sudo tee {temporary} >/dev/null && sudo chmod 0644 {temporary} && sudo mv -f {temporary} {path}"),
-            build_cron_file(application_id, schedules).as_bytes(),
+            build_cron_file(application_id, schedules, disk).as_bytes(),
         )
         .await?;
     if output.exit_code != 0 {
@@ -419,7 +528,7 @@ pub async fn create_schedule(
     let created = schedule_repo.create(application_id, &input)?;
     // The row and the Node have to agree. A schedule the Node never got is
     // one the panel would show as set while nothing happens - so it goes.
-    if let Err(err) = write_to_node(&connection, server_id, application_id, &schedule_repo.list(application_id)?).await {
+    if let Err(err) = sync_node(&connection, server_id, app_repo, schedule_repo, application_id).await {
         if let Err(undo) = schedule_repo.delete(created.id) {
             log::error!("couldn't undo a schedule the Node refused: {undo}");
         }
@@ -440,7 +549,7 @@ pub async fn update_schedule(
     let before = schedule_repo.get(schedule_id)?.ok_or_else(|| AppError::NotFound(format!("schedule {schedule_id}")))?;
     let (connection, server_id) = node_for(app_repo, server_repo, sessions, before.application_id).await?;
     schedule_repo.update(schedule_id, &input)?;
-    if let Err(err) = write_to_node(&connection, server_id, before.application_id, &schedule_repo.list(before.application_id)?).await {
+    if let Err(err) = sync_node(&connection, server_id, app_repo, schedule_repo, before.application_id).await {
         let previous = ScheduleInput { name: before.name.clone(), cron: before.cron.clone(), action: before.action, enabled: before.enabled };
         if let Err(undo) = schedule_repo.update(schedule_id, &previous) {
             log::error!("couldn't undo a schedule change the Node refused: {undo}");
@@ -464,7 +573,7 @@ pub async fn delete_schedule(
     schedule_repo.delete(schedule_id)?;
     // Deleted here but still in the Node's cron would keep firing with no row
     // left to show it - so a refusal puts the row back.
-    if let Err(err) = write_to_node(&connection, server_id, schedule.application_id, &schedule_repo.list(schedule.application_id)?).await {
+    if let Err(err) = sync_node(&connection, server_id, app_repo, schedule_repo, schedule.application_id).await {
         if let Err(undo) = schedule_repo.insert(&schedule) {
             log::error!("couldn't restore a schedule the Node wouldn't remove: {undo}");
         }
@@ -527,11 +636,116 @@ pub async fn move_schedules(
     to: Uuid,
 ) -> AppResult<usize> {
     let moved = schedule_repo.reassign(from, to)?;
-    if moved > 0 {
+    // The disk limit travels in the runtime config, so the target can need a
+    // cron file even with no schedule to move.
+    if moved > 0 || disk_check_for(app_repo, to)?.is_some() {
         let (connection, server_id) = node_for(app_repo, server_repo, sessions, to).await?;
-        write_to_node(&connection, server_id, to, &schedule_repo.list(to)?).await?;
+        sync_node(&connection, server_id, app_repo, schedule_repo, to).await?;
     }
     Ok(moved)
+}
+
+/// The largest disk limit accepted: 10 TB, well past any disk a Node has, so
+/// a slip of the keyboard is caught rather than stored.
+const MAX_DISK_LIMIT_MB: u64 = 10 * 1024 * 1024;
+
+/// Sets or clears an Application's disk limit and writes the Node's check.
+///
+/// Enforced the way Pterodactyl's Wings enforces it: the Node measures the
+/// directory every five minutes and stops the server gracefully once it
+/// holds more than the limit, and the panel refuses to start it while it
+/// does (`ensure_within_disk_limit`). Not a filesystem quota - that would
+/// depend on the Node's filesystem and mount options - so a server can pass
+/// the limit for up to five minutes before it is stopped.
+pub async fn set_disk_limit(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    schedule_repo: &ApplicationScheduleRepository,
+    application_id: Uuid,
+    limit_mb: Option<u64>,
+) -> AppResult<crate::models::ApplicationDetail> {
+    if let Some(mb) = limit_mb {
+        if !(100..=MAX_DISK_LIMIT_MB).contains(&mb) {
+            return Err(AppError::InvalidInput("a disk limit has to be between 100 MB and 10 TB".into()));
+        }
+    }
+    let (connection, server_id) = node_for(app_repo, server_repo, sessions, application_id).await?;
+    let detail = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?;
+    if limit_mb.is_some() {
+        cron_safe_directory(&detail.application.working_directory)?;
+    }
+    let previous = detail.runtime_config.clone();
+    let mut runtime_config = previous.clone();
+    let object = runtime_config.as_object_mut().ok_or_else(|| AppError::Internal("runtime_config wasn't a JSON object".into()))?;
+    match limit_mb {
+        Some(mb) => object.insert("diskLimitMb".to_string(), serde_json::json!(mb)),
+        None => object.remove("diskLimitMb"),
+    };
+    app_repo.update_runtime_config(application_id, &runtime_config)?;
+    // Stored but not on the Node would be a limit the panel shows and nothing
+    // enforces - so a refusal puts the old config back.
+    if let Err(err) = sync_node(&connection, server_id, app_repo, schedule_repo, application_id).await {
+        if let Err(undo) = app_repo.update_runtime_config(application_id, &previous) {
+            log::error!("couldn't undo a disk limit the Node refused: {undo}");
+        }
+        return Err(err);
+    }
+    app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))
+}
+
+/// One line of `schedule-runner disk`: when, bytes used, limit, whether that
+/// check stopped the server.
+fn parse_disk_line(line: &str) -> Option<crate::models::DiskUsage> {
+    let mut parts = line.trim().split('\t');
+    let checked_at = Utc.timestamp_opt(parts.next()?.parse().ok()?, 0).single()?;
+    let used_bytes = parts.next()?.parse().ok()?;
+    let limit_bytes = parts.next()?.parse().ok()?;
+    let stopped = parts.next()? == "1";
+    Some(crate::models::DiskUsage { checked_at, used_bytes, limit_bytes, stopped })
+}
+
+/// What the Node's last disk check found, or `None` before the first one (or
+/// without a limit). Read from the check's record rather than measured here:
+/// `du` over a large world is slow, and the Overview asks often.
+pub async fn disk_usage(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+) -> AppResult<Option<crate::models::DiskUsage>> {
+    let (connection, _) = node_for(app_repo, server_repo, sessions, application_id).await?;
+    let output = connection
+        .execute_command(&format!("[ -x {runner} ] || exit 0; sudo {runner} disk {application_id}", runner = shell_quote(RUNNER_PATH)))
+        .await?;
+    if output.exit_code != 0 {
+        return Err(AppError::Connection(format!("couldn't read the disk check: {}", output.stderr.trim())));
+    }
+    Ok(output.stdout.lines().next().and_then(parse_disk_line))
+}
+
+/// Refuses to start an Application whose directory is over its disk limit -
+/// the other half of the enforcement `set_disk_limit` describes. Measured now,
+/// not read from the last check: the person may have just deleted files to
+/// get under it.
+pub async fn ensure_within_disk_limit(connection: &SshSession, runtime_config: &serde_json::Value, working_directory: &str) -> AppResult<()> {
+    let Some(limit_mb) = disk_limit_mb(runtime_config) else {
+        return Ok(());
+    };
+    let output = connection
+        .execute_command(&format!("sudo du -sb -- {} 2>/dev/null | cut -f1", shell_quote(working_directory)))
+        .await?;
+    let Ok(used) = output.stdout.trim().parse::<u64>() else {
+        // Could not measure: starting is not the place to fail over a figure
+        // the periodic check will take anyway.
+        log::warn!("couldn't measure '{working_directory}' against its disk limit: {}", output.stderr.trim());
+        return Ok(());
+    };
+    let limit = limit_mb * 1024 * 1024;
+    if used > limit {
+        return Err(AppError::DiskLimitExceeded { used_mb: used / (1024 * 1024), limit_mb });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -577,13 +791,52 @@ mod tests {
     #[test]
     fn the_cron_file_has_a_line_per_enabled_schedule_and_ends_with_a_newline() {
         let application = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
-        let file = build_cron_file(application, &[schedule("0 4 * * *", ScheduleAction::Restart, true), schedule("0 5 * * *", ScheduleAction::Stop, false)]);
+        let file = build_cron_file(application, &[schedule("0 4 * * *", ScheduleAction::Restart, true), schedule("0 5 * * *", ScheduleAction::Stop, false)], None);
         assert!(file.ends_with('\n'));
         let jobs: Vec<&str> = file.lines().filter(|line| !line.starts_with('#') && !line.contains('=')).collect();
         assert_eq!(
             jobs,
             ["0 4 * * * root /usr/local/lib/vibessh/schedule-runner run aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee 11111111-2222-3333-4444-555555555555 restart"]
         );
+    }
+
+    #[test]
+    fn a_disk_limit_adds_a_check_every_five_minutes_even_without_schedules() {
+        let application = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+        let disk = DiskCheck { limit_bytes: 20 * 1024 * 1024 * 1024, directory: "/home/container/mc".into() };
+        let file = build_cron_file(application, &[], Some(&disk));
+        assert!(file.ends_with('\n'));
+        assert!(file.contains(
+            "*/5 * * * * root /usr/local/lib/vibessh/schedule-runner diskcheck aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee 21474836480 /home/container/mc\n"
+        ));
+    }
+
+    #[test]
+    fn only_a_plain_absolute_directory_can_go_on_a_cron_line() {
+        assert!(cron_safe_directory("/home/container/royalmc-bedwars").is_ok());
+        assert!(cron_safe_directory("/srv/app_1.2").is_ok());
+        for bad in ["relative/dir", "/home/my server", "/srv/a;id", "/srv/$(id)", "/srv/../etc", "/srv/a\nb", "/srv/a%b"] {
+            assert!(cron_safe_directory(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_disk_record_reads_back() {
+        let usage = parse_disk_line("1758859200\t1073741824\t2147483648\t0\n").unwrap();
+        assert_eq!((usage.used_bytes, usage.limit_bytes, usage.stopped), (1073741824, 2147483648, false));
+        assert!(parse_disk_line("1758859200\t5\t2\t1").unwrap().stopped);
+        assert!(parse_disk_line("garbage").is_none());
+    }
+
+    #[test]
+    fn the_runner_script_is_valid_sh() {
+        use std::io::Write;
+        let Ok(mut child) = std::process::Command::new("sh").arg("-n").stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn() else {
+            return;
+        };
+        child.stdin.take().unwrap().write_all(RUNNER_SCRIPT.as_bytes()).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     }
 
     #[test]

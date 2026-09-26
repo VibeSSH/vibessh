@@ -94,6 +94,16 @@ Ostrzeżenia są pomarańczowe, błędy czerwone.
 4. **CPU** — wpisz liczbę rdzeni, np. `1.5`.
 5. Zapisz.
 
+## Ustawienie limitu dysku
+
+Dla aplikacji Docker na Nodzie połączonym przez SSH możesz ograniczyć, ile miejsca zajmuje jej folder.
+
+1. Wejdź w zakładkę **Ustawienia** → **Limity zasobów** i kliknij **Edytuj**.
+2. **Dysk (GB)** - wpisz na przykład `20`. Puste pole oznacza brak limitu.
+3. Zapisz.
+
+Limitu pilnuje sam Node: co 5 minut sprawdza, ile zajmuje folder aplikacji. Po przekroczeniu limitu zatrzymuje serwer, dając mu czas na zapis świata, i nie da się go uruchomić, dopóki nie zwolnisz miejsca albo nie zwiększysz limitu. Zajętość widać w zakładce **Przegląd**, w karcie **Zasoby**. Node potrzebuje do tego crona, tak jak harmonogramy.
+
 ## Zmienne środowiskowe
 
 1. Wejdź w zakładkę **Ustawienia**.

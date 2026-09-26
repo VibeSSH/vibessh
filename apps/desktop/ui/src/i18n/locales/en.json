@@ -867,6 +867,7 @@
     "timeout": "{{operation}} took longer than {{seconds}} seconds and was given up on. The Node may be busy - try again.",
     "ssh_auth_rejected": "The server rejected the SSH login as {{username}}. Check the username, password or key in the server's settings.",
     "cron_missing": "This Node has no cron, which schedules need to run. Install it with the button below, or in the Node's terminal: sudo apt install cron.",
+    "disk_limit_exceeded": "The application uses {{usedMb}} MB and its disk limit is {{limitMb}} MB, so it won't be started. Delete some files or raise the limit in Settings → Resource limits.",
     "host_key_mismatch": "The SSH host key for {{host}} has changed. That happens when a server is reinstalled - but it also happens when someone is intercepting the connection. Confirm the server is really yours before connecting again.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} is already taken on this Node by {{owner}}. Pick a different port.",
     "database_server_unavailable": "No database server is running on {{host}}. VibeSSH can install MariaDB on that node for you - it isn't done automatically, because it installs a system service and creates an administrator account.",
@@ -1207,6 +1208,13 @@
     "loading": "Checking the schedules…",
     "pluginLabel": "VibeSSH Scheduler plugin"
   },
+  "diskUsage": {
+    "label": "Disk",
+    "value": "{{used}} of {{limit}}",
+    "checked": "Checked at {{time}}; the Node checks every 5 minutes.",
+    "over": "Over the limit - the Node stopped the server and won't start it until you free some space or raise the limit.",
+    "pending": "The first disk measurement appears within 5 minutes."
+  },
   "schedules": {
     "installCron": "Install cron",
     "installingCron": "Installing cron…",
@@ -1480,6 +1488,9 @@
     "system": "System"
   },
   "resourceLimits": {
+    "disk": "Disk (GB)",
+    "diskPlaceholder": "No limit",
+    "diskNote": "The Node keeps to the disk limit: every 5 minutes it measures the application's folder and stops the server once it is over (with time to save the world). Over the limit, the server can't be started.",
     "title": "Resource limits",
     "dockerNote": "A change here only takes effect the next time this container is recreated (removed and started again) - same as an edited image or command.",
     "remoteProcessNote": "CPU only - memory can't be limited without Docker/systemd. Requires the \"cpulimit\" package installed on the server; if it's missing, the limit won't actually apply. Takes effect after the application is restarted.",

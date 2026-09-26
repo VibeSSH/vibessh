@@ -48,6 +48,11 @@ pub async fn start_application(
         if let (Some(conn), Some(image)) = (&connection, detail.runtime_config.get("image").and_then(|v| v.as_str())) {
             ensure_registry_login(conn, registry_repo, image).await?;
         }
+        // Over its disk limit, it stays stopped - the Node's own check would
+        // only stop it again within five minutes.
+        if let Some(conn) = &connection {
+            crate::services::schedule_service::ensure_within_disk_limit(conn, &detail.runtime_config, &detail.application.working_directory).await?;
+        }
         let ctx = RuntimeContext { application: &detail.application, runtime_config: &detail.runtime_config, environment: &detail.environment, ports: &detail.ports, links: &detail.links, connection };
         runtime.start(&ctx).await?;
         refresh_and_persist_status(repo, runtime.as_ref(), &ctx, id).await
