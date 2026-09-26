@@ -4,13 +4,14 @@
 //! fingerprint before calling `connect`, keeping this module pure protocol
 //! mechanics and independently testable against a bare SSH server.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use russh::keys::{load_secret_key, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
-use russh::{client, Channel, ChannelMsg, Disconnect};
+use russh::keys::{load_secret_key, Algorithm, EcdsaCurve, HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
+use russh::{client, Channel, ChannelMsg, Disconnect, Preferred};
 use russh_sftp::client::SftpSession;
 use tokio::sync::{mpsc, OnceCell};
 
@@ -168,28 +169,171 @@ pub(super) struct MetricsSample {
 pub struct ConnectOutcome {
     pub session: SshSession,
     pub host_key_fingerprint: String,
+    /// The kind of host key that fingerprint belongs to - worth remembering,
+    /// so the next connection asks for that kind first (see `KnownHostKey`).
+    pub host_key_family: Option<HostKeyFamily>,
 }
 
-pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<String>) -> AppResult<ConnectOutcome> {
+/// A kind of SSH host key. A server holds at most one of each, and which one
+/// a connection is shown depends on what both sides prefer - so the kind is
+/// part of what "the key we saw before" means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostKeyFamily {
+    Ed25519,
+    Ecdsa,
+    Rsa,
+}
+
+const ED25519_ALGORITHMS: &[Algorithm] = &[Algorithm::Ed25519];
+const ECDSA_ALGORITHMS: &[Algorithm] = &[
+    Algorithm::Ecdsa { curve: EcdsaCurve::NistP256 },
+    Algorithm::Ecdsa { curve: EcdsaCurve::NistP384 },
+    Algorithm::Ecdsa { curve: EcdsaCurve::NistP521 },
+];
+const RSA_ALGORITHMS: &[Algorithm] = &[Algorithm::Rsa { hash: Some(HashAlg::Sha512) }, Algorithm::Rsa { hash: Some(HashAlg::Sha256) }];
+
+impl HostKeyFamily {
+    const ALL: [HostKeyFamily; 3] = [HostKeyFamily::Ed25519, HostKeyFamily::Ecdsa, HostKeyFamily::Rsa];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ed25519 => "ed25519",
+            Self::Ecdsa => "ecdsa",
+            Self::Rsa => "rsa",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|family| family.as_str() == value)
+    }
+
+    fn of(algorithm: &Algorithm) -> Option<Self> {
+        match algorithm {
+            Algorithm::Ed25519 => Some(Self::Ed25519),
+            Algorithm::Ecdsa { .. } => Some(Self::Ecdsa),
+            Algorithm::Rsa { .. } => Some(Self::Rsa),
+            _ => None,
+        }
+    }
+
+    fn algorithms(self) -> &'static [Algorithm] {
+        match self {
+            Self::Ed25519 => ED25519_ALGORITHMS,
+            Self::Ecdsa => ECDSA_ALGORITHMS,
+            Self::Rsa => RSA_ALGORITHMS,
+        }
+    }
+}
+
+/// The host key recorded for a server: its fingerprint, and the kind it is
+/// when that is known (keys recorded before the kind was kept have none).
+pub struct KnownHostKey {
+    pub fingerprint: String,
+    pub family: Option<HostKeyFamily>,
+}
+
+/// The host-key preference for a connection: russh's own order, with the
+/// recorded kind moved to the front when there is one, so a server holding
+/// several keys shows the one we know.
+fn key_preference(first: Option<HostKeyFamily>) -> Cow<'static, [Algorithm]> {
+    let default = Preferred::DEFAULT.key;
+    match first {
+        None => default,
+        // Reordered, never trimmed: everything russh offers is still offered.
+        Some(family) => {
+            let (mut order, rest): (Vec<Algorithm>, Vec<Algorithm>) = default.iter().cloned().partition(|algorithm| HostKeyFamily::of(algorithm) == Some(family));
+            order.extend(rest);
+            Cow::Owned(order)
+        }
+    }
+}
+
+type Handshake = (client::Handle<TofuHandler>, Arc<Mutex<SeenHostKey>>, ForwardRegistry);
+
+/// One SSH handshake - key exchange and host-key check, no login - offering
+/// the host-key algorithms in `keys`, in that order. A failure carries the
+/// kind of key the server showed, when it got that far.
+async fn handshake(
+    credentials: &SshCredentials,
+    expected: Option<&str>,
+    keys: Cow<'static, [Algorithm]>,
+) -> Result<Handshake, (AppError, Option<HostKeyFamily>)> {
     let seen = Arc::new(Mutex::new(SeenHostKey::default()));
     let forward_registry: ForwardRegistry = Arc::new(Mutex::new(HashMap::new()));
     let handler = TofuHandler {
-        expected_fingerprint: known_fingerprint,
+        expected_fingerprint: expected.map(str::to_string),
         seen: seen.clone(),
         forward_registry: forward_registry.clone(),
     };
-
     let config = Arc::new(client::Config {
         keepalive_interval: Some(KEEPALIVE_INTERVAL),
         inactivity_timeout: None,
+        preferred: Preferred { key: keys, ..Preferred::DEFAULT },
         ..Default::default()
     });
-
     let addr = (credentials.host.as_str(), credentials.port);
-    let mut handle = tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler))
+    let shown = |seen: &Arc<Mutex<SeenHostKey>>| seen.lock().expect("host key mutex poisoned").family;
+    let handle = tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler))
         .await
-        .map_err(|_| AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() })?
-        .map_err(|err| classify_connect_error(&err, &seen, &credentials.host))?;
+        .map_err(|_| (AppError::Timeout { operation: "connecting", seconds: CONNECT_TIMEOUT.as_secs() }, None))?
+        .map_err(|err| (classify_connect_error(&err, &seen, &credentials.host, expected), shown(&seen)))?;
+    Ok((handle, seen, forward_registry))
+}
+
+/// Handshakes, and on a host-key mismatch asks whether the server simply
+/// holds another kind of key as well - OpenSSH's `UpdateHostKeys` situation.
+///
+/// A server that gains an ECDSA key beside the RSA key it always had now
+/// shows ECDSA first, and the recorded RSA fingerprint no longer matches the
+/// key on offer. That is not a changed key, and treating it as the
+/// interception warning trains people to click through that warning. So on a
+/// mismatch each other kind is asked for in turn; if one of them is the
+/// recorded key, the connection goes ahead with it. Safe for the same reason
+/// the first check is: the handshake only completes if the server signs the
+/// exchange with that key's private half, so matching the recorded
+/// fingerprint here means holding the recorded key. When no kind matches,
+/// the original warning stands.
+async fn handshake_with_known_key(credentials: &SshCredentials, known: Option<&KnownHostKey>) -> AppResult<(Handshake, Option<HostKeyFamily>)> {
+    let expected = known.map(|known| known.fingerprint.as_str());
+    let first_choice = known.and_then(|known| known.family);
+    let (mismatch, shown_family) = match handshake(credentials, expected, key_preference(first_choice)).await {
+        Ok(result) => {
+            let family = result.1.lock().expect("host key mutex poisoned").family;
+            return Ok((result, family));
+        }
+        Err((err @ AppError::HostKeyMismatch { .. }, family)) => (err, family),
+        Err((err, _)) => return Err(err),
+    };
+    let AppError::HostKeyMismatch { presented, .. } = &mismatch else {
+        return Err(mismatch);
+    };
+    // The kind just shown is the one that did not match; asking for it again
+    // would only show the same key.
+    for family in HostKeyFamily::ALL.into_iter().filter(|family| Some(*family) != shown_family) {
+        match handshake(credentials, expected, Cow::Borrowed(family.algorithms())).await {
+            Ok(result) => {
+                log::info!(
+                    "{} also presents a newer host key ({}); connected with the recorded {} key instead",
+                    credentials.host,
+                    presented.as_deref().unwrap_or("unknown"),
+                    family.as_str()
+                );
+                return Ok((result, Some(family)));
+            }
+            // This kind is not the recorded key either, or the server does
+            // not have one - try the next.
+            Err(_) => continue,
+        }
+    }
+    Err(mismatch)
+}
+
+pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<String>) -> AppResult<ConnectOutcome> {
+    connect_known(credentials, known_fingerprint.map(|fingerprint| KnownHostKey { fingerprint, family: None })).await
+}
+
+pub async fn connect_known(credentials: &SshCredentials, known: Option<KnownHostKey>) -> AppResult<ConnectOutcome> {
+    let ((mut handle, seen, forward_registry), host_key_family) = handshake_with_known_key(credentials, known.as_ref()).await?;
 
     // The handshake above has a deadline; the login used to have none. A Node
     // that accepts the connection and then stalls on authentication - sshd
@@ -248,6 +392,7 @@ pub async fn connect(credentials: &SshCredentials, known_fingerprint: Option<Str
             command_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_COMMANDS),
         },
         host_key_fingerprint,
+        host_key_family,
     })
 }
 
@@ -748,6 +893,7 @@ impl TerminalHandle {
 #[derive(Default)]
 struct SeenHostKey {
     fingerprint: Option<String>,
+    family: Option<HostKeyFamily>,
     mismatched: bool,
 }
 
@@ -771,6 +917,7 @@ impl client::Handler for TofuHandler {
         let fingerprint = server_public_key.public_key().fingerprint(HashAlg::Sha256).to_string();
         let mut seen = self.seen.lock().expect("host key mutex poisoned");
         seen.fingerprint = Some(fingerprint.clone());
+        seen.family = HostKeyFamily::of(&server_public_key.public_key().algorithm());
 
         match &self.expected_fingerprint {
             None => Ok(true),
@@ -812,16 +959,50 @@ impl client::Handler for TofuHandler {
     }
 }
 
-fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>, host: &str) -> AppError {
-    if seen.lock().expect("host key mutex poisoned").mismatched {
+fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>, host: &str, expected: Option<&str>) -> AppError {
+    let seen = seen.lock().expect("host key mutex poisoned");
+    if seen.mismatched {
         // Its own code rather than a generic connection error: this is the
         // one failure here where the right UI is a warning the user has to
         // read and decide about, not a retry button. The full explanation
         // ("reinstalled, or someone is intercepting") now lives in the
         // frontend's own translated copy, where it can be phrased properly
         // in the user's language instead of assembled in Rust.
-        AppError::HostKeyMismatch { host: host.to_string() }
+        AppError::HostKeyMismatch { host: host.to_string(), server_id: None, expected: expected.map(str::to_string), presented: seen.fingerprint.clone() }
     } else {
         AppError::Connection(format!("SSH connection failed: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_host_key_family_round_trips_through_its_name() {
+        for family in HostKeyFamily::ALL {
+            assert_eq!(HostKeyFamily::parse(family.as_str()), Some(family));
+        }
+        assert_eq!(HostKeyFamily::parse("dsa"), None);
+    }
+
+    #[test]
+    fn the_recorded_kind_is_asked_for_first_and_nothing_is_dropped() {
+        let order = key_preference(Some(HostKeyFamily::Rsa));
+        assert_eq!(HostKeyFamily::of(&order[0]), Some(HostKeyFamily::Rsa));
+        // Every algorithm russh would offer is still offered, once.
+        assert_eq!(order.len(), Preferred::DEFAULT.key.len());
+        for algorithm in Preferred::DEFAULT.key.iter() {
+            assert_eq!(order.iter().filter(|offered| *offered == algorithm).count(), 1, "{algorithm:?}");
+        }
+        // Without a recorded kind the order is russh's own.
+        assert_eq!(key_preference(None).as_ref(), Preferred::DEFAULT.key.as_ref());
+    }
+
+    #[test]
+    fn every_kind_asks_only_for_its_own_algorithms() {
+        for family in HostKeyFamily::ALL {
+            assert!(family.algorithms().iter().all(|algorithm| HostKeyFamily::of(algorithm) == Some(family)));
+        }
     }
 }

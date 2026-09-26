@@ -142,7 +142,7 @@ pub use ping_service::ping_server;
 pub use schedule_service::{create_schedule, delete_schedule, list_schedules, run_schedule_now, update_schedule};
 pub use server_service::{
     create_server, delete_server, get_server, set_server_icon, install_docker, install_ufw, install_wireguard, list_servers, probe_node_capabilities,
-    replace_ssh_password, update_server,
+    replace_ssh_password, trust_host_key, update_server,
     upgrade_server_to_agent, upsert_agent_server,
 };
 pub use ssh_service::{

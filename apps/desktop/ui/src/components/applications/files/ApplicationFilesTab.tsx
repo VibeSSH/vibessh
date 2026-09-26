@@ -733,6 +733,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         )}
         {loading ? (
           <SkeletonRows />
+        ) : entries.length === 0 && loadError ? (
+          // Not "this folder is empty": nothing was read, and saying empty
+          // reads as the files having gone. The reason is in the banner above.
+          <EmptyState icon="alert-triangle" title={t("applicationFilesTab.loadFailedTitle")} description={t("applicationFilesTab.loadFailedDescription")} />
         ) : entries.length === 0 ? (
           <EmptyState icon="folder" title={t("applicationFilesTab.emptyTitle")} description={t("applicationFilesTab.emptyDescription")} />
         ) : (

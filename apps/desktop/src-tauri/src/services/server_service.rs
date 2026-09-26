@@ -204,6 +204,26 @@ pub async fn install_ufw(repo: &ServerRepository, sessions: &SshSessionManager, 
     Ok(capabilities)
 }
 
+/// Records a new SSH host key for a server after the person has compared it
+/// with what the Node itself reports - the way out of a host-key mismatch.
+///
+/// Stores exactly the fingerprint that was shown to them, not whatever the
+/// Node presents next: if the key changed yet again in between, the next
+/// connection is refused again rather than trusting a key nobody looked at.
+/// Nothing else ever replaces a recorded key; that is the point of pinning.
+pub fn trust_host_key(repo: &ServerRepository, id: Uuid, fingerprint: &str) -> AppResult<()> {
+    let fingerprint = fingerprint.trim();
+    let well_formed = fingerprint
+        .strip_prefix("SHA256:")
+        .is_some_and(|hash| !hash.is_empty() && hash.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')));
+    if !well_formed {
+        return Err(AppError::InvalidInput(format!("'{fingerprint}' isn't an SSH key fingerprint")));
+    }
+    repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("server {id}")))?;
+    log::warn!("the SSH host key for server {id} was replaced by the operator with {fingerprint}");
+    repo.set_known_host_fingerprint(id, fingerprint)
+}
+
 /// Replaces a server's SSH password after the Node rejected the one it had.
 ///
 /// Goes where Edit Server puts a password - the OS credential store - because

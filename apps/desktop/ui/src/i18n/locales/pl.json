@@ -366,6 +366,8 @@
     "windowLoading": "Wczytuję…"
   },
   "applicationFilesTab": {
+    "loadFailedTitle": "Nie udało się wczytać folderu",
+    "loadFailedDescription": "Pliki są na miejscu - nie udało się tylko połączyć z Nodem. Powód jest wyżej.",
     "fetchButton": "Z linku",
     "fetchTitle": "Pobierz z linku",
     "fetchUrl": "Link do pliku",
@@ -1221,6 +1223,19 @@
     "checked": "Sprawdzono o {{time}}, Node sprawdza co 5 minut.",
     "over": "Przekroczony limit - Node zatrzymał serwer i nie uruchomi go, dopóki nie zwolnisz miejsca albo nie zwiększysz limitu.",
     "pending": "Pierwszy pomiar dysku pojawi się w ciągu 5 minut."
+  },
+  "hostKey": {
+    "title": "Zmienił się klucz serwera",
+    "lead": "{{host}} przedstawił się innym kluczem SSH niż ostatnio.",
+    "body": "Tak się dzieje po reinstalacji systemu albo odtworzeniu VPS-a z obrazu. Ale dokładnie tak samo wygląda ktoś, kto przechwytuje połączenie - wtedy wpisane dane trafiłyby do niego. Dlatego VibeSSH nie połączy się, dopóki nie sprawdzisz klucza.",
+    "expected": "Zapamiętany",
+    "presented": "Nowy",
+    "verify": "Zaloguj się na serwer inną drogą (np. konsolą w panelu dostawcy VPS) i uruchom poniższe polecenie. Jeden z wypisanych odcisków musi być identyczny z „Nowy”.",
+    "copied": "Skopiowano polecenie",
+    "confirmNote": "Zaufaj tylko wtedy, gdy odcisk na serwerze jest identyczny. Jeśli się różni, nie łącz się i zmień hasła do serwera.",
+    "dontConnect": "Nie łącz",
+    "trust": "Sprawdziłem, ufam nowemu kluczowi",
+    "trustConfirm": "Tak, zapisz nowy klucz"
   },
   "schedules": {
     "installCron": "Zainstaluj crona",

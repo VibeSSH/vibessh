@@ -40,8 +40,8 @@ export interface ApplicationSchedules {
   schedules: ApplicationSchedule[];
   lastRuns: ScheduleRun[];
   timeZone: NodeTimeZone | null;
-  /** Why the Node could not be asked. The schedules themselves still load. */
-  nodeError: string | null;
+  /** Why the Node could not be asked, shaped like a command error. The schedules themselves still load. */
+  nodeError: unknown;
 }
 
 export function listApplicationSchedules(applicationId: string): Promise<ApplicationSchedules> {

@@ -100,7 +100,9 @@ pub struct ApplicationSchedules {
     pub schedules: Vec<ApplicationSchedule>,
     pub last_runs: Vec<ScheduleRun>,
     pub time_zone: Option<NodeTimeZone>,
-    /// Why the Node could not be asked, when it could not. The schedules
-    /// themselves still come from the local database.
-    pub node_error: Option<String>,
+    /// Why the Node could not be asked, when it could not - the error in the
+    /// same shape a failed command returns, so the interface translates it
+    /// (and a changed host key reads as the warning it is) instead of showing
+    /// English. The schedules themselves still come from the local database.
+    pub node_error: Option<serde_json::Value>,
 }

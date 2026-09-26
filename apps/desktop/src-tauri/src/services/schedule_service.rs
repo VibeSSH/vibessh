@@ -511,7 +511,7 @@ pub async fn list_schedules(
     };
     Ok(match node.await {
         Ok((time_zone, last_runs)) => ApplicationSchedules { schedules, last_runs, time_zone: Some(time_zone), node_error: None },
-        Err(err) => ApplicationSchedules { schedules, last_runs: Vec::new(), time_zone: None, node_error: Some(err.to_string()) },
+        Err(err) => ApplicationSchedules { schedules, last_runs: Vec::new(), time_zone: None, node_error: serde_json::to_value(&err).ok() },
     })
 }
 

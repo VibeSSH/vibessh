@@ -16,6 +16,7 @@ import { ForcePasswordChange } from "@/components/teams/ForcePasswordChange";
 import { useAuthStore } from "@/stores/authStore";
 import { GlobalServerModal } from "./GlobalServerModal";
 import { SessionPasswordPrompt } from "@/components/servers/SessionPasswordPrompt";
+import { HostKeyPrompt } from "@/components/servers/HostKeyPrompt";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import "./AppLayout.css";
@@ -106,6 +107,7 @@ export function AppLayout() {
         </main>
       </div>
       <SessionPasswordPrompt />
+      <HostKeyPrompt />
       <ToastHost />
       <GlobalServerModal />
       <AuthModal />

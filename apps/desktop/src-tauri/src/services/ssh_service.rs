@@ -525,16 +525,26 @@ pub(super) async fn get_or_connect(repo: &ServerRepository, sessions: &SshSessio
 
     let server = repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
     let credentials = credentials_from_server(&server)?;
-    let known_fingerprint = repo.get_known_host_fingerprint(server_id)?;
+    let known = repo.get_known_host_key(server_id)?;
+    let known_family = known.as_ref().and_then(|known| known.family);
+    let first_connection = known.is_none();
 
     // The connect does not know which server it is for; the UI needs to, so
     // it can ask for that server's password again rather than show a dead end.
-    let outcome = ssh::connect(&credentials, known_fingerprint.clone()).await.map_err(|err| match err {
+    let outcome = ssh::connect_known(&credentials, known).await.map_err(|err| match err {
         AppError::SshAuthRejected { username, method, .. } => AppError::SshAuthRejected { username, method, server_id: Some(server_id) },
+        AppError::HostKeyMismatch { host, expected, presented, .. } => AppError::HostKeyMismatch { host, server_id: Some(server_id), expected, presented },
         other => other,
     })?;
-    if known_fingerprint.is_none() {
+    if first_connection {
         repo.set_known_host_fingerprint(server_id, &outcome.host_key_fingerprint)?;
+    }
+    // Remembered, so a server holding several kinds of key is asked for the
+    // one on record first - see `ssh::client::handshake_with_known_key`.
+    if let Some(family) = outcome.host_key_family.filter(|family| Some(*family) != known_family) {
+        if let Err(err) = repo.set_known_host_family(server_id, family) {
+            log::warn!("couldn't record the kind of host key for server {server_id}: {err}");
+        }
     }
 
     let session = Arc::new(outcome.session);

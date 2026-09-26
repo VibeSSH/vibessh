@@ -63,6 +63,13 @@ pub fn replace_ssh_password(repo: State<'_, ServerRepository>, server_id: Uuid, 
     services::replace_ssh_password(&repo, server_id, &password)
 }
 
+/// Trusts a server's new SSH host key, after the person compared it with the
+/// Node's own - see `services::trust_host_key`.
+#[tauri::command]
+pub fn trust_host_key(repo: State<'_, ServerRepository>, server_id: Uuid, fingerprint: String) -> AppResult<()> {
+    services::trust_host_key(&repo, server_id, &fingerprint)
+}
+
 /// Drops a remembered password - called when one turned out to be wrong, so
 /// the next attempt asks again instead of failing the same way forever.
 #[tauri::command]

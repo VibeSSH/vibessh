@@ -500,6 +500,17 @@ const STEPS: &[Step] = &[
             CREATE INDEX application_schedules_application_idx ON application_schedules (application_id);",
             down: Some("DROP TABLE application_schedules;"),
         },
+        // Migration 19: which kind of key (ed25519, ecdsa, rsa) a recorded
+        // host key is. A server can hold one of each, and gaining a new kind
+        // changes which one a connection is shown - the recorded key no longer
+        // matches the key on offer though nothing was replaced. Knowing the
+        // kind lets `ssh::connect_known` ask for it first. Nullable: every
+        // key recorded before this has no kind, and learns it on its next
+        // connection.
+        Step {
+            up: "ALTER TABLE ssh_known_hosts ADD COLUMN key_family TEXT;",
+            down: Some("ALTER TABLE ssh_known_hosts DROP COLUMN key_family;"),
+        },
 ];
 
 #[cfg(test)]

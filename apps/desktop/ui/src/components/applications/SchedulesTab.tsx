@@ -22,7 +22,7 @@ import {
   type ScheduleAction,
   type ScheduleInput,
 } from "@/services/scheduleService";
-import { CommandError, errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage, normalizeError } from "@/services/tauri";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { buildCron, isValidCron, nextRun, presetOf, twoDigits, type CronPreset } from "@/utils/cron";
 import "./SchedulesTab.css";
@@ -151,7 +151,9 @@ export function SchedulesTab({ applicationId, canManage }: { applicationId: stri
         }
       >
         {loadError && <p className="form-note form-note-danger form-note-spaced">{loadError}</p>}
-        {data?.nodeError && <p className="form-note form-note-danger form-note-spaced">{t("schedules.nodeError", { reason: data.nodeError })}</p>}
+        {data?.nodeError ? (
+          <p className="form-note form-note-danger form-note-spaced">{t("schedules.nodeError", { reason: errorMessage(normalizeError(data.nodeError), t) })}</p>
+        ) : null}
         {!data && !loadError ? (
           <SkeletonRows />
         ) : data && data.schedules.length === 0 ? (

@@ -184,7 +184,18 @@ pub enum AppError {
     Timeout { operation: &'static str, seconds: u64 },
 
     #[error("the Node's host key doesn't match the one VibeSSH saw before")]
-    HostKeyMismatch { host: String },
+    HostKeyMismatch {
+        host: String,
+        /// Filled in by `ssh_service::get_or_connect`, which knows which
+        /// server it was connecting to - so the prompt can offer to trust the
+        /// new key for that server.
+        server_id: Option<uuid::Uuid>,
+        /// The SHA-256 fingerprint recorded before, and the one the Node just
+        /// presented - both shown to the person, who compares the new one
+        /// with what the Node itself reports before trusting it.
+        expected: Option<String>,
+        presented: Option<String>,
+    },
 
     /// This Node authenticates with a password and none is available - the
     /// keyring has none stored, or could not be reached at all.
@@ -341,7 +352,9 @@ impl AppError {
                 serde_json::json!({ "port": port, "protocol": protocol, "owner": owner })
             }
             AppError::Timeout { operation, seconds } => serde_json::json!({ "operation": operation, "seconds": seconds }),
-            AppError::HostKeyMismatch { host } => serde_json::json!({ "host": host }),
+            AppError::HostKeyMismatch { host, server_id, expected, presented } => {
+                serde_json::json!({ "host": host, "serverId": server_id, "expected": expected, "presented": presented })
+            }
             AppError::PasswordRequired { server_id } => serde_json::json!({ "serverId": server_id }),
             AppError::SshAuthRejected { username, method, server_id } => {
                 serde_json::json!({ "username": username, "method": method, "serverId": server_id })
@@ -460,7 +473,7 @@ mod tests {
             AppError::PortInUse { port: 25565, protocol: "tcp", owner: None },
             AppError::DockerUnavailable,
             AppError::Timeout { operation: "the command", seconds: 600 },
-            AppError::HostKeyMismatch { host: "node.example.com".into() },
+            AppError::HostKeyMismatch { host: "node.example.com".into(), server_id: None, expected: None, presented: None },
             AppError::AiNotConfigured,
             AppError::AiAuthFailed,
             AppError::AiModelUnavailable { model: "gpt-4o-mini".into() },
@@ -504,7 +517,7 @@ mod tests {
         assert_eq!(json(&AppError::DockerUnavailable)["kind"], "invalid_input");
         assert_eq!(json(&AppError::PortInUse { port: 1, protocol: "tcp", owner: None })["kind"], "invalid_input");
         assert_eq!(json(&AppError::Timeout { operation: "x", seconds: 1 })["kind"], "connection");
-        assert_eq!(json(&AppError::HostKeyMismatch { host: "h".into() })["kind"], "connection");
+        assert_eq!(json(&AppError::HostKeyMismatch { host: "h".into(), server_id: None, expected: None, presented: None })["kind"], "connection");
         assert_eq!(json(&AppError::Unauthorized("x".into()))["kind"], "unauthorized");
     }
 

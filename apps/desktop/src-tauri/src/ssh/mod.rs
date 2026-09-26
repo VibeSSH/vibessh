@@ -30,7 +30,7 @@ mod sftp;
 // `systemctl` calls this module's own methods already validate.
 pub(crate) mod systemd;
 
-pub use client::{connect, SshAuth, SshCredentials, SshSession, TerminalHandle};
+pub use client::{connect, connect_known, HostKeyFamily, KnownHostKey, SshAuth, SshCredentials, SshSession, TerminalHandle};
 pub use port_forward::PortForwardHandle;
 
 use crate::errors::{AppError, AppResult};

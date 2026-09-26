@@ -36,24 +36,42 @@ impl ServerRepository {
     }
 
     /// `None` means no connection has ever succeeded for this server - the
-    /// next `ssh::connect` call trusts whatever host key it sees and this
-    /// becomes the baseline every later connection is checked against.
-    pub fn get_known_host_fingerprint(&self, server_id: Uuid) -> AppResult<Option<String>> {
+    /// next connection trusts whatever host key it sees and this becomes the
+    /// baseline every later connection is checked against.
+    ///
+    /// The recorded key with its kind, for `ssh::connect_known` - see
+    /// `ssh::KnownHostKey`. The kind is absent for keys recorded before it
+    /// was kept, and for one an operator just trusted.
+    pub fn get_known_host_key(&self, server_id: Uuid) -> AppResult<Option<crate::ssh::KnownHostKey>> {
         self.lock()
             .query_row(
-                "SELECT fingerprint FROM ssh_known_hosts WHERE server_id = ?1",
+                "SELECT fingerprint, key_family FROM ssh_known_hosts WHERE server_id = ?1",
                 params![server_id.to_string()],
-                |row| row.get(0),
+                |row| {
+                    let family: Option<String> = row.get(1)?;
+                    Ok(crate::ssh::KnownHostKey { fingerprint: row.get(0)?, family: family.as_deref().and_then(crate::ssh::HostKeyFamily::parse) })
+                },
             )
             .optional()
             .map_err(|err| AppError::Storage(format!("failed to read the known host key: {err}")))
     }
 
+    /// Records which kind the known key is, once a connection has shown it -
+    /// so later connections ask for that kind first.
+    pub fn set_known_host_family(&self, server_id: Uuid, family: crate::ssh::HostKeyFamily) -> AppResult<()> {
+        self.lock()
+            .execute("UPDATE ssh_known_hosts SET key_family = ?2 WHERE server_id = ?1", params![server_id.to_string(), family.as_str()])
+            .map_err(|err| AppError::Storage(format!("failed to record the host key's kind: {err}")))?;
+        Ok(())
+    }
+
+    /// Records a server's key. Replacing it forgets the old key's kind, which
+    /// described a key that is no longer the one trusted.
     pub fn set_known_host_fingerprint(&self, server_id: Uuid, fingerprint: &str) -> AppResult<()> {
         self.lock()
             .execute(
                 "INSERT INTO ssh_known_hosts (server_id, fingerprint) VALUES (?1, ?2)
-                 ON CONFLICT(server_id) DO UPDATE SET fingerprint = excluded.fingerprint",
+                 ON CONFLICT(server_id) DO UPDATE SET fingerprint = excluded.fingerprint, key_family = NULL",
                 params![server_id.to_string(), fingerprint],
             )
             .map_err(|err| AppError::Storage(format!("failed to record the known host key: {err}")))?;

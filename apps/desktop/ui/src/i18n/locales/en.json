@@ -366,6 +366,8 @@
     "windowLoading": "Loading…"
   },
   "applicationFilesTab": {
+    "loadFailedTitle": "Couldn't load this folder",
+    "loadFailedDescription": "The files are still there - only the connection to the Node failed. The reason is above.",
     "fetchButton": "From link",
     "fetchTitle": "Download from a link",
     "fetchUrl": "Link to the file",
@@ -1214,6 +1216,19 @@
     "checked": "Checked at {{time}}; the Node checks every 5 minutes.",
     "over": "Over the limit - the Node stopped the server and won't start it until you free some space or raise the limit.",
     "pending": "The first disk measurement appears within 5 minutes."
+  },
+  "hostKey": {
+    "title": "The server's key changed",
+    "lead": "{{host}} presented a different SSH key from last time.",
+    "body": "That happens after the system is reinstalled or the VPS is restored from an image. But it looks exactly the same when somebody is intercepting the connection - and then whatever you send would reach them. So VibeSSH won't connect until you check the key.",
+    "expected": "Recorded",
+    "presented": "New",
+    "verify": "Sign in to the server another way (for example the console in your VPS provider's panel) and run the command below. One of the fingerprints it prints must match \"New\" exactly.",
+    "copied": "Command copied",
+    "confirmNote": "Only trust it if the fingerprint on the server is identical. If it differs, don't connect, and change the server's passwords.",
+    "dontConnect": "Don't connect",
+    "trust": "I've checked it - trust the new key",
+    "trustConfirm": "Yes, save the new key"
   },
   "schedules": {
     "installCron": "Install cron",

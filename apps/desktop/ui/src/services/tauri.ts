@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isHostKeyDeclined, useHostKeyStore } from "@/stores/hostKeyStore";
 import { isRejectedPromptDismissed, useSessionPasswordStore } from "@/stores/sessionPasswordStore";
 import { recordCommandTiming } from "./commandTiming";
 
@@ -109,6 +110,26 @@ export async function callCommand<T>(command: string, args?: Record<string, unkn
     // happened to land.
     if (!isRetry && normalized instanceof CommandError && normalized.code === "ssh_auth_rejected") {
       return retryAfterRejectedLogin<T>(normalized, command, args);
+    }
+
+    // The Node's host key changed. Asked here for the same reason as the two
+    // above - any screen can be the one that meets it - and it used to be a
+    // dead end: a red line, and no way to accept a key that changed for an
+    // honest reason like a reinstall. Trusting records exactly the
+    // fingerprint that was shown, then tries once more.
+    if (!isRetry && normalized instanceof CommandError && normalized.code === "host_key_mismatch") {
+      const { serverId, host, expected, presented } = normalized.params;
+      if (typeof serverId === "string" && typeof presented === "string" && !isHostKeyDeclined(serverId)) {
+        const trusted = await useHostKeyStore.getState().request(serverId, {
+          host: typeof host === "string" ? host : "",
+          expected: typeof expected === "string" ? expected : null,
+          presented,
+        });
+        if (trusted) {
+          await callCommand<void>("trust_host_key", { serverId, fingerprint: presented }, true);
+          return callCommand<T>(command, args, true);
+        }
+      }
     }
 
     throw normalized;
