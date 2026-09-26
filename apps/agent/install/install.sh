@@ -40,7 +40,10 @@ MANAGED_UNITS_FILE="${BASE_CONFIG_DIR}/managed-units.conf"
 # be tested without a published release to fetch.
 LOCAL_BINARY="${VIBESSH_INSTALL_LOCAL_BINARY:-}"
 
-log() { printf '==> %s\n' "$*"; }
+# Progress goes to stderr, never stdout: stdout is how a function hands back a
+# value, and a log line written there becomes part of that value - which is
+# how the downloaded binary's path once came back as "==> downloading ...".
+log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 require_root() {
@@ -149,6 +152,8 @@ verify_signature() {
         || die "the downloaded agent is not signed by VibeSSH - refusing to install it"
 }
 
+# Downloads and verifies the agent, leaving its path in FETCHED_BINARY. Set
+# rather than printed, so nothing the steps inside write can end up in it.
 fetch_and_verify() {
     target="$1" # e.g. linux-amd64
     tmp_dir="$2"
@@ -174,7 +179,7 @@ fetch_and_verify() {
     log "verifying signature"
     verify_signature "$tmp_dir/$asset" "$tmp_dir/$asset.sig" "$tmp_dir"
 
-    echo "$tmp_dir/$asset"
+    FETCHED_BINARY="$tmp_dir/$asset"
 }
 
 install_binary() {
@@ -376,7 +381,8 @@ main() {
     else
         tmp_dir="$(mktemp -d)"
         trap 'rm -rf "$tmp_dir"' EXIT
-        binary_path="$(fetch_and_verify "$target" "$tmp_dir")"
+        fetch_and_verify "$target" "$tmp_dir"
+        binary_path="$FETCHED_BINARY"
     fi
 
     install_binary "$binary_path"
