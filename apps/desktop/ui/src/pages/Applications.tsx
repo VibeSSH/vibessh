@@ -24,6 +24,8 @@ import {
   stopApplication,
 } from "@/services/applicationService";
 import { listServers, serverSummaryToManagedServer } from "@/services/serverService";
+import { listSharedApplicationAccess, syncSharedApplications, type SharedApplicationAccess } from "@/services/cloudService";
+import { APPLICATIONS_LIFECYCLE } from "@/constants/permissions";
 import { useApplicationsStore } from "@/stores/applicationsStore";
 import { useServersStore } from "@/stores/serversStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
@@ -190,16 +192,30 @@ export function Applications() {
   const [order, setOrder] = useState<string[]>(loadOrder);
   const sensors = useSensors(useSensor(CardPointerSensor, { activationConstraint: { delay: DRAG_HOLD_MS, tolerance: DRAG_TOLERANCE_PX } }));
 
+  /** Which listed applications are somebody else's, shared with this account. */
+  const [sharedAccess, setSharedAccess] = useState<Map<string, SharedApplicationAccess>>(new Map());
+
   function reload() {
     listApplications()
       .then(setApplications)
       .catch(() => {
         // No applications yet, or this loaded outside a Tauri webview during development.
       });
+    listSharedApplicationAccess()
+      .then((rows) => setSharedAccess(new Map(rows.map((row) => [row.applicationId, row]))))
+      .catch(() => setSharedAccess(new Map()));
   }
 
   useEffect(() => {
     reload();
+    // What teammates shared with this account, brought up to date and then
+    // listed. After the first reload rather than before it, so the list the
+    // person already has is on screen while the backend is asked.
+    syncSharedApplications()
+      .then((report) => {
+        if (report.added > 0 || report.removed > 0 || report.refreshed > 0) reload();
+      })
+      .catch((err) => console.warn("couldn't sync shared applications", err));
     if (servers.length === 0) {
       listServers()
         .then((loaded) => setServers(loaded.map(serverSummaryToManagedServer)))
@@ -397,8 +413,13 @@ export function Applications() {
                   application={application}
                   serverName={servers.find((s) => s.id === application.serverId)?.name}
                   busy={busyId === application.id}
-                  selected={selected.has(application.id)}
-                  onSelectedChange={(isSelected) => toggleSelected(application.id, isSelected)}
+                  selected={sharedAccess.has(application.id) ? undefined : selected.has(application.id)}
+                  onSelectedChange={sharedAccess.has(application.id) ? undefined : (isSelected) => toggleSelected(application.id, isSelected)}
+                  shared={
+                    sharedAccess.has(application.id)
+                      ? { canLifecycle: sharedAccess.get(application.id)?.permissions.includes(APPLICATIONS_LIFECYCLE) ?? false }
+                      : null
+                  }
                   onOpen={() => navigate(`/applications/${application.id}`)}
                   onStart={() => runAction(application.id, () => startApplication(application.id))}
                   onStop={() => runAction(application.id, () => stopApplication(application.id, true))}

@@ -400,6 +400,8 @@ pub fn run() {
             commands::cloud_commands::cloud_backend_is_configured,
             commands::cloud_commands::share_application_with_team,
             commands::cloud_commands::list_team_applications,
+            commands::cloud_commands::sync_shared_applications,
+            commands::cloud_commands::list_shared_application_access,
             commands::cloud_commands::unshare_application_from_team,
             commands::cloud_commands::list_application_members,
             commands::cloud_commands::add_application_member,

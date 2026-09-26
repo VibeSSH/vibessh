@@ -58,10 +58,12 @@ interface ApplicationFileEditorPanelProps {
    *  uses - the parent owns which file is open, and only it can intercept a
    *  click on a different one before the editor is torn down. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Open to read only - no save, and the text cannot be changed. */
+  readOnly?: boolean;
 }
 
 /** A full-tab editor view, same "swap the whole content area" shape as the older Node Files editor (FileEditorPanel.tsx) - this is a separate component (not a generalization of that one) because it needs real dirty-state tracking, Ctrl+S, a close-confirmation, a backup-before-save toggle, and Version History, none of which the simpler Node Files editor needs. Reuses the same CodeMirror theme/language wiring and CSS directly rather than re-deriving them. */
-export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSaved, onDirtyChange }: ApplicationFileEditorPanelProps) {
+export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSaved, onDirtyChange, readOnly = false }: ApplicationFileEditorPanelProps) {
   const { t } = useTranslation();
   // The live editor, so the header button can reach the same panel
   // Ctrl+F opens. Null until CodeMirror has mounted, which is why the
@@ -295,6 +297,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
   useEffect(() => load(), [load]);
 
   const handleSave = useCallback(async () => {
+    if (readOnly) return;
     if (loading || loadFailed || saving || tooLarge || blocking.length > 0) return;
     setSaving(true);
     setError(null);
@@ -312,7 +315,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
     } finally {
       setSaving(false);
     }
-  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, loadFailed, saving, tooLarge, blocking.length, onSaved, refreshBaseline, t]);
+  }, [applicationId, entry.path, entry.name, content, backupBeforeSave, loading, loadFailed, saving, tooLarge, blocking.length, onSaved, refreshBaseline, t, readOnly]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -367,7 +370,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
           />
           <IconButton icon="history" size="sm" onClick={() => setHistoryOpen(true)} title={t("applicationFileEditor.historyAria")} />
           <IconButton icon="refresh-cw" size="sm" onClick={() => load()} title={t("applicationFileEditor.reloadAria")} disabled={loading} />
-          {!tooLarge && (
+          {!tooLarge && !readOnly && (
             <Button onClick={handleSave} disabled={loading || loadFailed || saving || !dirty || blocking.length > 0}>
               {saving ? t("applicationFileEditor.saving") : t("applicationFileEditor.save")}
             </Button>
@@ -460,6 +463,7 @@ export function ApplicationFileEditorPanel({ applicationId, entry, onClose, onSa
             theme="none"
             extensions={extensions}
             onChange={setContent}
+            editable={!readOnly}
             onCreateEditor={(view) => (editorViewRef.current = view)}
             basicSetup={{ foldGutter: true, highlightActiveLine: true }}
           />

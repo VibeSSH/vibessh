@@ -425,6 +425,7 @@ pub async fn update_application_config(
     id: Uuid,
     field_values: serde_json::Value,
 ) -> AppResult<ApplicationDetail> {
+    super::refuse_if_shared(repo, id, "applications.config")?;
     let detail = repo.get(id)?.ok_or_else(|| AppError::NotFound(format!("application {id}")))?;
     let handler = registry
         .get(&detail.application.blueprint_id)
@@ -571,6 +572,7 @@ mod rerender_tests {
             runtime_config,
             metadata: serde_json::json!({ "blueprintInputs": inputs }),
             links: vec![],
+            shared: None,
         }
     }
 

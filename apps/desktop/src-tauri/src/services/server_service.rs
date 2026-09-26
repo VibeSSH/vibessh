@@ -38,16 +38,22 @@ pub fn set_server_icon(repo: &ServerRepository, id: Uuid, icon: Option<String>) 
 
 /// Refused while applications are on the server, naming them - the foreign
 /// key in `storage::migrations` refuses it too, but only as a bare id.
+///
+/// Shared Applications - somebody else's, reached through this server entry
+/// - do not hold it up: they are only this install's view of them, and go
+/// with it. Their containers are their owner's and are not touched.
 pub fn delete_server(repo: &ServerRepository, app_repo: &ApplicationRepository, id: Uuid) -> AppResult<()> {
-    let attached: Vec<String> = app_repo
-        .list()?
-        .into_iter()
-        .filter(|application| application.server_id == Some(id))
-        .map(|application| application.name)
-        .collect();
+    let shared: std::collections::HashSet<Uuid> = app_repo.list_shared()?.into_iter().map(|(application_id, _)| application_id).collect();
+    let on_server: Vec<crate::models::Application> =
+        app_repo.list()?.into_iter().filter(|application| application.server_id == Some(id)).collect();
+    let attached: Vec<String> =
+        on_server.iter().filter(|application| !shared.contains(&application.id)).map(|application| application.name.clone()).collect();
     if !attached.is_empty() {
         let server = repo.get(id)?.map(|server| server.name).unwrap_or_else(|| id.to_string());
         return Err(AppError::ServerHasApplications { server, applications: attached.join(", ") });
+    }
+    for application in on_server.iter().filter(|application| shared.contains(&application.id)) {
+        app_repo.forget_shared(application.id)?;
     }
     repo.delete(id)?;
     // Best-effort: the row is already gone, and delete_secret already treats

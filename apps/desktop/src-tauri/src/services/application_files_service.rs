@@ -106,7 +106,13 @@ pub(crate) async fn resolve_provider(
         Some(server_id) => Some(connect_with_live_sftp(server_repo, sessions, server_id).await?),
     };
     if let Some(connection) = &connection {
-        if files::wants_dedicated_user(&detail.application, &detail.runtime_config) && needs_readiness_check(connection.id(), application_id) {
+        // Not for somebody else's Application: its account and the helper
+        // are the owner's to provision, and a member's account may run the
+        // helper as that account and nothing more.
+        if detail.shared.is_none()
+            && files::wants_dedicated_user(&detail.application, &detail.runtime_config)
+            && needs_readiness_check(connection.id(), application_id)
+        {
             // Best-effort, proactive: Application Files must work for an
             // Application that opted into a dedicated account but has never
             // actually been started yet (`runtime::docker::start`/`restart`

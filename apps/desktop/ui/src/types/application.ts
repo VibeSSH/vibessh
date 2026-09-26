@@ -119,6 +119,16 @@ export interface ApplicationDetail extends Application {
   /** Ids of the other applications this one is allowed to reach on its node.
    * Symmetric - if A lists B, B lists A. See `listApplicationLinks`. */
   links: string[];
+  /** Set when this is somebody else's application, shared with this account
+   * through a team - the page then offers only what `permissions` allows. */
+  shared: SharedAccess | null;
+}
+
+/** Somebody else's application, shared with this account. */
+export interface SharedAccess {
+  teamId: string;
+  /** A subset of `APPLICATION_SCOPED`: what this account may do beyond viewing. */
+  permissions: string[];
 }
 
 export interface ResourceUsage {

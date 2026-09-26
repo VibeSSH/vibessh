@@ -511,6 +511,27 @@ const STEPS: &[Step] = &[
             up: "ALTER TABLE ssh_known_hosts ADD COLUMN key_family TEXT;",
             down: Some("ALTER TABLE ssh_known_hosts DROP COLUMN key_family;"),
         },
+        // Migration 20: Applications another team member owns and shared
+        // with this install's account (`services::shared_application_service`).
+        //
+        // Such an Application gets an ordinary `applications` row - under the
+        // owner's own id, because that id is what names its container, unit
+        // and account on the Node - so every screen keyed on an Application id
+        // works for it. This table is what marks the row as somebody else's:
+        // its presence routes the runtime and the file provider to the
+        // member's narrow paths, and keeps teardown away from a container
+        // this install does not own. `permissions` is a JSON array, what this
+        // account may do there. Cascades with the row, so removing the
+        // Application from this install removes the mark with it.
+        Step {
+            up: "CREATE TABLE shared_applications (
+                application_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+                team_id        TEXT NOT NULL,
+                permissions    TEXT NOT NULL,
+                synced_at      TEXT NOT NULL
+            );",
+            down: Some("DROP TABLE shared_applications;"),
+        },
 ];
 
 #[cfg(test)]

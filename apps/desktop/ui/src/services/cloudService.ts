@@ -419,6 +419,34 @@ export function addApplicationMember(teamId: string, applicationId: string, user
   return callCommand<void>("add_application_member", { teamId, applicationId, userId });
 }
 
+/** What one sync of shared applications did - see `syncSharedApplications`. */
+export interface SharedSyncReport {
+  added: number;
+  refreshed: number;
+  removed: number;
+}
+
+/** One of this install's applications that is somebody else's, shared with this account. */
+export interface SharedApplicationAccess {
+  applicationId: string;
+  teamId: string;
+  permissions: string[];
+}
+
+/**
+ * Puts the applications teammates shared with this account on this install,
+ * and takes off the ones no longer shared - only on Nodes this install
+ * connects to as its own member account. The row only: a container is its
+ * owner's and is never touched from here.
+ */
+export function syncSharedApplications(): Promise<SharedSyncReport> {
+  return callCommand<SharedSyncReport>("sync_shared_applications");
+}
+
+export function listSharedApplicationAccess(): Promise<SharedApplicationAccess[]> {
+  return callCommand<SharedApplicationAccess[]>("list_shared_application_access");
+}
+
 /** Replaces what one member may do with a shared application they can see. */
 export function setApplicationMemberPermissions(teamId: string, applicationId: string, userId: string, permissions: string[]): Promise<void> {
   return callCommand<void>("set_application_member_permissions", { teamId, applicationId, userId, permissions });

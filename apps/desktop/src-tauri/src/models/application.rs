@@ -312,4 +312,25 @@ pub struct ApplicationDetail {
     /// Unordered pairs, so this is symmetric: if A lists B, B lists A. See
     /// migration 16 for why a connection cannot be one-way.
     pub links: Vec<Uuid>,
+    /// Set when this Application belongs to somebody else on a team and was
+    /// shared with this install's account - see migration 20. The interface
+    /// shows only what `permissions` allows, and the runtime and file
+    /// provider take the member's narrow paths.
+    pub shared: Option<SharedAccess>,
+}
+
+/// Somebody else's Application, shared with this account through a team.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedAccess {
+    pub team_id: Uuid,
+    /// A subset of the backend's `APPLICATION_SCOPED`: what this account may
+    /// do here beyond viewing it.
+    pub permissions: Vec<String>,
+}
+
+impl SharedAccess {
+    pub fn allows(&self, permission: &str) -> bool {
+        self.permissions.iter().any(|held| held == permission)
+    }
 }

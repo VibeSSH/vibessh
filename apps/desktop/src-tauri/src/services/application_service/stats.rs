@@ -50,6 +50,12 @@ pub async fn follow_application_stats(
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("live resource usage is only available for Docker applications".to_string()));
     }
+    // `docker stats` takes several containers, so a member's account has no
+    // rule for it - see `runtime::member`. The page falls back to polling,
+    // which for a shared Application reports uptime.
+    if detail.shared.is_some() {
+        return Err(AppError::InvalidInput("live resource usage isn't available for a shared application".to_string()));
+    }
     let connection = connection.ok_or_else(|| AppError::InvalidInput("live resource usage needs a connection to the Node".to_string()))?;
     let container = format!("vibessh-app-{id}");
     connection

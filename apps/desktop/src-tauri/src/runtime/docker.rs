@@ -995,7 +995,7 @@ async fn ensure_working_directory_owned_by_dedicated_user(connection: &SshSessio
 /// than `runtime::remote_process` can offer for a plain `nohup`'d process -
 /// a real capability difference between runtimes, not something to flatten
 /// away (brief's own "nie udawaj identycznych capabilities").
-fn map_container_status(status: &str, exit_code: &str) -> ApplicationStatus {
+pub(crate) fn map_container_status(status: &str, exit_code: &str) -> ApplicationStatus {
     match status {
         "running" => ApplicationStatus::Running,
         "restarting" => ApplicationStatus::Starting,

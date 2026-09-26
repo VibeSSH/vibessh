@@ -442,3 +442,13 @@
     display: none;
   }
 }
+
+/* Said where the upload button would be, so its absence reads as a decision
+   rather than as something that failed to load. */
+.application-files-read-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}

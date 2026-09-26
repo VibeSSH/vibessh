@@ -96,8 +96,28 @@ async fn load_runtime(
     // the one place real secret values get resolved back in.
     detail.environment = resolve_environment_secrets(detail.application.id, detail.environment)?;
     let connection = resolve_connection(server_repo, sessions, detail.application.server_id).await?;
-    let runtime = runtime::runtime_for(detail.application.runtime_type, local_process_manager.clone());
+    // Somebody else's Application gets the member's runtime whatever its
+    // type: only the commands its sudo rules name - see `runtime::member`.
+    let runtime: Box<dyn ApplicationRuntime> = match &detail.shared {
+        Some(access) => Box::new(runtime::member::MemberRuntime::new(access.clone())),
+        None => runtime::runtime_for(detail.application.runtime_type, local_process_manager.clone()),
+    };
     Ok((detail, connection, runtime))
+}
+
+/// Refuses what only an Application's owner may do, when this install holds
+/// it as somebody else's shared Application.
+///
+/// The member's runtime cannot do these anyway, and the Node would refuse
+/// them. This is for the part that happens before either: recreating or
+/// deleting starts by changing this install's own record of it, and
+/// deleting one this install does not own would otherwise run a teardown
+/// against a container that is not its to remove.
+pub(crate) fn refuse_if_shared(repo: &ApplicationRepository, id: Uuid, action: &str) -> AppResult<()> {
+    if repo.shared_access(id)?.is_some() {
+        return Err(AppError::SharedActionNotAllowed { action: action.to_string() });
+    }
+    Ok(())
 }
 
 /// Re-reads status straight from the runtime and persists it - the only

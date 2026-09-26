@@ -40,6 +40,10 @@ interface ApplicationConsoleCardProps {
   onVerb?: (verb: LifecycleVerb) => void;
   /** A lifecycle action is already in flight, so the dots hold until it lands. */
   actionBusy?: boolean;
+  /** Shown in place of the input when this account may watch the console
+   *  but not type into it - a shared application without the console
+   *  permission. */
+  readOnlyReason?: string | null;
 }
 
 const TAIL_LINES = 200;
@@ -154,7 +158,7 @@ export function isCopyChord(event: Pick<KeyboardEvent, "type" | "ctrlKey" | "met
   return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
 }
 
-export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actionBusy }: ApplicationConsoleCardProps) {
+export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actionBusy, readOnlyReason = null }: ApplicationConsoleCardProps) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
   const [input, setInput] = useState("");
@@ -581,6 +585,8 @@ export function ApplicationConsoleCard({ applicationId, isRunning, onVerb, actio
       {lines.length === 0 && <p className="application-console-empty">{readFailure ?? t("applicationConsole.empty")}</p>}
       {unsupported ? (
         <p className="form-note form-note-danger form-note-spaced">{unsupported}</p>
+      ) : readOnlyReason ? (
+        <p className="form-note form-note-spaced">{readOnlyReason}</p>
       ) : (
         <form className="application-console-input-row" onSubmit={handleSubmit}>
           <input

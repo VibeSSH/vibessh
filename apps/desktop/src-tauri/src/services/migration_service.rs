@@ -132,6 +132,7 @@ pub async fn migrate_application(
     target_server_id: Uuid,
     progress: ProgressSink<'_>,
 ) -> AppResult<MigrationResult> {
+    crate::services::application_service::refuse_if_shared(app_repo, source_application_id, "applications.config")?;
     if !locks.try_start(source_application_id).await {
         return Err(AppError::InvalidInput("this application is already being migrated".into()));
     }

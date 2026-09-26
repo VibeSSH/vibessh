@@ -89,6 +89,13 @@ const logLines = [
   "[12:09:18 INFO]: Notch left the game",
 ];
 
+/** `?fixtures=1&shared=1` shows the application as somebody else's, shared
+ * with this account with start/stop and reading files - the member's view. */
+const SHARED_ACCESS =
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).has("shared")
+    ? { teamId: "team-fixture", permissions: ["applications.lifecycle", "applications.files.read"] }
+    : null;
+
 const fixtures: Record<string, unknown> = {
   list_servers: servers,
   list_applications: [application],
@@ -109,7 +116,10 @@ const fixtures: Record<string, unknown> = {
     links: [],
     runtimeConfig: { image: "itzg/minecraft-server:latest" },
     metadata: {},
+    shared: SHARED_ACCESS,
   },
+  list_shared_application_access: SHARED_ACCESS ? [{ applicationId: APPLICATION_ID, ...SHARED_ACCESS }] : [],
+  sync_shared_applications: { added: 0, refreshed: 0, removed: 0 },
   list_blueprints: [blueprint],
   refresh_application_status: "running",
   get_application_resource_usage: { cpuPercent: 38.4, ramBytes: 3_355_443_200, uptimeSeconds: 9_240 },

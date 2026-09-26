@@ -97,3 +97,13 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* Somebody else's application - a quiet label beside where it runs. */
+.application-card-shared {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3, var(--surface-2));
+  color: var(--text-secondary);
+  font-size: 11px;
+}

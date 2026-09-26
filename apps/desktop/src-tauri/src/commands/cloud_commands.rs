@@ -98,6 +98,27 @@ pub async fn share_application_with_team(
     services::team_application_service::share_application(&app_repo, &cloud, team_id, application_id, team_server_id).await
 }
 
+/// Puts the Applications teammates shared with this account on this
+/// install, and takes off the ones no longer shared - see
+/// `shared_application_service`. Run by the Applications list whenever it
+/// opens.
+#[tauri::command]
+pub async fn sync_shared_applications(
+    app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
+    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
+    cloud: State<'_, CloudState>,
+) -> AppResult<services::shared_application_service::SharedSyncReport> {
+    services::shared_application_service::sync_shared_applications(&app_repo, &server_repo, &cloud).await
+}
+
+/// Which of this install's Applications are shared ones, and what each allows.
+#[tauri::command]
+pub fn list_shared_application_access(
+    app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
+) -> AppResult<Vec<services::shared_application_service::SharedApplicationAccess>> {
+    services::shared_application_service::list_shared_access(&app_repo)
+}
+
 #[tauri::command]
 pub async fn list_team_applications(cloud: State<'_, CloudState>, team_id: uuid::Uuid) -> AppResult<Vec<crate::models::CloudApplication>> {
     services::team_application_service::list_shared_applications(&cloud, team_id).await

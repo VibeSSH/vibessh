@@ -366,6 +366,7 @@
     "windowLoading": "Wczytuję…"
   },
   "applicationFilesTab": {
+    "readOnly": "Tylko do odczytu",
     "dragOutTooLarge": "{{name}} jest za duży, żeby go przeciągnąć (limit 25 MB) - użyj przycisku pobierania.",
     "fetchNoExtension": "Ta nazwa nie ma rozszerzenia - wtyczka musi kończyć się na .jar, inaczej serwer jej nie wczyta.",
     "loadFailedTitle": "Nie udało się wczytać folderu",
@@ -905,6 +906,7 @@
     "cron_missing": "Ten Node nie ma crona, a harmonogramy go potrzebują. Zainstaluj go przyciskiem poniżej albo w terminalu Node'a: sudo apt install cron.",
     "disk_limit_exceeded": "Aplikacja zajmuje {{usedMb}} MB, a jej limit dysku to {{limitMb}} MB, więc nie zostanie uruchomiona. Usuń część plików albo zwiększ limit w Ustawieniach → Limity zasobów.",
     "database_from_newer_version": "Twoje dane zapisała nowsza wersja VibeSSH niż ta (baza w wersji {{found}}, ta wersja zna {{supported}}). Nic nie zginęło i nic nie jest uszkodzone - zainstaluj najnowszą wersję, żeby je otworzyć.",
+    "shared_action_not_allowed": "Nie masz na to uprawnienia w tej udostępnionej aplikacji. Poproś jej właściciela, żeby dał ci je w zakładce Użytkownicy i zsynchronizował dostęp.",
     "host_key_mismatch": "Klucz hosta SSH dla {{host}} się zmienił. Tak dzieje się po reinstalacji serwera - ale tak samo wygląda przechwytywanie połączenia. Upewnij się, że to naprawdę Twój serwer, zanim połączysz się ponownie.",
     "port_in_use_owned": "Port {{port}}/{{protocol}} jest już zajęty na tym Node przez {{owner}}. Wybierz inny port.",
     "database_server_unavailable": "Na hoście {{host}} nie działa żaden serwer bazy danych. VibeSSH może zainstalować MariaDB na tym węźle - nie robi tego automatycznie, bo instaluje usługę systemową i tworzy konto administratora.",
@@ -1327,6 +1329,13 @@
     "copied": "Skopiowano",
     "showReport": "Pokaż plik raportu",
     "close": "Zamknij"
+  },
+  "sharedApplication": {
+    "banner": "Aplikacja udostępniona przez zespół - jej właścicielem jest ktoś inny.",
+    "viewOnly": "Możesz ją oglądać i czytać logi.",
+    "canAlso": "Poza podglądem i logami możesz: {{list}}.",
+    "consoleReadOnly": "Konsolę możesz oglądać, ale nie masz uprawnienia do wpisywania komend. Poproś właściciela aplikacji o nie w zakładce Użytkownicy.",
+    "badge": "Udostępniona"
   },
   "schedules": {
     "installCron": "Zainstaluj crona",

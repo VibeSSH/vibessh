@@ -28,6 +28,10 @@ interface ApplicationCardProps {
   onRestart: () => void;
   onKill: () => void;
   onDelete: () => void;
+  /** Somebody else's application, shared with this account: marked as such,
+   *  with no delete - it is not this install's to remove - and start/stop
+   *  only when the grant allows it. */
+  shared?: { canLifecycle: boolean } | null;
 }
 
 export function ApplicationCard({
@@ -42,11 +46,13 @@ export function ApplicationCard({
   onRestart,
   onKill,
   onDelete,
+  shared = null,
 }: ApplicationCardProps) {
   const { t } = useTranslation();
   const isLocal = !application.serverId;
-  const canStart = application.status === "stopped" || application.status === "failed" || application.status === "unknown";
-  const canStopOrRestart = application.status === "running" || application.status === "starting";
+  const mayLifecycle = !shared || shared.canLifecycle;
+  const canStart = mayLifecycle && (application.status === "stopped" || application.status === "failed" || application.status === "unknown");
+  const canStopOrRestart = mayLifecycle && (application.status === "running" || application.status === "starting");
 
   // The header is the selection target when the list offers one, and inert
   // markup when it does not - a card outside that context is exactly what it
@@ -64,6 +70,7 @@ export function ApplicationCard({
           </p>
           <p className="application-card-meta">
             {isLocal ? t("applicationCard.local") : (serverName ?? t("applicationCard.remote"))} · {application.blueprintId}
+            {shared && <span className="application-card-shared">{t("sharedApplication.badge")}</span>}
           </p>
         </div>
       <Badge tone={STATUS_TONE[application.status]}>{t(`applicationStatus.${application.status}`)}</Badge>
@@ -129,7 +136,9 @@ export function ApplicationCard({
               <IconButton icon="power" size="sm" danger title={t("applicationCard.killAria", { name: application.name })} onClick={onKill} disabled={busy} />
             </>
           )}
-          <IconButton icon="trash" size="sm" danger title={t("applicationCard.deleteAria", { name: application.name })} onClick={onDelete} disabled={busy} />
+          {!shared && (
+            <IconButton icon="trash" size="sm" danger title={t("applicationCard.deleteAria", { name: application.name })} onClick={onDelete} disabled={busy} />
+          )}
         </div>
         <IconButton icon="chevron-right" size="sm" title={t("applicationCard.openAria", { name: application.name })} onClick={onOpen} />
       </div>

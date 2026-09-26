@@ -218,10 +218,14 @@ interface ApplicationFilesTabProps {
   applicationId: string;
   application: ApplicationDetail;
   knownFiles: KnownFile[];
+  /** Browse, open and download only - somebody else's shared application
+   *  this account may read but not change. The Node refuses a write either
+   *  way; this keeps the buttons for one from being offered. */
+  readOnly?: boolean;
 }
 
 /** design brief's "Application Files / SFTP" section, in full: browser (breadcrumbs/list/toolbar), a real transfer queue, the CodeMirror editor (dirty state, Ctrl+S, backup-before-save, Version History), rename/move/copy/chmod, zip extraction, Quick Files, and the JAR-replace warning. Deliberately not built here (documented, not silently dropped): drag & drop upload (native picker only - still real streaming, just not drag-initiated), and "compress selection into a new archive" (only *extracting* an existing one is implemented; the backend has no ZipWriter-based create-archive path yet). */
-export function ApplicationFilesTab({ applicationId, application, knownFiles }: ApplicationFilesTabProps) {
+export function ApplicationFilesTab({ applicationId, application, knownFiles, readOnly = false }: ApplicationFilesTabProps) {
   const { t, i18n } = useTranslation();
   const currentJarName = extractCurrentJarName(application.runtimeConfig);
   const isRunning = application.status === "running";
@@ -434,7 +438,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   // Only while the file list is on screen: the editor panel takes over the
   // whole tab, and dropping a file onto an open editor should not quietly
   // upload it somewhere behind that editor.
-  const dragging = useFileDrop(uploadPaths, !openFile);
+  const dragging = useFileDrop(uploadPaths, !openFile && !readOnly);
 
   async function handleJarUploadOnly() {
     if (!jarWarning) return;
@@ -576,6 +580,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
    * native-context-menu suppression in main.tsx means right-click would
    * otherwise open nothing at all here). */
   function buildMenuItems(entry: RemoteFileEntry): ContextMenuItem[] {
+    if (readOnly) return [];
     return [
       ...(!entry.isDir && /\.zip$/i.test(entry.name)
         ? [{ label: t("applicationFilesTab.extractAria", { name: entry.name }), icon: "archive", disabled: extractingPath === entry.path, onClick: () => handleExtract(entry) }]
@@ -629,6 +634,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
             onClose={closeEditor}
             onSaved={() => load(path)}
             onDirtyChange={setEditorDirty}
+            readOnly={readOnly}
           />
         </div>
 
@@ -711,22 +717,31 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
         actions={
           <>
             <GuideLink topic="application-files" />
-            <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
-              <Icon name="folder-plus" size={14} />
-              {t("applicationFilesTab.newFolder")}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setCreateModal("file")}>
-              <Icon name="file-plus" size={14} />
-              {t("applicationFilesTab.newFile")}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setFetchOpen(true)}>
-              <Icon name="download" size={14} />
-              {t("applicationFilesTab.fetchButton")}
-            </Button>
-            <Button size="sm" onClick={handleUpload}>
-              <Icon name="upload" size={14} />
-              {t("applicationFilesTab.upload")}
-            </Button>
+            {readOnly ? (
+              <span className="application-files-read-only">
+                <Icon name="eye" size={13} />
+                {t("applicationFilesTab.readOnly")}
+              </span>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setCreateModal("folder")}>
+                  <Icon name="folder-plus" size={14} />
+                  {t("applicationFilesTab.newFolder")}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setCreateModal("file")}>
+                  <Icon name="file-plus" size={14} />
+                  {t("applicationFilesTab.newFile")}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setFetchOpen(true)}>
+                  <Icon name="download" size={14} />
+                  {t("applicationFilesTab.fetchButton")}
+                </Button>
+                <Button size="sm" onClick={handleUpload}>
+                  <Icon name="upload" size={14} />
+                  {t("applicationFilesTab.upload")}
+                </Button>
+              </>
+            )}
           </>
         }
       >
@@ -826,6 +841,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
           {truncated && (
             <p className="form-note">{t("filesPage.showingFirst", { shown: visibleEntries.length, total: matchingEntries.length })}</p>
           )}
+          {!readOnly && (
           <SelectionActionBar count={selectedPaths.size} onClear={() => setSelectedPaths(new Set())}>
             <Button variant="secondary" size="sm" onClick={() => setCompressTargets(matchingEntries.filter((entry) => selectedPaths.has(entry.path)))}>
               <Icon name="archive" size={14} />
@@ -844,6 +860,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               {t("filesPage.deleteSelectedShort")}
             </Button>
           </SelectionActionBar>
+          )}
           </>
         )}
       </Card>

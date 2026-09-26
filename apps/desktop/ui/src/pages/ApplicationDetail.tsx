@@ -63,6 +63,7 @@ import {
 } from "@/services/applicationService";
 import { useServersStore } from "@/stores/serversStore";
 import { useCanOnServer } from "@/stores/nodePermissionsStore";
+import { APPLICATION_SCOPED, APPLICATIONS_CONSOLE, APPLICATIONS_FILES_READ, APPLICATIONS_FILES_WRITE, APPLICATIONS_LIFECYCLE } from "@/constants/permissions";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import { translateBlueprint } from "@/i18n/blueprintTranslations";
 import type { ApplicationDetail, ApplicationStatus, Blueprint, ResourceLimitsConfig } from "@/types/application";
@@ -304,8 +305,21 @@ export function ApplicationDetail() {
    * `nodePermissionsStore`; the roles screen and the guide say the same
    * thing where somebody grants these.
    */
-  const canLifecycle = useCanOnServer(application?.serverId, "applications.lifecycle");
-  const canConfigure = useCanOnServer(application?.serverId, "applications.config");
+  const roleLifecycle = useCanOnServer(application?.serverId, "applications.lifecycle");
+  const roleConfigure = useCanOnServer(application?.serverId, "applications.config");
+
+  /**
+   * Somebody else's application, shared with this account. Unlike the guard
+   * rails above, this one is held by the Node: the account this install
+   * connects as may run exactly the commands its grant names (see
+   * `member_sudoers`), so the page offers only those - start/stop, the
+   * console, the files - and none of what only the owner can do.
+   */
+  const shared = application?.shared ?? null;
+  const sharedAllows = (permission: string) => !shared || shared.permissions.includes(permission);
+  const canLifecycle = shared ? shared.permissions.includes(APPLICATIONS_LIFECYCLE) : roleLifecycle;
+  const canConfigure = shared ? false : roleConfigure;
+  const canReadFiles = sharedAllows(APPLICATIONS_FILES_READ) || sharedAllows(APPLICATIONS_FILES_WRITE);
 
   /** After an action the Node has already carried out - the next read is
    * the authoritative one. */
@@ -511,6 +525,7 @@ export function ApplicationDetail() {
   const serverName = application?.serverId ? (servers.find((s) => s.id === application.serverId)?.name ?? application.serverId) : null;
   const features = blueprint?.features ?? [];
   const schedulesAvailable =
+    !shared &&
     application?.runtimeType === "docker" &&
     !!application.serverId &&
     servers.find((s) => s.id === application.serverId)?.connectionMode !== "agent";
@@ -547,7 +562,7 @@ export function ApplicationDetail() {
         <div>
           <div className="application-detail-title-row">
             <h1 className="page-title">{application?.name ?? knownName ?? id}</h1>
-            {application && (
+            {application && !shared && (
               <IconButton
                 icon="edit"
                 size="sm"
@@ -695,6 +710,22 @@ export function ApplicationDetail() {
             </div>
           </div>
 
+          {shared && (
+            <p className="shared-application-banner">
+              <Icon name="users" size={14} />
+              <span>
+                {t("sharedApplication.banner")}{" "}
+                {APPLICATION_SCOPED.filter((permission) => shared.permissions.includes(permission)).length === 0
+                  ? t("sharedApplication.viewOnly")
+                  : t("sharedApplication.canAlso", {
+                      list: APPLICATION_SCOPED.filter((permission) => shared.permissions.includes(permission))
+                        .map((permission) => t(`roles.permissionLabels.${permission}`, { defaultValue: permission }).toLowerCase())
+                        .join(", "),
+                    })}
+              </span>
+            </p>
+          )}
+
           <div className="page-tabs">
             <button className={`modal-tab ${tab === "overview" ? "modal-tab-active" : ""}`} onClick={() => setTab("overview")}>
               {t("applicationDetail.tabOverview")}
@@ -703,7 +734,7 @@ export function ApplicationDetail() {
             {/* Shown only for a server running the VibeSSH Metrics plugin, which is
                 what writes the status file this reads. Placed second because on
                 a game server it is the tab you reach for most. */}
-            {minecraft.status && (
+            {minecraft.status && canReadFiles && (
               <button className={`modal-tab ${tab === "minecraft" ? "modal-tab-active" : ""}`} onClick={() => setTab("minecraft")}>
                 {t("minecraft.title")}
               {tab === "minecraft" && <TabUnderline group="application" />}
@@ -711,7 +742,7 @@ export function ApplicationDetail() {
             )}
             {/* Shown only for a server running the VibeSSH Scheduler plugin, which is what
                 writes the schedule file this reads. */}
-            {scheduler.status && (
+            {scheduler.status && canReadFiles && (
               <button className={`modal-tab ${tab === "restarts" ? "modal-tab-active" : ""}`} onClick={() => setTab("restarts")}>
                 {t("restarts.title")}
               {tab === "restarts" && <TabUnderline group="application" />}
@@ -723,7 +754,7 @@ export function ApplicationDetail() {
                 replace - and it was buried behind four tabs that are read
                 far less often. The rest keep their existing relative order:
                 only the one that was in the wrong place moved. */}
-            {features.includes("files") && (
+            {features.includes("files") && canReadFiles && (
               <button className={`modal-tab ${tab === "files" ? "modal-tab-active" : ""}`} onClick={() => setTab("files")}>
                 {t("applicationDetail.tabFiles")}
               {tab === "files" && <TabUnderline group="application" />}
@@ -735,22 +766,24 @@ export function ApplicationDetail() {
               {tab === "logs" && <TabUnderline group="application" />}
               </button>
             )}
-            {features.includes("ports") && (
+            {features.includes("ports") && !shared && (
               <button className={`modal-tab ${tab === "ports" ? "modal-tab-active" : ""}`} onClick={() => setTab("ports")}>
                 {t("applicationDetail.tabPorts")}
               {tab === "ports" && <TabUnderline group="application" />}
               </button>
             )}
-            {features.includes("databases") && (
+            {features.includes("databases") && !shared && (
               <button className={`modal-tab ${tab === "databases" ? "modal-tab-active" : ""}`} onClick={() => setTab("databases")}>
                 {t("applicationDetail.tabDatabases")}
               {tab === "databases" && <TabUnderline group="application" />}
               </button>
             )}
+            {!shared && (
             <button className={`modal-tab ${tab === "backups" ? "modal-tab-active" : ""}`} onClick={() => setTab("backups")}>
               {t("applicationDetail.tabBackups")}
             {tab === "backups" && <TabUnderline group="application" />}
               </button>
+            )}
             {/* Where the Node can run them itself: a Docker application on a
                 Node reached over SSH. See `SchedulesTab`. */}
             {schedulesAvailable && (
@@ -759,14 +792,18 @@ export function ApplicationDetail() {
               {tab === "schedules" && <TabUnderline group="application" />}
               </button>
             )}
-            <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
-              {t("applicationDetail.tabMembers")}
-            {tab === "members" && <TabUnderline group="application" />}
-              </button>
-            <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
-              {t("applicationDetail.tabSettings")}
-            {tab === "settings" && <TabUnderline group="application" />}
-              </button>
+            {!shared && (
+              <>
+                <button className={`modal-tab ${tab === "members" ? "modal-tab-active" : ""}`} onClick={() => setTab("members")}>
+                  {t("applicationDetail.tabMembers")}
+                  {tab === "members" && <TabUnderline group="application" />}
+                </button>
+                <button className={`modal-tab ${tab === "settings" ? "modal-tab-active" : ""}`} onClick={() => setTab("settings")}>
+                  {t("applicationDetail.tabSettings")}
+                  {tab === "settings" && <TabUnderline group="application" />}
+                </button>
+              </>
+            )}
           </div>
 
           {tab === "overview" && (
@@ -774,6 +811,7 @@ export function ApplicationDetail() {
               <div className="application-detail-overview">
                 {features.includes("console") && (
                   <ApplicationConsoleCard
+                    readOnlyReason={sharedAllows(APPLICATIONS_CONSOLE) ? null : t("sharedApplication.consoleReadOnly")}
                     applicationId={id}
                     isRunning={application.status === "running"}
                     onVerb={requestVerb}
@@ -949,7 +987,7 @@ export function ApplicationDetail() {
               for a scroll away and the rest noise around it. The section is
               in the address like the tab is, so it survives a reload and can
               be linked to. */}
-          {tab === "settings" && (
+          {tab === "settings" && !shared && (
             <div className="application-settings">
               <nav className="application-settings-nav" aria-label={t("applicationDetail.tabSettings")}>
                 {settingsSections.map((entry) => (
@@ -1031,14 +1069,16 @@ export function ApplicationDetail() {
           )}
 
 
-          {tab === "ports" && <PortsTab applicationId={id} application={application} />}
+          {tab === "ports" && !shared && <PortsTab applicationId={id} application={application} />}
 
-          {tab === "databases" && <DatabasesTab applicationId={id} />}
+          {tab === "databases" && !shared && <DatabasesTab applicationId={id} />}
 
-          {tab === "files" && <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} />}
-          {tab === "backups" && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
+          {tab === "files" && canReadFiles && (
+            <ApplicationFilesTab applicationId={id} application={application} knownFiles={knownFiles} readOnly={!sharedAllows(APPLICATIONS_FILES_WRITE)} />
+          )}
+          {tab === "backups" && !shared && <ApplicationBackupsTab applicationId={id} applicationStatus={application.status} />}
           {tab === "schedules" && schedulesAvailable && <SchedulesTab applicationId={id} canManage={canLifecycle} />}
-          {tab === "members" && <ApplicationMembersTab applicationId={id} />}
+          {tab === "members" && !shared && <ApplicationMembersTab applicationId={id} />}
           {tab === "minecraft" && minecraft.status && <MinecraftStatusCard status={minecraft.status} history={minecraft.history} />}
           {tab === "restarts" && scheduler.status && <SchedulerStatusCard status={scheduler.status} fetchedAt={scheduler.fetchedAt} />}
         </div>

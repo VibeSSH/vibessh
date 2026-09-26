@@ -267,3 +267,25 @@
   font-weight: 600;
   letter-spacing: 0.04em;
 }
+
+/* Somebody else's application: said once, above the tabs, with what this
+   account may do - quiet, since it is a fact about the page rather than a
+   warning. */
+.shared-application-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.shared-application-banner svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}

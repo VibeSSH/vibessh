@@ -77,6 +77,9 @@ pub enum ErrorCode {
     /// own code because the fix - install the newer version again - is a
     /// button, and the first place it shows is the startup-failure screen.
     DatabaseFromNewerVersion,
+    /// Somebody else's shared Application, asked to do something this
+    /// account was not given - by this install, or refused by the Node.
+    SharedActionNotAllowed,
 
     // ---- Vibe AI ----
     //
@@ -253,6 +256,14 @@ pub enum AppError {
     )]
     DatabaseFromNewerVersion { what: String, found: usize, supported: usize },
 
+    /// A shared Application, and an action this account may not take on it.
+    /// `action` is the permission it would take, so the message can say
+    /// which one to ask the owner for. Raised both before anything is sent
+    /// (this install knows the grant) and when the Node's sudo refuses
+    /// (the grant changed and was synced since).
+    #[error("your account may not do that with this shared application ({action}) - ask its owner for it in the application's Users tab")]
+    SharedActionNotAllowed { action: String },
+
     // ---- Vibe AI ----
     //
     // Every message here is a plain sentence, and none of them carries a
@@ -340,6 +351,7 @@ impl AppError {
             AppError::ServerHasApplications { .. } => ErrorCode::ServerHasApplications,
             AppError::DiskLimitExceeded { .. } => ErrorCode::DiskLimitExceeded,
             AppError::DatabaseFromNewerVersion { .. } => ErrorCode::DatabaseFromNewerVersion,
+            AppError::SharedActionNotAllowed { .. } => ErrorCode::SharedActionNotAllowed,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
@@ -390,6 +402,7 @@ impl AppError {
             AppError::DatabaseFromNewerVersion { what, found, supported } => {
                 serde_json::json!({ "what": what, "found": found, "supported": supported })
             }
+            AppError::SharedActionNotAllowed { action } => serde_json::json!({ "action": action }),
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
@@ -464,6 +477,8 @@ impl Serialize for AppError {
             ErrorCode::DiskLimitExceeded => "invalid_input",
             // Was a plain `Storage` error until it had a code of its own.
             ErrorCode::DatabaseFromNewerVersion => "storage",
+            // A permission problem, as a reader of `kind` would have seen it.
+            ErrorCode::SharedActionNotAllowed => "invalid_input",
             // Same rule as the block above: each new code degrades to the
             // coarse bucket a `kind` reader would have seen before it
             // existed. Not configured and a rejected key are input

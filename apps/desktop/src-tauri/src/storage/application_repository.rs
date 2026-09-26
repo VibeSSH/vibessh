@@ -16,7 +16,7 @@ use crate::errors::{AppError, AppResult};
 use crate::models::protocol_name;
 use crate::models::{
     Application, ApplicationDetail, ApplicationPort, ApplicationStatus, CreateApplicationInput, EnvironmentVariable, HealthCheckType,
-    PortInput, PortProtocol, PortVisibility, RuntimeType, UpdateApplicationInput,
+    PortInput, PortProtocol, PortVisibility, RuntimeType, SharedAccess, UpdateApplicationInput,
 };
 
 pub struct ApplicationRepository {
@@ -280,6 +280,8 @@ impl ApplicationRepository {
             })
             .map_err(|err| AppError::Storage(format!("failed to load metadata: {err}")))?;
 
+        let shared = shared_access_locked(&conn, id)?;
+
         Ok(Some(ApplicationDetail {
             application,
             environment,
@@ -287,7 +289,114 @@ impl ApplicationRepository {
             runtime_config: serde_json::from_str(&runtime_config).unwrap_or_default(),
             metadata: serde_json::from_str(&metadata).unwrap_or_default(),
             links,
+            shared,
         }))
+    }
+
+    /// Whether this Application is somebody else's, shared with this
+    /// account - and if so, what it may do there. See migration 20.
+    pub fn shared_access(&self, id: Uuid) -> AppResult<Option<SharedAccess>> {
+        shared_access_locked(&self.lock(), id)
+    }
+
+    /// Every shared Application on this install, for the list screen's
+    /// badges and for the sync that keeps them current.
+    pub fn list_shared(&self) -> AppResult<Vec<(Uuid, SharedAccess)>> {
+        let conn = self.lock();
+        let mut stmt = conn
+            .prepare("SELECT application_id, team_id, permissions FROM shared_applications")
+            .map_err(|err| AppError::Storage(format!("failed to list shared applications: {err}")))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))
+            .map_err(|err| AppError::Storage(format!("failed to list shared applications: {err}")))?;
+        let mut shared = Vec::new();
+        for row in rows {
+            let (id, team_id, permissions) = row.map_err(|err| AppError::Storage(format!("failed to read a shared application: {err}")))?;
+            if let (Ok(id), Some(access)) = (Uuid::parse_str(&id), parse_shared(&team_id, &permissions)) {
+                shared.push((id, access));
+            }
+        }
+        Ok(shared)
+    }
+
+    /// Records somebody else's Application on this install, or refreshes it.
+    ///
+    /// Under the owner's own id, because that id names its container, unit
+    /// and account on the Node. An id this install already holds as its own
+    /// Application - the owner's install, or a member who is also an owner
+    /// here - is left alone and reported as such: overwriting it would turn
+    /// a real Application into a shared view of itself.
+    pub fn adopt_shared(&self, adopted: &AdoptedApplication) -> AppResult<AdoptOutcome> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().map_err(|err| AppError::Storage(format!("failed to start transaction: {err}")))?;
+        let id = adopted.id.to_string();
+
+        let exists: bool = tx
+            .query_row("SELECT EXISTS(SELECT 1 FROM applications WHERE id = ?1)", params![id], |row| row.get(0))
+            .map_err(|err| AppError::Storage(format!("failed to look up application: {err}")))?;
+        let is_shared: bool = tx
+            .query_row("SELECT EXISTS(SELECT 1 FROM shared_applications WHERE application_id = ?1)", params![id], |row| row.get(0))
+            .map_err(|err| AppError::Storage(format!("failed to look up shared application: {err}")))?;
+        if exists && !is_shared {
+            return Ok(AdoptOutcome::OwnApplication);
+        }
+
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "INSERT INTO applications (
+                id, server_id, name, description, blueprint_id, blueprint_version,
+                runtime_type, working_directory, status, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, NULL, ?4, 1, ?5, ?6, 'unknown', ?7, ?7)
+            ON CONFLICT(id) DO UPDATE SET
+                server_id = excluded.server_id, name = excluded.name, blueprint_id = excluded.blueprint_id,
+                runtime_type = excluded.runtime_type, working_directory = excluded.working_directory, updated_at = excluded.updated_at",
+            params![
+                id,
+                adopted.server_id.to_string(),
+                adopted.name,
+                adopted.blueprint_id,
+                runtime_type_to_str(adopted.runtime_type),
+                adopted.working_directory,
+                now,
+            ],
+        )
+        .map_err(|err| storage_or_fk_error(err, "server"))?;
+        // The owner's files are its dedicated account's, and a member reaches
+        // them only as that account - which is what this makes the file
+        // provider do.
+        tx.execute(
+            "INSERT INTO application_runtime_config (application_id, config_json) VALUES (?1, ?2)
+             ON CONFLICT(application_id) DO UPDATE SET config_json = excluded.config_json",
+            params![id, serde_json::json!({ "runAsDedicatedUser": true }).to_string()],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to record runtime config: {err}")))?;
+        tx.execute("INSERT OR IGNORE INTO application_metadata (application_id, metadata_json) VALUES (?1, '{}')", params![id])
+            .map_err(|err| AppError::Storage(format!("failed to record metadata: {err}")))?;
+        tx.execute(
+            "INSERT INTO shared_applications (application_id, team_id, permissions, synced_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(application_id) DO UPDATE SET team_id = excluded.team_id, permissions = excluded.permissions, synced_at = excluded.synced_at",
+            params![id, adopted.team_id.to_string(), serde_json::to_string(&adopted.permissions).unwrap_or_else(|_| "[]".into()), now],
+        )
+        .map_err(|err| AppError::Storage(format!("failed to record shared application: {err}")))?;
+
+        tx.commit().map_err(|err| AppError::Storage(format!("failed to commit transaction: {err}")))?;
+        Ok(if exists { AdoptOutcome::Refreshed } else { AdoptOutcome::Added })
+    }
+
+    /// Takes a shared Application off this install - the row only. The
+    /// container, its files and its account are the owner's and stay exactly
+    /// as they are.
+    pub fn forget_shared(&self, id: Uuid) -> AppResult<()> {
+        let conn = self.lock();
+        let is_shared: bool = conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM shared_applications WHERE application_id = ?1)", params![id.to_string()], |row| row.get(0))
+            .map_err(|err| AppError::Storage(format!("failed to look up shared application: {err}")))?;
+        if !is_shared {
+            return Err(AppError::Internal(format!("application {id} is not a shared one - refusing to forget an application this install owns")));
+        }
+        conn.execute("DELETE FROM applications WHERE id = ?1", params![id.to_string()])
+            .map_err(|err| AppError::Storage(format!("failed to remove shared application: {err}")))?;
+        Ok(())
     }
 
     /// The list/dashboard view - just the `applications` row, not the full
@@ -672,6 +781,45 @@ fn ordered_pair(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
     }
 }
 
+/// Somebody else's Application to record on this install - see
+/// `ApplicationRepository::adopt_shared`.
+#[derive(Debug, Clone)]
+pub struct AdoptedApplication {
+    /// The owner's own id for it.
+    pub id: Uuid,
+    /// This install's server entry for its Node - the one it connects to as
+    /// its own member account.
+    pub server_id: Uuid,
+    pub name: String,
+    pub blueprint_id: String,
+    pub runtime_type: RuntimeType,
+    pub working_directory: String,
+    pub team_id: Uuid,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdoptOutcome {
+    Added,
+    Refreshed,
+    /// The id is one of this install's own Applications, left untouched.
+    OwnApplication,
+}
+
+fn parse_shared(team_id: &str, permissions: &str) -> Option<SharedAccess> {
+    Some(SharedAccess { team_id: Uuid::parse_str(team_id).ok()?, permissions: serde_json::from_str(permissions).unwrap_or_default() })
+}
+
+fn shared_access_locked(conn: &Connection, id: Uuid) -> AppResult<Option<SharedAccess>> {
+    let row = conn
+        .query_row("SELECT team_id, permissions FROM shared_applications WHERE application_id = ?1", params![id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .optional()
+        .map_err(|err| AppError::Storage(format!("failed to load shared access: {err}")))?;
+    Ok(row.and_then(|(team_id, permissions)| parse_shared(&team_id, &permissions)))
+}
+
 /// Both columns, because the pair is normalised on write: an Application is
 /// as often the higher id as the lower one, and which side it landed on says
 /// nothing about the relationship.
@@ -881,6 +1029,83 @@ mod tests {
             runtime_config: serde_json::json!({ "jar": "server.jar" }),
             metadata: serde_json::json!({}),
         }
+    }
+
+    /// A server row to adopt against - `server_id` is a real foreign key.
+    fn with_server(repo: &ApplicationRepository) -> Uuid {
+        let id = Uuid::new_v4();
+        repo.lock()
+            .execute(
+                "INSERT INTO servers (id, name, host, ssh_port, username, authentication_type, connection_mode, created_at, updated_at)
+                 VALUES (?1, 'Dedyk', 'example.com', 22, 'vibessh-m-0123456789ab', 'private_key', 'ssh', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                params![id.to_string()],
+            )
+            .unwrap();
+        id
+    }
+
+    fn adopted(id: Uuid, server_id: Uuid, permissions: &[&str]) -> AdoptedApplication {
+        AdoptedApplication {
+            id,
+            server_id,
+            name: "oneblock".to_string(),
+            blueprint_id: "paper".to_string(),
+            runtime_type: RuntimeType::Docker,
+            working_directory: "/srv/vibessh/oneblock".to_string(),
+            team_id: Uuid::new_v4(),
+            permissions: permissions.iter().map(|key| (*key).to_string()).collect(),
+        }
+    }
+
+    /// Somebody else's Application arrives under its owner's id - the id
+    /// that names its container - marked as shared, with the file provider
+    /// pointed at its own account.
+    #[test]
+    fn a_shared_application_is_recorded_under_its_owners_id_and_marked() {
+        let (repo, _path) = temp_repo();
+        let server_id = with_server(&repo);
+        let id = Uuid::new_v4();
+
+        assert_eq!(repo.adopt_shared(&adopted(id, server_id, &["applications.lifecycle"])).unwrap(), AdoptOutcome::Added);
+        let detail = repo.get(id).unwrap().expect("the shared application is on this install");
+        assert_eq!(detail.application.id, id);
+        assert_eq!(detail.shared.as_ref().map(|shared| shared.permissions.clone()), Some(vec!["applications.lifecycle".to_string()]));
+        assert_eq!(detail.runtime_config["runAsDedicatedUser"], true);
+
+        // A later sync with a changed grant refreshes it in place.
+        assert_eq!(repo.adopt_shared(&adopted(id, server_id, &["applications.console"])).unwrap(), AdoptOutcome::Refreshed);
+        assert_eq!(repo.shared_access(id).unwrap().unwrap().permissions, vec!["applications.console".to_string()]);
+        assert_eq!(repo.list_shared().unwrap().len(), 1);
+    }
+
+    /// The owner's own install, or a member who is also an owner here: an id
+    /// this install already holds as its own is never turned into a shared
+    /// view of itself.
+    #[test]
+    fn an_application_this_install_owns_is_never_overwritten_as_shared() {
+        let (repo, _path) = temp_repo();
+        let server_id = with_server(&repo);
+        let own = repo.create(&local_input("mine")).unwrap();
+
+        assert_eq!(repo.adopt_shared(&adopted(own.application.id, server_id, &["applications.lifecycle"])).unwrap(), AdoptOutcome::OwnApplication);
+        let detail = repo.get(own.application.id).unwrap().unwrap();
+        assert_eq!(detail.application.name, "mine");
+        assert_eq!(detail.shared, None);
+        // And it cannot be removed as if it were somebody else's.
+        assert!(repo.forget_shared(own.application.id).is_err());
+        assert!(repo.get(own.application.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn forgetting_a_shared_application_removes_only_this_installs_record() {
+        let (repo, _path) = temp_repo();
+        let server_id = with_server(&repo);
+        let id = Uuid::new_v4();
+        repo.adopt_shared(&adopted(id, server_id, &[])).unwrap();
+
+        repo.forget_shared(id).unwrap();
+        assert!(repo.get(id).unwrap().is_none());
+        assert!(repo.list_shared().unwrap().is_empty(), "the mark goes with the row");
     }
 
     /// Switching an Application's blueprint has to leave everything else

@@ -115,6 +115,7 @@ pub async fn delete_application(
     id: Uuid,
     options: ApplicationDeleteOptions,
 ) -> AppResult<ApplicationTeardownReport> {
+    super::refuse_if_shared(repo, id, "applications.delete")?;
     let mut report = ApplicationTeardownReport::default();
     let detail = get_application(repo, id)?;
     let server_id = detail.application.server_id;

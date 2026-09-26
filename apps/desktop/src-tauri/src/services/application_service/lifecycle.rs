@@ -114,6 +114,7 @@ pub async fn recreate_application(
     local_process_manager: &Arc<LocalProcessManager>,
     id: Uuid,
 ) -> AppResult<ApplicationStatus> {
+    super::refuse_if_shared(repo, id, "applications.config")?;
     let detail = get_application(repo, id)?;
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("recreating is only meaningful for Docker applications".into()));
@@ -188,6 +189,7 @@ pub async fn reinstall_application(
     id: Uuid,
     wipe_files: bool,
 ) -> AppResult<ApplicationStatus> {
+    super::refuse_if_shared(repo, id, "applications.config")?;
     let detail = get_application(repo, id)?;
     if detail.application.runtime_type != RuntimeType::Docker {
         return Err(AppError::InvalidInput("reinstalling is only available for Docker applications".into()));

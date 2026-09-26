@@ -25,7 +25,7 @@ pub use app_info::AppInfo;
 pub use application::{
     Application, ApplicationDetail, ApplicationLocation, ApplicationPort, ApplicationStatus, CreateApplicationFromBlueprintInput,
     CreateApplicationInput, EnvironmentVariable, HealthCheckType, PortInput, PortProtocol, PortVisibility, RuntimeType,
-    protocol_name, SetHealthCheckInput, SetResourceLimitsInput, UpdateApplicationInput,
+    protocol_name, SetHealthCheckInput, SetResourceLimitsInput, SharedAccess, UpdateApplicationInput,
 };
 pub use application_backup::{ApplicationBackup, BackupKind, BackupSchedule, SetBackupScheduleInput};
 pub use application_schedule::{ApplicationSchedule, ApplicationSchedules, DiskUsage, NodeTimeZone, ScheduleAction, ScheduleInput, ScheduleRun};
