@@ -203,6 +203,7 @@ require_staging() {{
     esac
 }}
 
+{fetch_function}
 case "$op" in
   realpath)
     resolved=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such path" >&2; exit 4; }}
@@ -341,6 +342,29 @@ case "$op" in
     fi
     mv -f -- "$tmp" "$target" || {{ rm -f -- "$tmp"; exit 1; }}
     ;;
+  fetchurl)
+    # "Download from a link", run as this account so the file is its own.
+    # Into a temporary file beside the target, renamed over it only once the
+    # download is complete - an interrupted one leaves nothing half-written.
+    # Prints the size. The link was checked before it got here
+    # (`files::url_fetch`); `fetch_to` keeps it to http and https.
+    target=$(resolve_target "$1") || {{ echo "vibessh-file-helper: no such directory" >&2; exit 4; }}
+    require_within_root "$target"
+    if [ -d "$target" ]; then
+        echo "vibessh-file-helper: '$target' is a directory" >&2
+        exit 4
+    fi
+    tmp=$(mktemp -- "$(dirname -- "$target")/.vibessh-fetch.XXXXXX") || {{ echo "vibessh-file-helper: could not create a temporary file" >&2; exit 1; }}
+    if fetch_to "$2" "$tmp"; then
+        chmod 0644 -- "$tmp"
+        mv -f -- "$tmp" "$target" || {{ rm -f -- "$tmp"; exit 1; }}
+        wc -c < "$target"
+    else
+        rc=$?
+        rm -f -- "$tmp"
+        exit "$rc"
+    fi
+    ;;
   cleanup)
     require_staging "$1"
     rm -f -- "$1"
@@ -352,6 +376,7 @@ case "$op" in
 esac
 "#,
         staging_root = STAGING_ROOT,
+        fetch_function = crate::files::url_fetch::fetch_function(),
     )
 }
 
@@ -825,6 +850,23 @@ impl ApplicationFileProvider for SudoUserApplicationFileProvider {
         self.run_helper("rename", &[&from_resolved, &to_resolved]).await.map(|_| ())
     }
 
+    async fn fetch_url(&self, path: &str, url: &str) -> AppResult<u64> {
+        let resolved = self.resolve(path)?;
+        let command = format!(
+            "sudo -u {} {} {} fetchurl {} {}",
+            shell_quote(&self.username),
+            shell_quote(HELPER_PATH),
+            shell_quote(&self.root),
+            shell_quote(&resolved),
+            shell_quote(url),
+        );
+        let output = self.connection.execute_command(&command).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(crate::files::url_fetch::describe_failure(output.exit_code, &output.stderr)));
+        }
+        Ok(output.stdout.trim().parse().unwrap_or(0))
+    }
+
     async fn copy(&self, from: &str, to: &str) -> AppResult<()> {
         let from_resolved = self.resolve(from)?;
         let to_resolved = self.resolve(to)?;
@@ -908,6 +950,22 @@ fn release_staging_command(username: &str, staging: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The whole generated script, through `sh -n` - it is assembled from a
+    /// format string and a shared function, which is where a stray brace or
+    /// quote hides. Skipped where there is no `sh` to ask (a Windows machine
+    /// without Git Bash on its PATH); CI runs on Linux, where there always is.
+    #[test]
+    fn the_helper_script_is_valid_sh() {
+        use std::io::Write;
+        let script = helper_script();
+        let Ok(mut child) = std::process::Command::new("sh").arg("-n").stdin(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn() else {
+            return;
+        };
+        child.stdin.take().unwrap().write_all(script.as_bytes()).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
 
     #[test]
     fn the_sudoers_rule_passes_the_group_as_an_argument_not_as_printf_format() {

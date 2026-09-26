@@ -34,6 +34,17 @@ To find text in a file, click the magnifier or press `Ctrl+F`.
 2. Choose a file from your computer.
 3. Wait for the transfer to finish.
 
+## How to download a file from a link onto the server
+
+Useful for plugins from Modrinth or a world from a release page: the Node downloads the file itself, so it never has to come to your computer first.
+
+1. Go into the folder it belongs in, for example `plugins`.
+2. Click **From link**.
+3. Paste the **Link to the file**. The file name fills itself in, and you can change it.
+4. Click **Download** and wait for **Downloaded**.
+
+The link has to start with `http://` or `https://`, and the file can be up to 2 GB. A link with a login and password in it, or one pointing into the Node's internal network, will not work. A file with the same name in the folder is replaced.
+
 ## How to download a file
 
 1. Click the download icon next to the file.

@@ -366,6 +366,16 @@
     "windowLoading": "Wczytuję…"
   },
   "applicationFilesTab": {
+    "fetchButton": "Z linku",
+    "fetchTitle": "Pobierz z linku",
+    "fetchUrl": "Link do pliku",
+    "fetchName": "Zapisz jako",
+    "fetchWhere": "Plik trafi do folderu {{folder}}. Plik o tej nazwie zostanie zastąpiony.",
+    "fetchNote": "Node pobierze plik sam, bez przesyłania go przez ten komputer. Do 2 GB, tylko linki http i https.",
+    "fetchBusy": "Pobieranie na Node… Duży plik może chwilę potrwać.",
+    "fetching": "Pobieranie…",
+    "fetchConfirm": "Pobierz",
+    "fetchedToast": "Pobrano {{name}} ({{size}})",
     "upOneLevel": "Poziom wyżej",
     "summary": "Foldery: {{folders}} · Pliki: {{files}}",
     "columnName": "Nazwa",

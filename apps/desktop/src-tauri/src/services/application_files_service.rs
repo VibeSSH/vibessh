@@ -410,6 +410,25 @@ pub async fn copy(
     provider.copy(from, to).await
 }
 
+/// Downloads a link into `path`, relative to the Application's root - the
+/// Files tab's "Download from a link". The Node fetches it itself; see
+/// `files::url_fetch` for which links are accepted and why.
+pub async fn fetch_url(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    application_id: Uuid,
+    path: &str,
+    url: &str,
+) -> AppResult<u64> {
+    let url = files::url_fetch::validate_fetch_url(url)?;
+    if path.trim().is_empty() || path.ends_with('/') {
+        return Err(AppError::InvalidInput("give the downloaded file a name".into()));
+    }
+    let (_, provider) = resolve_provider(app_repo, server_repo, sessions, application_id).await?;
+    provider.fetch_url(path, &url).await
+}
+
 /// Compresses `paths` into a new `.zip` at `destination_path`, all relative
 /// to the Application's root.
 ///

@@ -40,6 +40,7 @@ pub mod local;
 pub mod sandbox;
 pub mod sftp;
 pub mod sudo_user;
+pub mod url_fetch;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -122,6 +123,10 @@ pub trait ApplicationFileProvider: Send + Sync {
     /// `mode` is a raw POSIX permission value (e.g. `0o755`) - not
     /// meaningful for `LocalApplicationFileProvider` on Windows, which
     /// returns a clear `InvalidInput` rather than silently no-op'ing.
+    /// Downloads a link (already checked by `url_fetch::validate_fetch_url`)
+    /// into `path`, on whichever side the files live - the Node fetches it
+    /// itself rather than routing it through this computer. Returns the size.
+    async fn fetch_url(&self, path: &str, url: &str) -> AppResult<u64>;
     async fn set_permissions(&self, path: &str, mode: u32) -> AppResult<()>;
     async fn download_file(&self, path: &str, local_dest: &Path, on_progress: ProgressFn<'_>) -> AppResult<()>;
     async fn upload_file(&self, local_src: &Path, path: &str, on_progress: ProgressFn<'_>) -> AppResult<()>;

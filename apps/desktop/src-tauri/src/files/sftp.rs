@@ -122,6 +122,30 @@ fn split_parent(path: &str) -> AppResult<(String, String)> {
     }
 }
 
+/// The script `fetch_url` runs: the shared `fetch_to`, into a temporary file
+/// beside the target, renamed over it only once complete. Prints the size.
+fn build_fetch_script(resolved: &str, url: &str) -> String {
+    format!(
+        r#"{function}target={target}
+url={url}
+if [ -d "$target" ]; then echo "'$target' is a directory" >&2; exit 4; fi
+tmp=$(mktemp -- "$(dirname -- "$target")/.vibessh-fetch.XXXXXX") || exit 1
+if fetch_to "$url" "$tmp"; then
+    chmod 0644 -- "$tmp"
+    mv -f -- "$tmp" "$target" || {{ rm -f -- "$tmp"; exit 1; }}
+    wc -c < "$target"
+else
+    rc=$?
+    rm -f -- "$tmp"
+    exit "$rc"
+fi
+"#,
+        function = crate::files::url_fetch::fetch_function(),
+        target = crate::ssh::command::quote(resolved),
+        url = crate::ssh::command::quote(url),
+    )
+}
+
 #[async_trait::async_trait]
 impl ApplicationFileProvider for SftpApplicationFileProvider {
     async fn list_directory(&self, path: &str) -> AppResult<Vec<RemoteFileEntry>> {
@@ -177,6 +201,18 @@ impl ApplicationFileProvider for SftpApplicationFileProvider {
         let from_resolved = self.resolve(from).await?;
         let to_resolved = self.resolve(to).await?;
         self.copy_resolved(&from_resolved, &to_resolved).await
+    }
+
+    /// As the connecting admin, the same identity SFTP writes as - so the
+    /// file ends up owned exactly like an uploaded one.
+    async fn fetch_url(&self, path: &str, url: &str) -> AppResult<u64> {
+        let resolved = self.resolve(path).await?;
+        let script = build_fetch_script(&resolved, url);
+        let output = self.connection.execute_command(&script).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(crate::files::url_fetch::describe_failure(output.exit_code, &output.stderr)));
+        }
+        Ok(output.stdout.trim().parse().unwrap_or(0))
     }
 
     async fn set_permissions(&self, path: &str, mode: u32) -> AppResult<()> {

@@ -34,6 +34,17 @@ Aby znaleźć tekst w pliku, kliknij ikonę lupy albo wciśnij `Ctrl+F`.
 2. Wybierz plik z komputera.
 3. Poczekaj na koniec transferu.
 
+## Jak pobrać plik z linku na serwer
+
+Przydaje się do wtyczek z Modrinth czy świata ze strony z wydaniami: plik pobiera sam Node, więc nie trzeba go najpierw ściągać na komputer.
+
+1. Wejdź do folderu, do którego ma trafić plik, na przykład `plugins`.
+2. Kliknij **Z linku**.
+3. Wklej **Link do pliku**. Nazwa pliku uzupełni się sama, możesz ją zmienić.
+4. Kliknij **Pobierz** i poczekaj na komunikat **Pobrano**.
+
+Link musi zaczynać się od `http://` albo `https://`, a plik może mieć do 2 GB. Link z loginem i hasłem w środku albo prowadzący do sieci wewnętrznej Node'a nie zadziała. Plik o tej samej nazwie w folderze zostanie zastąpiony.
+
 ## Jak pobrać plik
 
 1. Kliknij ikonę pobierania przy pliku.

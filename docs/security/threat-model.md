@@ -136,6 +136,18 @@ only after every regular file, so no member can be written through one. A
 Node whose `tar` is not GNU tar (BusyBox, say) does not get those guarantees
 and has not been assessed.
 
+**Download from a link** (`files::url_fetch`). The Node fetches a URL a
+person typed into an Application's folder, as that Application's account.
+That is a request from inside the Node's network on behalf of anyone with
+file access, so links are held to `http`/`https` (redirects too), a login in
+the link is refused because the URL sits on a command line while it
+downloads, and a literal internal host - loopback, private ranges,
+link-local including the cloud metadata address, `localhost` - is refused.
+That last check is on the host as written: a public name that resolves to a
+private address, or rebinds to one, still gets through. Closing that would
+mean resolving on the Node and pinning curl to the checked address, which
+has not been done.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

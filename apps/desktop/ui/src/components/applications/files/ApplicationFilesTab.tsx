@@ -30,6 +30,7 @@ import {
   deleteApplicationFile,
   downloadApplicationFile,
   extractApplicationArchive,
+  fetchApplicationFileUrl,
   getApplicationFileMetadata,
   onTransferProgress,
   renameApplicationFile,
@@ -47,6 +48,8 @@ import type { RemoteFileEntry } from "@/types/files";
 import { discardFileDraft, rememberFilesView, rememberedFilesView } from "@/stores/applicationFilesStore";
 import { ApplicationFileEditorPanel } from "./ApplicationFileEditorPanel";
 import { ChmodModal } from "./ChmodModal";
+import { FetchUrlModal } from "./FetchUrlModal";
+import { formatBytes } from "@/utils/formatBytes";
 import { JarReplaceWarningModal } from "./JarReplaceWarningModal";
 import { RenameOrMoveModal } from "./RenameOrMoveModal";
 import { TransferQueuePanel } from "./TransferQueuePanel";
@@ -223,6 +226,7 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<RemoteFileEntry | null>(null);
   const [createModal, setCreateModal] = useState<"file" | "folder" | null>(null);
+  const [fetchOpen, setFetchOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ entry: RemoteFileEntry; mode: "rename" | "move" | "copy" } | null>(null);
   // Acting on a whole selection from the bar at the bottom of the list.
   const [compressTargets, setCompressTargets] = useState<RemoteFileEntry[] | null>(null);
@@ -683,6 +687,10 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
               <Icon name="file-plus" size={14} />
               {t("applicationFilesTab.newFile")}
             </Button>
+            <Button variant="secondary" size="sm" onClick={() => setFetchOpen(true)}>
+              <Icon name="download" size={14} />
+              {t("applicationFilesTab.fetchButton")}
+            </Button>
             <Button size="sm" onClick={handleUpload}>
               <Icon name="upload" size={14} />
               {t("applicationFilesTab.upload")}
@@ -806,6 +814,19 @@ export function ApplicationFilesTab({ applicationId, application, knownFiles }: 
       {contextMenu.element}
 
       <TransferQueuePanel />
+
+      {fetchOpen && (
+        <FetchUrlModal
+          folderLabel={path === ROOT_PATH ? "/" : `/${path}`}
+          onClose={() => setFetchOpen(false)}
+          onFetch={async (url, fileName) => {
+            const size = await fetchApplicationFileUrl(applicationId, joinPath(path, fileName), url);
+            setFetchOpen(false);
+            toastSuccess(t("applicationFilesTab.fetchedToast", { name: fileName, size: formatBytes(size) }));
+            load(path);
+          }}
+        />
+      )}
 
       {createModal && (
         <CreateEntryModal

@@ -152,6 +152,20 @@ pub async fn copy_application_file(
     services::copy_application_file(&app_repo, &server_repo, &sessions, application_id, &from, &to).await
 }
 
+/// Downloads a link into the Application's files, fetched by the Node itself.
+/// Returns the size of the downloaded file.
+#[tauri::command]
+pub async fn fetch_application_file_url(
+    app_repo: State<'_, ApplicationRepository>,
+    server_repo: State<'_, ServerRepository>,
+    sessions: State<'_, SshSessionManager>,
+    application_id: Uuid,
+    path: String,
+    url: String,
+) -> AppResult<u64> {
+    services::fetch_application_file_url(&app_repo, &server_repo, &sessions, application_id, &path, &url).await
+}
+
 /// Compresses the given files and folders into a new `.zip`, inside the
 /// Application's root - the Files tab's "Compress" for a selection.
 #[tauri::command]

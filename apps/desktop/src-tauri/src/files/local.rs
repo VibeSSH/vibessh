@@ -268,6 +268,63 @@ impl ApplicationFileProvider for LocalApplicationFileProvider {
         copy_recursive(&from_resolved, &to_resolved).await
     }
 
+    /// The same rules the Node's `curl` follows - http/https redirects only,
+    /// five at most, the same size cap - streamed to a temporary file beside
+    /// the target and renamed over it once complete.
+    async fn fetch_url(&self, path: &str, url: &str) -> AppResult<u64> {
+        let target = self.resolve(path)?;
+        if target.is_dir() {
+            return Err(AppError::InvalidInput(format!("'{path}' is a folder")));
+        }
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(std::time::Duration::from_secs(590))
+            .build()
+            .map_err(|err| AppError::Internal(format!("couldn't start the download: {err}")))?;
+        let mut response = client
+            .get(url)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|err| AppError::Connection(format!("the download failed: {err}")))?;
+        let limit = super::url_fetch::MAX_FETCH_BYTES;
+        if response.content_length().is_some_and(|length| length > limit) {
+            return Err(AppError::InvalidInput(super::url_fetch::describe_failure(63, "")));
+        }
+        let parent = target.parent().ok_or_else(|| AppError::InvalidInput("invalid path".into()))?;
+        let temporary = parent.join(format!(".vibessh-fetch-{}", uuid::Uuid::new_v4()));
+        let result: AppResult<u64> = async {
+            let mut file = tokio::fs::File::create(&temporary)
+                .await
+                .map_err(|err| AppError::Internal(format!("couldn't create {}: {err}", temporary.display())))?;
+            let mut written = 0u64;
+            while let Some(chunk) = response.chunk().await.map_err(|err| AppError::Connection(format!("the download was interrupted: {err}")))? {
+                written += chunk.len() as u64;
+                if written > limit {
+                    return Err(AppError::InvalidInput(super::url_fetch::describe_failure(63, "")));
+                }
+                file.write_all(&chunk).await.map_err(|err| AppError::Internal(format!("couldn't write the download: {err}")))?;
+            }
+            file.flush().await.map_err(|err| AppError::Internal(format!("couldn't write the download: {err}")))?;
+            Ok(written)
+        }
+        .await;
+        match result {
+            Ok(written) => {
+                tokio::fs::rename(&temporary, &target)
+                    .await
+                    .map_err(|err| AppError::Internal(format!("couldn't put the download in place: {err}")))?;
+                Ok(written)
+            }
+            Err(err) => {
+                if let Err(cleanup) = tokio::fs::remove_file(&temporary).await {
+                    log::warn!("couldn't remove the partial download {}: {cleanup}", temporary.display());
+                }
+                Err(err)
+            }
+        }
+    }
+
     async fn set_permissions(&self, path: &str, mode: u32) -> AppResult<()> {
         #[cfg(unix)]
         {

@@ -366,6 +366,16 @@
     "windowLoading": "Loading…"
   },
   "applicationFilesTab": {
+    "fetchButton": "From link",
+    "fetchTitle": "Download from a link",
+    "fetchUrl": "Link to the file",
+    "fetchName": "Save as",
+    "fetchWhere": "The file goes into {{folder}}. A file with this name will be replaced.",
+    "fetchNote": "The Node downloads it itself, without sending it through this computer. Up to 2 GB, http and https links only.",
+    "fetchBusy": "Downloading on the Node… A large file can take a while.",
+    "fetching": "Downloading…",
+    "fetchConfirm": "Download",
+    "fetchedToast": "Downloaded {{name}} ({{size}})",
     "upOneLevel": "Up one level",
     "summary": "Folders: {{folders}} · Files: {{files}}",
     "columnName": "Name",

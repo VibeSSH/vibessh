@@ -32,7 +32,7 @@ pub use application_backup_service::{
     set_backup_destination, set_backup_schedule, test_backup_destination,
 };
 pub use application_files_service::{
-    clear_file_history, compress as compress_application_files, copy as copy_application_file, create_directory as create_application_directory, delete as delete_application_file,
+    clear_file_history, compress as compress_application_files, copy as copy_application_file, fetch_url as fetch_application_file_url, create_directory as create_application_directory, delete as delete_application_file,
     download_file as download_application_file, extract_archive as extract_application_archive, get_metadata as get_application_file_metadata,
     list_directory as list_application_files, list_file_history, read_file_for_editor as read_application_file, rename as rename_application_file,
     restore_file_history, save_file as save_application_file, set_permissions as set_application_file_permissions,

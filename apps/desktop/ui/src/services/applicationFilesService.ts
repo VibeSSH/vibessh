@@ -121,3 +121,8 @@ export function clearApplicationFileHistory(applicationId: string, path: string)
 export function onTransferProgress(transferId: string, handler: (progress: TransferProgressEvent) => void): Promise<UnlistenFn> {
   return listen<TransferProgressEvent>(`application-files://${transferId}/progress`, (event) => handler(event.payload)).catch(() => () => {});
 }
+
+/** Has the Node download `url` into `path` (relative to the Application's root). Resolves with the size in bytes. */
+export function fetchApplicationFileUrl(applicationId: string, path: string, url: string): Promise<number> {
+  return callCommand<number>("fetch_application_file_url", { applicationId, path, url });
+}
