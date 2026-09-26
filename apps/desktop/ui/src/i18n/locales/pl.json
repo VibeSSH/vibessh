@@ -852,7 +852,8 @@
     "installServerOffer": "Host \"{{name}}\" wskazuje na ten węzeł, a nie działa na nim jeszcze żaden serwer bazy danych. Instalacja MariaDB dodaje usługę systemową i konto administratora.",
     "installServer": "Zainstaluj MariaDB",
     "installingServer": "Instalowanie…",
-    "fromInsideContainer": "— tak widzi ją aplikacja z wnętrza kontenera; z powłoki node'a to {{host}}"
+    "fromInsideContainer": "— tak widzi ją aplikacja z wnętrza kontenera; z powłoki node'a to {{host}}",
+    "createdNotReachable": "Baza została utworzona, ale aplikacje w kontenerach jeszcze się do niej nie połączą: {{message}}"
   },
   "deleteApplicationDialog": {
     "title": "Usuń aplikację",
@@ -944,7 +945,9 @@
     "invalid_input": "{{message}}",
     "connection": "Problem z połączeniem: {{message}}",
     "storage": "Problem z zapisem danych: {{message}}",
-    "internal": "Coś poszło nie tak wewnątrz VibeSSH: {{message}}"
+    "internal": "Coś poszło nie tak wewnątrz VibeSSH: {{message}}",
+    "database_bind_unsupported": "Ten serwer baz danych jest za stary, żeby nasłuchiwać na więcej niż jednym adresie (potrzebna MariaDB 10.11 albo MySQL 8.0.13), więc aplikacje w kontenerach nie mają do niego dostępu. VibeSSH nie ustawi zamiast tego nasłuchu na wszystkich adresach, bo wystawiłoby to bazę do internetu. Zaktualizuj serwer baz - na Ubuntu 24.04 i Debianie 12 jest to 10.11.",
+    "database_firewall_rule_failed": "Baza nasłuchuje już tam, gdzie kontenery mogą ją osiągnąć, ale firewall odrzucił regułę, która je przepuszcza na porcie {{port}}. Sprawdź ufw na węźle i uruchom naprawę ponownie."
   },
   "cloudErrors": {
     "reset_code_invalid": "Ten kod jest błędny, został już użyty albo wygasł. Poproś o nowy.",
@@ -2297,7 +2300,8 @@
       "setMysqlRootPassword": "Ustaw MYSQL_ROOT_PASSWORD w zakładce Środowisko przed uruchomieniem — hasła roota z panelu nie da się odczytać przez jego API.",
       "someServersUnreadable": "Panel zgłasza {{total}} serwerów, a odczytano {{read}}. Reszta jest poza tym, co widzi ten klucz.",
       "stopFailed": "Nie udało się zatrzymać serwera na panelu: {{error}}. Nic nie zostało utworzone — panel jest w takim stanie jak był. Najczęstsza przyczyna: użytkownik SSH nie ma prawa do sudo dla Dockera na tej maszynie.",
-      "suspended": "Ten serwer jest zawieszony w panelu. Pliki nadal tam są i da się go przenieść, ale zdecyduj, czy ma potem działać."
+      "suspended": "Ten serwer jest zawieszony w panelu. Pliki nadal tam są i da się go przenieść, ale zdecyduj, czy ma potem działać.",
+      "databaseNotReachableFromContainers": "Przeniesiono {{database}}, ale kontener serwera nie ma jeszcze dostępu do serwera baz: {{error}}"
     },
     "foundServers_one": "Znaleziono {{count}} serwer do przeniesienia",
     "foundServers_few": "Znaleziono {{count}} serwery do przeniesienia",

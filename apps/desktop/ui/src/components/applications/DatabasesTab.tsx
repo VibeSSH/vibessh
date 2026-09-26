@@ -28,7 +28,7 @@ import {
 import type { ApplicationDatabase, DatabaseHost } from "@/types/database";
 import "@/components/servers/forms.css";
 import "./DatabasesTab.css";
-import { CommandError, errorMessage } from "@/services/tauri";
+import { CommandError, errorMessage, normalizeError } from "@/services/tauri";
 
 interface DatabasesTabProps {
   applicationId: string;
@@ -100,9 +100,14 @@ export function DatabasesTab({ applicationId }: DatabasesTabProps) {
     setCreating(true);
     setActionError(null);
     try {
-      await createApplicationDatabase(applicationId, effectiveHostId, purpose.trim() || undefined);
+      const created = await createApplicationDatabase(applicationId, effectiveHostId, purpose.trim() || undefined);
       setPurpose("");
       setInstallHostId(null);
+      // Created, but the Application's container cannot reach it. Said here
+      // rather than left for the Application's own "can't connect" log.
+      if (created.containerAccessError) {
+        setActionError(t("databasesTab.createdNotReachable", { message: errorMessage(normalizeError(created.containerAccessError), t) }));
+      }
       reload();
     } catch (err) {
       setActionError(errorMessage(err, t));

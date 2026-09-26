@@ -186,7 +186,7 @@ pub async fn create_application_database(
     application_id: Uuid,
     database_host_id: Uuid,
     purpose: Option<&str>,
-) -> AppResult<ApplicationDatabase> {
+) -> AppResult<DatabaseCreated> {
     let host = load_host(db_repo, database_host_id)?;
     let application = app_repo.get(application_id)?.ok_or_else(|| AppError::NotFound(format!("application {application_id}")))?.application;
     let admin_password = load_host_admin_password(&host)?;
@@ -212,10 +212,21 @@ pub async fn create_application_database(
     // enough. Only for a database server on a Node VibeSSH manages: there is
     // nothing to configure on somebody else's host, and nothing that should
     // be.
-    if is_loopback_host(&host.host) && host.server_id.is_some() {
-        if let Ok(connection) = connect_to_host(server_repo, sessions, &host).await {
-            ensure_mysql_reachable_from_containers(&connection, host.port).await;
+    //
+    // Not the creation's error - the database exists and is usable from the
+    // Node itself - but carried back with it rather than logged, because an
+    // Application that cannot reach its new database is the one thing the
+    // operator is about to find out the slow way.
+    let container_access_error = if is_loopback_host(&host.host) && host.server_id.is_some() {
+        match connect_to_host(server_repo, sessions, &host).await {
+            Ok(connection) => ensure_mysql_reachable_from_containers(&connection, host.port).await.err(),
+            Err(err) => Some(err),
         }
+    } else {
+        None
+    };
+    if let Some(err) = &container_access_error {
+        log::warn!("database created on '{}', but containers can't reach it: {err}", host.name);
     }
 
     let record = match db_repo.create_database(&CreateApplicationDatabaseInput {
@@ -258,7 +269,17 @@ pub async fn create_application_database(
     // OS-keyring error here is surfaced as-is rather than reported as a
     // silent success with a password that could never be revealed again.
     credentials::store_secret(record.id, SecretKind::ApplicationDatabaseUser, &password)?;
-    Ok(record)
+    Ok(DatabaseCreated { database: record, container_access_error })
+}
+
+/// A created database, and whether an Application's container can reach it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseCreated {
+    pub database: ApplicationDatabase,
+    /// Set when the database server could not be made reachable from
+    /// containers - see `ensure_mysql_reachable_from_containers`.
+    pub container_access_error: Option<AppError>,
 }
 
 pub async fn delete_application_database(
@@ -598,8 +619,9 @@ pub async fn install_database_server(
         }
     }
     grant_admin_user(&connection, &host, &admin_password).await?;
-    ensure_mysql_reachable_from_containers(&connection, host.port).await;
-    Ok(())
+    // Propagated: a server installed so that Applications can use it, which
+    // they cannot, has not been installed in any sense the operator meant.
+    ensure_mysql_reachable_from_containers(&connection, host.port).await
 }
 
 /// Re-applies both halves of container reachability to a database server
@@ -630,8 +652,7 @@ pub async fn repair_database_reachability(
         )));
     }
     let connection = connect_to_host(server_repo, sessions, &host).await?;
-    ensure_mysql_reachable_from_containers(&connection, host.port).await;
-    Ok(())
+    ensure_mysql_reachable_from_containers(&connection, host.port).await
 }
 
 /// Creates (or re-points) the Database Host's configured admin user on a
@@ -742,19 +763,35 @@ async fn grant_admin_user(connection: &SshSession, host: &DatabaseHost, admin_pa
 /// package's loopback-only bind forever, with no step that ever revisits it.
 /// Both halves are no-ops when they are already right, so the repeat costs
 /// one command and no restart.
-async fn ensure_mysql_reachable_from_containers(connection: &SshSession, port: u16) {
-    let script = reachability_script(port);
-    match connection.execute_command(&script).await {
-        Ok(output) if output.exit_code == 0 => {
-            let warning = output.stderr.trim();
-            if !warning.is_empty() {
-                log::warn!("{warning}");
-            }
-        }
-        Ok(output) => log::warn!("couldn't make MariaDB reachable from containers: {}", output.stderr.trim()),
-        Err(err) => log::warn!("couldn't make MariaDB reachable from containers: {err}"),
+/// ### What it reports
+///
+/// Every outcome, because every caller used to be told "done" whatever
+/// happened: the script's failures were a log line. On Ubuntu 22.04 and
+/// Debian 11 (MariaDB 10.6 and 10.5, no multi-address bind) the bind was
+/// rolled back and the repair button said "repaired"; on MySQL the drop-in
+/// went to a MariaDB-only directory that does not exist there; for a
+/// non-root admin on Debian, `ufw` is not on the SSH exec PATH, so the
+/// firewall half was skipped as if there were no firewall.
+async fn ensure_mysql_reachable_from_containers(connection: &SshSession, port: u16) -> AppResult<()> {
+    let output = connection.execute_command(&reachability_script(port)).await?;
+    let detail = output.stderr.trim();
+    match output.exit_code {
+        0 => Ok(()),
+        REACHABILITY_BIND_UNSUPPORTED => Err(AppError::DatabaseBindUnsupported),
+        REACHABILITY_FIREWALL_FAILED => Err(AppError::DatabaseFirewallRuleFailed { port }),
+        _ => Err(AppError::Connection(format!(
+            "couldn't make the database server reachable from containers: {}",
+            if detail.is_empty() { "the configuration step failed" } else { detail }
+        ))),
     }
 }
+
+/// The server could not start with a two-address bind and was put back:
+/// MariaDB before 10.11, MySQL before 8.0.13.
+const REACHABILITY_BIND_UNSUPPORTED: i32 = 10;
+/// The bind is in place but ufw refused the rule that lets containers
+/// through it.
+const REACHABILITY_FIREWALL_FAILED: i32 = 13;
 
 /// Split out so the script can be read and checked without a Node to run it
 /// on - it is a shell program built by string interpolation, which is
@@ -763,12 +800,35 @@ async fn ensure_mysql_reachable_from_containers(connection: &SshSession, port: u
 fn reachability_script(port: u16) -> String {
     format!(
         r#"set -e
-path=/etc/mysql/mariadb.conf.d/99-vibessh-bind.cnf
+# A non-root admin's SSH exec PATH on Debian has no sbin directories, so
+# `ip` and `ufw` looked absent and the firewall half was skipped as if the
+# Node had no firewall.
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
+
 bridge=$(ip -4 -o addr show docker0 2>/dev/null | awk '{{print $4}}' | cut -d/ -f1)
 if [ -z "$bridge" ]; then
     # No Docker bridge on this Node yet - nothing to widen the bind for,
     # and widening it "just in case" is exactly the mistake this replaced.
     exit 0
+fi
+
+# MariaDB reads mariadb.conf.d and MySQL mysql.conf.d; each includes its
+# own directory after the file that sets the package's loopback bind, so a
+# 99- drop-in there wins. This used to write to the MariaDB one on every
+# Node, which does not exist on a MySQL one.
+if [ -d /etc/mysql/mariadb.conf.d ]; then
+    dir=/etc/mysql/mariadb.conf.d
+elif [ -d /etc/mysql/mysql.conf.d ]; then
+    dir=/etc/mysql/mysql.conf.d
+else
+    echo "no MariaDB or MySQL configuration directory under /etc/mysql - this is not a Debian or Ubuntu database server package" >&2
+    exit 11
+fi
+path="$dir/99-vibessh-bind.cnf"
+if systemctl is-active --quiet mariadb 2>/dev/null; then
+    service=mariadb
+else
+    service=mysql
 fi
 
 desired=$(printf '[mysqld]
@@ -777,29 +837,35 @@ bind-address = 127.0.0.1,%s
 current=$(sudo cat "$path" 2>/dev/null || true)
 if [ "$current" != "$desired" ]; then
     printf '%s' "$desired" | sudo tee "$path" >/dev/null
-    if ! sudo systemctl restart mariadb; then
-        # This MariaDB cannot parse a multi-address bind. Roll back rather
+    if ! sudo systemctl restart "$service"; then
+        # This server cannot parse a multi-address bind. Roll back rather
         # than fall back to 0.0.0.0 - a database that is unreachable from
         # containers is a fixable inconvenience; one that is reachable from
         # the internet is not.
         sudo rm -f "$path"
-        sudo systemctl restart mariadb || true
-        echo "vibessh: this MariaDB does not support a multi-address bind-address; containers cannot reach it" >&2
-        exit 1
+        if ! sudo systemctl restart "$service"; then
+            echo "the database server does not start even without VibeSSH's bind setting" >&2
+            exit 12
+        fi
+        exit {bind_unsupported}
     fi
 fi
 
 # The second half. Only when ufw is both installed and enforcing: on a Node
 # with no firewall there is nothing in the way and nothing to add, and
-# switching one on here is not this step's decision to make.
-if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | head -n1 | grep -qi active; then
+# switching one on here is not this step's decision to make. The status line
+# is matched whole: "Status: inactive" contains "active" too.
+if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | head -n1 | grep -qi '^status: active'; then
     # `ufw allow` is idempotent - a rule that is already there is skipped
-    # rather than duplicated. Never fatal: the bind above is the half that
-    # cannot be worked around by hand, and a node whose ufw refuses this
-    # (an old build with no `comment` support, say) should still finish.
-    sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port}         comment 'vibessh: containers reach the database' >/dev/null 2>&1         || sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port} >/dev/null 2>&1         || echo "vibessh: couldn't add a ufw rule for the database port; containers may time out reaching it" >&2
+    # rather than duplicated. The second form is for an old ufw with no
+    # `comment` support.
+    if ! sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port} comment 'vibessh: containers reach the database' >/dev/null 2>&1; then
+        sudo ufw allow in proto tcp from 172.16.0.0/12 to "$bridge" port {port} >/dev/null 2>&1 || exit {firewall_failed}
+    fi
 fi
-"#
+"#,
+        bind_unsupported = REACHABILITY_BIND_UNSUPPORTED,
+        firewall_failed = REACHABILITY_FIREWALL_FAILED,
     )
 }
 
@@ -1170,6 +1236,56 @@ mod tests {
         // including the `mysql` calls this module makes over SSH.
         assert!(script.contains("bind-address = 127.0.0.1,%s"), "the bind no longer keeps loopback:
 {script}");
+    }
+
+    /// MySQL keeps its drop-ins in `mysql.conf.d` and runs as `mysql`. The
+    /// script used to write to MariaDB's directory and restart `mariadb` on
+    /// every Node, so on MySQL it failed - and the caller said "done".
+    #[test]
+    fn a_mysql_server_is_configured_as_well_as_a_mariadb_one() {
+        let script = reachability_script(3306);
+
+        assert!(script.contains("/etc/mysql/mysql.conf.d"), "MySQL's drop-in directory is not handled:\n{script}");
+        assert!(script.contains(r#"systemctl restart "$service""#), "the restart names one server:\n{script}");
+        assert!(!script.contains("restart mariadb"), "the restart is still MariaDB-only:\n{script}");
+    }
+
+    /// `ip` and `ufw` live in sbin, which a non-root admin's SSH exec PATH
+    /// on Debian does not include - so the firewall half used to be skipped
+    /// there as if the Node had no firewall.
+    #[test]
+    fn sbin_is_on_the_path_before_anything_looks_there() {
+        let script = reachability_script(3306);
+        let path_line = script.find("/usr/sbin").expect("sbin is never added to PATH");
+        assert!(path_line < script.find("ip -4").unwrap() && path_line < script.find("command -v ufw").unwrap());
+    }
+
+    /// "Status: inactive" contains "active". The old unanchored match read
+    /// a switched-off ufw as enforcing.
+    #[test]
+    fn an_inactive_ufw_is_not_read_as_active() {
+        let script = reachability_script(3306);
+        let pattern = "grep -qi '^status: active'";
+        assert!(script.contains(pattern), "the status match is not anchored:\n{script}");
+
+        let matches = |status: &str| std::process::Command::new("sh").arg("-c").arg(format!("printf '%s\\n' '{status}' | {pattern}")).status();
+        match (matches("Status: active"), matches("Status: inactive")) {
+            (Ok(active), Ok(inactive)) => {
+                assert!(active.success(), "an active ufw was not recognised");
+                assert!(!inactive.success(), "an inactive ufw was read as active");
+            }
+            _ => eprintln!("no POSIX shell on PATH - skipped"),
+        }
+    }
+
+    /// The caller tells an old server and a refused firewall rule apart by
+    /// exit code; a script that exits with anything else for them reports a
+    /// generic failure instead of the one with the fix in it.
+    #[test]
+    fn the_script_exits_with_the_codes_the_caller_reads() {
+        let script = reachability_script(3306);
+        assert!(script.contains(&format!("exit {REACHABILITY_BIND_UNSUPPORTED}")));
+        assert!(script.contains(&format!("exit {REACHABILITY_FIREWALL_FAILED}")));
     }
 
     #[test]

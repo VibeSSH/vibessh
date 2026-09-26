@@ -274,7 +274,7 @@ async fn move_one_database(
     planned: &PlannedDatabase,
     application_id: Uuid,
     target_database_host_id: Uuid,
-) -> Result<String, PlanNote> {
+) -> Result<(String, Option<PlanNote>), PlanNote> {
     let Some(source_host_server_id) = planned.host_server_id else {
         return Err(PlanNote::with(
             "databaseHostUnknown",
@@ -329,7 +329,7 @@ async fn move_one_database(
     // The destination is created through the ordinary provisioning path, so
     // the new database, its user and its generated password are recorded and
     // shown exactly as a hand-made one would be.
-    let created = match database_service::create_application_database(
+    let created_with_access = match database_service::create_application_database(
         db_repo,
         app_repo,
         server_repo,
@@ -346,6 +346,13 @@ async fn move_one_database(
             return Err(PlanNote::with("databaseCreateFailed", &[("database", &planned.name), ("error", &err.to_string())]));
         }
     };
+    // The data still moves - it is intact and reachable from the Node - but
+    // the server that used to use it is about to start in a container, so
+    // this is the note that explains the "can't connect" it will log.
+    let access_note = created_with_access
+        .container_access_error
+        .map(|err| PlanNote::with("databaseNotReachableFromContainers", &[("database", &planned.name), ("error", &err.to_string())]));
+    let created = created_with_access.database;
 
     // The restore reads the dump from the database machine own filesystem, so
     // when that is a different machine the file has to travel. It goes
@@ -365,7 +372,7 @@ async fn move_one_database(
         let _ = target.execute_command(&format!("rm -f {}", shell_quote(&dump_path))).await;
     }
 
-    restore_result.map(|()| created.database_name)
+    restore_result.map(|()| (created.database_name, access_note))
 }
 
 /// Opens a connection to whichever Node a VibeSSH database host lives on.
@@ -592,7 +599,10 @@ pub async fn import_server(
             Some(host_id) => {
                 for database in &planned.databases {
                     match move_one_database(db_repo, app_repo, server_repo, sessions, database, application_id, host_id).await {
-                        Ok(new_name) => outcome.databases_moved.push(new_name),
+                        Ok((new_name, access_note)) => {
+                            outcome.databases_moved.push(new_name);
+                            outcome.warnings.extend(access_note);
+                        }
                         // A database that did not move is a warning, not a
                         // failure of the whole server: the Application, its
                         // configuration and its files are all in place, and

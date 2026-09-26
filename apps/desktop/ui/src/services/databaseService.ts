@@ -53,9 +53,15 @@ export function listApplicationDatabases(applicationId: string): Promise<Applica
   return callCommand<ApplicationDatabase[]>("list_application_databases", { applicationId });
 }
 
+/** Mirrors the Rust `DatabaseCreated` DTO. `containerAccessError` is a serialized `AppError` (for `normalizeError`), set when the database exists but the server could not be made reachable from containers - which is where the Application using it runs. */
+export interface DatabaseCreated {
+  database: ApplicationDatabase;
+  containerAccessError: unknown;
+}
+
 /** `purpose` seeds the generated name/username (e.g. "vibessh_myserver_a1b2c3") - everything else about them is opaque and random. Provisions for real over SSH; can take a few seconds. */
-export function createApplicationDatabase(applicationId: string, databaseHostId: string, purpose?: string): Promise<ApplicationDatabase> {
-  return callCommand<ApplicationDatabase>("create_application_database", { applicationId, databaseHostId, purpose });
+export function createApplicationDatabase(applicationId: string, databaseHostId: string, purpose?: string): Promise<DatabaseCreated> {
+  return callCommand<DatabaseCreated>("create_application_database", { applicationId, databaseHostId, purpose });
 }
 
 export function deleteApplicationDatabase(id: string): Promise<void> {

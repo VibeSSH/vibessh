@@ -34,6 +34,8 @@ export type ErrorCode =
   | "database_from_newer_version"
   | "shared_action_not_allowed"
   | "migration_has_databases"
+  | "database_bind_unsupported"
+  | "database_firewall_rule_failed"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"

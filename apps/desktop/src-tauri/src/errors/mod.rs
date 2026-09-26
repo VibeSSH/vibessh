@@ -106,6 +106,14 @@ pub enum ErrorCode {
     /// because it authenticates through the local socket. Its own code
     /// because the fix is a different account, not a different password.
     DatabaseSocketAuthOnly,
+    /// The database server cannot listen on loopback and the Docker bridge
+    /// at once, so containers cannot reach it. Its own code because the
+    /// remedy is an upgrade, and because the tempting workaround - binding
+    /// every address - is the one VibeSSH refuses to make.
+    DatabaseBindUnsupported,
+    /// The bind is right but ufw refused the rule that lets containers
+    /// through to it.
+    DatabaseFirewallRuleFailed,
     /// The panel refused the Application API key outright.
     PterodactylKeyRejected,
     /// The key was accepted, but has none of the resource permissions the
@@ -327,6 +335,12 @@ pub enum AppError {
     #[error("{user} authenticates through the local socket and cannot be used with a password")]
     DatabaseSocketAuthOnly { user: String },
 
+    #[error("this database server cannot listen on more than one address (MariaDB 10.11 or MySQL 8.0.13 is needed), so containers cannot reach it")]
+    DatabaseBindUnsupported,
+
+    #[error("the firewall refused the rule that lets containers reach the database on port {port}")]
+    DatabaseFirewallRuleFailed { port: u16 },
+
     // ---- Pterodactyl migration ----
     #[error("the Pterodactyl panel rejected the Application API key")]
     PterodactylKeyRejected,
@@ -366,6 +380,8 @@ impl AppError {
             AppError::MigrationHasDatabases { .. } => ErrorCode::MigrationHasDatabases,
             AppError::AiNotConfigured => ErrorCode::AiNotConfigured,
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
+            AppError::DatabaseBindUnsupported => ErrorCode::DatabaseBindUnsupported,
+            AppError::DatabaseFirewallRuleFailed { .. } => ErrorCode::DatabaseFirewallRuleFailed,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
             AppError::PterodactylKeyForbidden { .. } => ErrorCode::PterodactylKeyForbidden,
             AppError::AiAuthFailed => ErrorCode::AiAuthFailed,
@@ -419,6 +435,7 @@ impl AppError {
             AppError::AiModelUnavailable { model } => serde_json::json!({ "model": model }),
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
+            AppError::DatabaseFirewallRuleFailed { port } => serde_json::json!({ "port": port }),
             // The coarse variants carry their own English detail.
             //
             // Without this the frontend had nothing to put in a translated
@@ -498,6 +515,7 @@ impl Serialize for AppError {
             // existed. Not configured and a rejected key are input
             // problems the user can fix; the rest are the network.
             ErrorCode::DatabaseSocketAuthOnly => "invalid_input",
+            ErrorCode::DatabaseBindUnsupported | ErrorCode::DatabaseFirewallRuleFailed => "connection",
             ErrorCode::PterodactylKeyRejected | ErrorCode::PterodactylKeyForbidden => "unauthorized",
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",

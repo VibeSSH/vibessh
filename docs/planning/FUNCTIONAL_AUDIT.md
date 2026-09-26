@@ -74,7 +74,7 @@ the edges.
 - chmod on a folder reports failure after succeeding (full `setstat` truncates first).
 
 **Data**
-- Database reachability repair fails on Ubuntu 22.04 / Debian 11 (MariaDB < 10.11), on MySQL, and for a non-root admin on Debian - and reports success.
+- ~~Database reachability repair fails on Ubuntu 22.04 / Debian 11 (MariaDB < 10.11), on MySQL, and for a non-root admin on Debian - and reports success.~~ **Fixed:** MySQL's drop-in directory and service are handled, sbin is on the script's PATH, an inactive ufw is no longer read as active, and every failure is returned - repair and install fail with it, a created database and a Pterodactyl import carry it as a warning. MariaDB < 10.11 still cannot be reached from containers (binding every address is the refused alternative); it now says so, with the fix.
 - Backups as a non-root admin abort on one unreadable file; restore overlays rather than replaces; S3 holds the whole archive in memory and fails above 5 GiB.
 
 **Account backend**

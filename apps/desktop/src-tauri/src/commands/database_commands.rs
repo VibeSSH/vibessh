@@ -82,7 +82,7 @@ pub async fn create_application_database(
     application_id: Uuid,
     database_host_id: Uuid,
     purpose: Option<String>,
-) -> AppResult<ApplicationDatabase> {
+) -> AppResult<services::DatabaseCreated> {
     services::create_application_database(&db_repo, &app_repo, &server_repo, &sessions, application_id, database_host_id, purpose.as_deref())
         .await
 }

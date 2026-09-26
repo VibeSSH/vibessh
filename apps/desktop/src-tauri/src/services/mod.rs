@@ -79,7 +79,7 @@ pub use pterodactyl_import_service::{
 };
 pub use pterodactyl_run_service::{import_server as import_pterodactyl_server, ImportOutcome as PterodactylImportOutcome, ImportStep as PterodactylImportStep};
 pub use database_service::{
-    create_application_database, create_database_host, delete_application_database, delete_database_host, install_database_server, repair_database_reachability,
+    create_application_database, create_database_host, DatabaseCreated, delete_application_database, delete_database_host, install_database_server, repair_database_reachability,
     list_application_databases, list_database_hosts, phpmyadmin_url, reset_application_database_password,
     reveal_application_database_password, set_database_host_phpmyadmin, update_database_host,
 };

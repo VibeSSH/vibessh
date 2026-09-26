@@ -848,7 +848,8 @@
     "installServerOffer": "\"{{name}}\" points at this node itself, and no database server is running on it yet. Installing MariaDB adds a system service and an administrator account.",
     "installServer": "Install MariaDB",
     "installingServer": "Installing…",
-    "fromInsideContainer": "- as the application sees it from inside its container; from the Node's own shell it is {{host}}"
+    "fromInsideContainer": "- as the application sees it from inside its container; from the Node's own shell it is {{host}}",
+    "createdNotReachable": "The database was created, but applications in containers can't reach it yet: {{message}}"
   },
   "deleteApplicationDialog": {
     "title": "Delete application",
@@ -938,7 +939,9 @@
     "invalid_input": "{{message}}",
     "connection": "Connection problem: {{message}}",
     "storage": "Storage problem: {{message}}",
-    "internal": "Something went wrong inside VibeSSH: {{message}}"
+    "internal": "Something went wrong inside VibeSSH: {{message}}",
+    "database_bind_unsupported": "This database server is too old to listen on more than one address (MariaDB 10.11 or MySQL 8.0.13 is needed), so applications in containers cannot reach it. VibeSSH will not make it listen on every address instead, because that would put it on the internet. Upgrade the database server - it is 10.11 on Ubuntu 24.04 and Debian 12.",
+    "database_firewall_rule_failed": "The database now listens where containers can reach it, but the firewall refused the rule that lets them through on port {{port}}. Check ufw on the node, then run the repair again."
   },
   "cloudErrors": {
     "reset_code_invalid": "That code is wrong, already used or expired. Ask for a new one.",
@@ -2288,7 +2291,8 @@
       "setMysqlRootPassword": "Set MYSQL_ROOT_PASSWORD on the Environment tab before starting it - the panel's own root password is not readable through its API.",
       "someServersUnreadable": "The panel reports {{total}} servers and {{read}} were read. The rest are outside what this key can see.",
       "stopFailed": "The server could not be stopped on the panel: {{error}}. Nothing was created - the panel is exactly as it was. The usual cause is the SSH user not being allowed to run Docker under sudo on that machine.",
-      "suspended": "This server is suspended in the panel. Its files are still there and it can be migrated, but decide whether you want it running afterwards."
+      "suspended": "This server is suspended in the panel. Its files are still there and it can be migrated, but decide whether you want it running afterwards.",
+      "databaseNotReachableFromContainers": "{{database}} was moved, but the server's container can't reach the database server yet: {{error}}"
     },
     "foundServers_one": "Found {{count}} server to move",
     "foundServers_other": "Found {{count}} servers to move",
