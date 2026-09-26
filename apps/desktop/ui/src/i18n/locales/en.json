@@ -1257,7 +1257,7 @@
     "enableTitle": "Turn on two-step verification",
     "intro": "You'll need an authenticator app on your phone, such as Google Authenticator, Aegis or 1Password.",
     "begin": "Continue",
-    "scan": "Scan this QR code with your authenticator app.",
+    "scan": "Open your authenticator app and scan this code from inside it (in Google Authenticator: + → Scan a QR code). The phone's ordinary camera only shows it as text.",
     "manual": "Or enter the key by hand:",
     "secretCopied": "Key copied",
     "confirmCode": "Code from the app",

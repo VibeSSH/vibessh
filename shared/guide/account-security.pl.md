@@ -17,7 +17,7 @@ Aplikacji uwierzytelniającej na telefonie, np. **Google Authenticator**, **Aegi
 1. Zaloguj się na konto VibeSSH.
 2. Wejdź w **Ustawienia** → karta **Konto i bezpieczeństwo**.
 3. Kliknij **Włącz**, potem **Dalej**.
-4. Zeskanuj kod QR aplikacją na telefonie. Jeśli nie możesz, wpisz w niej klucz pokazany pod kodem.
+4. Otwórz aplikację uwierzytelniającą na telefonie i zeskanuj kod QR z jej wnętrza (np. w Google Authenticator: **+** → **Zeskanuj kod QR**). Nie używaj zwykłego aparatu. Jeśli skanowanie nie działa, wpisz w aplikacji klucz pokazany pod kodem.
 5. Wpisz 6-cyfrowy kod, który pokazuje aplikacja, i kliknij **Włącz**.
 6. Zapisz **kody zapasowe** w bezpiecznym miejscu (np. menedżerze haseł). Kliknij **Kopiuj kody**, zaznacz **Zapisałem kody zapasowe** i kliknij **Gotowe**.
 
@@ -39,6 +39,7 @@ Nie masz telefonu? Kliknij **Nie mam telefonu - użyj kodu zapasowego** i wpisz 
 ## Najczęstsze problemy
 
 - **„Ten kod jest nieprawidłowy”** - najczęściej zegar w telefonie się spieszy albo spóźnia. Włącz automatyczną godzinę w ustawieniach telefonu. Ten sam kod działa też tylko raz, więc po użyciu poczekaj na następny.
+- **Po zeskanowaniu otwiera się notatnik albo sam tekst** - kod zeskanowano zwykłym aparatem. Otwórz aplikację uwierzytelniającą i zeskanuj kod z jej wnętrza.
 - **Zgubiłem telefon** - zaloguj się kodem zapasowym, wyłącz weryfikację dwuetapową i włącz ją ponownie na nowym telefonie.
 - **„Weryfikacja dwuetapowa nie jest dostępna na tym serwerze kont”** - serwer kont nie ma skonfigurowanego klucza szyfrującego. Dotyczy to tylko własnego serwera kont, a nie api.vibessh.dev.
 - **Aplikacja na telefonie nie pyta o kod** - aplikacja mobilna VibeSSH nie obsługuje jeszcze kodów. Do czasu aktualizacji loguj się z komputera.

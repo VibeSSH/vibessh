@@ -1264,7 +1264,7 @@
     "enableTitle": "Włącz weryfikację dwuetapową",
     "intro": "Będziesz potrzebować aplikacji uwierzytelniającej na telefonie, np. Google Authenticator, Aegis albo 1Password.",
     "begin": "Dalej",
-    "scan": "Zeskanuj ten kod QR aplikacją uwierzytelniającą.",
+    "scan": "Otwórz aplikację uwierzytelniającą i zeskanuj ten kod z jej wnętrza (np. w Google Authenticator: + → Zeskanuj kod QR). Zwykły aparat w telefonie pokaże go tylko jako tekst.",
     "manual": "Albo wpisz klucz ręcznie:",
     "secretCopied": "Skopiowano klucz",
     "confirmCode": "Kod z aplikacji",
