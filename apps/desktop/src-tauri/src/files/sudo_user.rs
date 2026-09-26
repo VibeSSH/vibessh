@@ -1021,7 +1021,6 @@ mod tests {
         assert!(parse_entry_line("", "/srv/app/x", "/srv/app").is_err());
     }
 
-    #[test]
     /// Runs the real helper against a temporary directory - not a string
     /// assertion. Deleting a symlink must remove the link, not its target;
     /// renaming one must move the link; a rename never lands in or over an

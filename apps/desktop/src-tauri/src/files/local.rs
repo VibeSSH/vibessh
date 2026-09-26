@@ -522,7 +522,6 @@ mod tests {
         assert_eq!(nested[0].name, "MyPlugin.jar");
     }
 
-    #[tokio::test]
     /// The data-loss bug: deleting a symlink deleted what it pointed at. A
     /// link to a folder inside the root is removed; the folder and its files
     /// stay.
