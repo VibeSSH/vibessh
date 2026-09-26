@@ -39,6 +39,8 @@ pub const APPLICATION_UNSHARED: &str = "application.unshared";
 /// the per-application allow-list, distinct from the whole-team share above.
 pub const APPLICATION_ACCESS_GRANTED: &str = "application.access_granted";
 pub const APPLICATION_ACCESS_REVOKED: &str = "application.access_revoked";
+/// What a member may do with one shared Application changed.
+pub const APPLICATION_ACCESS_CHANGED: &str = "application.access_changed";
 /// Recorded when a member's account actually came off a Node, not when its
 /// removal was asked for - the asking is part of `MEMBER_REMOVED`.
 pub const ACCESS_REVOKED: &str = "access.revoked";

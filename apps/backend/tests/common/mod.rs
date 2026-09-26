@@ -64,6 +64,10 @@ pub async fn patch(app: Router, uri: &str, token: &str, body: Value) -> (StatusC
     request(app, "PATCH", uri, Some(body), Some(token)).await
 }
 
+pub async fn put(app: Router, uri: &str, token: &str, body: Value) -> (StatusCode, Value) {
+    request(app, "PUT", uri, Some(body), Some(token)).await
+}
+
 async fn request(app: Router, method: &str, uri: &str, body: Option<Value>, token: Option<&str>) -> (StatusCode, Value) {
     let mut builder = Request::builder().method(method).uri(uri);
     if let Some(token) = token {

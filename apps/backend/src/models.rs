@@ -426,12 +426,25 @@ pub struct ApplicationMember {
     pub email: String,
     pub display_name: String,
     pub granted_at: DateTime<Utc>,
+    /// What they may do here beyond seeing it - a subset of
+    /// `permissions::APPLICATION_SCOPED`.
+    pub permissions: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddApplicationMemberRequest {
     pub user_id: Uuid,
+    /// Optional, so a client that predates per-application permissions still
+    /// adds somebody who can see the Application and nothing more.
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetApplicationMemberPermissionsRequest {
+    pub permissions: Vec<String>,
 }
 
 /// Metadata only - no password/private-key-path/passphrase fields exist

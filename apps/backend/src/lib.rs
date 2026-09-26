@@ -15,7 +15,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -121,7 +121,7 @@ pub fn build_router(db: PgPool, jwt_secret: Arc<[u8]>) -> Router {
         )
         .route(
             "/teams/:team_id/applications/:application_id/members/:user_id",
-            delete(team_applications::remove_member),
+            put(team_applications::set_member_permissions).delete(team_applications::remove_member),
         )
         // The hosted Vibe AI assistant. Authenticated, because the
         // allowance it spends is per account and VibeSSH pays for it.

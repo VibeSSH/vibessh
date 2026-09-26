@@ -19,9 +19,9 @@ use uuid::Uuid;
 
 use crate::audit;
 use crate::auth::AuthUser;
-use crate::authorize::authorize;
+use crate::authorize::{authorize, ensure_can_grant};
 use crate::errors::{ApiError, ApiResult, Detail};
-use crate::models::{AddApplicationMemberRequest, ApplicationMember, PushTeamApplicationRequest, TeamApplication};
+use crate::models::{AddApplicationMemberRequest, ApplicationMember, PushTeamApplicationRequest, SetApplicationMemberPermissionsRequest, TeamApplication};
 use crate::teams::team_for_member;
 use crate::{permissions, AppState};
 
@@ -91,7 +91,7 @@ pub async fn list_members(
     application_in_team(&state, team_id, application_id).await?;
 
     let members: Vec<ApplicationMember> = sqlx::query_as(
-        "SELECT am.user_id, u.email, u.display_name, am.granted_at \
+        "SELECT am.user_id, u.email, u.display_name, am.granted_at, am.permissions \
          FROM application_members am \
          JOIN users u ON u.id = am.user_id \
          WHERE am.application_id = $1 AND am.team_id = $2 \
@@ -128,15 +128,18 @@ pub async fn add_member(
         return Err(ApiError::NotFound(Detail::new("not_a_team_member", "that user isn't a member of this team")));
     }
 
+    let granted = application_grant(&state, team_id, user_id, &body.permissions).await?;
+
     let mut tx = state.db.begin().await?;
     let insert = sqlx::query(
-        "INSERT INTO application_members (application_id, team_id, user_id, granted_by, granted_at) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO application_members (application_id, team_id, user_id, granted_by, granted_at, permissions) VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(application_id)
     .bind(team_id)
     .bind(body.user_id)
     .bind(user_id)
     .bind(Utc::now())
+    .bind(&granted)
     .execute(&mut *tx)
     .await;
     if let Err(sqlx::Error::Database(db_err)) = &insert {
@@ -153,11 +156,74 @@ pub async fn add_member(
         audit::APPLICATION_ACCESS_GRANTED,
         "application",
         Some(application_id),
-        serde_json::json!({ "userId": body.user_id }),
+        serde_json::json!({ "userId": body.user_id, "permissions": granted }),
     )
     .await?;
     tx.commit().await?;
     Ok(StatusCode::CREATED)
+}
+
+/// Changes what a member may do with a shared Application they can already see.
+///
+/// Replaces the whole set rather than adding to it, so the request says what
+/// the member should end up with - the shape of the checkboxes that send it.
+/// Same permission as granting access at all, plus the rule every grant in
+/// this service follows: nobody hands out a permission they do not hold.
+pub async fn set_member_permissions(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path((team_id, application_id, target_user_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(body): Json<SetApplicationMemberPermissionsRequest>,
+) -> ApiResult<impl IntoResponse> {
+    authorize(&state.db, team_id, user_id, permissions::APPLICATIONS_CREATE).await?;
+    let granted = application_grant(&state, team_id, user_id, &body.permissions).await?;
+
+    let mut tx = state.db.begin().await?;
+    let affected = sqlx::query("UPDATE application_members SET permissions = $4 WHERE application_id = $1 AND team_id = $2 AND user_id = $3")
+        .bind(application_id)
+        .bind(team_id)
+        .bind(target_user_id)
+        .bind(&granted)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if affected == 0 {
+        return Err(ApiError::NotFound(Detail::new("application_member_not_added", "that member could not already see this application")));
+    }
+    audit::record(
+        &mut tx,
+        team_id,
+        user_id,
+        audit::APPLICATION_ACCESS_CHANGED,
+        "application",
+        Some(application_id),
+        serde_json::json!({ "userId": target_user_id, "permissions": granted }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Checks a per-Application grant before anything is written, and returns it
+/// sorted and without repeats.
+///
+/// Two refusals. A permission that is not one of
+/// `permissions::APPLICATION_SCOPED` cannot be held to one Application on a
+/// Node - it reaches every Application or it is root - so it is refused by
+/// name rather than stored as a promise nothing keeps. And a permission the
+/// person granting does not hold themselves is refused the way a role is.
+async fn application_grant(state: &AppState, team_id: Uuid, actor_id: Uuid, requested: &[String]) -> ApiResult<Vec<String>> {
+    if let Some(unscoped) = requested.iter().find(|key| !permissions::APPLICATION_SCOPED.contains(&key.as_str())) {
+        return Err(ApiError::InvalidInput(
+            Detail::new("permission_not_application_scoped", format!("{unscoped} can't be granted on one application - give it through a role"))
+                .with("permission", unscoped.clone()),
+        ));
+    }
+    let mut granted: Vec<String> = requested.to_vec();
+    granted.sort();
+    granted.dedup();
+    ensure_can_grant(&state.db, team_id, actor_id, &granted).await?;
+    Ok(granted)
 }
 
 /// Stops one member from seeing a shared Application.

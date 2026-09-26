@@ -49,6 +49,10 @@ pub const SERVERS_MANAGE: &str = "servers.manage";
 pub const APPLICATIONS_VIEW: &str = "applications.view";
 pub const APPLICATIONS_CREATE: &str = "applications.create";
 pub const APPLICATIONS_LIFECYCLE: &str = "applications.lifecycle";
+/// Writing to an Application's console - in a Minecraft server, running any
+/// server command, `op` included. Its own permission because watching the
+/// console and typing into it are very different things to hand somebody.
+pub const APPLICATIONS_CONSOLE: &str = "applications.console";
 pub const APPLICATIONS_DELETE: &str = "applications.delete";
 pub const APPLICATIONS_CONFIG: &str = "applications.config";
 pub const APPLICATIONS_PORTS: &str = "applications.ports";
@@ -75,6 +79,7 @@ pub const ALL_PERMISSIONS: &[&str] = &[
     APPLICATIONS_VIEW,
     APPLICATIONS_CREATE,
     APPLICATIONS_LIFECYCLE,
+    APPLICATIONS_CONSOLE,
     APPLICATIONS_DELETE,
     APPLICATIONS_CONFIG,
     APPLICATIONS_PORTS,
@@ -99,6 +104,7 @@ pub const ENFORCED_BY_THE_DESKTOP_APP: &[&str] = &[
     APPLICATIONS_VIEW,
     APPLICATIONS_CREATE,
     APPLICATIONS_LIFECYCLE,
+    APPLICATIONS_CONSOLE,
     APPLICATIONS_DELETE,
     APPLICATIONS_CONFIG,
     APPLICATIONS_PORTS,
@@ -112,6 +118,13 @@ pub const ENFORCED_BY_THE_DESKTOP_APP: &[&str] = &[
     NODE_SOFTWARE,
     NODE_NETWORK,
 ];
+
+/// The permissions that can be granted on one shared Application rather than
+/// team-wide - see `migrations/0017_application_member_permissions.sql`,
+/// whose CHECK holds the same list. Each is something a Node can hold to one
+/// Application's container, console and account; the rest of the catalog
+/// reaches every Application at once or is root, and stays in roles.
+pub const APPLICATION_SCOPED: &[&str] = &[APPLICATIONS_LIFECYCLE, APPLICATIONS_CONSOLE, APPLICATIONS_FILES_READ, APPLICATIONS_FILES_WRITE];
 
 pub fn is_known_permission(key: &str) -> bool {
     ALL_PERMISSIONS.contains(&key)
@@ -127,6 +140,18 @@ mod tests {
             assert!(is_known_permission(permission));
         }
         assert!(!is_known_permission("not.a.real.permission"));
+    }
+
+    /// The migration's CHECK and this list have to agree, or the backend
+    /// accepts a grant the database then refuses with a bare constraint error.
+    #[test]
+    fn the_application_scoped_list_matches_the_migrations_check() {
+        let migration = include_str!("../migrations/0017_application_member_permissions.sql");
+        for permission in APPLICATION_SCOPED {
+            assert!(is_known_permission(permission), "{permission}");
+            assert!(migration.contains(&format!("'{permission}'")), "{permission} is missing from the CHECK");
+        }
+        assert_eq!(migration.matches("'applications.").count(), APPLICATION_SCOPED.len());
     }
 }
 
