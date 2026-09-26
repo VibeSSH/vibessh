@@ -204,6 +204,17 @@ fn container_working_directory(working_directory: &str) -> &str {
 /// `vibessh-app-<uuid>` - unambiguously VibeSSH-owned, matching
 /// `runtime::systemd`'s unit-naming reasoning, so this runtime never
 /// touches a container it didn't create.
+/// How long a stop waits for the process to exit before Docker kills it.
+///
+/// Docker's own default is ten seconds, which a large Minecraft world does
+/// not finish saving in - the container is killed mid-save and the world is
+/// what gets hurt. Two minutes, the same the schedule runner gives a
+/// scheduled stop. Set on the container at creation (`--stop-timeout`), so
+/// every stop and restart of it waits that long whoever runs it - a team
+/// member's narrowed account included - and passed explicitly as well, for
+/// a container created before this was set.
+const STOP_GRACE_SECONDS: &str = "120";
+
 fn container_name(application_id: Uuid) -> String {
     format!("vibessh-app-{application_id}")
 }
@@ -738,6 +749,8 @@ fn build_create_args(ctx: &RuntimeContext<'_>, config: &DockerConfig, name: &str
         name.into(),
         "--restart".into(),
         restart_policy.into(),
+        "--stop-timeout".into(),
+        STOP_GRACE_SECONDS.into(),
         "--add-host".into(),
         "host.docker.internal:host-gateway".into(),
         "--network".into(),
@@ -1203,7 +1216,7 @@ impl ApplicationRuntime for DockerRuntime {
         if !container_exists(runner, &name).await? {
             return Err(AppError::InvalidInput("this application isn't running".into()));
         }
-        expect_success(runner.docker(&["stop", &name]).await?, "stop the container")
+        expect_success(runner.docker(&["stop", "--time", STOP_GRACE_SECONDS, &name]).await?, "stop the container")
     }
 
     /// Applies a granted or revoked connection to a container that already
@@ -1242,7 +1255,7 @@ impl ApplicationRuntime for DockerRuntime {
             ensure_working_directory_owned_by_dedicated_user(connection, ctx).await;
             let _ = crate::files::sudo_user::ensure_helper_installed(connection).await;
         }
-        expect_success(runner.docker(&["restart", &name]).await?, "restart the container")?;
+        expect_success(runner.docker(&["restart", "--time", STOP_GRACE_SECONDS, &name]).await?, "restart the container")?;
         // Best-effort, per `attach_console_fifo`'s own doc comment - the
         // previous attach process died along with the pre-restart instance,
         // a fresh one is needed for the new one. Over SSH only: the FIFO is
@@ -1375,6 +1388,15 @@ impl ApplicationRuntime for DockerRuntime {
         validate_container_ref(&name)?;
         if !container_exists(runner, &name).await? {
             return Ok(());
+        }
+        // Stopped first, with the same grace as a stop. `rm -f` alone is
+        // SIGKILL, and recreate runs this on a running server - including the
+        // automatic recreate after saving its environment or limits - so a
+        // world was killed mid-save by an edit to one variable. A container
+        // that is already stopped answers this at once.
+        let stopped = runner.docker(&["stop", "--time", STOP_GRACE_SECONDS, &name]).await?;
+        if stopped.exit_code != 0 {
+            log::warn!("couldn't stop {name} gracefully before removing it, removing it anyway: {}", stopped.stderr.trim());
         }
         expect_success(runner.docker(&["rm", "-f", &name]).await?, "remove the container")
     }
@@ -2113,6 +2135,19 @@ second
 
         let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
         assert_eq!(flag_value(&args, "--restart"), Some("unless-stopped"), "{args:?}");
+    }
+
+    /// Docker's own ten seconds is not long enough for a large world to
+    /// save; every stop of this container, whoever runs it, waits two minutes.
+    #[test]
+    fn a_container_is_created_with_two_minutes_to_stop() {
+        let application = stub_application(Uuid::new_v4());
+        let config = DockerConfig { image: "alpine:latest".into(), command: vec![], memory_limit_mb: None, cpu_limit_cores: None, restart_policy: None, run_as_dedicated_user: false };
+        let runtime_config = serde_json::json!({});
+        let ctx = RuntimeContext { application: &application, runtime_config: &runtime_config, environment: &[], ports: &[], links: &[], connection: None };
+
+        let args = build_create_args(&ctx, &config, "vibessh-app-test", None, None).unwrap();
+        assert_eq!(flag_value(&args, "--stop-timeout"), Some("120"), "{args:?}");
     }
 
     #[test]
