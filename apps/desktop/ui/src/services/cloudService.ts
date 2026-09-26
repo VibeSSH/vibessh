@@ -419,6 +419,16 @@ export function addApplicationMember(teamId: string, applicationId: string, user
   return callCommand<void>("add_application_member", { teamId, applicationId, userId });
 }
 
+/** Emails a password-reset code. Answers the same whether or not the address has an account. */
+export function cloudRequestPasswordReset(email: string, language: string): Promise<void> {
+  return callCommand<void>("cloud_request_password_reset", { email, language });
+}
+
+/** Sets a new password with the emailed code. Every session the account had ends. */
+export function cloudConfirmPasswordReset(email: string, code: string, newPassword: string): Promise<void> {
+  return callCommand<void>("cloud_confirm_password_reset", { email, code, newPassword });
+}
+
 /** What one sync of shared applications did - see `syncSharedApplications`. */
 export interface SharedSyncReport {
   added: number;

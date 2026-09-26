@@ -572,6 +572,20 @@
     }
   },
   "auth": {
+    "reset": {
+      "forgot": "Forgot your password?",
+      "emailPrompt": "Enter your account's email address. We'll send a code there for setting a new password.",
+      "codePrompt": "If {{email}} has an account, we've just sent a code there. Check your spam folder too. The code works once, for 30 minutes.",
+      "code": "Code from the email",
+      "newPassword": "New password",
+      "repeatPassword": "Repeat the new password",
+      "mismatch": "The passwords don't match.",
+      "sendCode": "Send code",
+      "setPassword": "Set new password",
+      "sendAgain": "Didn't get a code? Send it again",
+      "back": "Back to sign in",
+      "doneToast": "Password changed. Sign in with your new password."
+    },
     "twoFactorPrompt": "This account has two-step verification on. Enter the 6-digit code from your authenticator app.",
     "recoveryPrompt": "Enter one of the recovery codes you saved when you turned two-step verification on. Each works once.",
     "twoFactorCode": "Code from the app",
@@ -924,6 +938,8 @@
     "internal": "Something went wrong inside VibeSSH: {{message}}"
   },
   "cloudErrors": {
+    "reset_code_invalid": "That code is wrong, already used or expired. Ask for a new one.",
+    "password_reset_unavailable": "This account server doesn't send email yet, so a password can't be reset by email.",
     "two_factor_required": "Enter the code from your authenticator app.",
     "two_factor_invalid": "That code isn't right. Check the clock on your phone is accurate, or use a recovery code.",
     "two_factor_unavailable": "Two-step verification isn't available on this account server - it has no encryption key (TOTP_ENCRYPTION_KEY).",

@@ -154,6 +154,19 @@ impl CloudClient {
         self.send(Method::POST, "/auth/login", None, Some(&body)).await
     }
 
+    /// Asks for a password-reset code by email. The backend answers the same
+    /// whether or not the address has an account.
+    pub async fn request_password_reset(&self, email: &str, language: &str) -> AppResult<()> {
+        self.send_no_content(Method::POST, "/auth/password-reset/request", None, Some(&json!({ "email": email, "language": language })))
+            .await
+    }
+
+    /// Sets a new password with the code from the email.
+    pub async fn confirm_password_reset(&self, email: &str, code: &str, new_password: &str) -> AppResult<()> {
+        let body = json!({ "email": email, "code": code, "newPassword": new_password });
+        self.send_no_content(Method::POST, "/auth/password-reset/confirm", None, Some(&body)).await
+    }
+
     pub async fn two_factor_setup(&self, access_token: &str) -> AppResult<CloudTwoFactorSetup> {
         self.send(Method::POST, "/auth/2fa/setup", Some(access_token), Some(&json!({}))).await
     }

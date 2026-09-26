@@ -576,6 +576,20 @@
     }
   },
   "auth": {
+    "reset": {
+      "forgot": "Nie pamiętasz hasła?",
+      "emailPrompt": "Podaj adres e-mail konta. Wyślemy na niego kod do ustawienia nowego hasła.",
+      "codePrompt": "Jeśli do {{email}} jest przypisane konto, właśnie wysłaliśmy tam kod. Sprawdź też folder spam. Kod działa raz, przez 30 minut.",
+      "code": "Kod z maila",
+      "newPassword": "Nowe hasło",
+      "repeatPassword": "Powtórz nowe hasło",
+      "mismatch": "Hasła się różnią.",
+      "sendCode": "Wyślij kod",
+      "setPassword": "Ustaw nowe hasło",
+      "sendAgain": "Nie dostałeś kodu? Wyślij ponownie",
+      "back": "Wróć do logowania",
+      "doneToast": "Hasło zmienione. Zaloguj się nowym hasłem."
+    },
     "twoFactorPrompt": "To konto ma włączoną weryfikację dwuetapową. Wpisz 6-cyfrowy kod z aplikacji uwierzytelniającej.",
     "recoveryPrompt": "Wpisz jeden z kodów zapasowych zapisanych przy włączaniu weryfikacji dwuetapowej. Każdy działa tylko raz.",
     "twoFactorCode": "Kod z aplikacji",
@@ -930,6 +944,8 @@
     "internal": "Coś poszło nie tak wewnątrz VibeSSH: {{message}}"
   },
   "cloudErrors": {
+    "reset_code_invalid": "Ten kod jest błędny, został już użyty albo wygasł. Poproś o nowy.",
+    "password_reset_unavailable": "Ten serwer kont nie wysyła jeszcze maili, więc nie da się zresetować hasła mailem.",
     "two_factor_required": "Wpisz kod z aplikacji uwierzytelniającej.",
     "two_factor_invalid": "Ten kod jest nieprawidłowy. Sprawdź, czy zegar w telefonie jest dokładny, albo użyj kodu zapasowego.",
     "two_factor_unavailable": "Weryfikacja dwuetapowa nie jest dostępna na tym serwerze kont - brakuje mu klucza szyfrującego (TOTP_ENCRYPTION_KEY).",

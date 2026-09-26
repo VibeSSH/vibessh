@@ -37,6 +37,20 @@ pub async fn login(state: &CloudState, email: &str, password: &str, totp_code: O
     Ok(user)
 }
 
+/// Asks the backend to email a password-reset code - see the backend's
+/// `password_reset`. Signed out by nature, so no token.
+pub async fn request_password_reset(state: &CloudState, email: &str, language: &str) -> AppResult<()> {
+    let inner = state.inner.lock().await;
+    inner.client.request_password_reset(email, language).await
+}
+
+/// Sets a new password with the emailed code. Every session the account had
+/// ends; the person signs in again with the new password.
+pub async fn confirm_password_reset(state: &CloudState, email: &str, code: &str, new_password: &str) -> AppResult<()> {
+    let inner = state.inner.lock().await;
+    inner.client.confirm_password_reset(email, code, new_password).await
+}
+
 pub async fn logout(state: &CloudState) -> AppResult<()> {
     let mut inner = state.inner.lock().await;
     if let Some(refresh_token) = credentials::load_cloud_refresh_token()? {

@@ -5,7 +5,14 @@ import { IconButton } from "@/components/ui/IconButton";
 import { useAuthModalStore } from "@/stores/authModalStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { cloudBackendIsConfigured, cloudLogin, cloudRegister, cloudPublishThisDevice } from "@/services/cloudService";
+import {
+  cloudBackendIsConfigured,
+  cloudConfirmPasswordReset,
+  cloudLogin,
+  cloudPublishThisDevice,
+  cloudRegister,
+  cloudRequestPasswordReset,
+} from "@/services/cloudService";
 import { toastSuccess } from "@/stores/toastStore";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -14,7 +21,7 @@ import { CommandError, errorMessage } from "@/services/tauri";
 type Tab = "login" | "register";
 
 export function AuthModal() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isOpen = useAuthModalStore((s) => s.isOpen);
   const close = useAuthModalStore((s) => s.close);
   const setUser = useAuthStore((s) => s.setUser);
@@ -30,6 +37,15 @@ export function AuthModal() {
    *  as they were, since the sign-in is sent again with them. */
   const [secondFactor, setSecondFactor] = useState<"totp" | "recovery" | null>(null);
   const [code, setCode] = useState("");
+  /**
+   * A forgotten password: first the address to send a code to, then the
+   * code with the new password. Null for the ordinary sign-in form. The
+   * email typed here carries over to the sign-in form afterwards.
+   */
+  const [resetStep, setResetStep] = useState<"email" | "code" | null>(null);
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
   /**
    * Whether an account backend has been chosen at all.
    *
@@ -53,6 +69,40 @@ export function AuthModal() {
     setError(null);
     setSecondFactor(null);
     setCode("");
+    setResetStep(null);
+    setResetCode("");
+    setNewPassword("");
+    setRepeatPassword("");
+  }
+
+  async function handleResetSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (resetStep === "code" && newPassword !== repeatPassword) {
+      setError(t("auth.reset.mismatch"));
+      return;
+    }
+    setBusy(true);
+    try {
+      if (resetStep === "email") {
+        await cloudRequestPasswordReset(email, i18n.language?.startsWith("en") ? "en" : "pl");
+        setResetStep("code");
+      } else {
+        await cloudConfirmPasswordReset(email, resetCode, newPassword);
+        toastSuccess(t("auth.reset.doneToast"));
+        // Back to signing in, with the address already there.
+        setResetStep(null);
+        setResetCode("");
+        setNewPassword("");
+        setRepeatPassword("");
+        setPassword("");
+        setTab("login");
+      }
+    } catch (err) {
+      setError(errorMessage(err, t));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function handleClose() {
@@ -104,6 +154,7 @@ export function AuthModal() {
           <IconButton icon="x" size="sm" onClick={handleClose} title={t("common.close")} />
         </div>
 
+        {!resetStep && (
         <div className="modal-tabs">
           <button className={`modal-tab ${tab === "login" ? "modal-tab-active" : ""}`} onClick={() => setTab("login")}>
             {t("auth.tabLogin")}
@@ -112,6 +163,7 @@ export function AuthModal() {
             {t("auth.tabRegister")}
           </button>
         </div>
+        )}
 
         <div className="modal-body">
           {/* Before the fields, not after a failed request: the form cannot
@@ -120,6 +172,94 @@ export function AuthModal() {
           {configured === false && (
             <p className="form-note form-note-danger form-note-spaced">{t("auth.noBackend")}</p>
           )}
+          {resetStep ? (
+            <form className="server-form" onSubmit={handleResetSubmit}>
+              <p className="dialog-body-text">
+                {resetStep === "email" ? t("auth.reset.emailPrompt") : t("auth.reset.codePrompt", { email })}
+              </p>
+              {resetStep === "email" ? (
+                <label className="form-field">
+                  <span className="form-label">{t("auth.email")}</span>
+                  <input
+                    className="form-input"
+                    type="email"
+                    placeholder={t("auth.emailPlaceholder")}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="form-field">
+                    <span className="form-label">{t("auth.reset.code")}</span>
+                    <input
+                      className="form-input"
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      placeholder="ABCDE-FGH23"
+                      autoComplete="one-time-code"
+                      autoFocus
+                      required
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span className="form-label">{t("auth.reset.newPassword")}</span>
+                    <input
+                      className="form-input"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      autoComplete="new-password"
+                      required
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span className="form-label">{t("auth.reset.repeatPassword")}</span>
+                    <input
+                      className="form-input"
+                      type="password"
+                      value={repeatPassword}
+                      onChange={(e) => setRepeatPassword(e.target.value)}
+                      autoComplete="new-password"
+                      required
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="form-note-link"
+                    onClick={() => {
+                      setResetStep("email");
+                      setResetCode("");
+                      setError(null);
+                    }}
+                  >
+                    {t("auth.reset.sendAgain")}
+                  </button>
+                </>
+              )}
+
+              {error && <p className="form-note form-note-danger">{error}</p>}
+
+              <div className="form-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setResetStep(null);
+                    setError(null);
+                  }}
+                  disabled={busy}
+                >
+                  {t("auth.reset.back")}
+                </Button>
+                <Button type="submit" disabled={busy}>
+                  {busy ? t("common.loading") : resetStep === "email" ? t("auth.reset.sendCode") : t("auth.reset.setPassword")}
+                </Button>
+              </div>
+            </form>
+          ) : (
           <form className="server-form" onSubmit={handleSubmit}>
             {secondFactor && (
               <>
@@ -186,6 +326,18 @@ export function AuthModal() {
                 required
               />
             </label>
+            {tab === "login" && (
+              <button
+                type="button"
+                className="form-note-link"
+                onClick={() => {
+                  setResetStep("email");
+                  setError(null);
+                }}
+              >
+                {t("auth.reset.forgot")}
+              </button>
+            )}
               </>
             )}
 
@@ -198,6 +350,7 @@ export function AuthModal() {
             </div>
             <p className="form-note">{t("auth.backendNote")}</p>
           </form>
+          )}
         </div>
       </div>
     </div>

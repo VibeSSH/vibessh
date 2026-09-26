@@ -391,6 +391,8 @@ pub fn run() {
             commands::cloud_commands::cloud_register,
             commands::cloud_commands::cloud_login,
             commands::cloud_commands::cloud_logout,
+            commands::cloud_commands::cloud_request_password_reset,
+            commands::cloud_commands::cloud_confirm_password_reset,
             commands::cloud_commands::cloud_two_factor_setup,
             commands::cloud_commands::cloud_two_factor_enable,
             commands::cloud_commands::cloud_two_factor_disable,

@@ -34,6 +34,18 @@ pub async fn cloud_login(
     services::cloud_login(&state, &email, &password, totp_code.as_deref(), recovery_code.as_deref()).await
 }
 
+/// Emails a password-reset code to `email`, in the app's language.
+#[tauri::command]
+pub async fn cloud_request_password_reset(state: State<'_, CloudState>, email: String, language: String) -> AppResult<()> {
+    crate::services::cloud_service::request_password_reset(&state, &email, &language).await
+}
+
+/// Sets a new password with the code from the email.
+#[tauri::command]
+pub async fn cloud_confirm_password_reset(state: State<'_, CloudState>, email: String, code: String, new_password: String) -> AppResult<()> {
+    crate::services::cloud_service::confirm_password_reset(&state, &email, &code, &new_password).await
+}
+
 #[tauri::command]
 pub async fn cloud_two_factor_setup(state: State<'_, CloudState>) -> AppResult<crate::models::CloudTwoFactorSetup> {
     crate::services::cloud_service::two_factor_setup(&state).await
