@@ -54,16 +54,27 @@ fn home_directory(username: &str) -> String {
 /// needs a home directory for `authorized_keys` and a shell, because a
 /// member connects to it over SSH. It has no password and none can be set -
 /// the only way in is a key, which is the point.
+///
+/// **Nothing here writes into the member's home as root.** That home, and
+/// everything in it, belongs to somebody who can log in and replace any of
+/// it with a symlink between two commands - and root following that link is
+/// root writing wherever the member chose. This used to run `sudo install
+/// -d -o <member> ~/.ssh`, which chowns through a symlinked `.ssh`, so a
+/// member could have been handed `/etc`. The account and its group are
+/// root's business; its `.ssh` is made by the member's own account
+/// (`authorized_keys_script`), with no more power than the member has.
+///
+/// Also lifts an expiry left by an earlier revoke, so re-adding somebody
+/// who was removed lets them in again.
 pub fn provision_script(username: &str) -> AppResult<String> {
     validate_linux_username(username, "the member's account name")?;
     let user = shell_quote(username);
-    let home = shell_quote(&home_directory(username));
     Ok(format!(
         "set -e; \
          getent group {group} >/dev/null 2>&1 || sudo groupadd {group}; \
          id -u {user} >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash --gid {group} {user}; \
          sudo passwd --lock {user} >/dev/null; \
-         sudo install -d -m 700 -o {user} -g {group} {home}/.ssh",
+         sudo usermod --expiredate '' {user}",
         group = shell_quote(GROUP),
     ))
 }
@@ -74,6 +85,15 @@ pub fn provision_script(username: &str) -> AppResult<String> {
 /// place, so a connection that drops halfway cannot leave a member locked
 /// out of a Node with a half-written file - `mv` within one filesystem is
 /// atomic, a partial write is not.
+///
+/// **Written as the member, not as root.** `sudo -u <member>`: the directory
+/// is the member's, so whatever they may have put there - a symlink where
+/// `authorized_keys.new` goes, a `.ssh` that points elsewhere - can only
+/// lead this write somewhere the member could already write. As root, the
+/// same `tee`, `chown` and `chmod` wrote and handed over whatever the link
+/// named, `/etc/passwd` included; any member with a login could take root at
+/// the next sync. The keys travel on stdin, the home directory as an
+/// argument - neither is ever part of the script.
 pub fn authorized_keys_script(username: &str, keys: &[String]) -> AppResult<String> {
     validate_linux_username(username, "the member's account name")?;
     for key in keys {
@@ -82,22 +102,21 @@ pub fn authorized_keys_script(username: &str, keys: &[String]) -> AppResult<Stri
         }
     }
     let user = shell_quote(username);
-    let home = home_directory(username);
-    let path = shell_quote(&format!("{home}/.ssh/authorized_keys"));
-    let temporary = shell_quote(&format!("{home}/.ssh/authorized_keys.new"));
+    let home = shell_quote(&home_directory(username));
     // Each key on its own line, quoted as one shell word so nothing in a
     // comment field can start a second command.
     let write = keys.iter().map(|key| format!("printf '%s\\n' {}", shell_quote(key))).collect::<Vec<_>>().join("; ");
     let write = if write.is_empty() { "true".to_string() } else { write };
     Ok(format!(
         "set -e; \
-         ({write}) | sudo tee {temporary} >/dev/null; \
-         sudo chown {user}:{group} {temporary}; \
-         sudo chmod 600 {temporary}; \
-         sudo mv {temporary} {path}",
-        group = shell_quote(GROUP),
+         ({write}) | sudo -n -u {user} sh -c {as_member} vibessh-keys {home}",
+        as_member = shell_quote(MEMBER_KEYS_WRITE),
     ))
 }
+
+/// What the member's own account runs to replace its keys: the home
+/// directory is `$1`, the keys arrive on stdin.
+const MEMBER_KEYS_WRITE: &str = r#"umask 077 && mkdir -p "$1/.ssh" && chmod 700 "$1/.ssh" && cat > "$1/.ssh/authorized_keys.new" && mv -f "$1/.ssh/authorized_keys.new" "$1/.ssh/authorized_keys""#;
 
 /// The sudo rules this member's role earns them, written as one file.
 ///
@@ -216,15 +235,31 @@ pub fn sudoers_script(username: &str, permissions: &[String], applications: &[me
 
 /// Removes the account's access without removing the account.
 ///
-/// Deliberately two different things. Emptying `authorized_keys` and taking
-/// away the sudo rule stops the member doing anything; deleting the account
-/// would also delete files it owns, and a member who wrote something in a
-/// shared directory should not have it vanish because their access was
-/// withdrawn.
+/// Deliberately two different things. Deleting the account would also
+/// delete files it owns, and a member who wrote something in a shared
+/// directory should not have it vanish because their access was withdrawn.
+///
+/// **What actually takes the access away is root's, not the member's.** The
+/// sudo rule is removed; the account is expired, which sshd refuses a login
+/// for whatever key is offered; and whatever the member is still running is
+/// ended. Their `authorized_keys` is emptied too, but only as a courtesy:
+/// it lives in a directory the member controls, so it could not be the
+/// thing a revocation rests on - a member expecting removal could have made
+/// it impossible to rewrite. Re-adding them lifts the expiry
+/// (`provision_script`).
 pub fn revoke_script(username: &str) -> AppResult<String> {
     validate_linux_username(username, "the member's account name")?;
     let path = shell_quote(&sudoers_path(username));
-    Ok(format!("sudo rm -f {path}; {keys}", keys = authorized_keys_script(username, &[])?))
+    let user = shell_quote(username);
+    Ok(format!(
+        "set -e; \
+         sudo rm -f {path}; \
+         id -u {user} >/dev/null 2>&1 || exit 0; \
+         sudo usermod --expiredate 1 {user}; \
+         {{ {keys}; }} || echo 'vibessh: the keys file could not be emptied - the account is expired, which is what refuses the login' >&2; \
+         sudo pkill -KILL -u {user} || true",
+        keys = authorized_keys_script(username, &[])?,
+    ))
 }
 
 /// Runs one of the scripts above and turns a non-zero exit into the Node's
@@ -264,7 +299,73 @@ mod tests {
         // The only way in is a key. A locked password is not a password
         // somebody can guess.
         assert!(script.contains("passwd --lock"), "{script}");
-        assert!(script.contains("-m 700"), "the .ssh directory has to be private: {script}");
+        // A revoked member who is added back gets in again.
+        assert!(script.contains("usermod --expiredate ''"), "{script}");
+    }
+
+    /// The privilege bug: root wrote into the member's home, through any
+    /// symlink the member left there. No step that touches the home may run
+    /// as root - not `tee`, `chown`, `chmod`, `install` or `mv` - and the keys
+    /// are written by the member's own account.
+    #[test]
+    fn nothing_in_the_members_home_is_written_as_root() {
+        let home = "/home/vibessh-m-0123456789ab";
+        let scripts = [
+            provision_script("vibessh-m-0123456789ab").unwrap(),
+            authorized_keys_script("vibessh-m-0123456789ab", &[KEY.to_string()]).unwrap(),
+            revoke_script("vibessh-m-0123456789ab").unwrap(),
+        ];
+        for script in &scripts {
+            for step in script.split(';') {
+                let step = step.trim();
+                if step.contains(home) {
+                    assert!(step.contains("sudo -n -u 'vibessh-m-0123456789ab'"), "a step touching the home runs as something else: {step}");
+                }
+                for as_root in ["sudo tee", "sudo chown", "sudo chmod", "sudo install", "sudo mv"] {
+                    assert!(!(step.contains(as_root) && step.contains(".ssh")), "{as_root} on the member's .ssh: {step}");
+                }
+            }
+        }
+        let keys = authorized_keys_script("vibessh-m-0123456789ab", &[KEY.to_string()]).unwrap();
+        assert!(keys.contains("| sudo -n -u 'vibessh-m-0123456789ab' sh -c"), "{keys}");
+    }
+
+    /// Every script the sync runs has to parse - the revoke one nests the
+    /// keys script in a group.
+    #[test]
+    fn the_account_scripts_parse() {
+        for script in [
+            provision_script("vibessh-m-0123456789ab").unwrap(),
+            authorized_keys_script("vibessh-m-0123456789ab", &[KEY.to_string()]).unwrap(),
+            revoke_script("vibessh-m-0123456789ab").unwrap(),
+        ] {
+            if let Ok(status) = std::process::Command::new("sh").arg("-n").arg("-c").arg(&script).status() {
+                assert!(status.success(), "{script}");
+            }
+        }
+    }
+
+    /// The member's own step parses and does what it says: run as whoever
+    /// runs the test, against a temporary home.
+    #[cfg(unix)]
+    #[test]
+    fn the_members_own_keys_write_replaces_the_file() {
+        let home = std::env::temp_dir().join(format!("vibessh-member-home-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+        std::fs::write(home.join(".ssh/authorized_keys"), "old-key\n").unwrap();
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(MEMBER_KEYS_WRITE)
+            .arg("vibessh-keys")
+            .arg(&home)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(child.stdin.as_mut().unwrap(), b"new-key\n").unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(std::fs::read_to_string(home.join(".ssh/authorized_keys")).unwrap(), "new-key\n");
+        assert!(!home.join(".ssh/authorized_keys.new").exists());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// Written whole, not appended. Appending is how a revoked key survives
@@ -272,9 +373,9 @@ mod tests {
     #[test]
     fn authorized_keys_is_replaced_rather_than_appended_to() {
         let script = authorized_keys_script("vibessh-m-0123456789ab", &[KEY.to_string()]).unwrap();
-        assert!(!script.contains("tee -a"), "appending leaves revoked keys in place: {script}");
-        assert!(script.contains("mv"), "the file has to be moved into place, not written in place: {script}");
-        assert!(script.contains("chmod 600"), "{script}");
+        assert!(!script.contains(">>"), "appending leaves revoked keys in place: {script}");
+        assert!(script.contains("mv -f"), "the file has to be moved into place, not written in place: {script}");
+        assert!(script.contains("umask 077"), "{script}");
     }
 
     /// Revoking a device produces an empty file rather than no command at
@@ -285,6 +386,10 @@ mod tests {
         let script = revoke_script("vibessh-m-0123456789ab").unwrap();
         assert!(script.contains("authorized_keys"), "{script}");
         assert!(script.contains("/etc/sudoers.d/vibessh-m-0123456789ab"), "{script}");
+        // What the revocation rests on is root's: the expiry, and ending
+        // what they still run - not a file in their own home.
+        assert!(script.contains("usermod --expiredate 1 'vibessh-m-0123456789ab'"), "{script}");
+        assert!(script.contains("pkill -KILL -u 'vibessh-m-0123456789ab'"), "{script}");
     }
 
     /// A role that cannot be narrowed, which is the case that still writes

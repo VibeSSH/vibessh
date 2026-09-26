@@ -201,6 +201,18 @@ root-equivalent rights on the Node, so this does not widen what they can
 reach. And `systemctl status` is only allowed with `--no-pager`: without
 it `less` runs as root, and `!sh` in `less` is a root shell.
 
+**The member's own home.** Every member with a published key gets a login,
+and a login owns its home: anything in it can be swapped for a symlink
+between two commands. The sync used to write `~/.ssh` as root (`install -d
+-o`, `tee`, `chown`, `chmod`, `mv`), all of which follow such a link, so any
+member - one with no permissions at all included - could have root write
+and hand over `/etc/passwd` at the next sync. Nothing touches the home as
+root now: the keys are written by the member's own account, with no more
+power than it has. And revocation no longer rests on a file the member
+controls: the account is expired (sshd refuses it whatever key is offered),
+its processes are killed and its sudo rule removed; emptying its keys is
+only a courtesy.
+
 **The firewall role.** It used to be `ufw *` and `iptables *`, under a
 comment saying neither runs anything. `iptables --modprobe=<program>` runs
 that program as root, so the role was root. A sudo rule cannot narrow it:
