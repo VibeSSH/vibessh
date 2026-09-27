@@ -111,7 +111,11 @@ async fn connects_authenticates_and_runs_a_real_command() {
         .expect("command should run");
 
     assert_eq!(output.exit_code, 7);
-    assert_eq!(output.stdout, "ran: echo hi\n");
+    // The server sees the command behind the PATH prefix every exec channel
+    // gets (`ssh::client::with_admin_path`), and the command itself intact.
+    assert!(output.stdout.starts_with("ran: PATH="), "{:?}", output.stdout);
+    assert!(output.stdout.contains("/usr/sbin"), "{:?}", output.stdout);
+    assert!(output.stdout.ends_with("; echo hi\n"), "{:?}", output.stdout);
     assert_eq!(output.stderr, "a warning on stderr\n");
 
     outcome.session.close().await;
