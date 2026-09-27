@@ -4,6 +4,8 @@ import type {
   DnsRecord,
   DnsSyncResult,
   DnsView,
+  JoinOutcome,
+  NetworkWarning,
   NodeEndpoint,
   NodeMeshStatus,
   NodeNetworkMember,
@@ -16,13 +18,14 @@ export function listNetworkMembers(): Promise<NodeNetworkMember[]> {
   return callCommand<NodeNetworkMember[]>("list_network_members");
 }
 
-/** "Dołącz do Vibe Network" - VibeSSH generates the keypair, allocates the private IP, syncs every peer's config on both sides, and best-effort pushes DNS so the new Node's own alias (and every existing service alias) resolves right away. The user never enters a CIDR, a peer, or a WireGuard setting by hand. */
-export function joinVibeNetwork(serverId: string): Promise<NodeNetworkMember> {
-  return callCommand<NodeNetworkMember>("join_vibe_network", { serverId });
+/** "Dołącz do Vibe Network" - VibeSSH generates the keypair, allocates the private IP, syncs every peer's config on both sides, opens the WireGuard port in the Node's firewall, waits for a peer to answer and pushes DNS. The user never enters a CIDR, a peer, or a WireGuard setting by hand. Rejects - with the membership taken back - when the tunnel could not be brought up on the Node; anything short of that comes back in `warnings`. */
+export function joinVibeNetwork(serverId: string): Promise<JoinOutcome> {
+  return callCommand<JoinOutcome>("join_vibe_network", { serverId });
 }
 
-export function leaveVibeNetwork(serverId: string): Promise<void> {
-  return callCommand<void>("leave_vibe_network", { serverId });
+/** Takes the interface, its systemd unit, the Node's private DNS block and its WireGuard firewall rule away. Rejects with `network_leave_has_mesh_ports` while a port on the Node is still "Vibe Network only". Resolves to what could not be cleaned up. */
+export function leaveVibeNetwork(serverId: string): Promise<NetworkWarning[]> {
+  return callCommand<NetworkWarning[]>("leave_vibe_network", { serverId });
 }
 
 /** Real, current state - each Node's own `wg show` output, cross-referenced back to whichever mesh member each peer is. */

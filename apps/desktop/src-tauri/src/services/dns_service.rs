@@ -269,6 +269,14 @@ mv "$tmp" /etc/hosts
     Ok(())
 }
 
+/// Removes VibeSSH's block from a Node's `/etc/hosts` - for a Node leaving
+/// the mesh, which `sync_dns` no longer reaches because it only pushes to
+/// current members. Left behind, the block kept mesh names resolving to
+/// addresses that Node could no longer reach.
+pub async fn clear_hosts_block(connection: &crate::ssh::SshSession) -> AppResult<()> {
+    push_fragment(connection, "").await
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DnsSyncResult {

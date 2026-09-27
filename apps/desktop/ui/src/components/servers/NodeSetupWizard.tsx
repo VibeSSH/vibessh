@@ -17,7 +17,8 @@ import {
   type FirewallRule,
 } from "@/services/serverService";
 import { useServersStore } from "@/stores/serversStore";
-import { toastSuccess } from "@/stores/toastStore";
+import { toastError, toastSuccess } from "@/stores/toastStore";
+import { networkWarningMessages } from "@/services/networkWarnings";
 import { firewallResultWarning } from "@/services/firewallWarnings";
 import type { NodeCapabilities } from "@/types/server";
 import { AgentPairingFlow } from "./AgentPairingFlow";
@@ -177,9 +178,10 @@ export function NodeSetupWizard({ serverId, serverName, onClose, onActivity }: N
     setJoiningNetwork(true);
     setNetworkError(null);
     try {
-      await joinVibeNetwork(serverId);
+      const joined = await joinVibeNetwork(serverId);
       setNetworkJoined(true);
       toastSuccess(t("nodeSetup.joinedNetworkToast"));
+      networkWarningMessages(joined.warnings, t).forEach(toastError);
     } catch (err) {
       setNetworkError(errorMessage(err, t));
     } finally {

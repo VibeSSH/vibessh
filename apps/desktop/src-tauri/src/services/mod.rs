@@ -69,7 +69,7 @@ pub use firewall_service::{
     ListeningSocket, NodeFirewallOverview,
 };
 pub use network_service::{
-    join_node, leave_node, list_members as list_network_members, list_node_endpoints, mesh_status, reconcile_mesh, sync_vibe_network,
+    join_node, leave_node, JoinOutcome, NetworkWarning, list_members as list_network_members, list_node_endpoints, mesh_status, reconcile_mesh, sync_vibe_network,
     MeshReconcileResult, NodeEndpoint, NodeMeshStatus, PeerHandshake, VibeNetworkSyncResult,
 };
 pub use node_state_service::{reconcile_node, sync_status as node_sync_status};

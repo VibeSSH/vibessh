@@ -224,8 +224,36 @@ fn build_apply_script(own_ip: &str, peers: &[Peer]) -> AppResult<String> {
          sudo rm -f \"$strip_conf\"\n\
          else\n  \
          sudo wg-quick up {INTERFACE}\n\
-         fi\n"
+         fi\n\
+         sudo systemctl enable {SERVICE} >/dev/null 2>&1 || {{ echo \"couldn't enable {SERVICE}, so the tunnel would not come back after a reboot\" >&2; exit 1; }}\n"
     ))
+}
+
+/// The systemd unit `wg-quick` ships for this interface. Enabled on every
+/// apply: the interface used to be brought up by hand and nothing else, so
+/// the first reboot of any member took it out of the mesh until somebody
+/// happened to reconcile - with every page still showing it as a member.
+const SERVICE: &str = concat!("wg-quick@", "wg-vibessh0");
+
+/// Waits for a peer to answer, for up to about fifteen seconds.
+///
+/// `wg-quick up` succeeding says the interface exists, not that anything
+/// can reach it. With `PersistentKeepalive` set, a peer that can be reached
+/// completes a handshake within a few seconds; one that has not after this
+/// long is almost always a UDP port blocked on the way - the Node's own
+/// firewall or its provider's.
+pub async fn await_handshake(connection: &SshSession) -> AppResult<bool> {
+    for attempt in 0..6 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+        if let InterfaceState::Up(peers) = show_peers(connection).await? {
+            if peers.iter().any(|peer| peer.latest_handshake_unix > 0) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Renders this Node's own full peer set and applies it - a first-time
@@ -352,20 +380,38 @@ fn classify_show_output(exit_code: i32, stdout: &str, stderr: &str) -> Interface
 /// exits non-zero for that, and it is exactly the state teardown is trying
 /// to reach - so that case is treated as success by checking the interface
 /// is gone afterwards rather than by trusting the exit code.
+///
+/// The unit is stopped and disabled too. Otherwise the next boot brings the
+/// interface straight back - or tries to, from a config that is gone.
 pub async fn teardown(connection: &SshSession) -> AppResult<()> {
-    let output = connection
-        .execute_command(&format!(
-            "sudo wg-quick down {INTERFACE} >/dev/null 2>&1; sudo rm -f {CONFIG_PATH}; \
-             if sudo ip link show {INTERFACE} >/dev/null 2>&1; then echo up; else echo down; fi"
-        ))
-        .await?;
-    if output.stdout.trim() != "down" {
-        return Err(AppError::Connection(format!(
+    let output = connection.execute_command(&teardown_script()).await?;
+    match output.stdout.trim() {
+        "down" => Ok(()),
+        "enabled" => Err(AppError::Connection(format!(
+            "the {INTERFACE} interface is down, but {SERVICE} is still enabled and would bring it back on the next boot - \
+             disable it manually (`systemctl disable {SERVICE}`) and try again"
+        ))),
+        _ => Err(AppError::Connection(format!(
             "the {INTERFACE} interface is still up on this Node, so it hasn't really left the Vibe Network - \
              bring it down manually (`wg-quick down {INTERFACE}`) and try again"
-        )));
+        ))),
     }
-    Ok(())
+}
+
+fn teardown_script() -> String {
+    // Stopped through systemd first when the unit brought the interface up
+    // (after a reboot), then `wg-quick down` for one brought up by hand.
+    // Each may have nothing to do, so their exit codes say nothing; the
+    // checks at the end are what decide.
+    format!(
+        "sudo systemctl stop {SERVICE} >/dev/null 2>&1; \
+         sudo wg-quick down {INTERFACE} >/dev/null 2>&1; \
+         sudo systemctl disable {SERVICE} >/dev/null 2>&1; \
+         sudo rm -f {CONFIG_PATH}; \
+         if sudo ip link show {INTERFACE} >/dev/null 2>&1; then echo up; \
+         elif systemctl is-enabled --quiet {SERVICE} 2>/dev/null; then echo enabled; \
+         else echo down; fi"
+    )
 }
 
 #[cfg(test)]
@@ -446,6 +492,66 @@ mod tests {
         let script = build_apply_script("10.77.0.1", &[]).unwrap();
         assert!(script.contains(&format!("wg-quick up {INTERFACE}")), "{script}");
         assert!(script.contains(&format!("wg syncconf {INTERFACE}")), "{script}");
+    }
+
+    /// The interface used to be brought up by hand and nothing else, so the
+    /// first reboot took the Node out of the mesh.
+    #[test]
+    fn the_interface_is_enabled_to_come_back_after_a_reboot() {
+        let script = build_apply_script("10.77.0.1", &[]).unwrap();
+        let enable = script.find(&format!("systemctl enable {SERVICE}")).unwrap_or_else(|| panic!("the unit is never enabled:\n{script}"));
+        assert!(enable > script.find("wg-quick up").unwrap(), "enabled before the interface is up:\n{script}");
+        assert_valid_shell(&script);
+    }
+
+    #[test]
+    fn teardown_stops_and_disables_the_unit_as_well_as_the_interface() {
+        let script = teardown_script();
+        assert!(script.contains(&format!("systemctl stop {SERVICE}")), "{script}");
+        assert!(script.contains(&format!("systemctl disable {SERVICE}")), "{script}");
+        assert_valid_shell(&script);
+    }
+
+    /// Runs the real teardown script against stand-ins for the commands it
+    /// calls: a unit that stays enabled must be reported, not read as a
+    /// clean leave - it would bring the interface back on the next boot.
+    #[cfg(unix)]
+    #[test]
+    fn teardown_reports_a_unit_that_is_still_enabled() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let run = |still_enabled: bool| {
+            let stubs = std::env::temp_dir().join(format!("vibessh-wg-stubs-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&stubs).unwrap();
+            let is_enabled_exit = if still_enabled { 0 } else { 1 };
+            for (name, body) in [
+                ("sudo", "exec \"$@\"".to_string()),
+                ("wg-quick", "exit 1".to_string()),
+                ("ip", "exit 1".to_string()),
+                ("systemctl", format!("[ \"$1\" = is-enabled ] && exit {is_enabled_exit}; exit 0")),
+            ] {
+                let path = stubs.join(name);
+                std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(teardown_script().replace(CONFIG_PATH, &stubs.join("none.conf").to_string_lossy()))
+                .env("PATH", format!("{}:{}", stubs.display(), std::env::var("PATH").unwrap_or_default()))
+                .output()
+                .unwrap();
+            std::fs::remove_dir_all(&stubs).ok();
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        };
+        assert_eq!(run(true), "enabled");
+        assert_eq!(run(false), "down");
+    }
+
+    fn assert_valid_shell(script: &str) {
+        match std::process::Command::new("sh").arg("-n").arg("-c").arg(script).output() {
+            Ok(output) => assert!(output.status.success(), "not valid shell: {}\n{script}", String::from_utf8_lossy(&output.stderr)),
+            Err(_) => eprintln!("no POSIX shell on PATH - skipped"),
+        }
     }
 
     #[test]

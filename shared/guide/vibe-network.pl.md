@@ -56,6 +56,8 @@ Połączenie działa w obie strony i obowiązuje od razu.
 - **Synchronizacja mówi „udane", a połączenie jest „Nie zestawione"** — sprawdź, czy dostawca VPS nie blokuje ruchu UDP. Vibe Network używa portu UDP `54221`.
 - **Aplikacje nadal się nie widzą** — sam tunel łączy serwery, nie aplikacje. Dodaj połączenie na karcie **Połączenia**.
 - **Brak tunelu** — na Node nie ma WireGuarda albo Node nie został jeszcze zsynchronizowany.
+- **Opuszczenie sieci jest odrzucane** - Node ma jeszcze porty ustawione jako **Tylko Vibe Network**. Nasłuchują na jego prywatnym adresie, który po opuszczeniu sieci znika. Zmień każdy z nich na **Publiczny** albo **Tylko localhost** w zakładce **Porty** aplikacji i dopiero wtedy opuść sieć.
+- **Po dodaniu Node pojawia się komunikat, że żaden węzeł nie odpowiedział** - tunel działa, ale port UDP `54221` jest blokowany przez firewall Node albo dostawcy.
 
 ## Więcej informacji
 

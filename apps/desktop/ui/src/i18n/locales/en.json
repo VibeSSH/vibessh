@@ -944,7 +944,8 @@
     "storage": "Storage problem: {{message}}",
     "internal": "Something went wrong inside VibeSSH: {{message}}",
     "database_bind_unsupported": "This database server is too old to listen on more than one address (MariaDB 10.11 or MySQL 8.0.13 is needed), so applications in containers cannot reach it. VibeSSH will not make it listen on every address instead, because that would put it on the internet. Upgrade the database server - it is 10.11 on Ubuntu 24.04 and Debian 12.",
-    "database_firewall_rule_failed": "The database now listens where containers can reach it, but the firewall refused the rule that lets them through on port {{port}}. Check ufw on the node, then run the repair again."
+    "database_firewall_rule_failed": "The database now listens where containers can reach it, but the firewall refused the rule that lets them through on port {{port}}. Check ufw on the node, then run the repair again.",
+    "network_leave_has_mesh_ports": "This node still has ports set to Vibe Network only: {{ports}}. They listen on its private address, which leaving takes away, so they would stop starting. Change each one to Public or Localhost only on its Ports tab first."
   },
   "cloudErrors": {
     "reset_code_invalid": "That code is wrong, already used or expired. Ask for a new one.",
@@ -2395,5 +2396,13 @@
     "syncFailed": "Saved, but the server's firewall wasn't updated: {{message}}. Sync it from the Firewall page or the Ports tab once the server is reachable.",
     "containerFailed": "Docker ports on this server are not restricted as shown - the container rules couldn't be written: {{message}}",
     "notActive": "The firewall was switched on, but the server still reports it inactive - the ports are open."
+  },
+  "vibeNetworkWarnings": {
+    "peerNotUpdated": "{{name}} couldn't be updated, so it and this node can't reach each other until a sync gets through: {{message}}",
+    "noHandshake": "The tunnel is up, but no other node has answered it yet. If it stays that way, UDP port 54221 is blocked on the way - by the node's own firewall or by its provider's.",
+    "firewall": "The node's firewall wasn't brought in line with the Vibe Network: {{message}}",
+    "dns": "Private DNS wasn't updated on {{name}}: {{message}}",
+    "dnsNotRun": "Private DNS couldn't be updated: {{message}}",
+    "bindAddresses": "Ports set to Vibe Network only weren't moved to the node's private address, so they may not start: {{message}}"
   }
 }

@@ -38,6 +38,7 @@ import { useServersStore, type ManagedServer } from "@/stores/serversStore";
 import { toastError, toastSuccess } from "@/stores/toastStore";
 import type { Application, PortInput } from "@/types/application";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
+import { networkWarningMessages } from "@/services/networkWarnings";
 import type { DnsRecord, DnsView, NodeEndpoint, NodeMeshStatus, NodeNetworkMember, VibeNetworkSyncResult } from "@/types/network";
 import "@/components/servers/AddServerModal.css";
 import "@/components/servers/forms.css";
@@ -113,8 +114,9 @@ export function VibeNetwork() {
     setLeaveBusy(true);
     setLeaveError(null);
     try {
-      await leaveVibeNetwork(leavingMember.serverId);
+      const warnings = await leaveVibeNetwork(leavingMember.serverId);
       toastSuccess(t("vibeNetwork.leftToast", { name: serverName(leavingMember.serverId) }));
+      networkWarningMessages(warnings, t).forEach(toastError);
       setLeavingMember(null);
       reload();
     } catch (err) {
@@ -467,9 +469,12 @@ function AddNodeModal({ joinableServers, onClose, onJoined }: AddNodeModalProps)
     setError(null);
     setStep("joining");
     try {
-      await joinVibeNetwork(serverId);
+      const joined = await joinVibeNetwork(serverId);
       setStep("done");
       toastSuccess(t("vibeNetwork.joinedToast"));
+      // Joined, but not everything followed - each one is what stands
+      // between "a member" and "reachable".
+      networkWarningMessages(joined.warnings, t).forEach(toastError);
       onJoined();
     } catch (err) {
       setStep("idle");

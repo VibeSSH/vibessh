@@ -120,8 +120,12 @@ async fn run_test(repos: TestRepos, node_a_id: uuid::Uuid, node_b_id: uuid::Uuid
 
     // Both Nodes join - each join reconciles the whole mesh, so after the
     // second join both sides know about each other.
-    let member_a = services::join_node(network_repo, server_repo, sessions, node_a_id).await.unwrap();
-    let member_b = services::join_node(network_repo, server_repo, sessions, node_b_id).await.unwrap();
+    let member_a = services::join_node(network_repo, server_repo, app_repo, firewall_rule_repo, sessions, node_a_id).await.unwrap().member;
+    let joined_b = services::join_node(network_repo, server_repo, app_repo, firewall_rule_repo, sessions, node_b_id).await.unwrap();
+    // The second join is the first with a peer to answer it, so it is the
+    // one that proves the handshake check, the firewall and DNS all landed.
+    assert!(joined_b.warnings.is_empty(), "the second join reported problems: {:?}", joined_b.warnings);
+    let member_b = joined_b.member;
     assert_ne!(member_a.wireguard_ip, member_b.wireguard_ip);
 
     // Explicit reconcile with results inspected, not swallowed - diagnostic

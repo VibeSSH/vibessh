@@ -950,7 +950,8 @@
     "storage": "Problem z zapisem danych: {{message}}",
     "internal": "Coś poszło nie tak wewnątrz VibeSSH: {{message}}",
     "database_bind_unsupported": "Ten serwer baz danych jest za stary, żeby nasłuchiwać na więcej niż jednym adresie (potrzebna MariaDB 10.11 albo MySQL 8.0.13), więc aplikacje w kontenerach nie mają do niego dostępu. VibeSSH nie ustawi zamiast tego nasłuchu na wszystkich adresach, bo wystawiłoby to bazę do internetu. Zaktualizuj serwer baz - na Ubuntu 24.04 i Debianie 12 jest to 10.11.",
-    "database_firewall_rule_failed": "Baza nasłuchuje już tam, gdzie kontenery mogą ją osiągnąć, ale firewall odrzucił regułę, która je przepuszcza na porcie {{port}}. Sprawdź ufw na węźle i uruchom naprawę ponownie."
+    "database_firewall_rule_failed": "Baza nasłuchuje już tam, gdzie kontenery mogą ją osiągnąć, ale firewall odrzucił regułę, która je przepuszcza na porcie {{port}}. Sprawdź ufw na węźle i uruchom naprawę ponownie.",
+    "network_leave_has_mesh_ports": "Ten węzeł ma jeszcze porty ustawione jako „Tylko Vibe Network”: {{ports}}. Nasłuchują na jego prywatnym adresie, który zniknie po opuszczeniu sieci, więc przestałyby startować. Najpierw zmień każdy z nich na „Publiczny” albo „Tylko localhost” w zakładce Porty."
   },
   "cloudErrors": {
     "reset_code_invalid": "Ten kod jest błędny, został już użyty albo wygasł. Poproś o nowy.",
@@ -2411,5 +2412,13 @@
     "syncFailed": "Zapisano, ale firewall serwera nie został zaktualizowany: {{message}}. Zsynchronizuj go na stronie Firewall albo w zakładce Porty, gdy serwer będzie osiągalny.",
     "containerFailed": "Porty Dockera na tym serwerze nie są ograniczone tak, jak pokazuje panel - nie udało się zapisać reguł dla kontenerów: {{message}}",
     "notActive": "Firewall został włączony, ale serwer nadal zgłasza go jako nieaktywny - porty są otwarte."
+  },
+  "vibeNetworkWarnings": {
+    "peerNotUpdated": "Nie udało się zaktualizować {{name}}, więc on i ten węzeł nie połączą się, dopóki synchronizacja nie przejdzie: {{message}}",
+    "noHandshake": "Tunel działa, ale żaden inny węzeł jeszcze nie odpowiedział. Jeśli tak zostanie, port UDP 54221 jest blokowany po drodze - przez firewall węzła albo jego dostawcy.",
+    "firewall": "Firewall węzła nie został dostosowany do Vibe Network: {{message}}",
+    "dns": "Prywatny DNS nie został zaktualizowany na {{name}}: {{message}}",
+    "dnsNotRun": "Nie udało się zaktualizować prywatnego DNS: {{message}}",
+    "bindAddresses": "Porty ustawione jako tylko Vibe Network nie zostały przeniesione na prywatny adres węzła, więc mogą nie wystartować: {{message}}"
   }
 }

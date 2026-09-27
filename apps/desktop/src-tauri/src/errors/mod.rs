@@ -114,6 +114,9 @@ pub enum ErrorCode {
     /// The bind is right but ufw refused the rule that lets containers
     /// through to it.
     DatabaseFirewallRuleFailed,
+    /// A Node cannot leave the Vibe Network while ports are bound to its
+    /// mesh address. Carries the ports, because they are the fix.
+    NetworkLeaveHasMeshPorts,
     /// The panel refused the Application API key outright.
     PterodactylKeyRejected,
     /// The key was accepted, but has none of the resource permissions the
@@ -341,6 +344,10 @@ pub enum AppError {
     #[error("the firewall refused the rule that lets containers reach the database on port {port}")]
     DatabaseFirewallRuleFailed { port: u16 },
 
+    /// Each entry is "<application> - <port name>".
+    #[error("this Node still has ports set to Vibe Network only ({}) - change them before it leaves", ports.join(", "))]
+    NetworkLeaveHasMeshPorts { ports: Vec<String> },
+
     // ---- Pterodactyl migration ----
     #[error("the Pterodactyl panel rejected the Application API key")]
     PterodactylKeyRejected,
@@ -382,6 +389,7 @@ impl AppError {
             AppError::DatabaseSocketAuthOnly { .. } => ErrorCode::DatabaseSocketAuthOnly,
             AppError::DatabaseBindUnsupported => ErrorCode::DatabaseBindUnsupported,
             AppError::DatabaseFirewallRuleFailed { .. } => ErrorCode::DatabaseFirewallRuleFailed,
+            AppError::NetworkLeaveHasMeshPorts { .. } => ErrorCode::NetworkLeaveHasMeshPorts,
             AppError::PterodactylKeyRejected => ErrorCode::PterodactylKeyRejected,
             AppError::PterodactylKeyForbidden { .. } => ErrorCode::PterodactylKeyForbidden,
             AppError::AiAuthFailed => ErrorCode::AiAuthFailed,
@@ -436,6 +444,7 @@ impl AppError {
             AppError::PterodactylKeyForbidden { resource } => serde_json::json!({ "resource": resource }),
             AppError::DatabaseSocketAuthOnly { user } => serde_json::json!({ "user": user }),
             AppError::DatabaseFirewallRuleFailed { port } => serde_json::json!({ "port": port }),
+            AppError::NetworkLeaveHasMeshPorts { ports } => serde_json::json!({ "ports": ports.join(", ") }),
             // The coarse variants carry their own English detail.
             //
             // Without this the frontend had nothing to put in a translated
@@ -516,6 +525,7 @@ impl Serialize for AppError {
             // problems the user can fix; the rest are the network.
             ErrorCode::DatabaseSocketAuthOnly => "invalid_input",
             ErrorCode::DatabaseBindUnsupported | ErrorCode::DatabaseFirewallRuleFailed => "connection",
+            ErrorCode::NetworkLeaveHasMeshPorts => "invalid_input",
             ErrorCode::PterodactylKeyRejected | ErrorCode::PterodactylKeyForbidden => "unauthorized",
             ErrorCode::AiNotConfigured | ErrorCode::AiAuthFailed | ErrorCode::AiModelUnavailable => "invalid_input",
             ErrorCode::AiRateLimited | ErrorCode::AiProviderUnavailable => "connection",

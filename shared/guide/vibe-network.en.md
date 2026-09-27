@@ -56,6 +56,8 @@ The connection works both ways and applies immediately.
 - **Sync says it succeeded but the connection says "Not established"** - check that your VPS provider is not blocking UDP. Vibe Network uses UDP port `54221`.
 - **The applications still cannot see each other** - the tunnel joins servers, not applications. Add a connection on the **Connections** card.
 - **No tunnel** - the Node has no WireGuard, or has not been synchronised yet.
+- **Leaving the network is refused** - the Node still has ports set to **Vibe Network only**. They listen on its private address, which leaving removes. Change each one to **Public** or **Localhost only** on the application's **Ports** tab, then leave.
+- **After adding a Node, a message says no other node answered** - the tunnel is up but UDP port `54221` is blocked, by the Node's own firewall or by the provider's.
 
 ## More detail
 

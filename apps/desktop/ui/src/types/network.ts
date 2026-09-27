@@ -6,6 +6,20 @@ export interface NodeNetworkMember {
   joinedAt: string;
 }
 
+/** Mirrors the Rust `NetworkWarning` DTO - something a join or a leave did not finish, while the membership change itself stands. Shown with `networkWarningMessages`. */
+export type NetworkWarning =
+  | { kind: "peerNotUpdated"; serverId: string; message: string }
+  | { kind: "noHandshake" }
+  | { kind: "firewall"; message: string }
+  | { kind: "dns"; serverId: string | null; message: string }
+  | { kind: "bindAddresses"; message: string };
+
+/** Mirrors the Rust `JoinOutcome` DTO. */
+export interface JoinOutcome {
+  member: NodeNetworkMember;
+  warnings: NetworkWarning[];
+}
+
 /** Mirrors the Rust `PeerHandshake` DTO - one resolved peer entry from a Node's own real `wg show` output. */
 export interface PeerHandshake {
   serverId: string;

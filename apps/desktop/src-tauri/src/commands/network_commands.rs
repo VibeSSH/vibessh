@@ -23,26 +23,37 @@ pub async fn join_vibe_network(
     app_repo: State<'_, ApplicationRepository>,
     dns_repo: State<'_, DnsRepository>,
     dns_suffix: State<'_, DnsSuffixState>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
     sessions: State<'_, SshSessionManager>,
     server_id: Uuid,
-) -> AppResult<NodeNetworkMember> {
-    let member = services::join_node(&network_repo, &server_repo, &sessions, server_id).await?;
+) -> AppResult<services::JoinOutcome> {
+    let mut outcome = services::join_node(&network_repo, &server_repo, &app_repo, &firewall_rule_repo, &sessions, server_id).await?;
     // A Node's mesh address is allocated here, so any port already declared
     // "Vibe Network only" has to be re-pointed at it - see
-    // `application_service::refresh_vibe_network_bind_addresses`. Reported
-    // rather than silently swallowed: a port left on a stale address fails
-    // to start with an unhelpful "cannot assign requested address".
+    // `application_service::refresh_vibe_network_bind_addresses`. A port
+    // left on a stale address fails to start with an unhelpful "cannot
+    // assign requested address", so this is returned, not logged.
     if let Err(err) = services::refresh_vibe_network_bind_addresses(&app_repo, &network_repo, server_id).await {
         log::warn!("couldn't re-point this Node's Vibe Network ports after joining: {err}");
+        outcome.warnings.push(services::NetworkWarning::BindAddresses { message: err.to_string() });
     }
-    // Best-effort: the new Node's own `<name><suffix>` alias (and every
-    // existing service alias) becomes reachable to/from it right away,
-    // without a separate manual "Synchronizuj" click - a DNS push failing
-    // for some reason must never undo a join that otherwise succeeded, same
-    // stance `services::migration_service` already takes for the identical
-    // call after a migration.
-    let _ = services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await;
-    Ok(member)
+    // The new Node's own `<name><suffix>` alias (and every existing service
+    // alias) becomes reachable to/from it right away. A DNS push failing
+    // must never undo a join that otherwise succeeded - but it used to be
+    // `let _`, which left names that did not resolve and nothing saying why.
+    outcome.warnings.extend(dns_warnings(services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await));
+    Ok(outcome)
+}
+
+fn dns_warnings(outcome: AppResult<Vec<services::DnsSyncResult>>) -> Vec<services::NetworkWarning> {
+    match outcome {
+        Ok(results) => results
+            .into_iter()
+            .filter(|result| !result.ok)
+            .map(|result| services::NetworkWarning::Dns { server_id: Some(result.server_id), message: result.error.unwrap_or_default() })
+            .collect(),
+        Err(err) => vec![services::NetworkWarning::Dns { server_id: None, message: err.to_string() }],
+    }
 }
 
 #[tauri::command]
@@ -52,17 +63,17 @@ pub async fn leave_vibe_network(
     app_repo: State<'_, ApplicationRepository>,
     dns_repo: State<'_, DnsRepository>,
     dns_suffix: State<'_, DnsSuffixState>,
+    firewall_rule_repo: State<'_, FirewallRuleRepository>,
     sessions: State<'_, SshSessionManager>,
     server_id: Uuid,
-) -> AppResult<()> {
-    services::leave_node(&network_repo, &server_repo, &sessions, server_id).await?;
-    if let Err(err) = services::refresh_vibe_network_bind_addresses(&app_repo, &network_repo, server_id).await {
-        log::warn!("couldn't re-point this Node's Vibe Network ports after leaving: {err}");
-    }
-    // Best-effort, same reasoning as `join_vibe_network` - cleans the
-    // departed Node's alias out of every remaining member's view.
-    let _ = services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await;
-    Ok(())
+) -> AppResult<Vec<services::NetworkWarning>> {
+    // No bind addresses to re-point: `leave_node` refuses while any port
+    // still depends on the mesh.
+    let mut warnings = services::leave_node(&network_repo, &server_repo, &app_repo, &firewall_rule_repo, &sessions, server_id).await?;
+    // Same reasoning as `join_vibe_network` - cleans the departed Node's
+    // alias out of every remaining member's view.
+    warnings.extend(dns_warnings(services::sync_dns(&dns_suffix.get(), &network_repo, &server_repo, &app_repo, &dns_repo, &sessions).await));
+    Ok(warnings)
 }
 
 #[tauri::command]

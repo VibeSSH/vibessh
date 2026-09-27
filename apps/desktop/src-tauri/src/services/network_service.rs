@@ -21,6 +21,8 @@ use crate::models::{ConnectionMode, NodeNetworkMember, Server};
 use crate::network::wireguard::{self, Peer};
 use crate::services::ssh_service::{get_or_connect, retry_on_connection_failure};
 use crate::state::SshSessionManager;
+use crate::storage::application_repository::ApplicationRepository;
+use crate::storage::firewall_rule_repository::FirewallRuleRepository;
 use crate::storage::node_network_repository::NodeNetworkRepository;
 use crate::storage::server_repository::ServerRepository;
 
@@ -36,6 +38,54 @@ pub struct MeshReconcileResult {
     pub error: Option<String>,
 }
 
+/// Something about a join or a leave that did not go as far as the change
+/// itself. The membership change stands; each of these is something the
+/// operator has to know to trust it - they were log lines, or `let _`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum NetworkWarning {
+    /// Another member could not be updated, so it and this Node cannot
+    /// reach each other until a sync gets through to it.
+    #[serde(rename_all = "camelCase")]
+    PeerNotUpdated { server_id: Uuid, message: String },
+    /// The tunnel is up, but no peer answered - see
+    /// `wireguard::await_handshake`.
+    NoHandshake,
+    /// This Node's firewall was not brought in line: on a join, the
+    /// WireGuard port may still be closed; on a leave, still open.
+    #[serde(rename_all = "camelCase")]
+    Firewall { message: String },
+    /// Private DNS was not updated on a Node - `None` when the sync could
+    /// not run at all.
+    #[serde(rename_all = "camelCase")]
+    Dns { server_id: Option<Uuid>, message: String },
+    /// "Vibe Network only" ports were not re-pointed at the mesh address.
+    #[serde(rename_all = "camelCase")]
+    BindAddresses { message: String },
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinOutcome {
+    pub member: NodeNetworkMember,
+    pub warnings: Vec<NetworkWarning>,
+}
+
+fn peer_warnings(results: &[MeshReconcileResult], except: Uuid) -> Vec<NetworkWarning> {
+    results
+        .iter()
+        .filter(|result| result.server_id != except && !result.ok)
+        .map(|result| NetworkWarning::PeerNotUpdated { server_id: result.server_id, message: result.error.clone().unwrap_or_default() })
+        .collect()
+}
+
+fn firewall_warning(outcome: AppResult<crate::services::firewall_service::FirewallSyncResult>) -> Option<NetworkWarning> {
+    match outcome {
+        Ok(result) => result.container_error.map(|message| NetworkWarning::Firewall { message }),
+        Err(err) => Some(NetworkWarning::Firewall { message: err.to_string() }),
+    }
+}
+
 fn require_ssh_mode(server: &Server) -> AppResult<()> {
     if server.connection_mode != ConnectionMode::Ssh {
         return Err(AppError::InvalidInput("the Vibe Network is only supported for SSH-mode Nodes right now".into()));
@@ -47,16 +97,29 @@ fn require_ssh_mode(server: &Server) -> AppResult<()> {
 /// keypair, allocates it a mesh IP, and reconciles the *whole* mesh - every
 /// existing member also needs a `[Peer]` block for the new one, not just
 /// the new Node needing blocks for everyone else.
+///
+/// **A join that did not bring the tunnel up is not a join.** The mesh
+/// reconcile reports per member, and this used to ignore the report: a Node
+/// whose own `wg-quick up` failed was recorded as a member and the join
+/// reported success. Now that failure is undone - the row removed, the
+/// others reconciled without it - and returned.
+///
+/// Then the Node's firewall, which is what opens the WireGuard port; the
+/// join never did that, so on a Node with ufw enforcing, no peer could ever
+/// reach it. And only then the handshake check, which is the first point
+/// at which "joined" can mean "reachable".
 pub async fn join_node(
     network_repo: &NodeNetworkRepository,
     server_repo: &ServerRepository,
+    app_repo: &ApplicationRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     server_id: Uuid,
-) -> AppResult<NodeNetworkMember> {
+) -> AppResult<JoinOutcome> {
     let server = server_repo.get(server_id)?.ok_or_else(|| AppError::NotFound(format!("server {server_id}")))?;
     require_ssh_mode(&server)?;
     if let Some(existing) = network_repo.get(server_id)? {
-        return Ok(existing);
+        return Ok(JoinOutcome { member: existing, warnings: vec![] });
     }
 
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
@@ -64,20 +127,101 @@ pub async fn join_node(
     let public_key = wireguard::ensure_keypair(&connection).await?;
     let member = network_repo.join(server_id, &public_key)?;
 
-    reconcile_mesh(network_repo, server_repo, sessions).await?;
-    Ok(member)
+    let results = match reconcile_mesh(network_repo, server_repo, sessions).await {
+        Ok(results) => results,
+        Err(err) => {
+            undo_join(network_repo, server_repo, sessions, server_id).await;
+            return Err(err);
+        }
+    };
+    if let Some(own) = results.iter().find(|result| result.server_id == server_id && !result.ok) {
+        let detail = own.error.clone().unwrap_or_default();
+        undo_join(network_repo, server_repo, sessions, server_id).await;
+        return Err(AppError::Connection(format!("the tunnel couldn't be brought up on this Node, so it hasn't joined the Vibe Network: {detail}")));
+    }
+
+    let mut warnings = peer_warnings(&results, server_id);
+    warnings.extend(firewall_warning(
+        crate::services::firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await,
+    ));
+    // Nobody to shake hands with when this is the first member.
+    if results.len() > 1 {
+        let answered = match get_or_connect(server_repo, sessions, server_id).await {
+            Ok(connection) => wireguard::await_handshake(&connection).await,
+            Err(err) => Err(err),
+        };
+        match answered {
+            Ok(true) => {}
+            Ok(false) => warnings.push(NetworkWarning::NoHandshake),
+            Err(err) => {
+                log::warn!("couldn't check the tunnel on server {server_id} after joining: {err}");
+                warnings.push(NetworkWarning::NoHandshake);
+            }
+        }
+    }
+    Ok(JoinOutcome { member, warnings })
 }
 
-/// Tears down this Node's own interface (best-effort - an unreachable Node
-/// still gets removed from the membership ledger, it just can't be told to
-/// clean up its own side), then reconciles the remaining members so they
-/// drop the departed peer from their own configs.
+/// Takes back a join that did not work. Best-effort by nature - it runs
+/// because something already failed, and that failure is what the caller
+/// returns - but each step that does not work is logged, not dropped.
+async fn undo_join(network_repo: &NodeNetworkRepository, server_repo: &ServerRepository, sessions: &SshSessionManager, server_id: Uuid) {
+    match get_or_connect(server_repo, sessions, server_id).await {
+        Ok(connection) => {
+            if let Err(err) = wireguard::teardown(&connection).await {
+                log::warn!("couldn't take down the half-joined interface on server {server_id}: {err}");
+            }
+        }
+        Err(err) => log::warn!("couldn't reach server {server_id} to take down its half-joined interface: {err}"),
+    }
+    if let Err(err) = network_repo.leave(server_id) {
+        log::error!("couldn't remove the failed join of server {server_id} from the Vibe Network: {err}");
+        return;
+    }
+    match reconcile_mesh(network_repo, server_repo, sessions).await {
+        Ok(results) => {
+            for failed in results.iter().filter(|result| !result.ok) {
+                log::warn!("server {} still lists the Node whose join failed as a peer: {}", failed.server_id, failed.error.clone().unwrap_or_default());
+            }
+        }
+        Err(err) => log::warn!("couldn't reconcile the Vibe Network after undoing a failed join: {err}"),
+    }
+}
+
+/// Tears down this Node's own interface, then reconciles the remaining
+/// members so they drop the departed peer from their own configs.
+///
+/// **Everything the membership put on the Node goes.** The interface and its
+/// systemd unit (`wireguard::teardown`), the private DNS block in
+/// `/etc/hosts`, which only the remaining members were ever re-synced
+/// and which this Node kept pointing at mesh addresses, and the WireGuard
+/// port in its firewall, which stayed open.
+///
+/// **Refused while a port depends on the mesh.** A "Vibe Network only"
+/// port is bound to this Node's mesh address, which stops existing here:
+/// the Application would fail to start with "cannot assign requested
+/// address", and quietly re-binding it anywhere else would widen who can
+/// reach it. The operator decides where each one goes first.
 pub async fn leave_node(
     network_repo: &NodeNetworkRepository,
     server_repo: &ServerRepository,
+    app_repo: &ApplicationRepository,
+    firewall_rule_repo: &FirewallRuleRepository,
     sessions: &SshSessionManager,
     server_id: Uuid,
-) -> AppResult<()> {
+) -> AppResult<Vec<NetworkWarning>> {
+    let mut mesh_ports = Vec::new();
+    for application in app_repo.list_by_server(server_id)? {
+        for port in app_repo.list_ports(application.id)? {
+            if port.visibility == crate::models::PortVisibility::VibeNetwork {
+                mesh_ports.push(format!("{} - {}", application.name, port.name));
+            }
+        }
+    }
+    if !mesh_ports.is_empty() {
+        return Err(AppError::NetworkLeaveHasMeshPorts { ports: mesh_ports });
+    }
+
     // The row is only removed once the Node has actually been torn down.
     //
     // Previously the teardown result was discarded and the row removed
@@ -90,9 +234,16 @@ pub async fn leave_node(
     // even checking the result would not have helped until it stopped.
     let connection = get_or_connect(server_repo, sessions, server_id).await?;
     wireguard::teardown(&connection).await?;
+    let mut warnings = Vec::new();
+    if let Err(err) = crate::services::dns_service::clear_hosts_block(&connection).await {
+        warnings.push(NetworkWarning::Dns { server_id: Some(server_id), message: err.to_string() });
+    }
     network_repo.leave(server_id)?;
-    reconcile_mesh(network_repo, server_repo, sessions).await?;
-    Ok(())
+    warnings.extend(peer_warnings(&reconcile_mesh(network_repo, server_repo, sessions).await?, server_id));
+    warnings.extend(firewall_warning(
+        crate::services::firewall_service::reconcile_node(app_repo, server_repo, network_repo, firewall_rule_repo, sessions, server_id).await,
+    ));
+    Ok(warnings)
 }
 
 /// Re-derives and re-applies the full peer set for every current member -
@@ -376,4 +527,74 @@ pub async fn sync_vibe_network(
         });
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CreateApplicationInput, PortInput, PortProtocol, PortVisibility, RuntimeType};
+
+    /// Leaving takes the mesh address away, and a port bound to it would
+    /// never start again. Refused before anything on the Node is touched -
+    /// the server here is not even reachable - and the membership stays.
+    #[tokio::test]
+    async fn a_node_with_vibe_network_only_ports_cannot_leave() {
+        let path = std::env::temp_dir().join(format!("vibessh-network-service-test-{}.sqlite3", Uuid::new_v4()));
+        let server_repo = ServerRepository::open(&path).unwrap();
+        let network_repo = NodeNetworkRepository::open(&path).unwrap();
+        let app_repo = ApplicationRepository::open(&path).unwrap();
+        let firewall_rule_repo = FirewallRuleRepository::open(&path).unwrap();
+        let sessions = SshSessionManager::new();
+
+        let server = server_repo
+            .create(&crate::models::ServerInput {
+                name: "Unreachable".into(),
+                host: "127.0.0.1".into(),
+                ssh_port: 1,
+                username: "root".into(),
+                authentication_type: crate::models::AuthenticationType::Password,
+                private_key_path: None,
+                group_id: None,
+                password: Some("x".into()),
+                key_passphrase: None,
+            })
+            .unwrap();
+        network_repo.join(server.id, "K4hV1cB0mQ2sT7nZ9xY3lJ6pR8dW5gA0fE1uI2oC3vM=").unwrap();
+        let app = app_repo
+            .create(&CreateApplicationInput {
+                server_id: Some(server.id),
+                name: "Database".into(),
+                description: None,
+                blueprint_id: "generic-docker".into(),
+                blueprint_version: 1,
+                runtime_type: RuntimeType::Docker,
+                working_directory: "/srv/db".into(),
+                environment: vec![],
+                ports: vec![],
+                runtime_config: serde_json::json!({}),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        app_repo
+            .add_port(
+                app.application.id,
+                &PortInput {
+                    name: "mysql".into(),
+                    protocol: PortProtocol::Tcp,
+                    bind_address: "10.77.0.1".into(),
+                    internal_port: 3306,
+                    external_port: Some(3306),
+                    visibility: PortVisibility::VibeNetwork,
+                    required: false,
+                },
+            )
+            .unwrap();
+
+        let err = leave_node(&network_repo, &server_repo, &app_repo, &firewall_rule_repo, &sessions, server.id).await.unwrap_err();
+        match err {
+            AppError::NetworkLeaveHasMeshPorts { ports } => assert_eq!(ports, vec!["Database - mysql".to_string()]),
+            other => panic!("expected the mesh-ports refusal, got {other}"),
+        }
+        assert!(network_repo.get(server.id).unwrap().is_some(), "a refused leave must not remove the membership");
+    }
 }

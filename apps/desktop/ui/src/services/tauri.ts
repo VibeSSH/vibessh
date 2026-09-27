@@ -36,6 +36,7 @@ export type ErrorCode =
   | "migration_has_databases"
   | "database_bind_unsupported"
   | "database_firewall_rule_failed"
+  | "network_leave_has_mesh_ports"
   // Vibe AI. Four codes rather than one because the remedy differs: fix the
   // settings, replace the key, correct the model name, or wait and retry.
   | "ai_not_configured"
