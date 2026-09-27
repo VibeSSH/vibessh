@@ -35,6 +35,26 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// far short of forever.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// The sbin directories, appended to whatever PATH the account's exec
+/// channel starts with.
+///
+/// An SSH exec channel gets the account's non-login PATH, and for anyone but
+/// root on Debian that has no sbin directory: `ufw`, `ip`, `iptables` and
+/// `useradd` all look absent to `command -v`. A non-root admin was told ufw
+/// was "missing" on a Node that had it enforcing, the Firewall page lost its
+/// backend, and member firewall rules were dropped - one cause behind a
+/// whole group of findings, fixed here once rather than at each probe.
+///
+/// Appended, not prepended, so the account's own order still wins. It
+/// changes where a bare name is found, never what `sudo` allows: sudo
+/// matches the command it is given against its own rules and resolves it
+/// with `secure_path`, not this.
+const ADMIN_PATH_PREFIX: &str = r#"PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"; export PATH; "#;
+
+fn with_admin_path(command: &str) -> String {
+    format!("{ADMIN_PATH_PREFIX}{command}")
+}
+
 /// Keepalive, not a deadline.
 ///
 /// This used to be a 60-second `inactivity_timeout`, which tore down the
@@ -467,7 +487,7 @@ impl SshSession {
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel: {err}")))?;
         channel
-            .exec(true, command)
+            .exec(true, with_admin_path(command))
             .await
             .map_err(|err| AppError::Connection(format!("couldn't run the command: {err}")))?;
         if let Some(input) = input {
@@ -534,7 +554,7 @@ impl SshSession {
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel on the target: {err}")))?;
         target_channel
-            .exec(true, target_command)
+            .exec(true, with_admin_path(target_command))
             .await
             .map_err(|err| AppError::Connection(format!("couldn't start the receiving command: {err}")))?;
         // Read concurrently with the writes below: the target's messages
@@ -560,7 +580,7 @@ impl SshSession {
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open an SSH channel on the source: {err}")))?;
         source_channel
-            .exec(true, command)
+            .exec(true, with_admin_path(command))
             .await
             .map_err(|err| AppError::Connection(format!("couldn't start the sending command: {err}")))?;
 
@@ -744,7 +764,7 @@ impl SshSession {
             .await
             .map_err(|err| AppError::Connection(format!("couldn't open a log channel: {err}")))?;
         channel
-            .exec(true, command)
+            .exec(true, with_admin_path(command))
             .await
             .map_err(|err| AppError::Connection(format!("couldn't start following the log: {err}")))?;
 
@@ -987,6 +1007,23 @@ fn classify_connect_error(err: &russh::Error, seen: &Arc<Mutex<SeenHostKey>>, ho
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Run through a real shell: sbin is on the PATH the command sees, the
+    /// command is otherwise untouched, and its exit code is still its own -
+    /// every caller that reads one depends on that.
+    #[test]
+    fn every_command_sees_sbin_and_keeps_its_own_exit_code() {
+        let run = |command: &str| std::process::Command::new("sh").arg("-c").arg(with_admin_path(command)).env("PATH", "/usr/bin:/bin").output();
+        match (run("printf '%s' \"$PATH\""), run("exit 3")) {
+            (Ok(path), Ok(exit)) => {
+                let path = String::from_utf8_lossy(&path.stdout).to_string();
+                assert!(path.starts_with("/usr/bin:/bin:"), "the account's own PATH must come first: {path}");
+                assert!(path.split(':').any(|dir| dir == "/usr/sbin"), "{path}");
+                assert_eq!(exit.status.code(), Some(3));
+            }
+            _ => eprintln!("no POSIX shell on PATH - skipped"),
+        }
+    }
 
     #[test]
     fn a_host_key_family_round_trips_through_its_name() {

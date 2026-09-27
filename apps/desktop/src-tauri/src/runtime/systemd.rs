@@ -6,19 +6,19 @@
 //! docs/architecture/APPLICATIONS_ARCHITECTURE.md Section 5.3 for the design and why
 //! this is SSH-only (no Agent path) for now.
 //!
-//! **Known limitation, stated rather than hidden**: units are written to
-//! `/etc/systemd/system/`, which needs the SSH-authenticated user to have
-//! write access there (typically root, or passwordless sudo - VibeSSH does
-//! not prompt for a sudo password over the exec channel). A non-privileged
-//! SSH user will see `start()`/`restart()` fail with the underlying
-//! permission error surfaced as-is, not a silent no-op.
+//! **Every write goes through `sudo`.** Units live in `/etc/systemd/system/`
+//! and their environment in `/etc/vibessh/env`, neither writable by anyone
+//! but root. They used to be written over SFTP as the connecting account and
+//! reloaded with a bare `systemctl daemon-reload`, so for an admin with
+//! passwordless sudo - the setup the rest of VibeSSH supports - the systemd
+//! runtime simply did not work. Content goes to `sudo tee` on stdin, never
+//! in a command line (AGENTS.md rule 2).
 //!
-//! **Known gap**: the `ApplicationRuntime` trait (Phase 0) has no
-//! `destroy()`/`remove()` method, so nothing here deletes the unit file
-//! when an Application itself is deleted - that has to be wired into
-//! whatever future commands-layer phase handles Application deletion for
-//! Remote/Systemd applications, not something a `start`/`stop`/`kill`-only
-//! trait can express on its own.
+//! **Deleting the Application removes the unit** (`destroy`). The trait had
+//! no such method when this was written, and once it did, this runtime never
+//! implemented it: a deleted Application's service kept running, enabled
+//! across reboots, with its environment file - passwords included - left in
+//! `/etc/vibessh/env`.
 
 use std::sync::Arc;
 
@@ -222,6 +222,19 @@ fn render_unit_file(ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResu
 /// small enough to ignore. The contents then travel over SFTP, so they never
 /// appear in a command line either - `/proc/<pid>/cmdline` is world-readable
 /// on Linux and `ps` is how somebody would look.
+/// Replaces a root-owned file's contents from stdin. The file has to exist
+/// already, with the mode it should keep - `tee` truncates and writes, it
+/// does not change the mode - and the directory must be root's alone, so no
+/// other account could have put a symlink where the path points.
+async fn write_as_root(connection: &SshSession, path: &str, contents: &[u8]) -> AppResult<()> {
+    let output = connection.execute_command_with_input(&format!("sudo tee {} >/dev/null", crate::ssh::command::quote(path)), contents).await?;
+    if output.exit_code != 0 {
+        let detail = output.stderr.trim();
+        return Err(AppError::Connection(format!("couldn't write {path}: {}", if detail.is_empty() { "sudo tee failed" } else { detail })));
+    }
+    Ok(())
+}
+
 async fn write_environment_file(connection: &SshSession, unit: &str, environment: &[crate::models::EnvironmentVariable]) -> AppResult<()> {
     let path = env_path(unit);
     let prepare = format!(
@@ -245,7 +258,7 @@ async fn write_environment_file(connection: &SshSession, unit: &str, environment
         contents.push_str(&env.value);
         contents.push('\n');
     }
-    connection.write_file(&path, contents.as_bytes()).await
+    write_as_root(connection, &path, contents.as_bytes()).await
 }
 
 async fn write_unit(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &SystemdConfig) -> AppResult<String> {
@@ -257,13 +270,18 @@ async fn write_unit(connection: &SshSession, ctx: &RuntimeContext<'_>, config: &
     if !ctx.environment.is_empty() {
         write_environment_file(connection, &unit, ctx.environment).await?;
     }
-    connection.write_file(&unit_path(&unit), unit_file.as_bytes()).await?;
+    let path = unit_path(&unit);
+    let prepare = connection.execute_command(&format!("sudo install -T -m 644 /dev/null {}", crate::ssh::command::quote(&path))).await?;
+    if prepare.exit_code != 0 {
+        return Err(AppError::Connection(format!("couldn't create the unit file: {}", prepare.stderr.trim())));
+    }
+    write_as_root(connection, &path, unit_file.as_bytes()).await?;
     run_daemon_reload(connection).await?;
     Ok(unit)
 }
 
 async fn run_daemon_reload(connection: &SshSession) -> AppResult<()> {
-    let output = connection.execute_command("systemctl daemon-reload").await?;
+    let output = connection.execute_command("sudo systemctl daemon-reload").await?;
     if output.exit_code != 0 {
         let detail = output.stderr.trim();
         let detail = if detail.is_empty() { "systemctl daemon-reload failed".to_string() } else { detail.to_string() };
@@ -412,6 +430,38 @@ impl ApplicationRuntime for SystemdRuntime {
         let connection = connection_arc(ctx)?;
         Ok(Box::new(SystemdLogs { connection, unit: unit_name(ctx.application.id) }))
     }
+
+    async fn destroy(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        let connection = connection_ref(ctx)?;
+        let unit = unit_name(ctx.application.id);
+        validate_unit_name(&unit)?;
+        let output = connection.execute_command(&destroy_script(&unit)).await?;
+        if output.exit_code != 0 {
+            let detail = output.stderr.trim();
+            return Err(AppError::Connection(format!(
+                "couldn't remove the systemd unit {unit}: {}",
+                if detail.is_empty() { "the removal failed" } else { detail }
+            )));
+        }
+        Ok(())
+    }
+}
+
+/// Stops, disables and removes the unit and its environment file.
+///
+/// `disable --now` has nothing to do for a unit that was never started, so
+/// its exit code says nothing; what decides is the end state - no unit
+/// file, no environment file, and nothing running under the name.
+fn destroy_script(unit: &str) -> String {
+    let unit_file = crate::ssh::command::quote(&unit_path(unit));
+    let env_file = crate::ssh::command::quote(&env_path(unit));
+    format!(
+        "sudo systemctl disable --now {unit} >/dev/null 2>&1; \
+         sudo rm -f {unit_file} {env_file} || exit 1; \
+         sudo systemctl daemon-reload || exit 1; \
+         sudo systemctl reset-failed {unit} >/dev/null 2>&1; \
+         if systemctl is-active --quiet {unit}; then echo 'the service is still running' >&2; exit 1; fi"
+    )
 }
 
 struct SystemdLogs {
@@ -426,7 +476,10 @@ impl LogProvider for SystemdLogs {
         let max_lines = max_lines.clamp(1, 5000);
         let output = self
             .connection
-            .execute_command(&format!("journalctl -u {} -n {max_lines} --no-pager --output=short-iso", self.unit))
+            // Through sudo: a system unit's journal is readable only by root
+            // and the systemd-journal group, and without it a non-root admin
+            // got an empty log rather than an error.
+            .execute_command(&format!("sudo journalctl -u {} -n {max_lines} --no-pager --output=short-iso", self.unit))
             .await?;
         Ok(output.stdout.lines().map(str::to_string).collect())
     }
@@ -602,6 +655,22 @@ mod tests {
         assert_eq!(parse_ps_cpu_and_ram(""), (None, None));
     }
 
+    /// A deleted Application's unit used to stay enabled and running, with
+    /// its environment file - passwords included - left behind.
+    #[test]
+    fn destroy_removes_the_unit_its_environment_and_what_is_running() {
+        let unit = unit_name(Uuid::new_v4());
+        let script = destroy_script(&unit);
+        assert!(script.contains(&format!("sudo systemctl disable --now {unit}")), "{script}");
+        assert!(script.contains(&unit_path(&unit)) && script.contains(&env_path(&unit)), "{script}");
+        assert!(script.contains("sudo systemctl daemon-reload"), "{script}");
+        assert!(script.contains(&format!("systemctl is-active --quiet {unit}")), "the end state is never checked:\n{script}");
+        match std::process::Command::new("sh").arg("-n").arg("-c").arg(&script).output() {
+            Ok(output) => assert!(output.status.success(), "not valid shell: {}", String::from_utf8_lossy(&output.stderr)),
+            Err(_) => eprintln!("no POSIX shell on PATH - skipped"),
+        }
+    }
+
     #[tokio::test]
     async fn methods_that_need_a_connection_fail_cleanly_without_one() {
         let application = stub_application(Uuid::new_v4());
@@ -613,5 +682,6 @@ mod tests {
         assert!(matches!(runtime.start(&ctx).await, Err(AppError::Internal(_))));
         assert!(matches!(runtime.status(&ctx).await, Err(AppError::Internal(_))));
         assert!(matches!(runtime.logs(&ctx).await, Err(AppError::Internal(_))));
+        assert!(matches!(runtime.destroy(&ctx).await, Err(AppError::Internal(_))), "destroy must not report a unit removed without reaching the Node");
     }
 }

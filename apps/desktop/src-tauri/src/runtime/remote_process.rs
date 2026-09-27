@@ -334,6 +334,37 @@ impl ApplicationRuntime for RemoteProcessRuntime {
         Ok(())
     }
 
+    /// Ends the process and removes the pid, log and stdin files beside it.
+    ///
+    /// Deleting the Application used to leave the process running - nothing
+    /// implemented this - holding its port, with nothing left in VibeSSH
+    /// that knew its pid.
+    async fn destroy(&self, ctx: &RuntimeContext<'_>) -> AppResult<()> {
+        let connection = connection_ref(ctx)?;
+        if let Some(pid) = read_pid_file(connection, ctx).await? {
+            if is_process_alive(connection, pid).await? {
+                connection.execute_command(&format!("kill -TERM {pid}")).await?;
+                wait_until_stopped(connection, pid, Duration::from_secs(10)).await;
+                if is_process_alive(connection, pid).await? {
+                    connection.execute_command(&format!("kill -KILL {pid}")).await?;
+                    wait_until_stopped(connection, pid, Duration::from_secs(5)).await;
+                }
+                if is_process_alive(connection, pid).await? {
+                    return Err(AppError::Connection(format!("process {pid} is still running after SIGKILL")));
+                }
+            }
+        }
+        let files: Vec<String> = [pid_file_name(ctx.application.id), log_file_name(ctx.application.id), fifo_file_name(ctx.application.id)]
+            .iter()
+            .map(|name| shell_quote(&remote_path(&ctx.application.working_directory, name)))
+            .collect();
+        let output = connection.execute_command(&format!("rm -f {}", files.join(" "))).await?;
+        if output.exit_code != 0 {
+            return Err(AppError::Connection(format!("the process is gone, but its files couldn't be removed: {}", output.stderr.trim())));
+        }
+        Ok(())
+    }
+
     async fn status(&self, ctx: &RuntimeContext<'_>) -> AppResult<ApplicationStatus> {
         let connection = connection_ref(ctx)?;
         match read_pid_file(connection, ctx).await? {
