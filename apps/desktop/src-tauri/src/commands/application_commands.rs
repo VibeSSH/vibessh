@@ -225,10 +225,11 @@ pub async fn delete_application(
     sessions: State<'_, SshSessionManager>,
     local_process_manager: State<'_, Arc<LocalProcessManager>>,
     log_capture: State<'_, LogCaptureStore>,
+    cloud: State<'_, crate::state::CloudState>,
     id: Uuid,
     remove_files: Option<bool>,
 ) -> AppResult<services::ApplicationTeardownReport> {
-    services::delete_application(
+    let mut report = services::delete_application(
         &repo,
         &server_repo,
         &db_repo,
@@ -242,7 +243,13 @@ pub async fn delete_application(
         id,
         services::ApplicationDeleteOptions { drop_databases: true, remove_files: remove_files.unwrap_or(false) },
     )
-    .await
+    .await?;
+    // Off every team too, now that every application on a team's Node is
+    // shared: otherwise its teammates keep a copy of something that is gone.
+    for warning in services::team_application_service::unshare_everywhere(&cloud, id).await {
+        report.warnings.push(format!("couldn't remove it from a team: {warning}"));
+    }
+    Ok(report)
 }
 
 /// Writes a visible break into the captured log when a new run begins.

@@ -54,6 +54,10 @@ Muszą być spełnione dwa warunki:
 
 Członek nie powinien dodawać serwera zespołu ręcznie. Jego aplikacja robi to sama, na właściwe konto.
 
+## Aplikacje na serwerze zespołu
+
+Każda aplikacja na udostępnionym serwerze jest udostępniana zespołowi automatycznie, także te dodane później. Co członek może z nimi zrobić, wynika z jego roli. Żeby ograniczyć jedną aplikację do wybranych osób, dodaj je w zakładce **Użytkownicy** tej aplikacji.
+
 ## Jak sprawdzić, czy działa
 
 - Osoba jest na liście **Członkowie**.

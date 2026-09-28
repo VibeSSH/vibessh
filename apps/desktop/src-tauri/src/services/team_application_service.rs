@@ -45,15 +45,55 @@ fn visibility_name(visibility: PortVisibility) -> &'static str {
 /// It is written as an explicit blank anyway: relying on a guarantee made
 /// somewhere else, silently, is how the guarantee gets removed by somebody
 /// who does not know this depends on it.
+/// The environment as the team sees it: every key, and the value only when
+/// it is plainly not a secret.
+///
+/// A variable nobody marked secret is not therefore safe to publish - an
+/// `RCON_PASSWORD` typed in as an ordinary variable is still a password.
+/// Now that every application on a team's Node is shared on its own, not
+/// only the ones somebody chose to share, a value whose key looks like a
+/// secret is withheld too, by the same rule the AI assistant redacts with.
 fn project_environment(environment: &[EnvironmentVariable]) -> Vec<CloudApplicationEnvironment> {
     environment
         .iter()
-        .map(|variable| CloudApplicationEnvironment {
-            key: variable.key.clone(),
-            value: if variable.is_secret { String::new() } else { variable.value.clone() },
-            is_secret: variable.is_secret,
+        .map(|variable| {
+            let secret = variable.is_secret || crate::ai::sanitizer::is_secret_key(&variable.key);
+            CloudApplicationEnvironment {
+                key: variable.key.clone(),
+                value: if secret { String::new() } else { variable.value.clone() },
+                is_secret: secret,
+            }
         })
         .collect()
+}
+
+/// Takes one Application off every team it is shared with - for when it is
+/// deleted. Its shared copy used to outlive it, so teammates kept seeing an
+/// application that no longer existed. Returns what could not be removed.
+pub async fn unshare_everywhere(cloud: &CloudState, local_id: Uuid) -> Vec<String> {
+    if crate::services::cloud_service::session_info(cloud).await.is_none() {
+        return vec![];
+    }
+    let teams = match crate::services::cloud_service::list_teams(cloud).await {
+        Ok(teams) => teams,
+        Err(err) => return vec![format!("couldn't check which teams this application was shared with: {err}")],
+    };
+    let mut warnings = Vec::new();
+    for team in teams {
+        let shared = match crate::services::cloud_service::list_team_applications(cloud, team.id).await {
+            Ok(shared) => shared,
+            Err(err) => {
+                warnings.push(format!("couldn't check team {}: {err}", team.name));
+                continue;
+            }
+        };
+        for projection in shared.into_iter().filter(|projection| projection.local_id == local_id) {
+            if let Err(err) = crate::services::cloud_service::remove_team_application(cloud, team.id, projection.id).await {
+                warnings.push(format!("it is still shared with team {}: {err}", team.name));
+            }
+        }
+    }
+    warnings
 }
 
 /// Publishes one Application to a team, replacing any earlier snapshot.
@@ -168,6 +208,18 @@ mod tests {
 
     fn variable(key: &str, value: &str, is_secret: bool) -> EnvironmentVariable {
         EnvironmentVariable { key: key.into(), value: value.into(), is_secret }
+    }
+
+    /// Every application on a team's Node is shared on its own now, so a
+    /// password somebody typed in as an ordinary variable must not ride
+    /// along with it.
+    #[test]
+    fn a_value_whose_key_looks_like_a_secret_is_withheld_even_when_unmarked() {
+        let projected = project_environment(&[variable("RCON_PASSWORD", "hunter2", false), variable("MAX_PLAYERS", "40", false)]);
+        assert_eq!(projected[0].value, "", "an unmarked password was published");
+        assert!(projected[0].is_secret);
+        assert_eq!(projected[1].value, "40");
+        assert!(!projected[1].is_secret);
     }
 
     /// The one that matters: a secret's value must not be in the projection,

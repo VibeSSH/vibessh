@@ -249,10 +249,11 @@ pub async fn cloud_list_pending_revocations(
 #[tauri::command]
 pub async fn sync_administered_team_access(
     server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
+    app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
     sessions: State<'_, crate::state::SshSessionManager>,
     cloud: State<'_, CloudState>,
 ) -> AppResult<Vec<services::team_access_service::AccessSweepProblem>> {
-    services::team_access_service::sync_administered_team_access(&server_repo, &sessions, &cloud).await
+    services::team_access_service::sync_administered_team_access(&server_repo, &app_repo, &sessions, &cloud).await
 }
 
 /// Makes one Node hold exactly the access this team describes: every current

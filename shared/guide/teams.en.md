@@ -43,6 +43,8 @@ They sign in with it and must change it immediately. Until they do, their accoun
 
 Operation permissions only apply to servers shared with the team.
 
+Every application on a shared server is shared with the team too, including ones you add later. What a member may do with them comes from their role. To limit one application to named people, add them in that application's **Users** tab.
+
 ## What the new member sees
 
 Nothing to set up on their side. Within a few minutes of being added, their VibeSSH shows the team's servers and the applications shared with them. It signs in to each server as their own account on it, with a key made on their computer.

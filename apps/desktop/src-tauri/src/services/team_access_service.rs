@@ -217,10 +217,20 @@ fn fingerprint(members: &[CloudMemberAccess], revocations: &[crate::models::Clou
 /// in to the Node as its administrator can already do everything a sync
 /// does, so running it there grants nobody anything new.
 ///
+/// **Every application on a team's Node is shared with the team.** Sharing
+/// the Node is the decision; the applications on it follow, new ones
+/// included, and a role decides what each member may do with them. They
+/// used to be shared one by one from each application's Users tab, so a
+/// member added to a team saw its Node and none of what ran there - and one
+/// shared before the projection recorded its Node was inert until somebody
+/// happened to open that tab. The Users tab still narrows one application
+/// down to named people.
+///
 /// It needs this app running. The backend holds no credentials for any
 /// Node, by design, so there is nothing else that could do it.
 pub async fn sync_administered_team_access(
     server_repo: &ServerRepository,
+    app_repo: &crate::storage::application_repository::ApplicationRepository,
     sessions: &SshSessionManager,
     cloud: &CloudState,
 ) -> AppResult<Vec<AccessSweepProblem>> {
@@ -236,12 +246,13 @@ pub async fn sync_administered_team_access(
             let servers = crate::services::cloud_service::list_servers(cloud, team.id).await?;
             let members = crate::services::cloud_service::list_team_access(cloud, team.id).await?;
             let revocations = crate::services::cloud_service::list_pending_revocations(cloud, team.id).await?;
-            AppResult::Ok((servers, members, revocations))
+            let shared = crate::services::cloud_service::list_team_applications(cloud, team.id).await?;
+            AppResult::Ok((servers, members, revocations, shared))
         }
         .await;
         // Left for the next run: a team that could not be read says nothing
         // about what its Nodes should hold.
-        let Ok((servers, members, revocations)) = read else { continue };
+        let Ok((servers, members, revocations, shared)) = read else { continue };
 
         for team_server in &servers {
             let Ok(port) = u16::try_from(team_server.ssh_port) else { continue };
@@ -253,6 +264,34 @@ pub async fn sync_administered_team_access(
             }) else {
                 continue;
             };
+
+            // This install's own applications on the Node that the team does
+            // not have yet, or has without knowing which Node they are on.
+            // An application somebody else shared with this account is theirs
+            // to share, not this install's.
+            let mut share_failures = Vec::new();
+            for application in app_repo.list_by_server(local.id)? {
+                if app_repo.shared_access(application.id)?.is_some() {
+                    continue;
+                }
+                let projection = shared.iter().find(|projection| projection.local_id == application.id);
+                if projection.is_some_and(|projection| projection.team_server_id == Some(team_server.id)) {
+                    continue;
+                }
+                if let Err(err) = crate::services::team_application_service::share_application(app_repo, server_repo, cloud, team.id, application.id, Some(team_server.id)).await {
+                    log::warn!("couldn't share {} with team {}: {err}", application.name, team.name);
+                    share_failures.push(application.name.clone());
+                }
+            }
+            if !share_failures.is_empty() {
+                problems.push(AccessSweepProblem {
+                    team_server_id: team_server.id,
+                    server_name: team_server.name.clone(),
+                    error: Some(format!("couldn't share {} with the team", share_failures.join(", "))),
+                    members: vec![],
+                });
+            }
+
             let wanted = fingerprint(&members, &revocations, team_server.id, local.id);
             if LAST_SWEPT.lock().expect("access sweep mutex poisoned").get(&team_server.id) == Some(&wanted) {
                 continue;
