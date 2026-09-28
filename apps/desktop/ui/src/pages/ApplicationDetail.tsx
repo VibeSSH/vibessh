@@ -32,7 +32,7 @@ import { useMinecraftStatus } from "@/hooks/useMinecraftStatus";
 import { SchedulerStatusCard } from "@/components/applications/SchedulerStatusCard";
 import { useSchedulerStatus } from "@/hooks/useSchedulerStatus";
 import { useLiveResourceStats } from "@/hooks/useLiveResourceStats";
-import type { ResourceStatsSample } from "@/services/applicationService";
+import { refreshApplicationStatus, type ResourceStatsSample } from "@/services/applicationService";
 import { ApplicationConfigCard } from "@/components/applications/ApplicationConfigCard";
 import { BlueprintSwitchCard } from "@/components/applications/BlueprintSwitchCard";
 import { CommandConsoleCard } from "@/components/applications/CommandConsoleCard";
@@ -198,6 +198,30 @@ export function ApplicationDetail() {
     refetchInterval: POLL_INTERVALS.applicationDetail,
   });
   const application = applicationQuery.data ?? null;
+
+  /**
+   * The status as the runtime reports it now, not as it was last written.
+   *
+   * `getApplication` reads the stored status, which only a start, stop or
+   * restart made from this install ever wrote. A container that crashed, or
+   * one somebody else started, kept showing its old state - and a teammate's
+   * shared application showed "Unknown" with a Start button while its
+   * console scrolled with the running server's log. Asked of the Node itself
+   * (one `docker inspect` or `systemctl status`), which also persists it.
+   */
+  const statusQuery = useQuery({
+    queryKey: [...queryKeys.application(id ?? ""), "status"],
+    queryFn: () => refreshApplicationStatus(id as string),
+    enabled: Boolean(id) && application !== null,
+    refetchInterval: POLL_INTERVALS.applicationDetail,
+  });
+  useEffect(() => {
+    const live = statusQuery.data;
+    if (!id || !live) return;
+    queryClient.setQueryData<ApplicationDetail>(queryKeys.application(id), (old) =>
+      old && old.status !== live ? { ...old, status: live } : old,
+    );
+  }, [id, statusQuery.data, queryClient]);
 
   // Opening an Application puts it in the strip. Done here rather than at
   // the click that navigated, because an Application can be reached from a

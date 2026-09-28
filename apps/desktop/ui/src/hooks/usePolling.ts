@@ -27,6 +27,8 @@ export const POLL_INTERVALS = {
   dashboardOverview: 20000,
   /** Due-backup check. Not a network poll - see `pauseWhenHidden`. */
   backupScheduler: 15 * 60 * 1000,
+  /** Every application's status on the Applications list, asked of its runtime - see `refreshAllStatuses` there. Slower than the detail page's: it is one command per application. */
+  applicationStatuses: 30000,
   /** Team access and shared applications - see `useTeamSync`. Short enough that a new member sees their applications within minutes of being added; each tick is a few requests, and SSH only when a team actually changed. */
   teamSync: 2 * 60 * 1000,
 } as const;

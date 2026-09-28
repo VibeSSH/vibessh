@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { POLL_INTERVALS, usePolling } from "@/hooks/usePolling";
 import { DndContext, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
 import { CardPointerSensor, SortableApplicationCard } from "@/components/applications/SortableApplicationCard";
@@ -19,6 +20,7 @@ import {
   killApplication,
   listApplications,
   listBlueprints,
+  refreshApplicationStatus,
   restartApplication,
   startApplication,
   stopApplication,
@@ -205,6 +207,30 @@ export function Applications() {
       .then((rows) => setSharedAccess(new Map(rows.map((row) => [row.applicationId, row]))))
       .catch(() => setSharedAccess(new Map()));
   }
+
+  /**
+   * Every status as its runtime reports it, not as it was last written -
+   * see the status query on the detail page for why the stored one goes
+   * stale. Three at a time: a list of many applications on one Node is
+   * that many commands, and sshd limits how many run at once.
+   */
+  const refreshAllStatuses = useCallback(async () => {
+    const current = await listApplications().catch(() => []);
+    let next = 0;
+    let changed = false;
+    const worker = async () => {
+      while (next < current.length) {
+        const application = current[next++];
+        const live = await refreshApplicationStatus(application.id).catch(() => null);
+        if (live && live !== application.status) changed = true;
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    // Each refresh persisted its answer, so the list re-read is the new one.
+    if (changed) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  usePolling(refreshAllStatuses, POLL_INTERVALS.applicationStatuses);
 
   useEffect(() => {
     reload();
