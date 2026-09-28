@@ -21,6 +21,15 @@
 //! **The backend is the list.** An Application no longer shared with this
 //! account, or in a team it has left, loses its local record at the next
 //! sync - the row only; the container is the owner's and is not touched.
+//!
+//! **The server entries are made here too.** Every Node a team shares gets
+//! an entry on this install logging in as the member account with this
+//! device's key. They used to come only from a button in Teams -> Servers,
+//! so being added to a team showed nothing until somebody found it, and a
+//! member who had instead added the Node by hand as `root` - which the
+//! team list, showing the owner's login, all but suggested - got a password
+//! prompt for an account that was never theirs. An entry this made is
+//! removed when no team shares that Node with this account any more.
 
 use std::collections::{HashMap, HashSet};
 
@@ -43,6 +52,18 @@ pub struct SharedSyncReport {
     pub added: usize,
     pub refreshed: usize,
     pub removed: usize,
+    /// Team Nodes that got an entry on this install.
+    pub servers_added: usize,
+    /// Entries this sync made earlier, for Nodes no team shares any more.
+    pub servers_removed: usize,
+}
+
+/// Whether a local server entry is one this sync made: the member account
+/// (a name only the backend hands out) and this device's own key. A Node
+/// somebody added by hand, under any other login or key, is theirs and is
+/// never touched.
+fn is_team_entry(username: &str, private_key_path: Option<&str>, device_key_path: &str) -> bool {
+    username.starts_with("vibessh-m-") && private_key_path == Some(device_key_path)
 }
 
 fn runtime_type_from_projection(name: &str) -> Option<RuntimeType> {
@@ -64,7 +85,12 @@ fn effective_permissions(role: &[String], granted: &[String]) -> Vec<String> {
         .collect()
 }
 
-pub async fn sync_shared_applications(app_repo: &ApplicationRepository, server_repo: &ServerRepository, cloud: &CloudState) -> AppResult<SharedSyncReport> {
+pub async fn sync_shared_applications(
+    app_repo: &ApplicationRepository,
+    server_repo: &ServerRepository,
+    cloud: &CloudState,
+    device_key_path: &str,
+) -> AppResult<SharedSyncReport> {
     let mut report = SharedSyncReport::default();
     // Signed out is not "nothing is shared any more": the records stay until
     // a signed-in sync says otherwise.
@@ -73,7 +99,10 @@ pub async fn sync_shared_applications(app_repo: &ApplicationRepository, server_r
     };
     let me = session.user.id;
     let teams = crate::services::cloud_service::list_teams(cloud).await?;
-    let local_servers = server_repo.list()?;
+    let mut local_servers = server_repo.list()?;
+    // Every Node a team shares with this account, as (host, port) - what a
+    // team entry is kept for.
+    let mut shared_nodes: HashSet<(String, u16)> = HashSet::new();
 
     let mut kept: HashSet<Uuid> = HashSet::new();
     // Teams this sync could read in full. Only their records are pruned: a
@@ -97,6 +126,41 @@ pub async fn sync_shared_applications(app_repo: &ApplicationRepository, server_r
             }
         };
         let Some(mine): Option<&CloudMemberAccess> = access.iter().find(|member| member.user_id == me) else { continue };
+
+        for team_server in &servers {
+            let Ok(port) = u16::try_from(team_server.ssh_port) else { continue };
+            if team_server.host.trim().is_empty() {
+                continue;
+            }
+            shared_nodes.insert((team_server.host.clone(), port));
+            // Not for the team's owner, who reaches their own Nodes as their
+            // administrator. Anybody else gets the member entry even if they
+            // already have one of their own for the address: that one may be
+            // exactly the hand-made `root` entry that never worked.
+            if team.owner_id == me {
+                continue;
+            }
+            let exists = local_servers.iter().any(|local| local.host == team_server.host && local.ssh_port == port && local.username == mine.node_username);
+            if exists {
+                continue;
+            }
+            let created = crate::services::server_service::create_server(
+                server_repo,
+                crate::models::ServerInput {
+                    name: team_server.name.clone(),
+                    host: team_server.host.clone(),
+                    ssh_port: port,
+                    username: mine.node_username.clone(),
+                    authentication_type: crate::models::AuthenticationType::PrivateKey,
+                    private_key_path: Some(device_key_path.to_string()),
+                    group_id: None,
+                    password: None,
+                    key_passphrase: None,
+                },
+            )?;
+            local_servers.push(created);
+            report.servers_added += 1;
+        }
         let granted: HashMap<Uuid, &Vec<String>> = mine.applications.iter().map(|grant| (grant.local_id, &grant.permissions)).collect();
 
         for application in &applications {
@@ -136,6 +200,21 @@ pub async fn sync_shared_applications(app_repo: &ApplicationRepository, server_r
         if !kept.contains(&id) && (team_gone || settled_teams.contains(&access.team_id)) {
             app_repo.forget_shared(id)?;
             report.removed += 1;
+        }
+    }
+
+    // Only when every team was read: a team whose listing failed says
+    // nothing about which Nodes are still shared.
+    if settled_teams.len() == teams.len() {
+        for local in server_repo.list()? {
+            if !is_team_entry(&local.username, local.private_key_path.as_deref(), device_key_path) || shared_nodes.contains(&(local.host.clone(), local.ssh_port)) {
+                continue;
+            }
+            match crate::services::server_service::delete_server(server_repo, app_repo, local.id) {
+                Ok(()) => report.servers_removed += 1,
+                // Something of this account's own is on it. Kept, and said.
+                Err(err) => log::warn!("{} is no longer shared with this account but couldn't be removed: {err}", local.name),
+            }
         }
     }
     Ok(report)
@@ -178,6 +257,18 @@ mod tests {
             keys(&["applications.console", "applications.files.read"])
         );
         assert!(effective_permissions(&keys(&["applications.delete", "applications.config"]), &[]).is_empty());
+    }
+
+    /// Removing a Node that stops being shared must never reach one the
+    /// person added themselves - as root, or as the member account with a
+    /// key of their own choosing.
+    #[test]
+    fn only_an_entry_this_sync_made_counts_as_one() {
+        let device = "/cfg/device_key";
+        assert!(is_team_entry("vibessh-m-0123456789ab", Some(device), device));
+        assert!(!is_team_entry("root", Some(device), device));
+        assert!(!is_team_entry("vibessh-m-0123456789ab", Some("/home/me/.ssh/id_ed25519"), device));
+        assert!(!is_team_entry("vibessh-m-0123456789ab", None, device));
     }
 
     #[test]

@@ -169,6 +169,122 @@ pub async fn sync_team_access(
     Ok(NodeAccessSync { members: results, revocations })
 }
 
+/// A Node's access that the automatic sweep could not bring in line.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessSweepProblem {
+    pub team_server_id: Uuid,
+    pub server_name: String,
+    /// The sync as a whole failed - the Node was unreachable, say.
+    pub error: Option<String>,
+    /// Members whose grant or revocation failed, by email.
+    pub members: Vec<String>,
+}
+
+/// What each Node was last brought in line with, as a fingerprint of the
+/// team's access list and pending revocations. Held for this run of the app:
+/// after a restart every Node is synced once more, which costs a few
+/// commands and settles anything that changed while the app was closed.
+static LAST_SWEPT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<Uuid, u64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn fingerprint(members: &[CloudMemberAccess], revocations: &[crate::models::CloudNodeRevocation], team_server_id: Uuid, local_server_id: Uuid) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    team_server_id.hash(&mut hasher);
+    local_server_id.hash(&mut hasher);
+    serde_json::to_string(members).unwrap_or_default().hash(&mut hasher);
+    for revocation in revocations.iter().filter(|row| row.team_server_id == team_server_id) {
+        revocation.id.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Brings every Node this install administers for a team in line with that
+/// team, whenever what the team says has changed.
+///
+/// **This is what makes adding a member enough.** Access used to be written
+/// to a Node only when somebody pressed Sync on it in Teams -> Servers, so a
+/// new member - or a new device, a changed role, an Application just shared
+/// - reached nobody until then, and a removed member kept their key. Run
+/// on a timer by the app: a Node is touched only when the team's access list
+/// or its pending revocations differ from what it was last synced with.
+///
+/// **Only where this install is the administrator.** A Node counts when this
+/// install has an SSH entry for it under an account of its own - not a
+/// `vibessh-m-` member account, whose rules could not write any of this.
+/// That is the whole test, and it is the right one: an install that can log
+/// in to the Node as its administrator can already do everything a sync
+/// does, so running it there grants nobody anything new.
+///
+/// It needs this app running. The backend holds no credentials for any
+/// Node, by design, so there is nothing else that could do it.
+pub async fn sync_administered_team_access(
+    server_repo: &ServerRepository,
+    sessions: &SshSessionManager,
+    cloud: &CloudState,
+) -> AppResult<Vec<AccessSweepProblem>> {
+    if crate::services::cloud_service::session_info(cloud).await.is_none() {
+        return Ok(vec![]);
+    }
+    let teams = crate::services::cloud_service::list_teams(cloud).await?;
+    let local_servers = server_repo.list()?;
+    let mut problems = Vec::new();
+
+    for team in &teams {
+        let read = async {
+            let servers = crate::services::cloud_service::list_servers(cloud, team.id).await?;
+            let members = crate::services::cloud_service::list_team_access(cloud, team.id).await?;
+            let revocations = crate::services::cloud_service::list_pending_revocations(cloud, team.id).await?;
+            AppResult::Ok((servers, members, revocations))
+        }
+        .await;
+        // Left for the next run: a team that could not be read says nothing
+        // about what its Nodes should hold.
+        let Ok((servers, members, revocations)) = read else { continue };
+
+        for team_server in &servers {
+            let Ok(port) = u16::try_from(team_server.ssh_port) else { continue };
+            let Some(local) = local_servers.iter().find(|local| {
+                local.host == team_server.host
+                    && local.ssh_port == port
+                    && !local.username.starts_with("vibessh-m-")
+                    && local.connection_mode == crate::models::ConnectionMode::Ssh
+            }) else {
+                continue;
+            };
+            let wanted = fingerprint(&members, &revocations, team_server.id, local.id);
+            if LAST_SWEPT.lock().expect("access sweep mutex poisoned").get(&team_server.id) == Some(&wanted) {
+                continue;
+            }
+
+            match sync_team_access(server_repo, sessions, cloud, local.id, team.id, team_server.id).await {
+                Ok(outcome) => {
+                    let failed: Vec<String> = outcome
+                        .members
+                        .iter()
+                        .filter(|member| member.error.is_some())
+                        .map(|member| member.email.clone())
+                        .chain(outcome.revocations.iter().filter(|revocation| !revocation.completed).map(|revocation| revocation.email.clone()))
+                        .collect();
+                    if failed.is_empty() {
+                        // Remembered only when everything landed, so a
+                        // member whose grant failed is tried again next time.
+                        LAST_SWEPT.lock().expect("access sweep mutex poisoned").insert(team_server.id, wanted);
+                    } else {
+                        problems.push(AccessSweepProblem { team_server_id: team_server.id, server_name: team_server.name.clone(), error: None, members: failed });
+                    }
+                }
+                Err(err) => {
+                    log::warn!("couldn't sync team access on {}: {err}", team_server.name);
+                    problems.push(AccessSweepProblem { team_server_id: team_server.id, server_name: team_server.name.clone(), error: Some(err.to_string()), members: vec![] });
+                }
+            }
+        }
+    }
+    Ok(problems)
+}
+
 /// Carries out every revocation this team is owed on this Node.
 ///
 /// Only this Node: the list covers every machine the team shares, and this
@@ -349,4 +465,51 @@ pub async fn publish_this_device(cloud: &CloudState, config_dir: &std::path::Pat
         .await
         .map(|_| ())
         .map_err(|err| AppError::Connection(format!("couldn't publish this device's key: {err}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn member(keys: &[&str], permissions: &[&str]) -> CloudMemberAccess {
+        CloudMemberAccess {
+            user_id: Uuid::nil(),
+            email: "member@example.com".into(),
+            display_name: "Member".into(),
+            node_username: "vibessh-m-0123456789ab".into(),
+            public_keys: keys.iter().map(|key| (*key).to_string()).collect(),
+            permissions: permissions.iter().map(|permission| (*permission).to_string()).collect(),
+            applications: vec![],
+        }
+    }
+
+    fn revocation(team_server_id: Uuid) -> crate::models::CloudNodeRevocation {
+        crate::models::CloudNodeRevocation {
+            id: Uuid::new_v4(),
+            team_server_id,
+            server_name: "royalmc-dedyk".into(),
+            host: "203.0.113.5".into(),
+            ssh_port: 22,
+            user_id: Uuid::nil(),
+            node_username: "vibessh-m-0123456789ab".into(),
+            email: "gone@example.com".into(),
+            requested_at: chrono::Utc::now(),
+        }
+    }
+
+    /// The sweep only touches a Node when this changes, so everything that
+    /// should reach the Node has to change it: a member's first device key,
+    /// a new permission, a removal waiting to be carried out.
+    #[test]
+    fn every_change_that_must_reach_the_node_changes_the_fingerprint() {
+        let (team_server, local) = (Uuid::new_v4(), Uuid::new_v4());
+        let base = fingerprint(&[member(&[], &[])], &[], team_server, local);
+
+        assert_eq!(base, fingerprint(&[member(&[], &[])], &[], team_server, local), "an unchanged team must not trigger a sync");
+        assert_ne!(base, fingerprint(&[member(&["ssh-ed25519 AAAA"], &[])], &[], team_server, local), "a newly published key");
+        assert_ne!(base, fingerprint(&[member(&[], &["applications.console"])], &[], team_server, local), "a changed permission");
+        assert_ne!(base, fingerprint(&[], &[], team_server, local), "a member removed");
+        assert_ne!(base, fingerprint(&[member(&[], &[])], &[revocation(team_server)], team_server, local), "a revocation for this Node");
+        assert_eq!(base, fingerprint(&[member(&[], &[])], &[revocation(Uuid::new_v4())], team_server, local), "another Node's revocation is not this Node's business");
+    }
 }

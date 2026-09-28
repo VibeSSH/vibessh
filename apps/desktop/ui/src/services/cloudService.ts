@@ -434,6 +434,23 @@ export interface SharedSyncReport {
   added: number;
   refreshed: number;
   removed: number;
+  /** Team Nodes that got an entry on this install, logging in as this account's member account. */
+  serversAdded: number;
+  /** Entries this sync made earlier, for Nodes no team shares with this account any more. */
+  serversRemoved: number;
+}
+
+/** A Node whose team access the automatic sync could not bring in line - see the Rust `AccessSweepProblem`. */
+export interface AccessSweepProblem {
+  teamServerId: string;
+  serverName: string;
+  error: string | null;
+  members: string[];
+}
+
+/** Writes each team's access to every Node this install administers, where the team changed since the last run - see the Rust `sync_administered_team_access`. Resolves to what could not be done. */
+export function syncAdministeredTeamAccess(): Promise<AccessSweepProblem[]> {
+  return callCommand<AccessSweepProblem[]>("sync_administered_team_access");
 }
 
 /** One of this install's applications that is somebody else's, shared with this account. */

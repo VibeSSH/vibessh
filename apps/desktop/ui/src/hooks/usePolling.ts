@@ -27,6 +27,8 @@ export const POLL_INTERVALS = {
   dashboardOverview: 20000,
   /** Due-backup check. Not a network poll - see `pauseWhenHidden`. */
   backupScheduler: 15 * 60 * 1000,
+  /** Team access and shared applications - see `useTeamSync`. Short enough that a new member sees their applications within minutes of being added; each tick is a few requests, and SSH only when a team actually changed. */
+  teamSync: 2 * 60 * 1000,
 } as const;
 
 interface PollingOptions {

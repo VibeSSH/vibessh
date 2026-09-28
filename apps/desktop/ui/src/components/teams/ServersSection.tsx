@@ -105,7 +105,17 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
    * so they are what identifies it here.
    */
   function localMatch(server: CloudServer): ServerSummary | undefined {
-    return localServers.find((local) => local.host === server.host && local.sshPort === server.sshPort);
+    // The administrator's entry: a sync writes accounts and sudo rules,
+    // which a member account's own entry for the same address cannot.
+    return localServers.find((local) => local.host === server.host && local.sshPort === server.sshPort && !local.username.startsWith("vibessh-m-"));
+  }
+
+  function hasMemberEntry(server: CloudServer, nodeUsername: string): boolean {
+    return localServers.some((local) => local.host === server.host && local.sshPort === server.sshPort && local.username === nodeUsername);
+  }
+
+  function hasAdminEntry(server: CloudServer): boolean {
+    return localServers.some((local) => local.host === server.host && local.sshPort === server.sshPort && !local.username.startsWith("vibessh-m-"));
   }
 
   async function handleSync(server: CloudServer) {
@@ -233,7 +243,10 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                 <span className="server-list-name" title={server.name}>{server.name}</span>
                 <HostAddress
                   value={`${server.host}:${server.sshPort}`}
-                  prefix={server.username ? `${server.username}@` : undefined}
+                  // The owner's login, shown only to those who manage the
+                  // team. To a member it read as the account to use, which
+                  // is how people ended up adding the Node as root.
+                  prefix={canManage && server.username ? `${server.username}@` : undefined}
                   className="server-list-host"
                 />
               </div>
@@ -249,7 +262,11 @@ export function ServersSection({ teamId, canManage }: { teamId: string; canManag
                   {granting === server.id ? t("common.loading") : t("teamServers.sync")}
                 </Button>
               )}
-              {!localMatch(server) && myAccess && (
+              {/* Offered until this account has its member entry - an entry
+                  for the address under another login (a hand-made root one)
+                  no longer hides it. Not to those who manage the team and
+                  already reach the Node as its administrator. */}
+              {myAccess && !hasMemberEntry(server, myAccess.nodeUsername) && !(canManage && hasAdminEntry(server)) && (
                 <Button
                   variant="ghost"
                   size="sm"

@@ -43,6 +43,17 @@ Ta osoba loguje się tym hasłem i musi je od razu zmienić. Do tego czasu jej k
 
 Uprawnienia do operacji działają tylko dla serwerów udostępnionych zespołowi.
 
+## Co widzi nowy członek
+
+Po jego stronie nie trzeba nic ustawiać. W ciągu kilku minut od dodania jego VibeSSH pokazuje serwery zespołu i aplikacje, które mu udostępniono. Na każdy serwer loguje się jako własne konto na tym serwerze, kluczem utworzonym na jego komputerze.
+
+Muszą być spełnione dwa warunki:
+
+- Twój VibeSSH jest otwarty. To on zakłada konto członka na serwerze - nic innego nie może zalogować się na serwer jako jego administrator.
+- Członek choć raz zalogował się do VibeSSH na swoim komputerze.
+
+Członek nie powinien dodawać serwera zespołu ręcznie. Jego aplikacja robi to sama, na właściwe konto.
+
 ## Jak sprawdzić, czy działa
 
 - Osoba jest na liście **Członkowie**.
@@ -54,6 +65,8 @@ Uprawnienia do operacji działają tylko dla serwerów udostępnionych zespołow
 - **Nie widzę Zespołów w menu** — trzeba być zalogowanym.
 - **Konto z tym adresem już istnieje** — ta osoba ma już konto. Dodaj ją jako członka zamiast tworzyć nowe.
 - **Nowy członek i tak może wszystko** — serwer nie jest udostępniony zespołowi, albo osoba korzysta z tego samego komputera co Ty i widzi Twoje lokalne serwery.
+- **Członek widzi serwer, ale nie może się połączyć** - Twój VibeSSH nie był otwarty od czasu dodania tej osoby albo nie zalogowała się jeszcze na tym komputerze. Otwórz VibeSSH i poczekaj kilka minut.
+- **Członek dostaje prośbę o hasło roota** - dodał serwer ręcznie. Niech usunie ten wpis; właściwy jest ten, który dodała jego aplikacja.
 
 ## Więcej informacji
 

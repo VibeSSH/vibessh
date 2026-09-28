@@ -117,11 +117,14 @@ pub async fn share_application_with_team(
 /// opens.
 #[tauri::command]
 pub async fn sync_shared_applications(
+    app: tauri::AppHandle,
     app_repo: State<'_, crate::storage::application_repository::ApplicationRepository>,
     server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
     cloud: State<'_, CloudState>,
 ) -> AppResult<services::shared_application_service::SharedSyncReport> {
-    services::shared_application_service::sync_shared_applications(&app_repo, &server_repo, &cloud).await
+    let config_dir = app.path().app_config_dir().map_err(|err| crate::errors::AppError::Internal(format!("couldn't find the config directory: {err}")))?;
+    let device_key = crate::device_key::ensure(&config_dir)?;
+    services::shared_application_service::sync_shared_applications(&app_repo, &server_repo, &cloud, &device_key.private_key_path).await
 }
 
 /// Which of this install's Applications are shared ones, and what each allows.
@@ -239,6 +242,17 @@ pub async fn cloud_list_pending_revocations(
     team_id: uuid::Uuid,
 ) -> AppResult<Vec<crate::models::CloudNodeRevocation>> {
     services::cloud_list_pending_revocations(&state, team_id).await
+}
+
+/// The automatic half of access sync - see
+/// `team_access_service::sync_administered_team_access`.
+#[tauri::command]
+pub async fn sync_administered_team_access(
+    server_repo: State<'_, crate::storage::server_repository::ServerRepository>,
+    sessions: State<'_, crate::state::SshSessionManager>,
+    cloud: State<'_, CloudState>,
+) -> AppResult<Vec<services::team_access_service::AccessSweepProblem>> {
+    services::team_access_service::sync_administered_team_access(&server_repo, &sessions, &cloud).await
 }
 
 /// Makes one Node hold exactly the access this team describes: every current

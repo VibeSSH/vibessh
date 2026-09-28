@@ -213,6 +213,25 @@ controls: the account is expired (sshd refuses it whatever key is offered),
 its processes are killed and its sudo rule removed; emptying its keys is
 only a courtesy.
 
+**When the sync runs.** It used to run only when somebody pressed Sync. It
+now also runs on its own, every two minutes while the app is open, on every
+Node the install reaches as its administrator (an SSH entry under an account
+that is not a `vibessh-m-` one), and only when the team's access list or its
+pending revocations changed since that Node was last brought in line
+(`team_access_service::sync_administered_team_access`). This grants nothing
+new: an install that logs in as the Node's administrator could already run
+the same sync by hand. What it changes is timing - a revocation lands within
+minutes of the member being removed instead of whenever somebody remembers,
+which narrows the window a removed member keeps their access. The backend
+still holds no Node credential; the sync still needs the administrator's app
+running, and a revocation that could not land stays pending on the Teams
+page.
+
+**The member's side** makes local entries for the team's Nodes itself: the
+member account, this device's key (`shared_application_service`). It never
+edits or removes an entry the person made by hand, and it removes its own
+only when no team shares that Node with the account any more.
+
 **The firewall role.** It used to be `ufw *` and `iptables *`, under a
 comment saying neither runs anything. `iptables --modprobe=<program>` runs
 that program as root, so the role was root. A sudo rule cannot narrow it:

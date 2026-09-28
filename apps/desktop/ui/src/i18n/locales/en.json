@@ -2404,5 +2404,9 @@
     "dns": "Private DNS wasn't updated on {{name}}: {{message}}",
     "dnsNotRun": "Private DNS couldn't be updated: {{message}}",
     "bindAddresses": "Ports set to Vibe Network only weren't moved to the node's private address, so they may not start: {{message}}"
+  },
+  "teamSync": {
+    "nodeFailed": "Team access couldn't be written to {{name}}: {{message}}",
+    "membersFailed": "Team access on {{name}} didn't land for: {{members}}"
   }
 }

@@ -43,6 +43,17 @@ They sign in with it and must change it immediately. Until they do, their accoun
 
 Operation permissions only apply to servers shared with the team.
 
+## What the new member sees
+
+Nothing to set up on their side. Within a few minutes of being added, their VibeSSH shows the team's servers and the applications shared with them. It signs in to each server as their own account on it, with a key made on their computer.
+
+Two things have to be true for that:
+
+- Your VibeSSH is open. It is what creates their account on the server - nothing else can log in to the server as its administrator.
+- They have signed in to VibeSSH on their computer at least once.
+
+They should not add the team's server by hand. Their app does it, under the right account.
+
 ## How to check it works
 
 - The person appears in the **Members** list.
@@ -54,6 +65,8 @@ Operation permissions only apply to servers shared with the team.
 - **I do not see Teams in the menu** - you have to be signed in.
 - **An account with this email already exists** - that person already has an account. Add them as a member instead.
 - **A new member can still do everything** - the server is not shared with the team, or they are using the same computer as you and can see your local servers.
+- **The member sees the server, but it does not connect** - your VibeSSH has not been open since they were added, or they have not signed in on that computer yet. Open VibeSSH and wait a few minutes.
+- **The member is asked for a root password** - they added the server by hand. They should remove that entry; the one their app added is the one to use.
 
 ## More detail
 

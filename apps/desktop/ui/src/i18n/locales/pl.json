@@ -2420,5 +2420,9 @@
     "dns": "Prywatny DNS nie został zaktualizowany na {{name}}: {{message}}",
     "dnsNotRun": "Nie udało się zaktualizować prywatnego DNS: {{message}}",
     "bindAddresses": "Porty ustawione jako tylko Vibe Network nie zostały przeniesione na prywatny adres węzła, więc mogą nie wystartować: {{message}}"
+  },
+  "teamSync": {
+    "nodeFailed": "Nie udało się zapisać dostępu zespołu na {{name}}: {{message}}",
+    "membersFailed": "Dostęp zespołu na {{name}} nie został nadany dla: {{members}}"
   }
 }

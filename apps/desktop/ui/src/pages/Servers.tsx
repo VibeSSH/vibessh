@@ -59,6 +59,11 @@ function ServerRow({
 }: ServerRowProps) {
   const { t } = useTranslation();
   const isAgent = server.connectionMode === "agent";
+  // A team's Node, reached as this person's member account. Setting the Node
+  // up (Docker, WireGuard, the firewall) is its administrator's job and the
+  // member account could not do it; editing the login is how such an entry
+  // gets turned into one that cannot log in at all.
+  const isTeamEntry = server.username?.startsWith("vibessh-m-") ?? false;
   const latencyMs = usePingStore((s) => s.latencies[server.id]);
   const menuItems = isAgent
     ? [
@@ -68,8 +73,12 @@ function ServerRow({
     : [
         { label: t("nav.actions"), icon: "zap", onClick: onOpenActions },
         { label: t("nav.firewall"), icon: "shield", onClick: onOpenFirewall },
-        { label: t("serverCard.setupNode"), icon: "settings", onClick: onSetupNode },
-        { label: t("common.edit"), icon: "edit", onClick: onEdit },
+        ...(isTeamEntry
+          ? []
+          : [
+              { label: t("serverCard.setupNode"), icon: "settings", onClick: onSetupNode },
+              { label: t("common.edit"), icon: "edit", onClick: onEdit },
+            ]),
         { label: t("common.remove"), icon: "trash", danger: true, onClick: onDelete },
       ];
 

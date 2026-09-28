@@ -6,6 +6,7 @@ import { Outlet } from "react-router-dom";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ToastHost } from "@/components/ui/ToastHost";
 import { useBackupScheduler } from "@/hooks/useBackupScheduler";
+import { useTeamSync } from "@/hooks/useTeamSync";
 import { startUpdateChecks } from "@/stores/updateStore";
 import { UpdateBanner } from "./UpdateBanner";
 import { useSmoothScroll } from "@/hooks/useSmoothScroll";
@@ -51,6 +52,7 @@ export function AppLayout() {
   // whole interface is covered rather than letting them wander into it.
   const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword ?? false);
   useBackupScheduler();
+  useTeamSync();
 
   useEffect(() => {
     // A session from a previous launch may already be restored on the Rust
