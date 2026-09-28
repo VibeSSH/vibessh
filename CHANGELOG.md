@@ -6,6 +6,88 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.22
+
+### New
+
+- **Choose what each person may do with one application.** An application
+  has a **Users** tab: add a teammate and tick what they may do - start and
+  stop it, use its console, read its files or edit them. On the server this
+  becomes rules naming that one application, so it holds outside VibeSSH too.
+  The application then appears in their own VibeSSH, marked as shared.
+
+- **Adding somebody to a team is enough.** Their VibeSSH now adds the team's
+  servers and the applications shared with them on its own, within a few
+  minutes, logging in as their own account on the server. Your VibeSSH writes
+  the team's access to the server whenever the team changes - a new member, a
+  new device, a changed role, somebody removed - so there is no Sync to press.
+  It needs your VibeSSH open: nothing else can log in to your server.
+
+- **Forgot your password?** The sign-in window sends a code to your email.
+
+- **Cut, copy and paste on a right-click** in every text field.
+
+- **When VibeSSH cannot start, it says why** instead of closing, with a report
+  you can send us.
+
+### Changed
+
+- **Restoring a backup puts the folder back exactly as the backup has it.**
+  Files created after the backup are removed now, not left mixed in with the
+  restored ones.
+
+- **A server gets two minutes to save before it is stopped** - on stop,
+  restart, and when settings are applied by recreating it. Saving settings on
+  a running Paper server used to kill it mid-save.
+
+- **Leaving the Vibe Network is refused while a port is "Vibe Network only".**
+  Those ports listen on the server's private address, which leaving takes
+  away. The message names the ports to change first.
+
+- **The team's server list no longer shows its owner's login to members.**
+
+### Fixed
+
+- **Deleting or renaming a symlink in Files acts on the link, not on what it
+  points at.** Deleting `/bin` on the server's own Files page emptied
+  `/usr/bin`.
+- **Recreating an application no longer drops the limits and image you set**
+  after creating it - memory, CPU and disk limits, and a changed image.
+- **Backups:** retention no longer deletes the backup it has just made, or a
+  manual one. Copies to a backup destination work above 5 GiB, and a failed
+  copy, or a deleted backup whose file stayed behind, is reported.
+- **Moving an application to another server** is refused while it has
+  databases, instead of leaving them behind; a failed move starts the
+  original again, and its backups move with it.
+- **Importing from Pterodactyl as a non-root admin copies the world** instead
+  of creating an empty server and calling it done.
+- **Firewall:** a sync that did not fully land is shown - on the Ports tab,
+  the Vibe Network and Firewall pages and in Node setup - and "secured" is
+  shown only when it is. Container ports are restricted on a server without
+  ufw too.
+- **Databases** can be reached from containers on MySQL as well as MariaDB.
+  An older MariaDB that cannot be reached says so, and repair no longer
+  reports success when it failed.
+- **Vibe Network:** a server whose tunnel did not come up is not left in the
+  network; joining opens the WireGuard port in its firewall and says when no
+  other server answers; the network survives a reboot; leaving removes
+  everything it set up.
+- **Servers you log in to as a user with sudo rather than as root:** ufw is
+  found, and applications running as a systemd service work.
+- **Deleting a systemd or background-process application stops it** and
+  removes its files, instead of leaving it running.
+- **Sharing an application with a team records which server it is on**, so
+  the permissions reach the server.
+
+### Security
+
+- A custom firewall rule's source address is checked before use. Anything
+  else typed there used to run as a command on the server.
+- Granting access to a team member no longer writes into their home folder
+  as root, which a member could have used to become root.
+- The firewall permission for a team member no longer gives root through
+  `iptables`.
+
 ## 0.1.0-beta.21
 
 ### New
