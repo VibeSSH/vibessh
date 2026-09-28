@@ -6,6 +6,26 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.23
+
+### Changed
+
+- **Every application on a server shared with a team is shared with the team.**
+  Sharing the server is enough - its applications follow, new ones included,
+  and a member's role decides what they may do with them. To limit one
+  application to named people, add them in its **Users** tab. A variable whose
+  name looks like a password is not published with it, and deleting an
+  application removes it from its teams.
+
+### Fixed
+
+- **An application's status is what its server reports now.** The status was
+  only updated by a start, stop or restart made from your own VibeSSH, so a
+  server that crashed kept showing **Running**, and a teammate's shared
+  application showed **Unknown** with a Start button while its console showed
+  it running. The application page checks every few seconds, and the
+  Applications list every half minute.
+
 ## 0.1.0-beta.22
 
 ### New
