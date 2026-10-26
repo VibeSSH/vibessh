@@ -255,7 +255,7 @@ arguments and never executes them.
 ## The local assistant endpoint (MCP)
 
 The desktop can answer an MCP client - Claude Code, an IDE - on
- only (). The bind address is not a setting. Every
+`127.0.0.1` only (`mcp.rs`). The bind address is not a setting. Every
 request needs a bearer token kept in the OS keyring, because any process on
 the machine can reach a loopback port. Nothing it returns carries a secret:
 no passwords, keys or key paths, and no environment variables at all.
@@ -265,7 +265,7 @@ What a client may do is three separate switches, each off by default:
 - **Enabled** - read: servers, applications, logs, the blueprint catalogue.
 - **Allow changes** - restart an application, and the Gradle deploy route,
   which writes a file to a Node.
-- **Allow creating applications** - , through the same
+- **Allow creating applications** - `create_application`, through the same
   function as the setup wizard. It is its own switch because creating pulls
   an image, makes a container and takes a port, which somebody who allowed
   restarts never agreed to. It refuses an application on this computer,
