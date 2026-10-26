@@ -6,6 +6,44 @@ than for the person who wrote it. The commit history has the reasoning.
 This file starts at 0.1.0-beta.5. Earlier releases were published without one;
 their contents are in the git history between the tags.
 
+## 0.1.0-beta.24
+
+### New
+
+- **Share an application's files with a teammate even when it runs as root.**
+  A teammate's file access works through the application's own account on
+  the server, which Paper, Purpur and Velocity servers have and a Node.js
+  bot, Redis or a generic container do not. The application's **Users** tab
+  now says so and offers **Run on its own account**: VibeSSH creates the
+  account, hands it the folder and restarts the application. A Node.js bot
+  keeps working, because its home folder is the application's own.
+
+- **Claude can create applications for you.** With **Allow creating
+  applications** turned on under Settings - Claude and other assistants, an
+  assistant connected to VibeSSH can set up an application on one of your
+  servers, the same way the wizard does. It is created stopped, only on a
+  server, and the switch is separate from the one for restarts.
+
+- **VibeSSH builds on macOS** - native window buttons, a `.app` and a `.dmg`,
+  and the Dock icon brings a hidden window back. Thanks to Qbiter. There is
+  no macOS installer in the release yet; it builds from source.
+
+### Fixed
+
+- **A teammate opening an application's files** no longer gets "connection
+  problem: sudo: unknown user". They are told the application has no account
+  of its own, and who can fix it.
+- **One team server or application that could not be added** no longer
+  stops a teammate's VibeSSH from receiving everything after it.
+- **The team pages no longer tell you to press Sync** for access to reach a
+  server - it happens on its own within a few minutes.
+
+### Security
+
+- Dependency updates for this month's advisories: rustls, quinn, the
+  constant-time arithmetic under SSH, the TLS root certificates, zip (now
+  version 9), vite and vitest.
+
 ## 0.1.0-beta.23
 
 ### Changed
