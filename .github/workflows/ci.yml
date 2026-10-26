@@ -264,5 +264,17 @@ jobs:
       #
       # It is a deliberately narrow ignore: one advisory id, not a severity
       # threshold. Anything else, at any severity, still fails this job.
+      #
+      # RUSTSEC-2026-0367, -0368 and -0369 are three advisories against the
+      # `zip` crate's bulk extraction (`ZipArchive::extract` and
+      # `ZipStreamReader::extract`: symlinks pointing outside the destination,
+      # SUID/SGID bits kept, permissions applied through a symlink), fixed only
+      # in zip 9. This repository's own use is on zip 9 already. What is left is
+      # the copy `tauri-plugin-updater` 2.x pins (zip 4), and its latest
+      # stable release still does. It extracts an update only after checking
+      # the signature against the public key in tauri.conf.json, and these
+      # releases update through the NSIS installer on Windows and the AppImage
+      # on Linux, so no zip from anybody else reaches that code. Remove these
+      # three once the updater depends on zip 9 or later.
       - name: cargo audit
-        run: cargo audit --ignore RUSTSEC-2023-0071
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369

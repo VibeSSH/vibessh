@@ -531,7 +531,7 @@ mod tests {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes)).unwrap();
 
         // Not "backup/config.yml" - the entry is rooted at its own basename.
-        assert_eq!(archive.by_index(0).unwrap().name(), "config.yml");
+        assert_eq!(archive.by_index(0).unwrap().name().unwrap(), "config.yml");
     }
     /// The regression test for the zip-bomb finding. An entry's declared
     /// uncompressed size is written by whoever built the archive, and the

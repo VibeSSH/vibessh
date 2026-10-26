@@ -344,6 +344,15 @@ worse than a missing row, because it stops the next person looking.
   the decrypting side, which is where the oracle would have to be - so the
   practical exposure looks low, but "looks low" is a judgement, not a
   measurement, and it is recorded here rather than dismissed.
+- **RUSTSEC-2026-0367/0368/0369 in `zip` 4, through the updater.** All
+  three are in bulk extraction (`extract()`): symlinks out of the
+  destination, SUID/SGID kept, permissions through a symlink. VibeSSH's own
+  archive code is on zip 9 and never called `extract()` - each entry goes
+  through `enclosed_name` and the file provider, and no mode or link is
+  taken from an archive. `tauri-plugin-updater` 2.x still pins zip 4; it
+  extracts only a signature-verified update, and these releases update
+  through NSIS and AppImage rather than a zip. Ignored in CI by id until the
+  updater moves to zip 9.
 
   The crate has no patched release. CI ignores this one advisory id
   explicitly (`.github/workflows/ci.yml`) rather than lowering the whole

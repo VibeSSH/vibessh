@@ -755,7 +755,7 @@ mod tests {
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
         for i in 0..zip.len() {
             let entry = zip.by_index(i).unwrap();
-            assert!(!entry.name().starts_with(BACKUPS_DIR), "backup contained its own backups folder: {}", entry.name());
+            assert!(!entry.name().unwrap().starts_with(BACKUPS_DIR), "backup contained its own backups folder: {}", entry.name().unwrap());
         }
     }
 
