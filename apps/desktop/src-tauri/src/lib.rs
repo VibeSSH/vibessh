@@ -445,6 +445,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running VibeSSH")
         .run(|app_handle, event| {
+            // macOS: clicking the Dock icon after the close button hid the
+            // window - see `tray::hide_to_tray` - has to bring it back, or the
+            // app looks running and unreachable at the same time.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::show_main_window(app_handle);
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 // Every repository shares one file, so one checkpoint covers
                 // all nine - see `storage::checkpoint_wal` for what it is

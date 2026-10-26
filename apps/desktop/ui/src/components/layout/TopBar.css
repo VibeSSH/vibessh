@@ -295,3 +295,9 @@
     animation: none;
   }
 }
+
+/* macOS: the native traffic lights sit at the bar's left edge. */
+.topbar-macos {
+  padding-left: 80px;
+  padding-right: 10px;
+}

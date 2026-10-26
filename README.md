@@ -91,6 +91,11 @@ bun run tauri dev
 `./scripts/setup.ps1` does the same with a prerequisite check first;
 `-Dev` runs the app and `-Build` produces the Windows installer.
 
+On macOS you need the Xcode Command Line Tools (`xcode-select --install`).
+`bun run tauri build` there produces `VibeSSH.app` and a `.dmg` under
+`target/release/bundle/` - `tauri.macos.conf.json` swaps the Windows
+installer for those and gives the window its native traffic lights.
+
 To run the agent on its own, without the desktop app:
 
 ```bash

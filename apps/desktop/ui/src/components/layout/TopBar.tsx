@@ -37,6 +37,13 @@ function currentWindow(): Window | null {
   return cachedWindow;
 }
 
+/**
+ * On macOS the window keeps its native traffic lights, drawn over the top bar
+ * (`tauri.macos.conf.json`), so the bar leaves room for them on the left and
+ * does not draw a second set of window buttons on the right.
+ */
+const IS_MACOS = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
+
 const TONE_ICON: Record<string, string> = { success: "check", error: "x", info: "activity" };
 
 /** The label of the view the current path belongs to, for the breadcrumb. */
@@ -279,7 +286,7 @@ export function TopBar() {
   }
 
   return (
-    <div className="topbar" onMouseDown={handleMouseDown}>
+    <div className={IS_MACOS ? "topbar topbar-macos" : "topbar"} onMouseDown={handleMouseDown}>
       <div className="topbar-context">
         <img src="/vibessh-mark.png" alt="" className="topbar-mark" />
         <span className="topbar-crumb-root">VibeSSH</span>
@@ -295,35 +302,37 @@ export function TopBar() {
           <NotificationsMenu />
           <AccountMenu />
         </div>
-        <div className="topbar-window">
-          <Tooltip label={t("titlebar.minimize")} placement="bottom">
-            <button
-              className="topbar-win-btn"
-              onClick={() => currentWindow()?.minimize().catch((err) => console.error("minimize failed:", err))}
-              aria-label={t("titlebar.minimize")}
-            >
-              <Icon name="minus" size={16} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("titlebar.maximize")} placement="bottom">
-            <button
-              className="topbar-win-btn"
-              onClick={() => currentWindow()?.toggleMaximize().catch((err) => console.error("toggleMaximize failed:", err))}
-              aria-label={t("titlebar.maximize")}
-            >
-              <Icon name="square" size={12} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t("titlebar.close")} placement="bottom">
-            <button
-              className="topbar-win-btn topbar-win-close"
-              onClick={() => currentWindow()?.close().catch((err) => console.error("close failed:", err))}
-              aria-label={t("titlebar.close")}
-            >
-              <Icon name="x" size={16} />
-            </button>
-          </Tooltip>
-        </div>
+        {!IS_MACOS && (
+          <div className="topbar-window">
+            <Tooltip label={t("titlebar.minimize")} placement="bottom">
+              <button
+                className="topbar-win-btn"
+                onClick={() => currentWindow()?.minimize().catch((err) => console.error("minimize failed:", err))}
+                aria-label={t("titlebar.minimize")}
+              >
+                <Icon name="minus" size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("titlebar.maximize")} placement="bottom">
+              <button
+                className="topbar-win-btn"
+                onClick={() => currentWindow()?.toggleMaximize().catch((err) => console.error("toggleMaximize failed:", err))}
+                aria-label={t("titlebar.maximize")}
+              >
+                <Icon name="square" size={12} />
+              </button>
+            </Tooltip>
+            <Tooltip label={t("titlebar.close")} placement="bottom">
+              <button
+                className="topbar-win-btn topbar-win-close"
+                onClick={() => currentWindow()?.close().catch((err) => console.error("close failed:", err))}
+                aria-label={t("titlebar.close")}
+              >
+                <Icon name="x" size={16} />
+              </button>
+            </Tooltip>
+          </div>
+        )}
       </div>
     </div>
   );

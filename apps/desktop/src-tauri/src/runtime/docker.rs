@@ -1597,6 +1597,18 @@ mod tests {
     mod console_write {
         use super::super::{console_write_command, CONSOLE_WRITE_TIMEOUT_SECONDS};
 
+        /// The command runs on a Linux Node, where `timeout` is coreutils. A
+        /// stock macOS has none, and that is not a defect in the command
+        /// either - so the tests that run it for real skip there too.
+        fn local_shell_has_timeout() -> bool {
+            let found = std::process::Command::new("sh").arg("-c").arg("command -v timeout").output();
+            let has = found.is_ok_and(|output| output.status.success());
+            if !has {
+                eprintln!("no POSIX shell with `timeout` on PATH - skipped");
+            }
+            has
+        }
+
         #[test]
         fn is_bounded_so_a_dead_attach_cannot_hang_the_interface() {
             let command = console_write_command("/tmp/vibessh/console.fifo", "stop");
@@ -1610,9 +1622,12 @@ mod tests {
         /// that come out the other end.
         ///
         /// Skipped where no POSIX shell is on PATH - a plain Windows box is
-        /// not a defect in the command.
+        /// not a defect in the command - or where it has no `timeout`.
         #[test]
         fn a_console_line_full_of_shell_metacharacters_arrives_verbatim() {
+            if !local_shell_has_timeout() {
+                return;
+            }
             let target = std::env::temp_dir().join(format!("vibessh-console-{}.txt", uuid::Uuid::new_v4()));
             let nasty = r#"lp user CrispiDEV parent add 'mod'; touch /tmp/pwned $(id) `id` "x""#;
             let command = console_write_command(&target.to_string_lossy(), nasty);
@@ -1636,6 +1651,9 @@ mod tests {
         /// first.
         #[test]
         fn a_second_line_joins_the_first() {
+            if !local_shell_has_timeout() {
+                return;
+            }
             let target = std::env::temp_dir().join(format!("vibessh-console-{}.txt", uuid::Uuid::new_v4()));
             for line in ["first", "second"] {
                 let command = console_write_command(&target.to_string_lossy(), line);
