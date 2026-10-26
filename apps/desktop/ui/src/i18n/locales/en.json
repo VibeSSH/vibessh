@@ -1949,7 +1949,9 @@
     "cloudBackendNote": "Leave this as it is and accounts work straight away - it points at the backend VibeSSH runs. If you would rather your accounts lived on your own server, run one from the `apps/backend/` directory of the source and put its address here instead.",
     "cloudBackendSavedToast": "Backend address saved",
     "cloudBackendGuide": "How to run your own backend instead, step by step.",
-    "cloudBackendUnset": "No backend is set, so accounts and teams are off. Everything else - nodes, applications, files, the terminal - works without one."
+    "cloudBackendUnset": "No backend is set, so accounts and teams are off. Everything else - nodes, applications, files, the terminal - works without one.",
+    "mcpAllowCreate": "Allow creating applications",
+    "mcpAllowCreateNote": "Off by default, and separate from changes. With it on, an assistant can create an application on one of your servers - the same way the setup wizard does. It is created stopped, so nothing runs until you start it."
   },
   "sshForm": {
     "name": "Name",

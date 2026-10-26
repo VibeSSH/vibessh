@@ -17,7 +17,8 @@ It is **off** by default and nothing is listening.
 
 - your servers' names, addresses, ports and login,
 - your applications: type, working directory, status and which server each runs on,
-- the most recent log lines from an application you name.
+- the most recent log lines from an application you name,
+- the kinds of application VibeSSH can create, with the questions each one asks.
 
 ## What it can never see
 
@@ -77,6 +78,19 @@ what gives the assistant a tool for restarting an application.
 The split is deliberate: "may Claude see my servers" and "may Claude restart them" are two
 different questions, and most people answer them differently. While changes are off the
 assistant **cannot even see** such a tool, so it cannot keep offering one.
+
+## How to let it create applications
+
+Another separate switch, **Allow creating applications**. With it on, the assistant can
+create an application on one of your servers - "set up a Paper 1.21 lobby on RoyalMC-Dedyk",
+for instance. It goes through the same setup as the wizard, with the same checks, folder
+and ports.
+
+- **The application is created stopped.** Nothing runs and no port is taken until you
+  start it - check what it made first, on the Applications page.
+- **Only on a server**, never on this computer.
+- **It is separate from Allow changes.** Allowing restarts does not allow creating, and
+  the other way round.
 
 ## Running it from IntelliJ (Gradle)
 
@@ -233,6 +247,7 @@ access.
 - **"couldn't open the local endpoint ... port in use"** - something else has 7422. Change
   the port in Settings and update the address in your assistant.
 - **The assistant offers a restart and is refused** - **Allow changes** is off.
+- **The assistant says it cannot create an application** - **Allow creating applications** is off.
 - **The assistant does not see the new token** - after issuing one you have to paste it
   into the assistant again; the old one is void immediately.
 - **`Unresolved reference 'net'` on `java.net.URI`** - inside `build.gradle.kts` the name

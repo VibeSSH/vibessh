@@ -252,6 +252,29 @@ helper that takes a DOCKER-USER rule as parts (add or delete, `tcp` or
 `ufw` is allowed in the five forms the page runs; ufw parses its own
 arguments and never executes them.
 
+## The local assistant endpoint (MCP)
+
+The desktop can answer an MCP client - Claude Code, an IDE - on
+ only (). The bind address is not a setting. Every
+request needs a bearer token kept in the OS keyring, because any process on
+the machine can reach a loopback port. Nothing it returns carries a secret:
+no passwords, keys or key paths, and no environment variables at all.
+
+What a client may do is three separate switches, each off by default:
+
+- **Enabled** - read: servers, applications, logs, the blueprint catalogue.
+- **Allow changes** - restart an application, and the Gradle deploy route,
+  which writes a file to a Node.
+- **Allow creating applications** - , through the same
+  function as the setup wizard. It is its own switch because creating pulls
+  an image, makes a container and takes a port, which somebody who allowed
+  restarts never agreed to. It refuses an application on this computer,
+  which would run processes as the person using it, and it leaves what it
+  made stopped, so a wrong configuration runs nothing until a person looks.
+
+A tool that is switched off is absent from the tool list rather than
+present and refusing, so a model never keeps proposing it.
+
 ## Attackers, and what they can currently do
 
 | Attacker | Can they cross? | Notes |

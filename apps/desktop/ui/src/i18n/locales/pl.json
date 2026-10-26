@@ -1957,7 +1957,9 @@
     "cloudBackendNote": "Zostaw to tak, jak jest, a konta zadziałają od razu - wskazuje backend, który utrzymuje VibeSSH. Jeśli wolisz, żeby Twoje konta stały na Twoim serwerze, uruchom go z katalogu `apps/backend/` w źródłach i wpisz tutaj jego adres.",
     "cloudBackendSavedToast": "Adres backendu zapisany",
     "cloudBackendGuide": "Jak zamiast tego postawić własny backend, krok po kroku.",
-    "cloudBackendUnset": "Nie ustawiono backendu, więc konta i zespoły są wyłączone. Cała reszta - Node'y, aplikacje, pliki, terminal - działa bez niego."
+    "cloudBackendUnset": "Nie ustawiono backendu, więc konta i zespoły są wyłączone. Cała reszta - Node'y, aplikacje, pliki, terminal - działa bez niego.",
+    "mcpAllowCreate": "Zezwól na tworzenie aplikacji",
+    "mcpAllowCreateNote": "Domyślnie wyłączone i niezależne od zmian. Po włączeniu asystent może utworzyć aplikację na jednym z Twoich serwerów - tak samo jak kreator. Powstaje zatrzymana, więc nic nie działa, dopóki jej nie uruchomisz."
   },
   "sshForm": {
     "name": "Nazwa",

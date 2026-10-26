@@ -103,6 +103,7 @@ struct Endpoint {
     app: tauri::AppHandle,
     token: String,
     allow_changes: bool,
+    allow_create: bool,
 }
 
 /// Starts or stops the endpoint to match `config`.
@@ -117,7 +118,7 @@ pub async fn apply(app: &tauri::AppHandle, state: &McpState, config: McpConfig) 
         return Ok(());
     }
 
-    let endpoint = Endpoint { app: app.clone(), token: token()?, allow_changes: config.allow_changes };
+    let endpoint = Endpoint { app: app.clone(), token: token()?, allow_changes: config.allow_changes, allow_create: config.allow_create };
     let router = Router::new()
         .route("/mcp", post(handle))
         // Not an MCP tool, on purpose. This one carries a build artifact -
@@ -175,7 +176,7 @@ async fn handle(State(endpoint): State<Endpoint>, headers: HeaderMap, body: Json
         return StatusCode::ACCEPTED.into_response();
     }
 
-    let result = match protocol_response(method, endpoint.allow_changes) {
+    let result = match protocol_response(method, endpoint.allow_changes, endpoint.allow_create) {
         Some(answer) => answer,
         // The only method that needs the application itself, and so the only
         // one that cannot be answered by a pure function.
@@ -367,14 +368,14 @@ async fn logs(State(endpoint): State<Endpoint>, headers: HeaderMap, params: axum
 /// without a running desktop: `initialize`'s answer is what an MCP client
 /// reads before it will speak at all, and getting a field name wrong there
 /// is a feature that fails at the handshake with nothing in any log.
-fn protocol_response(method: &str, allow_changes: bool) -> Option<AppResult<Value>> {
+fn protocol_response(method: &str, allow_changes: bool, allow_create: bool) -> Option<AppResult<Value>> {
     match method {
         "initialize" => Some(Ok(json!({
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "vibessh", "version": env!("CARGO_PKG_VERSION") },
         }))),
-        "tools/list" => Some(Ok(json!({ "tools": tool_definitions(allow_changes) }))),
+        "tools/list" => Some(Ok(json!({ "tools": tool_definitions(allow_changes, allow_create) }))),
         "tools/call" => None,
         other => Some(Err(AppError::InvalidInput(format!("unknown method: {other}")))),
     }
@@ -399,7 +400,7 @@ fn authorized(headers: &HeaderMap, expected: &str) -> bool {
 /// changes are not allowed: a tool a model can see is a tool it will try,
 /// and an assistant that keeps proposing a restart it cannot perform is
 /// worse than one that never offers.
-fn tool_definitions(allow_changes: bool) -> Vec<Value> {
+fn tool_definitions(allow_changes: bool, allow_create: bool) -> Vec<Value> {
     let mut tools = vec![
         json!({
             "name": "list_servers",
@@ -423,7 +424,38 @@ fn tool_definitions(allow_changes: bool) -> Vec<Value> {
                 "required": ["application_id"],
             },
         }),
+        json!({
+            "name": "list_blueprints",
+            "description": "The kinds of application VibeSSH can create (Paper, Purpur, Velocity, a Node.js or Python bot, MariaDB, Redis, ...), each with the fields its setup asks for, their types, defaults and which are required. Read this before create_application rather than guessing a configuration.",
+            "inputSchema": { "type": "object", "properties": {} },
+        }),
     ];
+    if allow_create {
+        tools.push(json!({
+            "name": "create_application",
+            "description": "Create an application on a server, the same way the setup wizard in VibeSSH does - same checks, same default folder and ports. It is created stopped: tell the user what you made and let them start it. Only available because the user has allowed creating applications from this endpoint. Use list_servers for server_id and list_blueprints for blueprint_id and the inputs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "server_id": { "type": "string", "description": "The server to create it on, from list_servers." },
+                    "name": { "type": "string", "description": "A name for the application, as it will show in VibeSSH." },
+                    "blueprint_id": { "type": "string", "description": "Which kind of application, from list_blueprints." },
+                    "inputs": { "type": "object", "description": "The blueprint's fields, by key - see list_blueprints. A field left out takes its default." },
+                    "environment": {
+                        "type": "array",
+                        "description": "Environment variables. Mark passwords and tokens secret so they are kept in the system keyring and never shown.",
+                        "items": {
+                            "type": "object",
+                            "properties": { "key": { "type": "string" }, "value": { "type": "string" }, "secret": { "type": "boolean" } },
+                            "required": ["key", "value"],
+                        },
+                    },
+                    "working_directory": { "type": "string", "description": "Optional. Defaults to /home/container/<name>, as the wizard does." },
+                },
+                "required": ["server_id", "name", "blueprint_id"],
+            },
+        }));
+    }
     if allow_changes {
         tools.push(json!({
             "name": "restart_application",
@@ -446,6 +478,13 @@ async fn call_tool(endpoint: &Endpoint, params: &Value) -> AppResult<Value> {
         "list_servers" => tools::list_servers(&endpoint.app)?,
         "list_applications" => tools::list_applications(&endpoint.app)?,
         "application_logs" => tools::application_logs(&endpoint.app, &arguments).await?,
+        "list_blueprints" => tools::list_blueprints(&endpoint.app)?,
+        "create_application" if endpoint.allow_create => tools::create_application(&endpoint.app, &arguments).await?,
+        "create_application" => {
+            return Err(AppError::InvalidInput(
+                "creating applications from the local endpoint is switched off - turn on 'Allow creating applications' in VibeSSH's settings to permit this".into(),
+            ))
+        }
         "restart_application" if endpoint.allow_changes => tools::restart_application(&endpoint.app, &arguments).await?,
         "restart_application" => {
             return Err(AppError::InvalidInput(
@@ -534,6 +573,142 @@ mod tools {
         Ok(lines.join("\n"))
     }
 
+    /// What each kind of application asks for, so a model fills the form
+    /// instead of inventing one. Field by field, like everything else here.
+    pub fn list_blueprints(app: &tauri::AppHandle) -> AppResult<String> {
+        let registry = app.state::<crate::blueprints::BlueprintRegistry>();
+        let rows: Vec<Value> = crate::services::list_blueprints(&registry)
+            .iter()
+            .map(|blueprint| {
+                json!({
+                    "id": blueprint.id,
+                    "name": blueprint.name,
+                    "description": blueprint.description,
+                    "runtimes": blueprint.supported_runtime_types,
+                    "fields": blueprint.fields.iter().map(|field| json!({
+                        "key": field.key,
+                        "label": field.label,
+                        "type": field.field_type,
+                        "required": field.required,
+                        "default": field.default_value,
+                        "help": field.help_text,
+                    })).collect::<Vec<_>>(),
+                    "default_ports": blueprint.default_ports.iter().map(|port| json!({
+                        "name": port.name,
+                        "port": port.external_port,
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        serde_json::to_string_pretty(&rows).map_err(|err| AppError::Internal(err.to_string()))
+    }
+
+    /// The folder the wizard proposes for a name - kept in step with
+    /// `CreateApplicationWizard`'s own `slugify`.
+    pub(super) fn default_working_directory(name: &str) -> String {
+        let mut slug = String::new();
+        for ch in name.trim().to_lowercase().chars() {
+            if ch.is_ascii_alphanumeric() {
+                slug.push(ch);
+            } else if !slug.ends_with('-') {
+                slug.push('-');
+            }
+        }
+        let slug = slug.trim_matches('-');
+        format!("/home/container/{}", if slug.is_empty() { "app" } else { slug })
+    }
+
+    /// Creates an application through the very function the wizard calls, so
+    /// every check the wizard relies on applies here too.
+    ///
+    /// **On a server only.** An application on this computer runs processes
+    /// as the person using it, which is not something a model should be
+    /// able to start from a prompt.
+    ///
+    /// **Created stopped.** A mistaken configuration then takes no port and
+    /// runs nothing until somebody looks at it.
+    pub async fn create_application(app: &tauri::AppHandle, arguments: &Value) -> AppResult<String> {
+        let text = |key: &str| arguments.get(key).and_then(Value::as_str).map(str::trim).filter(|value| !value.is_empty());
+        let server_id = text("server_id").ok_or_else(|| AppError::InvalidInput("server_id is required - list_servers gives them".into()))?;
+        let server_id = Uuid::parse_str(server_id).map_err(|_| AppError::InvalidInput(format!("'{server_id}' is not a server id - list_servers gives them")))?;
+        let name = text("name").ok_or_else(|| AppError::InvalidInput("name is required".into()))?.to_string();
+        let blueprint_id = text("blueprint_id").ok_or_else(|| AppError::InvalidInput("blueprint_id is required - list_blueprints gives them".into()))?.to_string();
+
+        let registry = app.state::<crate::blueprints::BlueprintRegistry>();
+        let blueprint = crate::services::list_blueprints(&registry)
+            .into_iter()
+            .find(|blueprint| blueprint.id == blueprint_id)
+            .ok_or_else(|| AppError::InvalidInput(format!("there is no blueprint '{blueprint_id}' - list_blueprints gives them")))?;
+        let runtime_type = *blueprint
+            .supported_runtime_types
+            .first()
+            .ok_or_else(|| AppError::Internal(format!("blueprint '{blueprint_id}' supports no runtime")))?;
+
+        // Every field, filled from what was given or from its default - the
+        // same object the wizard sends.
+        let given = arguments.get("inputs").and_then(Value::as_object).cloned().unwrap_or_default();
+        let mut blueprint_inputs = serde_json::Map::new();
+        for field in &blueprint.fields {
+            match given.get(&field.key).cloned().or_else(|| field.default_value.clone()) {
+                Some(value) => {
+                    blueprint_inputs.insert(field.key.clone(), value);
+                }
+                None if field.required => {
+                    return Err(AppError::InvalidInput(format!("'{}' ({}) is required for {}", field.key, field.label, blueprint.name)));
+                }
+                None => {}
+            }
+        }
+        if let Some(unknown) = given.keys().find(|key| !blueprint.fields.iter().any(|field| &field.key == *key)) {
+            return Err(AppError::InvalidInput(format!("{} has no field '{unknown}' - list_blueprints gives its fields", blueprint.name)));
+        }
+
+        let environment = arguments
+            .get("environment")
+            .and_then(Value::as_array)
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| {
+                        let key = row.get("key").and_then(Value::as_str)?.trim().to_string();
+                        let value = row.get("value").and_then(Value::as_str).unwrap_or_default().to_string();
+                        let is_secret = row.get("secret").and_then(Value::as_bool).unwrap_or(false);
+                        (!key.is_empty()).then_some(crate::models::EnvironmentVariable { key, value, is_secret })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let working_directory = text("working_directory").map(str::to_string).unwrap_or_else(|| default_working_directory(&name));
+
+        let repo = app.state::<crate::storage::application_repository::ApplicationRepository>();
+        let servers = app.state::<crate::storage::server_repository::ServerRepository>();
+        let sessions = app.state::<crate::state::SshSessionManager>();
+        let java_root = app.state::<crate::state::JavaRoot>();
+        let input = crate::models::CreateApplicationFromBlueprintInput {
+            server_id: Some(server_id),
+            name,
+            description: None,
+            blueprint_id,
+            runtime_type,
+            working_directory,
+            environment,
+            blueprint_inputs: Value::Object(blueprint_inputs),
+            connect_to_application_id: None,
+        };
+        let created = crate::services::create_application(&repo, &registry, &servers, &sessions, &java_root.0, input).await?;
+        // Visible to whoever is at the desk: something outside the interface
+        // just added an application to one of their servers.
+        log::info!("the local MCP endpoint created application {} ({})", created.application.name, created.application.id);
+        let ports: Vec<String> = created.ports.iter().filter_map(|port| port.external_port.map(|external| format!("{} {external}", port.name))).collect();
+        Ok(format!(
+            "created '{}' (id {}) on the server, stopped, in {}. Ports: {}. It is not running - tell the user, who can start it in VibeSSH.",
+            created.application.name,
+            created.application.id,
+            created.application.working_directory,
+            if ports.is_empty() { "none published".to_string() } else { ports.join(", ") },
+        ))
+    }
+
     pub async fn restart_application(app: &tauri::AppHandle, arguments: &Value) -> AppResult<String> {
         let id = application_id(arguments)?;
         let repo = app.state::<crate::storage::application_repository::ApplicationRepository>();
@@ -580,10 +755,33 @@ mod tests {
     /// A tool a model can see is a tool it will try. Hiding the changing
     /// ones is what stops an assistant proposing a restart that will be
     /// refused, over and over.
+    /// Creating is its own permission: allowing restarts must not hand over
+    /// creating, and the reverse. Reading what can be created needs neither.
+    #[test]
+    fn creating_needs_its_own_switch_and_restarting_does_not_grant_it() {
+        let names = |changes, create| {
+            tool_definitions(changes, create).iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        };
+        assert!(names(false, false).contains(&"list_blueprints".to_string()), "reading the blueprints is not a change");
+        assert!(!names(true, false).contains(&"create_application".to_string()), "allowing restarts must not allow creating");
+        let create_only = names(false, true);
+        assert!(create_only.contains(&"create_application".to_string()));
+        assert!(!create_only.contains(&"restart_application".to_string()), "allowing creating must not allow restarts");
+    }
+
+    /// The folder a model gets by default is the one the wizard would have
+    /// proposed for the same name.
+    #[test]
+    fn the_default_folder_is_the_wizards() {
+        assert_eq!(tools::default_working_directory("RoyalMC Lobby!"), "/home/container/royalmc-lobby");
+        assert_eq!(tools::default_working_directory("  bot__v2 "), "/home/container/bot-v2");
+        assert_eq!(tools::default_working_directory("***"), "/home/container/app");
+    }
+
     #[test]
     fn the_changing_tools_are_absent_until_changes_are_allowed() {
         let names = |allow| {
-            tool_definitions(allow)
+            tool_definitions(allow, allow)
                 .iter()
                 .map(|tool| tool["name"].as_str().unwrap().to_string())
                 .collect::<Vec<_>>()
@@ -608,7 +806,7 @@ mod tests {
     /// time, with nothing in any log to say why.
     #[test]
     fn initialize_answers_in_the_shape_a_client_reads() {
-        let answer = protocol_response("initialize", false).expect("initialize is answered here").unwrap();
+        let answer = protocol_response("initialize", false, false).expect("initialize is answered here").unwrap();
         assert_eq!(answer["protocolVersion"], PROTOCOL_VERSION);
         assert!(answer["capabilities"]["tools"].is_object(), "a client decides whether to ask for tools from this");
         assert_eq!(answer["serverInfo"]["name"], "vibessh");
@@ -620,16 +818,16 @@ mod tests {
     /// stopped doing so, every tool would silently do nothing.
     #[test]
     fn tools_call_is_the_only_method_left_to_the_application() {
-        assert!(protocol_response("tools/call", false).is_none());
-        assert!(protocol_response("initialize", false).is_some());
-        assert!(protocol_response("tools/list", false).is_some());
+        assert!(protocol_response("tools/call", false, false).is_none());
+        assert!(protocol_response("initialize", false, false).is_some());
+        assert!(protocol_response("tools/list", false, false).is_some());
     }
 
     /// Answered, not ignored: a client that mistypes a method gets told,
     /// rather than waiting for a reply that never comes.
     #[test]
     fn an_unknown_method_is_an_error_rather_than_silence() {
-        let answer = protocol_response("tools/destroy_everything", true).expect("still answered");
+        let answer = protocol_response("tools/destroy_everything", true, true).expect("still answered");
         let err = answer.expect_err("an unknown method cannot succeed");
         assert!(err.to_string().contains("tools/destroy_everything"), "{err}");
     }
@@ -691,7 +889,7 @@ mod tests {
     /// tool with none is one the model will call with nothing.
     #[test]
     fn every_tool_declares_a_name_a_description_and_a_schema() {
-        for tool in tool_definitions(true) {
+        for tool in tool_definitions(true, true) {
             let name = tool["name"].as_str().expect("a tool without a name");
             assert!(!tool["description"].as_str().unwrap_or_default().is_empty(), "{name} has no description");
             assert_eq!(tool["inputSchema"]["type"], "object", "{name} has no object schema");

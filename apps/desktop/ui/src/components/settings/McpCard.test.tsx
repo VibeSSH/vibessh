@@ -28,7 +28,7 @@ vi.mock("@/stores/toastStore", () => ({ toastSuccess: vi.fn() }));
 const { McpCard } = await import("./McpCard");
 
 const TOKEN = "d3adb33f".repeat(8);
-const OFF = { enabled: false, allowChanges: false, port: 7422, url: "http://127.0.0.1:7422/mcp", token: TOKEN };
+const OFF = { enabled: false, allowChanges: false, allowCreate: false, port: 7422, url: "http://127.0.0.1:7422/mcp", token: TOKEN };
 const ON = { ...OFF, enabled: true };
 
 describe("McpCard", () => {
@@ -73,7 +73,7 @@ describe("McpCard", () => {
     await screen.findByText("Allow changes");
     await userEvent.click(screen.getByRole("switch", { name: "Answer assistants on this computer" }));
 
-    await waitFor(() => expect(setMcpSettings).toHaveBeenCalledWith({ enabled: false, allowChanges: false, port: 7422 }));
+    await waitFor(() => expect(setMcpSettings).toHaveBeenCalledWith({ enabled: false, allowChanges: false, allowCreate: false, port: 7422 }));
   });
 
   /// Turning it on does not grant anything by itself - the second answer is
@@ -84,7 +84,7 @@ describe("McpCard", () => {
     await screen.findByText("Answer assistants on this computer");
     await userEvent.click(screen.getByRole("switch", { name: "Answer assistants on this computer" }));
 
-    await waitFor(() => expect(setMcpSettings).toHaveBeenCalledWith({ enabled: true, allowChanges: false, port: 7422 }));
+    await waitFor(() => expect(setMcpSettings).toHaveBeenCalledWith({ enabled: true, allowChanges: false, allowCreate: false, port: 7422 }));
   });
 
   /// A port already taken is the realistic failure, and the switch has to

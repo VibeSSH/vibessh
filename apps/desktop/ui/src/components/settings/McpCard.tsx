@@ -36,7 +36,7 @@ export function McpCard() {
       .catch((err) => setError(errorMessage(err, t)));
   }, [t]);
 
-  async function save(next: { enabled: boolean; allowChanges: boolean; port: number }) {
+  async function save(next: { enabled: boolean; allowChanges: boolean; allowCreate: boolean; port: number }) {
     const previous = settings;
     setBusy(true);
     setError(null);
@@ -86,7 +86,14 @@ export function McpCard() {
             </div>
             <Switch
               checked={settings.enabled}
-              onChange={(enabled) => void save({ enabled, allowChanges: enabled ? settings.allowChanges : false, port: settings.port })}
+              onChange={(enabled) =>
+                void save({
+                  enabled,
+                  allowChanges: enabled ? settings.allowChanges : false,
+                  allowCreate: enabled ? settings.allowCreate : false,
+                  port: settings.port,
+                })
+              }
               ariaLabel={t("settings.mcpEnable")}
             />
           </div>
@@ -128,8 +135,20 @@ export function McpCard() {
                 </div>
                 <Switch
                   checked={settings.allowChanges}
-                  onChange={(allowChanges) => void save({ enabled: settings.enabled, allowChanges, port: settings.port })}
+                  onChange={(allowChanges) => void save({ enabled: settings.enabled, allowChanges, allowCreate: settings.allowCreate, port: settings.port })}
                   ariaLabel={t("settings.mcpAllowChanges")}
+                />
+              </div>
+
+              <div className="settings-preference-row settings-preference-row-stacked">
+                <div>
+                  <p className="settings-preference-label">{t("settings.mcpAllowCreate")}</p>
+                  <p className="settings-muted">{t("settings.mcpAllowCreateNote")}</p>
+                </div>
+                <Switch
+                  checked={settings.allowCreate}
+                  onChange={(allowCreate) => void save({ enabled: settings.enabled, allowChanges: settings.allowChanges, allowCreate, port: settings.port })}
+                  ariaLabel={t("settings.mcpAllowCreate")}
                 />
               </div>
 

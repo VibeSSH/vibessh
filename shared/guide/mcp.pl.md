@@ -17,7 +17,8 @@ Domyślnie jest to **wyłączone** i nic nie nasłuchuje.
 
 - nazwy serwerów, ich adresy, porty i login,
 - listę aplikacji: rodzaj, katalog roboczy, status i to, na którym serwerze działają,
-- ostatnie linie logu wybranej aplikacji.
+- ostatnie linie logu wybranej aplikacji,
+- rodzaje aplikacji, które VibeSSH umie utworzyć, razem z pytaniami, jakie zadaje każda z nich.
 
 ## Czego nie zobaczy nigdy
 
@@ -75,6 +76,19 @@ Dopiero on daje asystentowi narzędzie do restartowania aplikacji.
 Rozdzieliliśmy to celowo: „niech Claude widzi moje serwery" i „niech Claude je restartuje"
 to dwa różne pytania i u większości ludzi mają różne odpowiedzi. Dopóki zmiany są
 wyłączone, asystent **nie widzi nawet takiego narzędzia** — nie może go więc proponować.
+
+## Jak pozwolić na tworzenie aplikacji
+
+Kolejny osobny przełącznik, **Zezwól na tworzenie aplikacji**. Po włączeniu asystent może
+utworzyć aplikację na jednym z Twoich serwerów - na przykład „postaw lobby na Paper 1.21 na
+RoyalMC-Dedyk". Idzie to tą samą ścieżką co kreator, z tymi samymi sprawdzeniami,
+folderem i portami.
+
+- **Aplikacja powstaje zatrzymana.** Nic nie działa i żaden port nie jest zajęty, dopóki
+  jej nie uruchomisz - najpierw sprawdź, co powstało, na stronie Aplikacje.
+- **Tylko na serwerze**, nigdy na tym komputerze.
+- **To osobne od Zezwól na zmiany.** Zgoda na restarty nie daje zgody na tworzenie i
+  odwrotnie.
 
 ## Odpalanie z IntelliJ (Gradle)
 
@@ -229,6 +243,7 @@ tokenem po prostu przestaje mieć dostęp.
 - **„Nie udało się otworzyć wejścia … port zajęty"** — coś innego zajmuje 7422.
   Zmień port w ustawieniach i popraw adres w konfiguracji asystenta.
 - **Asystent proponuje restart i dostaje odmowę** — masz wyłączone **Zezwól na zmiany**.
+- **Asystent mówi, że nie może utworzyć aplikacji** - masz wyłączone **Zezwól na tworzenie aplikacji**.
 - **Asystent nie widzi nowego tokenu** — po wygenerowaniu nowego trzeba go wkleić
   ponownie po stronie asystenta; stary jest unieważniony od razu.
 - **`Unresolved reference 'net'` przy `java.net.URI`** — w `build.gradle.kts` nazwa `java`

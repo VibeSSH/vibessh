@@ -40,6 +40,14 @@ pub struct McpConfig {
     /// switch would make the safe choice unavailable.
     #[serde(default)]
     pub allow_changes: bool,
+    /// Whether Claude may create applications.
+    ///
+    /// Its own switch rather than part of `allow_changes`: a restart touches
+    /// something that already exists, while creating pulls an image, makes a
+    /// container and takes a port on a server - a different decision, and
+    /// one that somebody who allowed restarts never made.
+    #[serde(default)]
+    pub allow_create: bool,
 }
 
 fn default_port() -> u16 {
@@ -48,7 +56,7 @@ fn default_port() -> u16 {
 
 impl Default for McpConfig {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, allow_changes: false }
+        Self { enabled: false, port: DEFAULT_PORT, allow_changes: false, allow_create: false }
     }
 }
 
@@ -107,7 +115,7 @@ mod tests {
     #[test]
     fn what_is_saved_is_what_comes_back() {
         let dir = temp_dir();
-        let saved = McpConfig { enabled: true, port: 9999, allow_changes: true };
+        let saved = McpConfig { enabled: true, port: 9999, allow_changes: true, allow_create: true };
         save_mcp_config(&dir, &saved).unwrap();
         assert_eq!(load_mcp_config(&dir), saved);
         std::fs::remove_dir_all(&dir).ok();
@@ -135,6 +143,7 @@ mod tests {
         let config = load_mcp_config(&dir);
         assert!(config.enabled);
         assert!(!config.allow_changes);
+        assert!(!config.allow_create, "an older file must not read as permission to create either");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

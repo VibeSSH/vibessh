@@ -112,6 +112,7 @@ pub fn set_tray_language(app: tauri::AppHandle, language: String) {
 pub struct McpSettings {
     pub enabled: bool,
     pub allow_changes: bool,
+    pub allow_create: bool,
     pub port: u16,
     pub url: String,
     pub token: String,
@@ -121,6 +122,7 @@ fn mcp_settings_from(config: crate::storage::mcp_config::McpConfig) -> AppResult
     Ok(McpSettings {
         enabled: config.enabled,
         allow_changes: config.allow_changes,
+        allow_create: config.allow_create,
         port: config.port,
         url: format!("http://127.0.0.1:{}/mcp", config.port),
         token: crate::mcp::token()?,
@@ -148,9 +150,10 @@ pub async fn set_mcp_settings(
     state: State<'_, std::sync::Arc<crate::mcp::McpState>>,
     enabled: bool,
     allow_changes: bool,
+    allow_create: bool,
     port: u16,
 ) -> AppResult<McpSettings> {
-    let config = crate::storage::mcp_config::McpConfig { enabled, allow_changes, port };
+    let config = crate::storage::mcp_config::McpConfig { enabled, allow_changes, allow_create, port };
     crate::mcp::apply(&app, &state, config).await?;
 
     let config_dir = app

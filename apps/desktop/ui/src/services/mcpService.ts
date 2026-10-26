@@ -14,6 +14,8 @@ import { callCommand } from "./tauri";
 export interface McpSettings {
   enabled: boolean;
   allowChanges: boolean;
+  /** Whether an assistant may create applications - its own switch, see the Rust `McpConfig::allow_create`. */
+  allowCreate: boolean;
   port: number;
   /** The address to paste into an MCP client. */
   url: string;
@@ -32,7 +34,7 @@ export function getMcpSettings(): Promise<McpSettings> {
  * error with the switch still off - rather than a setting that claims to be
  * on and is not.
  */
-export function setMcpSettings(input: { enabled: boolean; allowChanges: boolean; port: number }): Promise<McpSettings> {
+export function setMcpSettings(input: { enabled: boolean; allowChanges: boolean; allowCreate: boolean; port: number }): Promise<McpSettings> {
   return callCommand<McpSettings>("set_mcp_settings", input);
 }
 
