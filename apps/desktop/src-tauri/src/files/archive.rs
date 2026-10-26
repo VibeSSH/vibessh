@@ -616,7 +616,7 @@ mod tests {
 
         let bytes = std::fs::read(root.join("out.zip")).unwrap();
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        let names: Vec<String> = (0..archive.len()).map(|i| archive.by_index(i).unwrap().name().to_string()).collect();
+        let names: Vec<String> = (0..archive.len()).map(|i| archive.by_index(i).unwrap().name().unwrap().to_string()).collect();
         assert!(names.iter().any(|n| n == "plugins/real.jar"), "the real file is missing: {names:?}");
         assert!(!names.iter().any(|n| n.contains("loop")), "the symlink was followed: {names:?}");
         std::fs::remove_dir_all(&root).ok();
